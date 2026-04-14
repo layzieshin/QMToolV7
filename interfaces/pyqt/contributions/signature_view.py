@@ -29,7 +29,7 @@ class SignatureWorkspace(QWidget):
         self._audit = container.get_port("audit_logger") if container.has_port("audit_logger") else None
         self._actions = SignatureActions(self._api)
         self._form = SignatureRequestForm()
-        self._form.output_pdf.setReadOnly(True)
+        self._form.output_pdf.setReadOnly(False)
         self._template_preview = QPlainTextEdit()
         self._template_preview.setReadOnly(True)
         self._placement_status = QLabel("Platzierung: Standardwerte aktiv")
@@ -55,6 +55,7 @@ class SignatureWorkspace(QWidget):
 
         buttons = QHBoxLayout()
         btn_in = QPushButton("Eingabe-PDF waehlen")
+        btn_out = QPushButton("Ausgabe-PDF waehlen")
         btn_png = QPushButton("Signaturbild waehlen")
         btn_canvas = QPushButton("Signatur zeichnen")
         btn_profiles = QPushButton("Profile laden")
@@ -62,6 +63,7 @@ class SignatureWorkspace(QWidget):
         btn_manage = QPushButton("Signatur verwalten")
         btn_sign = QPushButton("Dokument ad-hoc signieren")
         btn_in.clicked.connect(self._pick_input)
+        btn_out.clicked.connect(self._pick_output)
         btn_png.clicked.connect(self._pick_png)
         btn_canvas.clicked.connect(self._open_canvas)
         btn_profiles.clicked.connect(self._load_profiles)
@@ -69,6 +71,7 @@ class SignatureWorkspace(QWidget):
         btn_manage.clicked.connect(self._open_manage_flow)
         btn_sign.clicked.connect(self._sign_fixed)
         buttons.addWidget(btn_in)
+        buttons.addWidget(btn_out)
         buttons.addWidget(btn_png)
         buttons.addWidget(btn_canvas)
         buttons.addWidget(btn_profiles)
@@ -107,13 +110,23 @@ class SignatureWorkspace(QWidget):
         if path:
             self._form.signature_png.setText(path)
 
+    def _pick_output(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Ausgabe-PDF", self._form.output_pdf.text().strip(), "PDF (*.pdf)")
+        if path:
+            self._form.output_pdf.setText(path)
+
     def _open_canvas(self) -> None:
         dialog = SignatureCanvasDialog(self)
         dialog.exec()
         user = self._um.get_current_user()
         if user is not None and dialog.signature_bytes() is not None:
-            asset = self._api.import_signature_asset_bytes(user.user_id, dialog.signature_bytes(), filename_hint="canvas.png")
-            self._api.set_active_signature_asset(user.user_id, asset.asset_id)
+            password = self._form.password.text().strip() or None
+            asset = self._api.import_signature_asset_bytes_and_set_active(
+                user.user_id,
+                dialog.signature_bytes(),
+                filename_hint="canvas.png",
+                password=password,
+            )
             self._append("AKTIVE_SIGNATUR_AKTUALISIERT", {"asset_id": asset.asset_id})
         saved = dialog.saved_path()
         if saved is not None:
@@ -156,6 +169,7 @@ class SignatureWorkspace(QWidget):
             user = self._current_user()
             if not self._form.input_pdf.text().strip():
                 raise RuntimeError("Bitte zuerst eine Eingabe-PDF auswählen.")
+            self._ensure_active_signature_available(user.user_id)
             output = self._form.output_pdf.text().strip()
             if output and Path(output).exists():
                 if self._audit is not None:
@@ -177,6 +191,8 @@ class SignatureWorkspace(QWidget):
         if not input_path:
             self._form.output_pdf.clear()
             return
+        if self._form.output_pdf.text().strip():
+            return
         src = Path(input_path)
         stem = src.stem or "dokument"
         target = src.with_name(f"{stem}_signiert.pdf")
@@ -185,12 +201,35 @@ class SignatureWorkspace(QWidget):
     def _load_profiles(self) -> None:
         try:
             user = self._current_user()
-            names = self._actions.list_template_names(user.user_id)
-            self._form.set_profiles(names)
-            self._append("PROFILE_GELADEN", {"count": len(names), "profiles": names})
+            rows = self._actions.list_templates_for_select(user.user_id)
+            self._form.set_profiles(rows)
+            self._append("PROFILE_GELADEN", {"count": len(rows), "profiles": [name for _, name in rows]})
             self._update_profile_preview()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
+
+    def _ensure_active_signature_available(self, user_id: str) -> None:
+        selected = self._form.selected_profile()
+        if selected:
+            template = self._actions.get_template_by_id(user_id, selected)
+            if template is not None and template.layout.show_signature and template.signature_asset_id:
+                return
+        if self._form.signature_png.text().strip():
+            return
+        active = self._api.get_active_signature_asset_id(user_id)
+        if active:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Aktive Signatur fehlt",
+            "Es ist keine aktive Signatur vorhanden. Jetzt zeichnen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._open_canvas()
+        else:
+            raise RuntimeError("Keine aktive Signatur vorhanden. Bitte zuerst Signatur verwalten.")
 
     def _update_profile_preview(self) -> None:
         try:

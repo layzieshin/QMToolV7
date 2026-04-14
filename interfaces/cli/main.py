@@ -438,6 +438,23 @@ def cmd_sign(args: argparse.Namespace) -> int:
                 )
             )
             return 0
+        if args.sign_command == "import-set-active":
+            asset = api.import_signature_asset_and_set_active(
+                args.owner_user_id,
+                Path(args.input),
+                password=args.password,
+            )
+            print(
+                json.dumps(
+                    {
+                        "asset_id": asset.asset_id,
+                        "owner_user_id": asset.owner_user_id,
+                        "active": True,
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            return 0
         if args.sign_command == "template-create":
             placement = SignaturePlacementInput(page_index=args.page, x=args.x, y=args.y, target_width=args.width)
             layout = LabelLayoutInput(
@@ -463,6 +480,7 @@ def cmd_sign(args: argparse.Namespace) -> int:
                 placement=placement,
                 layout=layout,
                 signature_asset_id=args.asset_id,
+                scope=args.scope,
             )
             print(
                 json.dumps(
@@ -476,8 +494,61 @@ def cmd_sign(args: argparse.Namespace) -> int:
                 )
             )
             return 0
+        if args.sign_command == "template-update":
+            placement = None
+            if args.page is not None and args.x is not None and args.y is not None and args.width is not None:
+                placement = SignaturePlacementInput(page_index=args.page, x=args.x, y=args.y, target_width=args.width)
+            layout = None
+            if args.show_signature is not None or args.show_name is not None or args.show_date is not None:
+                layout = LabelLayoutInput(
+                    show_signature=True if args.show_signature is None else bool(args.show_signature),
+                    show_name=True if args.show_name is None else bool(args.show_name),
+                    show_date=True if args.show_date is None else bool(args.show_date),
+                    name_text=args.name_text,
+                    date_text=args.date_text,
+                    name_position=args.name_pos,
+                    date_position=args.date_pos,
+                    name_font_size=args.name_size,
+                    date_font_size=args.date_size,
+                    color_hex=args.color,
+                    name_above=args.name_above,
+                    name_below=args.name_below,
+                    date_above=args.date_above,
+                    date_below=args.date_below,
+                    x_offset=args.x_offset,
+                )
+            template = api.update_signature_template(
+                template_id=args.template_id,
+                owner_user_id=args.owner_user_id,
+                name=args.name,
+                placement=placement,
+                layout=layout,
+                signature_asset_id=args.asset_id,
+            )
+            print(
+                json.dumps(
+                    {
+                        "template_id": template.template_id,
+                        "owner_user_id": template.owner_user_id,
+                        "name": template.name,
+                        "signature_asset_id": template.signature_asset_id,
+                        "scope": template.scope,
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            return 0
+        if args.sign_command == "template-delete":
+            api.delete_signature_template(args.template_id)
+            print(json.dumps({"deleted": True, "template_id": args.template_id}, ensure_ascii=True))
+            return 0
         if args.sign_command == "template-list":
-            rows = api.list_user_signature_templates(args.owner_user_id)
+            if args.scope == "global":
+                rows = api.list_global_signature_templates()
+            else:
+                if not str(args.owner_user_id).strip():
+                    raise ValueError("--owner-user-id is required for --scope user")
+                rows = api.list_user_signature_templates(args.owner_user_id)
             print(
                 json.dumps(
                     [
@@ -486,12 +557,47 @@ def cmd_sign(args: argparse.Namespace) -> int:
                             "owner_user_id": row.owner_user_id,
                             "name": row.name,
                             "signature_asset_id": row.signature_asset_id,
+                            "scope": row.scope,
                         }
                         for row in rows
                     ],
                     ensure_ascii=True,
                 )
             )
+            return 0
+        if args.sign_command == "template-copy-global":
+            template = api.copy_global_template_to_user(
+                template_id=args.template_id,
+                owner_user_id=args.owner_user_id,
+                name=args.name,
+            )
+            print(
+                json.dumps(
+                    {
+                        "template_id": template.template_id,
+                        "owner_user_id": template.owner_user_id,
+                        "name": template.name,
+                        "scope": template.scope,
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            return 0
+        if args.sign_command == "active-set":
+            api.set_active_signature_asset(args.owner_user_id, args.asset_id, password=args.password)
+            print(json.dumps({"active_set": True, "owner_user_id": args.owner_user_id, "asset_id": args.asset_id}, ensure_ascii=True))
+            return 0
+        if args.sign_command == "active-get":
+            asset_id = api.get_active_signature_asset_id(args.owner_user_id)
+            print(json.dumps({"owner_user_id": args.owner_user_id, "asset_id": asset_id}, ensure_ascii=True))
+            return 0
+        if args.sign_command == "active-clear":
+            api.clear_active_signature(args.owner_user_id, password=args.password)
+            print(json.dumps({"active_cleared": True, "owner_user_id": args.owner_user_id}, ensure_ascii=True))
+            return 0
+        if args.sign_command == "active-export":
+            exported = api.export_active_signature(args.owner_user_id, Path(args.output))
+            print(json.dumps({"owner_user_id": args.owner_user_id, "output": str(exported)}, ensure_ascii=True))
             return 0
         if args.sign_command == "template-sign":
             result = api.sign_with_template(
@@ -1263,9 +1369,14 @@ def main() -> int:
     sign_import_asset = sign_sub.add_parser("import-asset", help="Import PNG/GIF signature asset securely")
     sign_import_asset.add_argument("--owner-user-id", required=True)
     sign_import_asset.add_argument("--input", required=True)
+    sign_import_set_active = sign_sub.add_parser("import-set-active", help="Import signature asset and set as active")
+    sign_import_set_active.add_argument("--owner-user-id", required=True)
+    sign_import_set_active.add_argument("--input", required=True)
+    sign_import_set_active.add_argument("--password")
     sign_template_create = sign_sub.add_parser("template-create", help="Create user signature template")
     sign_template_create.add_argument("--owner-user-id", required=True)
     sign_template_create.add_argument("--name", required=True)
+    sign_template_create.add_argument("--scope", choices=["user", "global"], default="user")
     sign_template_create.add_argument("--asset-id")
     sign_template_create.add_argument("--page", type=int, default=0)
     sign_template_create.add_argument("--x", type=float, required=True)
@@ -1286,8 +1397,51 @@ def main() -> int:
     sign_template_create.add_argument("--date-above", type=float, default=18.0)
     sign_template_create.add_argument("--date-below", type=float, default=24.0)
     sign_template_create.add_argument("--x-offset", type=float, default=0.0)
+    sign_template_update = sign_sub.add_parser("template-update", help="Update an existing signature template")
+    sign_template_update.add_argument("--template-id", required=True)
+    sign_template_update.add_argument("--owner-user-id", required=True)
+    sign_template_update.add_argument("--name")
+    sign_template_update.add_argument("--asset-id")
+    sign_template_update.add_argument("--page", type=int)
+    sign_template_update.add_argument("--x", type=float)
+    sign_template_update.add_argument("--y", type=float)
+    sign_template_update.add_argument("--width", type=float)
+    sign_template_update.add_argument("--show-signature", action=argparse.BooleanOptionalAction, default=None)
+    sign_template_update.add_argument("--show-name", action=argparse.BooleanOptionalAction, default=None)
+    sign_template_update.add_argument("--show-date", action=argparse.BooleanOptionalAction, default=None)
+    sign_template_update.add_argument("--name-text")
+    sign_template_update.add_argument("--date-text")
+    sign_template_update.add_argument("--name-pos", choices=["above", "below", "off"], default="above")
+    sign_template_update.add_argument("--date-pos", choices=["above", "below", "off"], default="below")
+    sign_template_update.add_argument("--name-size", type=int, default=12)
+    sign_template_update.add_argument("--date-size", type=int, default=12)
+    sign_template_update.add_argument("--color", default="#000000")
+    sign_template_update.add_argument("--name-above", type=float, default=6.0)
+    sign_template_update.add_argument("--name-below", type=float, default=12.0)
+    sign_template_update.add_argument("--date-above", type=float, default=18.0)
+    sign_template_update.add_argument("--date-below", type=float, default=24.0)
+    sign_template_update.add_argument("--x-offset", type=float, default=0.0)
     sign_template_list = sign_sub.add_parser("template-list", help="List user signature templates")
-    sign_template_list.add_argument("--owner-user-id", required=True)
+    sign_template_list.add_argument("--owner-user-id", required=False, default="")
+    sign_template_list.add_argument("--scope", choices=["user", "global"], default="user")
+    sign_template_delete = sign_sub.add_parser("template-delete", help="Delete signature template")
+    sign_template_delete.add_argument("--template-id", required=True)
+    sign_template_copy_global = sign_sub.add_parser("template-copy-global", help="Copy global template to user")
+    sign_template_copy_global.add_argument("--template-id", required=True)
+    sign_template_copy_global.add_argument("--owner-user-id", required=True)
+    sign_template_copy_global.add_argument("--name")
+    sign_active_set = sign_sub.add_parser("active-set", help="Set active signature asset")
+    sign_active_set.add_argument("--owner-user-id", required=True)
+    sign_active_set.add_argument("--asset-id", required=True)
+    sign_active_set.add_argument("--password")
+    sign_active_get = sign_sub.add_parser("active-get", help="Get active signature asset")
+    sign_active_get.add_argument("--owner-user-id", required=True)
+    sign_active_clear = sign_sub.add_parser("active-clear", help="Clear active signature asset")
+    sign_active_clear.add_argument("--owner-user-id", required=True)
+    sign_active_clear.add_argument("--password")
+    sign_active_export = sign_sub.add_parser("active-export", help="Export active signature asset")
+    sign_active_export.add_argument("--owner-user-id", required=True)
+    sign_active_export.add_argument("--output", required=True)
     sign_template_sign = sign_sub.add_parser("template-sign", help="Sign using stored template")
     sign_template_sign.add_argument("--template-id", required=True)
     sign_template_sign.add_argument("--input", required=True)

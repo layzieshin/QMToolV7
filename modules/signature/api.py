@@ -44,6 +44,25 @@ class SignatureApi:
     def delete_signature_template(self, template_id: str) -> None:
         self.service.delete_signature_template(template_id)
 
+    def update_signature_template(
+        self,
+        *,
+        template_id: str,
+        owner_user_id: str,
+        name: str | None = None,
+        placement: SignaturePlacementInput | None = None,
+        layout: LabelLayoutInput | None = None,
+        signature_asset_id: str | None = None,
+    ) -> UserSignatureTemplate:
+        return self.service.update_signature_template(
+            template_id=template_id,
+            owner_user_id=owner_user_id,
+            name=name,
+            placement=placement,
+            layout=layout,
+            signature_asset_id=signature_asset_id,
+        )
+
     def copy_global_template_to_user(self, template_id: str, owner_user_id: str, name: str | None = None) -> UserSignatureTemplate:
         return self.service.copy_global_template_to_user(template_id, owner_user_id, name=name)
 
@@ -61,6 +80,30 @@ class SignatureApi:
 
     def import_signature_asset_bytes(self, owner_user_id: str, png_bytes: bytes, *, filename_hint: str = "canvas.png") -> SignatureAsset:
         return self.service.import_signature_asset_bytes(owner_user_id, png_bytes, filename_hint=filename_hint)
+
+    def import_signature_asset_and_set_active(
+        self,
+        owner_user_id: str,
+        source_path: Path,
+        *,
+        password: str | None = None,
+    ) -> SignatureAsset:
+        return self.service.import_signature_asset_and_set_active(owner_user_id, source_path, password=password)
+
+    def import_signature_asset_bytes_and_set_active(
+        self,
+        owner_user_id: str,
+        png_bytes: bytes,
+        *,
+        filename_hint: str = "canvas.png",
+        password: str | None = None,
+    ) -> SignatureAsset:
+        return self.service.import_signature_asset_bytes_and_set_active(
+            owner_user_id,
+            png_bytes,
+            filename_hint=filename_hint,
+            password=password,
+        )
 
     def sign_with_template(
         self,

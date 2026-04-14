@@ -14,14 +14,21 @@ class SignatureActions:
     def list_template_names(self, user_id: str) -> list[str]:
         return [template.name for template in self._api.list_user_signature_templates(user_id)]
 
+    def list_templates_for_select(self, user_id: str) -> list[tuple[str, str]]:
+        return [(template.template_id, template.name) for template in self._api.list_user_signature_templates(user_id)]
+
     def get_template_by_name(self, user_id: str, template_name: str):
         templates = self._api.list_user_signature_templates(user_id)
         return next((template for template in templates if template.name == template_name), None)
 
+    def get_template_by_id(self, user_id: str, template_id: str):
+        templates = self._api.list_user_signature_templates(user_id)
+        return next((template for template in templates if template.template_id == template_id), None)
+
     def sign_from_form(self, form, *, user_id: str, username: str) -> object:
         selected_profile = form.selected_profile()
         if selected_profile:
-            selected = self.get_template_by_name(user_id, selected_profile)
+            selected = self.get_template_by_id(user_id, selected_profile)
             if selected is None:
                 raise RuntimeError(f"Signaturprofil '{selected_profile}' wurde nicht gefunden")
             request = form.build_request(signer_user=username, reason="pyqt_signature_profile")
@@ -52,7 +59,7 @@ class SignatureActions:
                 "hinweis": "Dropdown auf ein gespeichertes Signaturprofil stellen, um die Profilvorschau zu sehen.",
                 "live_preview": form.preview.text(),
             }
-        selected = self.get_template_by_name(user_id, selected_name)
+        selected = self.get_template_by_id(user_id, selected_name)
         if selected is None:
             return {"error": f"Profil '{selected_name}' nicht gefunden"}
-        return {"selected_profile": selected_name, "template": selected}
+        return {"selected_profile": selected.name, "template": selected}

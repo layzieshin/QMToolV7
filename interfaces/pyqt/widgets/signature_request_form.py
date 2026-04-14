@@ -97,12 +97,16 @@ class SignatureRequestForm(QWidget):
     def has_input(self) -> bool:
         return bool(self.input_pdf.text().strip())
 
-    def set_profiles(self, names: list[str]) -> None:
+    def set_profiles(self, names: list[str] | list[tuple[str, str]]) -> None:
         current = self.profile.currentText()
         self.profile.clear()
         self.profile.addItem("Eigene Parameter", "")
-        for name in names:
-            self.profile.addItem(name, name)
+        for item in names:
+            if isinstance(item, tuple):
+                template_id, name = item
+                self.profile.addItem(name, template_id)
+            else:
+                self.profile.addItem(item, item)
         idx = self.profile.findText(current)
         if idx >= 0:
             self.profile.setCurrentIndex(idx)
@@ -111,6 +115,9 @@ class SignatureRequestForm(QWidget):
         text = self.profile.currentText().strip()
         if not text or text == "Eigene Parameter":
             return None
+        data = self.profile.currentData()
+        if isinstance(data, str) and data.strip():
+            return data.strip()
         return text
 
     def _apply_preset(self, preset: str) -> None:

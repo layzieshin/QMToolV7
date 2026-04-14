@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image
 
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
+from modules.signature.errors import PasswordRequiredError
 from modules.signature.secure_store import EncryptedSignatureBlobStore
 from modules.signature.service import SignatureServiceV2
 from modules.signature.sqlite_repository import SQLiteSignatureRepository
@@ -126,6 +127,11 @@ class SignatureTemplatesTest(unittest.TestCase):
             asset = service.import_signature_asset("admin", gif_path)
             service.set_active_signature_asset("admin", asset.asset_id, password="admin")
             self.assertEqual(service.get_active_signature_asset_id("admin"), asset.asset_id)
+            asset_2 = service.import_signature_asset("admin", gif_path)
+            with self.assertRaises(PasswordRequiredError):
+                service.set_active_signature_asset("admin", asset_2.asset_id)
+            service.set_active_signature_asset("admin", asset_2.asset_id, password="admin")
+            self.assertEqual(service.get_active_signature_asset_id("admin"), asset_2.asset_id)
             global_template = service.create_user_signature_template(
                 owner_user_id="admin",
                 name="global-default",
@@ -137,8 +143,16 @@ class SignatureTemplatesTest(unittest.TestCase):
             self.assertEqual(global_template.scope, "global")
             copied = service.copy_global_template_to_user(global_template.template_id, "admin")
             self.assertEqual(copied.scope, "user")
+            updated = service.update_signature_template(
+                template_id=copied.template_id,
+                owner_user_id="admin",
+                name="user-template-updated",
+            )
+            self.assertEqual(updated.name, "user-template-updated")
             export = service.export_active_signature("admin", root / "active.png")
             self.assertTrue(export.exists())
+            with self.assertRaises(PasswordRequiredError):
+                service.clear_active_signature("admin")
             service.clear_active_signature("admin", password="admin")
             self.assertIsNone(service.get_active_signature_asset_id("admin"))
 

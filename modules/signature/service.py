@@ -153,19 +153,39 @@ class SignatureServiceV2:
     def delete_signature_template(self, template_id: str) -> None:
         self._template_use_cases.delete_signature_template(template_id)
 
+    def update_signature_template(
+        self,
+        *,
+        template_id: str,
+        owner_user_id: str,
+        name: str | None = None,
+        placement: SignaturePlacementInput | None = None,
+        layout: LabelLayoutInput | None = None,
+        signature_asset_id: str | None = None,
+    ) -> UserSignatureTemplate:
+        return self._template_use_cases.update_signature_template(
+            template_id=template_id,
+            owner_user_id=owner_user_id,
+            name=name,
+            placement=placement,
+            layout=layout,
+            signature_asset_id=signature_asset_id,
+        )
+
     def copy_global_template_to_user(self, template_id: str, owner_user_id: str, name: str | None = None) -> UserSignatureTemplate:
         return self._template_use_cases.copy_global_template_to_user(template_id, owner_user_id, name=name)
 
     def set_active_signature_asset(self, owner_user_id: str, asset_id: str, password: str | None = None) -> None:
         if self.repository is None:
             raise SignatureAssetError("signature template storage is not configured")
-        if password is not None and not self.password_verifier(owner_user_id, password):
-            raise PasswordInvalidError("password verification failed")
         asset = self.repository.get_asset(asset_id)
         if asset is None:
             raise SignatureAssetError(f"unknown signature asset: {asset_id}")
         if asset.owner_user_id != owner_user_id:
             raise SignatureAssetError("active signature ownership mismatch")
+        current_asset_id = self.repository.get_active_signature_asset_id(owner_user_id)
+        if current_asset_id is not None and current_asset_id != asset_id:
+            self._require_valid_password(owner_user_id, password)
         self.repository.set_active_signature_asset(owner_user_id, asset_id)
 
     def get_active_signature_asset_id(self, owner_user_id: str) -> str | None:
@@ -176,8 +196,10 @@ class SignatureServiceV2:
     def clear_active_signature(self, owner_user_id: str, password: str | None = None) -> None:
         if self.repository is None:
             raise SignatureAssetError("signature template storage is not configured")
-        if password is not None and not self.password_verifier(owner_user_id, password):
-            raise PasswordInvalidError("password verification failed")
+        current_asset_id = self.repository.get_active_signature_asset_id(owner_user_id)
+        if current_asset_id is None:
+            return
+        self._require_valid_password(owner_user_id, password)
         self.repository.clear_active_signature_asset(owner_user_id)
 
     def export_active_signature(self, owner_user_id: str, target_path: Path) -> Path:
@@ -201,6 +223,29 @@ class SignatureServiceV2:
             temp = Path(tmp) / filename_hint
             temp.write_bytes(png_bytes)
             return self.import_signature_asset(owner_user_id, temp)
+
+    def import_signature_asset_and_set_active(
+        self,
+        owner_user_id: str,
+        source_path: Path,
+        *,
+        password: str | None = None,
+    ) -> SignatureAsset:
+        asset = self.import_signature_asset(owner_user_id, source_path)
+        self.set_active_signature_asset(owner_user_id, asset.asset_id, password=password)
+        return asset
+
+    def import_signature_asset_bytes_and_set_active(
+        self,
+        owner_user_id: str,
+        png_bytes: bytes,
+        *,
+        filename_hint: str = "canvas.png",
+        password: str | None = None,
+    ) -> SignatureAsset:
+        asset = self.import_signature_asset_bytes(owner_user_id, png_bytes, filename_hint=filename_hint)
+        self.set_active_signature_asset(owner_user_id, asset.asset_id, password=password)
+        return asset
 
     def sign_with_template(
         self,
@@ -282,6 +327,12 @@ class SignatureServiceV2:
         if not request.password:
             raise PasswordRequiredError("password required by policy")
         if not self.password_verifier(request.signer_user, request.password):
+            raise PasswordInvalidError("password verification failed")
+
+    def _require_valid_password(self, owner_user_id: str, password: str | None) -> None:
+        if not password:
+            raise PasswordRequiredError("password required for replacing or deleting active signature")
+        if not self.password_verifier(owner_user_id, password):
             raise PasswordInvalidError("password verification failed")
 
     def _sign_visual(self, request: SignRequest, output_pdf: Path) -> None:

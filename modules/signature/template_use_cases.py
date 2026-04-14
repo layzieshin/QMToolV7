@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 import tempfile
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -118,6 +119,49 @@ class SignatureTemplateUseCases:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
         self._service.repository.delete_template(template_id)
+
+    def update_signature_template(
+        self,
+        *,
+        template_id: str,
+        owner_user_id: str,
+        name: str | None = None,
+        placement: SignaturePlacementInput | None = None,
+        layout: LabelLayoutInput | None = None,
+        signature_asset_id: str | None = None,
+    ) -> UserSignatureTemplate:
+        if self._service.repository is None:
+            raise SignatureTemplateError("signature template storage is not configured")
+        current = self._service.repository.get_template(template_id)
+        if current is None:
+            raise SignatureTemplateError(f"unknown signature template: {template_id}")
+        if current.owner_user_id != owner_user_id:
+            raise SignatureTemplateError("template ownership mismatch")
+        if signature_asset_id is not None:
+            asset = self._service.repository.get_asset(signature_asset_id)
+            if asset is None:
+                raise SignatureTemplateError(f"unknown signature asset: {signature_asset_id}")
+            if current.scope == "user" and asset.owner_user_id != owner_user_id:
+                raise SignatureTemplateError("signature asset ownership mismatch")
+
+        updated = replace(
+            current,
+            name=(name.strip() if name is not None else current.name),
+            placement=placement if placement is not None else current.placement,
+            layout=layout if layout is not None else current.layout,
+            signature_asset_id=signature_asset_id if signature_asset_id is not None else current.signature_asset_id,
+        )
+        if not updated.name:
+            raise SignatureTemplateError("template name is required")
+        self._service.repository.upsert_template(updated)
+        self._service.audit_logger.emit(
+            action="signature.template.updated",
+            actor=owner_user_id,
+            target=updated.template_id,
+            result="ok",
+            reason="signature_template_update",
+        )
+        return updated
 
     def copy_global_template_to_user(self, template_id: str, owner_user_id: str, name: str | None = None) -> UserSignatureTemplate:
         if self._service.repository is None:

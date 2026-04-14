@@ -6,6 +6,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 
 from interfaces.pyqt.contributions.common import as_json_text, normalize_role
 from interfaces.pyqt.presenters.settings_presenter import SettingsProfilePresenter
@@ -355,6 +357,12 @@ class _SignatureSettingsWidget(QWidget):
         self._name_pos.addItems(["above", "below", "off"])
         self._date_pos = QComboBox()
         self._date_pos.addItems(["above", "below", "off"])
+        self._name_font_size = QLineEdit("12")
+        self._date_font_size = QLineEdit("12")
+        self._name_rel_x = QLineEdit("")
+        self._name_rel_y = QLineEdit("")
+        self._date_rel_x = QLineEdit("")
+        self._date_rel_y = QLineEdit("")
         self._asset_id = QLineEdit()
         self._active_asset = QLineEdit()
         self._active_asset.setReadOnly(True)
@@ -365,6 +373,8 @@ class _SignatureSettingsWidget(QWidget):
 
         self._preview = QPlainTextEdit()
         self._preview.setReadOnly(True)
+        self._preview_canvas = QLabel()
+        self._preview_canvas.setMinimumHeight(170)
         self._out = QPlainTextEdit()
         self._out.setReadOnly(True)
 
@@ -400,8 +410,14 @@ class _SignatureSettingsWidget(QWidget):
         profile_form.addRow("Breite", self._width)
         profile_form.addRow("", self._show_name)
         profile_form.addRow("Name-Position", self._name_pos)
+        profile_form.addRow("Name Fontgröße", self._name_font_size)
+        profile_form.addRow("Name rel X", self._name_rel_x)
+        profile_form.addRow("Name rel Y", self._name_rel_y)
         profile_form.addRow("", self._show_date)
         profile_form.addRow("Datum-Position", self._date_pos)
+        profile_form.addRow("Datum Fontgröße", self._date_font_size)
+        profile_form.addRow("Datum rel X", self._date_rel_x)
+        profile_form.addRow("Datum rel Y", self._date_rel_y)
         layout.addLayout(profile_form)
         profile_btn = QHBoxLayout()
         btn_profiles = QPushButton("Profile laden")
@@ -410,8 +426,14 @@ class _SignatureSettingsWidget(QWidget):
         btn_create.clicked.connect(self._create_profile)
         btn_canvas = QPushButton("Signatur zeichnen")
         btn_canvas.clicked.connect(self._open_canvas)
+        btn_import = QPushButton("Signatur importieren")
+        btn_import.clicked.connect(self._import_and_set_active_signature)
         btn_dup = QPushButton("Profil duplizieren")
         btn_dup.clicked.connect(self._duplicate_profile)
+        btn_update = QPushButton("Profil speichern")
+        btn_update.clicked.connect(self._update_profile)
+        btn_delete = QPushButton("Profil löschen")
+        btn_delete.clicked.connect(self._delete_profile)
         btn_set_active = QPushButton("Asset als aktiv setzen")
         btn_set_active.clicked.connect(self._set_active_signature_asset)
         btn_export_active = QPushButton("Aktive Signatur exportieren")
@@ -421,7 +443,10 @@ class _SignatureSettingsWidget(QWidget):
         profile_btn.addWidget(btn_profiles)
         profile_btn.addWidget(btn_create)
         profile_btn.addWidget(btn_canvas)
+        profile_btn.addWidget(btn_import)
         profile_btn.addWidget(btn_dup)
+        profile_btn.addWidget(btn_update)
+        profile_btn.addWidget(btn_delete)
         profile_btn.addWidget(btn_set_active)
         profile_btn.addWidget(btn_export_active)
         profile_btn.addWidget(btn_clear_active)
@@ -450,12 +475,22 @@ class _SignatureSettingsWidget(QWidget):
         layout.addLayout(global_btn)
 
         layout.addWidget(QLabel("Preview"))
+        layout.addWidget(self._preview_canvas)
         layout.addWidget(self._preview, stretch=1)
         layout.addWidget(QLabel("Ergebnis"))
         layout.addWidget(self._out, stretch=1)
 
         self._profile_select.currentTextChanged.connect(lambda _text: self._apply_selected_profile())
         for widget in [self._page_index, self._x, self._y, self._width]:
+            widget.textChanged.connect(lambda _text: self._render_preview())
+        for widget in [
+            self._name_font_size,
+            self._date_font_size,
+            self._name_rel_x,
+            self._name_rel_y,
+            self._date_rel_x,
+            self._date_rel_y,
+        ]:
             widget.textChanged.connect(lambda _text: self._render_preview())
         self._show_name.toggled.connect(lambda _v: self._render_preview())
         self._show_date.toggled.connect(lambda _v: self._render_preview())
@@ -524,12 +559,22 @@ class _SignatureSettingsWidget(QWidget):
         )
 
     def _build_layout(self) -> LabelLayoutInput:
+        def _float_or_none(raw: str) -> float | None:
+            val = raw.strip()
+            return float(val) if val else None
+
         return LabelLayoutInput(
             show_signature=True,
             show_name=self._show_name.isChecked(),
             show_date=self._show_date.isChecked(),
             name_position=self._name_pos.currentText(),  # type: ignore[arg-type]
             date_position=self._date_pos.currentText(),  # type: ignore[arg-type]
+            name_font_size=int(self._name_font_size.text().strip() or "12"),
+            date_font_size=int(self._date_font_size.text().strip() or "12"),
+            name_rel_x=_float_or_none(self._name_rel_x.text()),
+            name_rel_y=_float_or_none(self._name_rel_y.text()),
+            date_rel_x=_float_or_none(self._date_rel_x.text()),
+            date_rel_y=_float_or_none(self._date_rel_y.text()),
         )
 
     def _create_profile(self) -> None:
@@ -546,6 +591,38 @@ class _SignatureSettingsWidget(QWidget):
                 scope="user",
             )
             self._append("SIGNATUR_PROFIL_ANGELEGT", created)
+            self._load_profiles()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Signaturprofil", str(exc))
+
+    def _update_profile(self) -> None:
+        try:
+            user = self._um.get_current_user()
+            if user is None:
+                raise RuntimeError("Anmeldung erforderlich")
+            template_id = str(self._profile_select.currentData() or "").strip()
+            if not template_id:
+                raise RuntimeError("Bitte zuerst ein bestehendes Profil auswählen")
+            updated = self._signature.update_signature_template(
+                template_id=template_id,
+                owner_user_id=user.user_id,
+                name=self._profile_name.text().strip(),
+                placement=self._build_placement(),
+                layout=self._build_layout(),
+                signature_asset_id=self._asset_id.text().strip() or None,
+            )
+            self._append("SIGNATUR_PROFIL_GESPEICHERT", {"template_id": updated.template_id, "name": updated.name})
+            self._load_profiles()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Signaturprofil", str(exc))
+
+    def _delete_profile(self) -> None:
+        try:
+            template_id = str(self._profile_select.currentData() or "").strip()
+            if not template_id:
+                raise RuntimeError("Bitte zuerst ein bestehendes Profil auswählen")
+            self._signature.delete_signature_template(template_id)
+            self._append("SIGNATUR_PROFIL_GELOESCHT", {"template_id": template_id})
             self._load_profiles()
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Signaturprofil", str(exc))
@@ -567,8 +644,9 @@ class _SignatureSettingsWidget(QWidget):
             if not selected_name or selected_name == "Neues Profil":
                 self._render_preview()
                 return
+            selected_id = str(self._profile_select.currentData() or "").strip()
             profiles = self._signature.list_user_signature_templates(user.user_id)
-            selected = next((p for p in profiles if p.name == selected_name), None)
+            selected = next((p for p in profiles if p.template_id == selected_id), None)
             if selected is None:
                 return
             self._profile_name.setText(selected.name)
@@ -581,11 +659,39 @@ class _SignatureSettingsWidget(QWidget):
             self._show_date.setChecked(selected.layout.show_date)
             self._name_pos.setCurrentText(selected.layout.name_position)
             self._date_pos.setCurrentText(selected.layout.date_position)
+            self._name_font_size.setText(str(selected.layout.name_font_size))
+            self._date_font_size.setText(str(selected.layout.date_font_size))
+            self._name_rel_x.setText("" if selected.layout.name_rel_x is None else str(selected.layout.name_rel_x))
+            self._name_rel_y.setText("" if selected.layout.name_rel_y is None else str(selected.layout.name_rel_y))
+            self._date_rel_x.setText("" if selected.layout.date_rel_x is None else str(selected.layout.date_rel_x))
+            self._date_rel_y.setText("" if selected.layout.date_rel_y is None else str(selected.layout.date_rel_y))
             self._render_preview()
         except Exception as exc:  # noqa: BLE001
             self._append("ERROR", {"message": str(exc)})
 
     def _render_preview(self) -> None:
+        pixmap = QPixmap(520, 160)
+        pixmap.fill(QColor("white"))
+        painter = QPainter(pixmap)
+        painter.setPen(QPen(QColor("black"), 2))
+        sig_x = 40
+        sig_y = 85
+        sig_w = 180
+        sig_h = 40
+        painter.drawRect(sig_x, sig_y, sig_w, sig_h)
+        painter.drawLine(sig_x + 10, sig_y + 25, sig_x + 60, sig_y + 12)
+        painter.drawLine(sig_x + 60, sig_y + 12, sig_x + 120, sig_y + 28)
+        painter.drawLine(sig_x + 120, sig_y + 28, sig_x + 165, sig_y + 18)
+
+        if self._show_name.isChecked():
+            painter.setPen(QColor("#1a5fb4"))
+            painter.drawText(sig_x + 4, sig_y - 8, "Name")
+        if self._show_date.isChecked():
+            painter.setPen(QColor("#2b8a3e"))
+            painter.drawText(sig_x + 4, sig_y + sig_h + 22, "Datum")
+        painter.end()
+        self._preview_canvas.setPixmap(pixmap)
+
         self._preview.setPlainText(
             "\n".join(
                 [
@@ -595,6 +701,9 @@ class _SignatureSettingsWidget(QWidget):
                     f"Breite: {self._width.text().strip()}",
                     f"Name: {'an' if self._show_name.isChecked() else 'aus'} ({self._name_pos.currentText()})",
                     f"Datum: {'an' if self._show_date.isChecked() else 'aus'} ({self._date_pos.currentText()})",
+                    f"Name Font: {self._name_font_size.text().strip() or '12'} | Datum Font: {self._date_font_size.text().strip() or '12'}",
+                    f"Name rel: x={self._name_rel_x.text().strip() or '-'}, y={self._name_rel_y.text().strip() or '-'}",
+                    f"Datum rel: x={self._date_rel_x.text().strip() or '-'}, y={self._date_rel_y.text().strip() or '-'}",
                 ]
             )
         )
@@ -604,20 +713,32 @@ class _SignatureSettingsWidget(QWidget):
         dialog.exec()
         user = self._um.get_current_user()
         if user is not None and dialog.signature_bytes() is not None:
-            asset = self._signature.import_signature_asset_bytes(
+            password = self._replace_password.text().strip() or None
+            asset = self._signature.import_signature_asset_bytes_and_set_active(
                 user.user_id,
                 dialog.signature_bytes(),
                 filename_hint="settings-canvas.png",
+                password=password,
             )
             self._asset_id.setText(asset.asset_id)
-            password = self._replace_password.text().strip() or None
-            self._signature.set_active_signature_asset(user.user_id, asset.asset_id, password=password)
             self._refresh_active_signature()
             self._append("AKTIVE_SIGNATUR_AKTUALISIERT", {"asset_id": asset.asset_id})
-        saved = dialog.saved_path()
-        if saved is not None:
-            self._asset_id.setText(str(saved))
-            self._append("SIGNATUR_CANVAS_GESPEICHERT", {"asset_path": str(saved)})
+
+    def _import_and_set_active_signature(self) -> None:
+        try:
+            user = self._um.get_current_user()
+            if user is None:
+                raise RuntimeError("Anmeldung erforderlich")
+            path, _ = QFileDialog.getOpenFileName(self, "Signatur importieren", "", "Images (*.png *.gif)")
+            if not path:
+                return
+            password = self._replace_password.text().strip() or None
+            asset = self._signature.import_signature_asset_and_set_active(user.user_id, Path(path), password=password)
+            self._asset_id.setText(asset.asset_id)
+            self._refresh_active_signature()
+            self._append("AKTIVE_SIGNATUR_IMPORTIERT", {"asset_id": asset.asset_id})
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Signatur importieren", str(exc))
 
     def _refresh_active_signature(self) -> None:
         user = self._um.get_current_user()

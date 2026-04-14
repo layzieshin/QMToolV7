@@ -71,6 +71,77 @@ class SignatureTemplatesCliTest(unittest.TestCase):
             rows = json.loads(listed.stdout.strip() or "[]")
             self.assertTrue(any(r.get("template_id") == template_id for r in rows))
 
+            global_created = run_cli(
+                "sign",
+                "template-create",
+                "--owner-user-id",
+                "admin",
+                "--scope",
+                "global",
+                "--name",
+                "global-std",
+                "--asset-id",
+                str(asset_id),
+                "--x",
+                "10",
+                "--y",
+                "10",
+                "--width",
+                "80",
+                env=env,
+            )
+            self.assertEqual(global_created.returncode, 0, msg=global_created.stderr + global_created.stdout)
+            global_template_id = json.loads(global_created.stdout.strip() or "{}").get("template_id")
+            self.assertTrue(global_template_id)
+
+            global_list = run_cli("sign", "template-list", "--scope", "global", env=env)
+            self.assertEqual(global_list.returncode, 0, msg=global_list.stderr + global_list.stdout)
+            global_rows = json.loads(global_list.stdout.strip() or "[]")
+            self.assertTrue(any(r.get("template_id") == global_template_id for r in global_rows))
+
+            copied = run_cli(
+                "sign",
+                "template-copy-global",
+                "--template-id",
+                str(global_template_id),
+                "--owner-user-id",
+                "admin",
+                env=env,
+            )
+            self.assertEqual(copied.returncode, 0, msg=copied.stderr + copied.stdout)
+
+            active_set = run_cli("sign", "active-set", "--owner-user-id", "admin", "--asset-id", str(asset_id), env=env)
+            self.assertEqual(active_set.returncode, 0, msg=active_set.stderr + active_set.stdout)
+
+            imported_replace = run_cli(
+                "sign",
+                "import-set-active",
+                "--owner-user-id",
+                "admin",
+                "--input",
+                str(gif_path),
+                env=env,
+            )
+            self.assertNotEqual(imported_replace.returncode, 0)
+            self.assertIn("BLOCKED", imported_replace.stdout)
+
+            imported_replace_ok = run_cli(
+                "sign",
+                "import-set-active",
+                "--owner-user-id",
+                "admin",
+                "--input",
+                str(gif_path),
+                "--password",
+                "admin",
+                env=env,
+            )
+            self.assertEqual(imported_replace_ok.returncode, 0, msg=imported_replace_ok.stderr + imported_replace_ok.stdout)
+
+            active_get = run_cli("sign", "active-get", "--owner-user-id", "admin", env=env)
+            self.assertEqual(active_get.returncode, 0, msg=active_get.stderr + active_get.stdout)
+            self.assertTrue(json.loads(active_get.stdout.strip() or "{}").get("asset_id"))
+
             signed = run_cli(
                 "sign",
                 "template-sign",
