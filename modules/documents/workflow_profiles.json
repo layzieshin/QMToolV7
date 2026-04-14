@@ -1,0 +1,57 @@
+{
+  "profiles": [
+    {
+      "profile_id": "long_release",
+      "label": "Long release path",
+      "control_class": "CONTROLLED",
+      "phases": ["IN_PROGRESS", "IN_REVIEW", "IN_APPROVAL", "APPROVED"],
+      "four_eyes_required": true,
+      "signature_required_transitions": ["IN_PROGRESS->IN_REVIEW", "IN_APPROVAL->APPROVED"],
+      "requires_editors": true,
+      "requires_reviewers": true,
+      "requires_approvers": true,
+      "allows_content_changes": true,
+      "release_evidence_mode": "WORKFLOW"
+    },
+    {
+      "profile_id": "fast_path",
+      "label": "Fast path",
+      "control_class": "CONTROLLED_SHORT",
+      "phases": ["IN_PROGRESS", "IN_APPROVAL", "APPROVED"],
+      "four_eyes_required": false,
+      "signature_required_transitions": ["IN_APPROVAL->APPROVED"],
+      "requires_editors": true,
+      "requires_reviewers": false,
+      "requires_approvers": true,
+      "allows_content_changes": true,
+      "release_evidence_mode": "REGISTRY_NOTE"
+    },
+    {
+      "profile_id": "external_control",
+      "label": "External monitored document",
+      "control_class": "EXTERNAL",
+      "phases": ["IN_PROGRESS", "APPROVED"],
+      "four_eyes_required": false,
+      "signature_required_transitions": [],
+      "requires_editors": false,
+      "requires_reviewers": false,
+      "requires_approvers": false,
+      "allows_content_changes": false,
+      "release_evidence_mode": "REGISTRY_NOTE"
+    },
+    {
+      "profile_id": "record_light",
+      "label": "Simplified record control",
+      "control_class": "RECORD",
+      "phases": ["IN_PROGRESS", "APPROVED"],
+      "four_eyes_required": false,
+      "signature_required_transitions": [],
+      "requires_editors": true,
+      "requires_reviewers": false,
+      "requires_approvers": false,
+      "allows_content_changes": true,
+      "release_evidence_mode": "REGISTRY_NOTE"
+    }
+  ]
+}
+

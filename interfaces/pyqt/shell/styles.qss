@@ -1,0 +1,70 @@
+/* Lightweight shell chrome; module views keep default Qt styling unless they opt in. */
+
+QMainWindow {
+    background-color: #f4f5f7;
+}
+
+QListWidget {
+    background-color: #ffffff;
+    border: 1px solid #d8dce3;
+    border-radius: 6px;
+    padding: 4px;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 8px 10px;
+    border-radius: 4px;
+}
+
+QListWidget::item:selected {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+QListWidget::item:hover:!selected {
+    background-color: #e8eef9;
+}
+
+QSplitter::handle {
+    width: 4px;
+    background: transparent;
+}
+
+QTableView {
+    gridline-color: #e2e5eb;
+    background-color: #ffffff;
+    alternate-background-color: #f9fafb;
+    selection-background-color: #dbeafe;
+    selection-color: #111827;
+    border: 1px solid #d8dce3;
+    border-radius: 4px;
+}
+
+QHeaderView::section {
+    background-color: #eef1f6;
+    padding: 6px;
+    border: none;
+    border-bottom: 1px solid #d8dce3;
+    font-weight: 600;
+}
+
+QPushButton {
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid #c5cad6;
+    background-color: #ffffff;
+}
+
+QPushButton:hover {
+    background-color: #f0f2f7;
+}
+
+QPushButton:pressed {
+    background-color: #e5e8ef;
+}
+
+QLabel#errorLabel {
+    color: #b91c1c;
+    font-weight: 500;
+}

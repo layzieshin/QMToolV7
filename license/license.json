@@ -1,0 +1,18 @@
+{
+  "license_id": "DEV-LICENSE-001",
+  "issued_to": "Local Development",
+  "customer_id": "DEV",
+  "plan": "dev",
+  "issued_at": "2026-01-01T00:00:00+00:00",
+  "expires_at": "2099-01-01T00:00:00+00:00",
+  "enabled_modules": [
+    "documents",
+    "signature"
+  ],
+  "device_binding": {
+    "mode": "optional"
+  },
+  "constraints": {},
+  "key_id": "dev-key",
+  "signature": "Bl2CK3pwhjQVZMOKxgPVFLwdUCa7ycITPBavJ61tOerF6W+LmGQZs+7jVTKRi0KOubqgyvkDrc5t/bPK4IqcBA=="
+}

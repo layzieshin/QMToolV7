@@ -1,0 +1,53 @@
+name: CI Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  quality-gates:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -c constraints-py314.txt -r requirements.txt -r requirements-pyqt.txt pytest
+
+      - name: Run regression gates
+        run: |
+          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_users_and_settings_cli.py -q
+
+      - name: Prepare migration-gate fixture db
+        run: |
+          python -c "import sqlite3; from pathlib import Path; p=Path('build')/'ci-documents.db'; p.parent.mkdir(parents=True,exist_ok=True); schema=Path('modules/documents/schema.sql').read_text(encoding='utf-8'); conn=sqlite3.connect(p); conn.executescript(schema); conn.execute(\"INSERT INTO document_headers (document_id, doc_type, control_class, workflow_profile_id, register_binding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))\", ('DOC-CI-1','VA','CONTROLLED','long_release',1)); conn.execute(\"INSERT INTO document_versions (document_id, version, title, description, doc_type, control_class, workflow_profile_id, owner_user_id, status, workflow_active, workflow_profile_json, editors_json, reviewers_json, approvers_json, reviewed_by_json, approved_by_json, edit_signature_done, valid_from, valid_until, next_review_at, review_completed_at, review_completed_by, approval_completed_at, approval_completed_by, released_at, archived_at, archived_by, superseded_by_version, extension_count, custom_fields_json, last_event_id, last_event_at, last_actor_user_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))\", ('DOC-CI-1',1,'CI Title',None,'VA','CONTROLLED','long_release','admin','PLANNED',0,'{}','[]','[]','[]','[]','[]',0,None,None,None,None,None,None,None,None,None,None,None,0,'{}',None,None,None)); conn.commit(); conn.close()"
+
+      - name: Run migration gate script
+        run: |
+          python scripts/migration_gates_documents.py --documents-db-path build/ci-documents.db --profiles-path modules/documents/workflow_profiles.json --baseline-other-count 0 > build/migration-gate-output.json
+
+      - name: Run go-live gate script
+        run: |
+          python scripts/golive_gate.py --output build/golive-gate-output.json
+
+      - name: Upload gate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-gate-output
+          path: |
+            build/migration-gate-output.json
+            build/golive-gate-output.json

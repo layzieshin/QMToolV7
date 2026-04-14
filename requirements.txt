@@ -1,0 +1,14 @@
+tkcalendar
+bcrypt
+tzdata
+pywin32>=311
+docx2pdf
+reportlab
+python-docx
+pypdf
+PyMuPDF>=1.26.0
+fastapi
+pillow
+cryptography>=44.0.0
+pypdfium2>=4.30.0
+pyinstaller>=6.13.0

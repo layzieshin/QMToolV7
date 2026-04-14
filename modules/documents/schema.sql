@@ -1,0 +1,80 @@
+CREATE TABLE IF NOT EXISTS document_headers (
+    document_id TEXT PRIMARY KEY,
+    doc_type TEXT NOT NULL,
+    control_class TEXT NOT NULL,
+    workflow_profile_id TEXT NOT NULL,
+    register_binding INTEGER NOT NULL,
+    department TEXT,
+    site TEXT,
+    regulatory_scope TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS document_versions (
+    document_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    doc_type TEXT NOT NULL,
+    control_class TEXT NOT NULL,
+    workflow_profile_id TEXT NOT NULL,
+    owner_user_id TEXT,
+    status TEXT NOT NULL,
+    workflow_active INTEGER NOT NULL,
+    workflow_profile_json TEXT,
+    editors_json TEXT NOT NULL,
+    reviewers_json TEXT NOT NULL,
+    approvers_json TEXT NOT NULL,
+    reviewed_by_json TEXT NOT NULL,
+    approved_by_json TEXT NOT NULL,
+    edit_signature_done INTEGER NOT NULL,
+    valid_from TEXT,
+    valid_until TEXT,
+    next_review_at TEXT,
+    review_completed_at TEXT,
+    review_completed_by TEXT,
+    approval_completed_at TEXT,
+    approval_completed_by TEXT,
+    released_at TEXT,
+    archived_at TEXT,
+    archived_by TEXT,
+    superseded_by_version INTEGER,
+    extension_count INTEGER NOT NULL,
+    custom_fields_json TEXT NOT NULL,
+    last_event_id TEXT,
+    last_event_at TEXT,
+    last_actor_user_id TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (document_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_versions_status
+    ON document_versions (status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_document_versions_one_approved_per_doc
+    ON document_versions (document_id)
+    WHERE status = 'APPROVED';
+
+CREATE TABLE IF NOT EXISTS document_artifacts (
+    artifact_id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    artifact_type TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    storage_key TEXT NOT NULL,
+    original_filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    is_current INTEGER NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_artifacts_doc_ver
+    ON document_artifacts (document_id, version);
+
+CREATE INDEX IF NOT EXISTS idx_document_artifacts_type_current
+    ON document_artifacts (document_id, version, artifact_type, is_current);
+

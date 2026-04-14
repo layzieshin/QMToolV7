@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Build / packaging
+build/
+dist/
+*.spec
+*.zip
+
+# Database
+# If you need a demo/dev DB, do NOT ignore
+# *.db
+# *.sqlite
+
+# Runtime data / secrets
+storage/
+*.pem
+*.key
+*.enc
+*.log
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
