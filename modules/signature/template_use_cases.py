@@ -191,6 +191,8 @@ class SignatureTemplateUseCases:
         dry_run: bool = False,
         overwrite_output: bool = False,
         reason: str = "template_api",
+        placement_override: SignaturePlacementInput | None = None,
+        layout_override: LabelLayoutInput | None = None,
     ) -> SignResult:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -214,13 +216,15 @@ class SignatureTemplateUseCases:
             signature_path = tmp_dir / "signature.png"
             signature_path.write_bytes(blob)
         try:
+            effective_placement = placement_override if placement_override is not None else template.placement
+            effective_layout = layout_override if layout_override is not None else template.layout
             return self._service.sign_with_fixed_position(
                 SignRequest(
                     input_pdf=input_pdf,
                     output_pdf=output_pdf,
                     signature_png=signature_path,
-                    placement=template.placement,
-                    layout=template.layout,
+                    placement=effective_placement,
+                    layout=effective_layout,
                     overwrite_output=overwrite_output,
                     dry_run=dry_run,
                     sign_mode="visual",

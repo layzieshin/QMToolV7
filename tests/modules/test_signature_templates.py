@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import closing
+from datetime import datetime
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -127,6 +130,13 @@ class SignatureTemplatesTest(unittest.TestCase):
             asset = service.import_signature_asset("admin", gif_path)
             service.set_active_signature_asset("admin", asset.asset_id, password="admin")
             self.assertEqual(service.get_active_signature_asset_id("admin"), asset.asset_id)
+            with closing(sqlite3.connect(root / "templates.db")) as conn:
+                row = conn.execute(
+                    "SELECT updated_at FROM user_active_signatures WHERE owner_user_id = ?",
+                    ("admin",),
+                ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertIsNotNone(datetime.fromisoformat(str(row[0])).tzinfo)
             asset_2 = service.import_signature_asset("admin", gif_path)
             with self.assertRaises(PasswordRequiredError):
                 service.set_active_signature_asset("admin", asset_2.asset_id)

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -13,6 +18,8 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
+    QRadioButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -20,7 +27,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 
 from interfaces.pyqt.contributions.common import as_json_text, normalize_role
 from interfaces.pyqt.presenters.settings_presenter import SettingsProfilePresenter
@@ -253,7 +260,7 @@ class _ModuleSettingsWidget(QWidget):
         self._policy = SettingsPolicyPresenter()
 
         self._module = QComboBox()
-        for mid in sorted(self._registry.list_module_ids()):
+        for mid in sorted(str(m) for m in self._registry.list_module_ids()):
             self._module.addItem(mid)
 
         self._editor = QPlainTextEdit()
@@ -339,6 +346,13 @@ class _SignatureSettingsWidget(QWidget):
         self._require_password = QCheckBox("Passwort für Signaturvorgänge erforderlich")
         self._default_mode = QComboBox()
         self._default_mode.addItems(["visual", "crypto", "both"])
+        # Dry-Run setting (Admin only, persisted in settings DB)
+        self._dry_run_off = QRadioButton("Scharf signieren (empfohlen — echte Signatur)")
+        self._dry_run_on = QRadioButton("Testmodus aktiv (Dry-Run — keine echte Signatur erzeugt)")
+        self._dry_run_off.setChecked(True)
+        self._dry_run_group = QButtonGroup(self)
+        self._dry_run_group.addButton(self._dry_run_off, 0)
+        self._dry_run_group.addButton(self._dry_run_on, 1)
         self._templates_db = QLineEdit()
         self._assets_root = QLineEdit()
         self._master_key = QLineEdit()
@@ -374,7 +388,8 @@ class _SignatureSettingsWidget(QWidget):
         self._preview = QPlainTextEdit()
         self._preview.setReadOnly(True)
         self._preview_canvas = QLabel()
-        self._preview_canvas.setMinimumHeight(170)
+        self._preview_canvas.setMinimumHeight(220)
+        self._preview_sig_pixmap: QPixmap | None = None
         self._out = QPlainTextEdit()
         self._out.setReadOnly(True)
 
@@ -383,6 +398,8 @@ class _SignatureSettingsWidget(QWidget):
         global_form = QFormLayout()
         global_form.addRow("", self._require_password)
         global_form.addRow("Default-Modus", self._default_mode)
+        global_form.addRow("Signiermodus", self._dry_run_off)
+        global_form.addRow("", self._dry_run_on)
         global_form.addRow("templates_db_path", self._templates_db)
         global_form.addRow("assets_root", self._assets_root)
         global_form.addRow("master_key_path", self._master_key)
@@ -517,6 +534,9 @@ class _SignatureSettingsWidget(QWidget):
         self._templates_db.setText(str(cfg.get("templates_db_path", "")))
         self._assets_root.setText(str(cfg.get("assets_root", "")))
         self._master_key.setText(str(cfg.get("master_key_path", "")))
+        dry_run = bool(cfg.get("dry_run_enabled", False))
+        self._dry_run_on.setChecked(dry_run)
+        self._dry_run_off.setChecked(not dry_run)
         self._append("SIGNATUR_SETTINGS_GELADEN", cfg)
 
     def _save_settings(self) -> None:
@@ -525,6 +545,7 @@ class _SignatureSettingsWidget(QWidget):
             payload = {
                 "require_password": self._require_password.isChecked(),
                 "default_mode": self._default_mode.currentText(),
+                "dry_run_enabled": self._dry_run_on.isChecked(),
                 "templates_db_path": self._templates_db.text().strip(),
                 "assets_root": self._assets_root.text().strip(),
                 "master_key_path": self._master_key.text().strip(),
@@ -670,25 +691,83 @@ class _SignatureSettingsWidget(QWidget):
             self._append("ERROR", {"message": str(exc)})
 
     def _render_preview(self) -> None:
-        pixmap = QPixmap(520, 160)
+        PREVIEW_W, PREVIEW_H = 520, 215
+        pixmap = QPixmap(PREVIEW_W, PREVIEW_H)
         pixmap.fill(QColor("white"))
         painter = QPainter(pixmap)
-        painter.setPen(QPen(QColor("black"), 2))
-        sig_x = 40
-        sig_y = 85
-        sig_w = 180
-        sig_h = 40
-        painter.drawRect(sig_x, sig_y, sig_w, sig_h)
-        painter.drawLine(sig_x + 10, sig_y + 25, sig_x + 60, sig_y + 12)
-        painter.drawLine(sig_x + 60, sig_y + 12, sig_x + 120, sig_y + 28)
-        painter.drawLine(sig_x + 120, sig_y + 28, sig_x + 165, sig_y + 18)
 
-        if self._show_name.isChecked():
+        sig_x, sig_y = 40, 95
+        sig_w, sig_h = 180, 45
+
+        # --- Aktive Signatur anzeigen oder Platzhalter zeichnen ---
+        if self._preview_sig_pixmap is not None:
+            painter.drawPixmap(sig_x, sig_y, sig_w, sig_h, self._preview_sig_pixmap)
+        else:
+            painter.fillRect(sig_x, sig_y, sig_w, sig_h, QColor(235, 240, 255))
+            painter.setPen(QPen(QColor("#888888"), 2))
+            painter.drawLine(sig_x + 10, sig_y + 28, sig_x + 60, sig_y + 15)
+            painter.drawLine(sig_x + 60, sig_y + 15, sig_x + 120, sig_y + 30)
+            painter.drawLine(sig_x + 120, sig_y + 30, sig_x + 165, sig_y + 20)
+
+        # Rahmen der Signaturbox
+        painter.setPen(QPen(QColor("#aaaaaa"), 1, Qt.PenStyle.DashLine))
+        painter.drawRect(sig_x, sig_y, sig_w, sig_h)
+
+        def _safe_fs(raw: str, default: int = 12) -> int:
+            try:
+                return max(6, int(raw.strip() or str(default)))
+            except ValueError:
+                return default
+
+        def _safe_float(raw: str) -> float | None:
+            try:
+                return float(raw.strip()) if raw.strip() else None
+            except ValueError:
+                return None
+
+        name_pos = self._name_pos.currentText()
+        date_pos = self._date_pos.currentText()
+        name_fs = _safe_fs(self._name_font_size.text())
+        date_fs = _safe_fs(self._date_font_size.text())
+
+        # --- Name-Label ---
+        if self._show_name.isChecked() and name_pos != "off":
+            font = QFont()
+            font.setPointSize(name_fs)
+            painter.setFont(font)
             painter.setPen(QColor("#1a5fb4"))
-            painter.drawText(sig_x + 4, sig_y - 8, "Name")
-        if self._show_date.isChecked():
+            rel_x = _safe_float(self._name_rel_x.text())
+            rel_y = _safe_float(self._name_rel_y.text())
+            if rel_x is not None and rel_y is not None:
+                tx = sig_x + int(rel_x * 1.5)
+                ty = sig_y - int(rel_y * 1.5)
+            elif name_pos == "above":
+                tx, ty = sig_x + 2, sig_y - 4
+            else:  # below
+                tx, ty = sig_x + 2, sig_y + sig_h + int(name_fs * 1.4) + 2
+            painter.drawText(tx, ty, "Max Mustermann")
+
+        # --- Datum-Label ---
+        if self._show_date.isChecked() and date_pos != "off":
+            font = QFont()
+            font.setPointSize(date_fs)
+            painter.setFont(font)
             painter.setPen(QColor("#2b8a3e"))
-            painter.drawText(sig_x + 4, sig_y + sig_h + 22, "Datum")
+            rel_x = _safe_float(self._date_rel_x.text())
+            rel_y = _safe_float(self._date_rel_y.text())
+            if rel_x is not None and rel_y is not None:
+                tx = sig_x + int(rel_x * 1.5)
+                ty = sig_y - int(rel_y * 1.5)
+            elif date_pos == "above":
+                name_also_above = self._show_name.isChecked() and name_pos == "above"
+                offset = (int(name_fs * 1.4) + 4) if name_also_above else 0
+                tx, ty = sig_x + 2, sig_y - 4 - offset
+            else:  # below
+                name_also_below = self._show_name.isChecked() and name_pos == "below"
+                offset = (int(name_fs * 1.4) + 4) if name_also_below else 0
+                tx, ty = sig_x + 2, sig_y + sig_h + int(date_fs * 1.4) + 2 + offset
+            painter.drawText(tx, ty, "2025-01-15")
+
         painter.end()
         self._preview_canvas.setPixmap(pixmap)
 
@@ -699,9 +778,8 @@ class _SignatureSettingsWidget(QWidget):
                     f"Seite: {self._page_index.text().strip()}",
                     f"Position: x={self._x.text().strip()}, y={self._y.text().strip()}",
                     f"Breite: {self._width.text().strip()}",
-                    f"Name: {'an' if self._show_name.isChecked() else 'aus'} ({self._name_pos.currentText()})",
-                    f"Datum: {'an' if self._show_date.isChecked() else 'aus'} ({self._date_pos.currentText()})",
-                    f"Name Font: {self._name_font_size.text().strip() or '12'} | Datum Font: {self._date_font_size.text().strip() or '12'}",
+                    f"Name: {'an' if self._show_name.isChecked() else 'aus'} ({name_pos}, {name_fs}pt)",
+                    f"Datum: {'an' if self._show_date.isChecked() else 'aus'} ({date_pos}, {date_fs}pt)",
                     f"Name rel: x={self._name_rel_x.text().strip() or '-'}, y={self._name_rel_y.text().strip() or '-'}",
                     f"Datum rel: x={self._date_rel_x.text().strip() or '-'}, y={self._date_rel_y.text().strip() or '-'}",
                 ]
@@ -744,9 +822,24 @@ class _SignatureSettingsWidget(QWidget):
         user = self._um.get_current_user()
         if user is None:
             self._active_asset.clear()
+            self._preview_sig_pixmap = None
+            self._render_preview()
             return
         asset_id = self._signature.get_active_signature_asset_id(user.user_id)
         self._active_asset.setText(asset_id or "-")
+        # Aktuell aktive Signatur als Pixmap für die Vorschau laden
+        self._preview_sig_pixmap = None
+        if asset_id:
+            try:
+                tmp_path = Path(tempfile.mkdtemp(prefix="qmtool-prev-")) / "sig.png"
+                exported = self._signature.export_active_signature(user.user_id, tmp_path)
+                if exported.exists():
+                    px = QPixmap(str(exported))
+                    if not px.isNull():
+                        self._preview_sig_pixmap = px
+            except Exception:  # noqa: BLE001
+                pass
+        self._render_preview()
 
     def _set_active_signature_asset(self) -> None:
         try:
@@ -1025,6 +1118,27 @@ class _PlannedOptionsWidget(QWidget):
         layout.addWidget(QLabel("Geplante Optionen (readonly, priorisiert)"))
         layout.addWidget(table, stretch=1)
         layout.addWidget(out, stretch=1)
+
+
+class SignatureSettingsDialog(QDialog):
+    """Öffentlicher Dialog, der das Signatur-Einstellungs-Panel standalone öffnet."""
+
+    def __init__(self, container: RuntimeContainer, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Signatur verwalten")
+        self.resize(820, 700)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(_SignatureSettingsWidget(container))
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.addWidget(scroll, stretch=1)
+        layout.addWidget(buttons)
 
 
 def _build(container: RuntimeContainer) -> QWidget:

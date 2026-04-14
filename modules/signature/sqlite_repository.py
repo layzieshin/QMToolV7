@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 from .contracts import LabelLayoutInput, SignatureAsset, SignaturePlacementInput, UserSignatureTemplate
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class SQLiteSignatureRepository:
@@ -138,7 +144,7 @@ class SQLiteSignatureRepository:
                     asset_id = excluded.asset_id,
                     updated_at = excluded.updated_at
                 """,
-                (owner_user_id, asset_id, datetime.utcnow().isoformat()),
+                (owner_user_id, asset_id, _utcnow().isoformat()),
             )
             conn.commit()
 
@@ -216,7 +222,11 @@ class SQLiteSignatureRepository:
                 conn.execute(f"ALTER TABLE user_signature_templates ADD COLUMN {col_name} {sql_type}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_signature_templates_scope ON user_signature_templates(scope)")
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()

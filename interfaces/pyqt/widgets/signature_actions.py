@@ -25,13 +25,29 @@ class SignatureActions:
         templates = self._api.list_user_signature_templates(user_id)
         return next((template for template in templates if template.template_id == template_id), None)
 
-    def sign_from_form(self, form, *, user_id: str, username: str) -> object:
+    def sign_from_form(
+        self,
+        form,
+        *,
+        user_id: str,
+        username: str,
+        display_name: str | None = None,
+        placement_override=None,
+        layout_override=None,
+    ) -> object:
         selected_profile = form.selected_profile()
+        request = form.build_request(signer_user=username, reason="pyqt_signature_profile" if selected_profile else "pyqt_signature_adhoc")
+        base_layout = layout_override or request.layout
+        base_placement = placement_override or request.placement
+        runtime_layout = replace(
+            base_layout,
+            name_text=(display_name or username) if request.layout.show_name else request.layout.name_text,
+        )
+        request = replace(request, placement=base_placement, layout=runtime_layout)
         if selected_profile:
             selected = self.get_template_by_id(user_id, selected_profile)
             if selected is None:
                 raise RuntimeError(f"Signaturprofil '{selected_profile}' wurde nicht gefunden")
-            request = form.build_request(signer_user=username, reason="pyqt_signature_profile")
             return self._api.sign_with_template(
                 template_id=selected.template_id,
                 input_pdf=request.input_pdf,
@@ -41,8 +57,9 @@ class SignatureActions:
                 dry_run=form.dry_run.isChecked(),
                 overwrite_output=False,
                 reason="pyqt_signature_profile",
+                placement_override=base_placement,
+                layout_override=runtime_layout,
             )
-        request = form.build_request(signer_user=username, reason="pyqt_signature_adhoc")
         if request.signature_png is None and request.layout.show_signature:
             active = self._api.get_active_signature_asset_id(user_id)
             if active:

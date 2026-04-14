@@ -258,6 +258,8 @@ class SignatureServiceV2:
         dry_run: bool = False,
         overwrite_output: bool = False,
         reason: str = "template_api",
+        placement_override: SignaturePlacementInput | None = None,
+        layout_override: LabelLayoutInput | None = None,
     ) -> SignResult:
         return self._template_use_cases.sign_with_template(
             template_id=template_id,
@@ -268,6 +270,38 @@ class SignatureServiceV2:
             dry_run=dry_run,
             overwrite_output=overwrite_output,
             reason=reason,
+            placement_override=placement_override,
+            layout_override=layout_override,
+        )
+
+    def resolve_runtime_layout(self, layout: LabelLayoutInput, *, signer_user: str | None = None) -> LabelLayoutInput:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        resolved_name = layout.name_text
+        resolved_date = layout.date_text
+        if layout.show_name and not resolved_name:
+            resolved_name = signer_user or ""
+        if layout.show_date and not resolved_date:
+            resolved_date = timestamp
+        return LabelLayoutInput(
+            show_signature=layout.show_signature,
+            show_name=layout.show_name,
+            show_date=layout.show_date,
+            name_text=resolved_name,
+            date_text=resolved_date,
+            name_position=layout.name_position,
+            date_position=layout.date_position,
+            name_font_size=layout.name_font_size,
+            date_font_size=layout.date_font_size,
+            color_hex=layout.color_hex,
+            name_above=layout.name_above,
+            name_below=layout.name_below,
+            date_above=layout.date_above,
+            date_below=layout.date_below,
+            x_offset=layout.x_offset,
+            name_rel_x=layout.name_rel_x,
+            name_rel_y=layout.name_rel_y,
+            date_rel_x=layout.date_rel_x,
+            date_rel_y=layout.date_rel_y,
         )
 
     def _safe_pdf_reader(self, input_pdf: Path):
@@ -354,6 +388,8 @@ class SignatureServiceV2:
         else:
             signature_png = self._transparent_png()
 
+        resolved_layout = self.resolve_runtime_layout(request.layout, signer_user=request.signer_user)
+
         placement = SignaturePlacement(
             page_index=request.placement.page_index,
             x=request.placement.x,
@@ -361,21 +397,21 @@ class SignatureServiceV2:
             target_width=request.placement.target_width,
         )
         labels = RenderLabels(
-            name_text=request.layout.name_text if request.layout.show_name else None,
-            date_text=request.layout.date_text if request.layout.show_date else None,
-            name_pos=LabelPosition(request.layout.name_position),
-            date_pos=LabelPosition(request.layout.date_position),
+            name_text=resolved_layout.name_text if resolved_layout.show_name else None,
+            date_text=resolved_layout.date_text if resolved_layout.show_date else None,
+            name_pos=LabelPosition(resolved_layout.name_position),
+            date_pos=LabelPosition(resolved_layout.date_position),
             date_format="%Y-%m-%d",
             offsets=LabelOffsets(
-                name_above=request.layout.name_rel_y if request.layout.name_rel_y is not None and request.layout.name_rel_y < 0 else request.layout.name_above,
-                name_below=request.layout.name_rel_y if request.layout.name_rel_y is not None and request.layout.name_rel_y >= 0 else request.layout.name_below,
-                date_above=request.layout.date_rel_y if request.layout.date_rel_y is not None and request.layout.date_rel_y < 0 else request.layout.date_above,
-                date_below=request.layout.date_rel_y if request.layout.date_rel_y is not None and request.layout.date_rel_y >= 0 else request.layout.date_below,
-                x_offset=request.layout.name_rel_x if request.layout.name_rel_x is not None else request.layout.x_offset,
+                name_above=resolved_layout.name_rel_y if resolved_layout.name_rel_y is not None and resolved_layout.name_rel_y < 0 else resolved_layout.name_above,
+                name_below=resolved_layout.name_rel_y if resolved_layout.name_rel_y is not None and resolved_layout.name_rel_y >= 0 else resolved_layout.name_below,
+                date_above=resolved_layout.date_rel_y if resolved_layout.date_rel_y is not None and resolved_layout.date_rel_y < 0 else resolved_layout.date_above,
+                date_below=resolved_layout.date_rel_y if resolved_layout.date_rel_y is not None and resolved_layout.date_rel_y >= 0 else resolved_layout.date_below,
+                x_offset=resolved_layout.name_rel_x if resolved_layout.name_rel_x is not None else resolved_layout.x_offset,
             ),
-            color_rgb=self._hex_to_rgb(request.layout.color_hex),
-            name_font_size=request.layout.name_font_size,
-            date_font_size=request.layout.date_font_size,
+            color_rgb=self._hex_to_rgb(resolved_layout.color_hex),
+            name_font_size=resolved_layout.name_font_size,
+            date_font_size=resolved_layout.date_font_size,
         )
         PdfSigner.sign_pdf(
             input_path=str(request.input_pdf),

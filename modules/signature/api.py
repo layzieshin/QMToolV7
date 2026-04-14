@@ -116,6 +116,8 @@ class SignatureApi:
         dry_run: bool = False,
         overwrite_output: bool = False,
         reason: str = "template_api",
+        placement_override: SignaturePlacementInput | None = None,
+        layout_override: LabelLayoutInput | None = None,
     ) -> SignResult:
         return self.service.sign_with_template(
             template_id=template_id,
@@ -126,5 +128,7 @@ class SignatureApi:
             dry_run=dry_run,
             overwrite_output=overwrite_output,
             reason=reason,
+            placement_override=placement_override,
+            layout_override=layout_override,
         )
 
