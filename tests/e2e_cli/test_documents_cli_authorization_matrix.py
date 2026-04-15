@@ -120,6 +120,41 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
                 "--sign-dry-run",
             )
 
+    @staticmethod
+    def _review_accept_signed(doc_id: str, signer_password: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_pdf = root / "input.pdf"
+            signature_png = root / "sig.png"
+            output_pdf = root / "output.pdf"
+            DocumentsCliAuthorizationMatrixTest._write_test_pdf(input_pdf)
+            DocumentsCliAuthorizationMatrixTest._write_test_png(signature_png)
+            return run_cli(
+                "documents",
+                "review-accept",
+                "--document-id",
+                doc_id,
+                "--version",
+                "1",
+                "--sign-input",
+                str(input_pdf),
+                "--sign-output",
+                str(output_pdf),
+                "--sign-signature-png",
+                str(signature_png),
+                "--sign-page",
+                "0",
+                "--sign-x",
+                "100",
+                "--sign-y",
+                "100",
+                "--sign-width",
+                "120",
+                "--signer-password",
+                signer_password,
+                "--sign-dry-run",
+            )
+
     def test_workflow_start_matrix(self) -> None:
         cases = (
             ("owner-user-allowed", "user", "user", "user", "owner path"),
@@ -221,7 +256,7 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
         )
         self.assertEqual(reviewers_open.returncode, 0, msg=reviewers_open.stderr + reviewers_open.stdout)
 
-        self.assertEqual(run_cli("documents", "review-accept", "--document-id", doc_id, "--version", "1").returncode, 0)
+        self.assertEqual(self._review_accept_signed(doc_id, "qmb").returncode, 0)
         reviewers_locked = run_cli(
             "documents",
             "assign-roles",

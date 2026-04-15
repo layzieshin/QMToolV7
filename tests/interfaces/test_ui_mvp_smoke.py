@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 import uuid
+
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -86,7 +87,8 @@ class UiMvpSmokeTest(unittest.TestCase):
             self.assertEqual(state.status, DocumentStatus.IN_REVIEW)
 
             self.controller.login("user", "user")
-            state = self.controller.review_accept(doc_id, 1)
+            review_request = _build_sign_request(input_pdf, output_pdf, signature_png, signer_user="user", password="user")
+            state = self.controller.review_accept(doc_id, 1, sign_request=review_request)
             self.assertEqual(state.status, DocumentStatus.IN_APPROVAL)
 
             self.controller.login("qmb", "qmb")

@@ -67,6 +67,41 @@ class DocumentsCliTest(unittest.TestCase):
     def _write_test_dotx(path: Path) -> None:
         path.write_bytes(b"dotx-binary-content")
 
+    @staticmethod
+    def _review_accept_signed(doc_id: str, signer_password: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_pdf = root / "input.pdf"
+            signature_png = root / "sig.png"
+            output_pdf = root / "output.pdf"
+            DocumentsCliTest._write_test_pdf(input_pdf)
+            DocumentsCliTest._write_test_png(signature_png)
+            return run_cli(
+                "documents",
+                "review-accept",
+                "--document-id",
+                doc_id,
+                "--version",
+                "1",
+                "--sign-input",
+                str(input_pdf),
+                "--sign-output",
+                str(output_pdf),
+                "--sign-signature-png",
+                str(signature_png),
+                "--sign-page",
+                "0",
+                "--sign-x",
+                "100",
+                "--sign-y",
+                "100",
+                "--sign-width",
+                "120",
+                "--signer-password",
+                signer_password,
+                "--sign-dry-run",
+            )
+
     def test_pool_list_by_status_defaults_to_planned(self) -> None:
         self._login("admin", "admin")
         doc_id = "DOC-E2E-PLANNED"
@@ -134,14 +169,7 @@ class DocumentsCliTest(unittest.TestCase):
             self.assertEqual(edit_result.returncode, 0, msg=edit_result.stderr + edit_result.stdout)
 
             self._login("user", "user")
-            review_result = run_cli(
-                "documents",
-                "review-accept",
-                "--document-id",
-                doc_id,
-                "--version",
-                "1",
-            )
+            review_result = self._review_accept_signed(doc_id, "user")
             self.assertEqual(review_result.returncode, 0, msg=review_result.stderr + review_result.stdout)
 
             self._login("qmb", "qmb")
@@ -271,7 +299,7 @@ class DocumentsCliTest(unittest.TestCase):
             )
 
         self._login("qmb", "qmb")
-        blocked = run_cli("documents", "review-accept", "--document-id", doc_id, "--version", "1")
+        blocked = self._review_accept_signed(doc_id, "qmb")
         self.assertEqual(blocked.returncode, 6)
         self.assertIn("not assigned as reviewer", blocked.stdout)
 
@@ -329,7 +357,7 @@ class DocumentsCliTest(unittest.TestCase):
             self.assertEqual(done.returncode, 0, msg=done.stderr + done.stdout)
 
         self._login("user", "user")
-        self.assertEqual(run_cli("documents", "review-accept", "--document-id", doc_id, "--version", "1").returncode, 0)
+        self.assertEqual(self._review_accept_signed(doc_id, "user").returncode, 0)
         self._login("qmb", "qmb")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

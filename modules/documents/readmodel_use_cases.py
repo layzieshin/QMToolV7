@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from datetime import datetime
+from datetime import datetime, timezone
 
 from modules.documents.contracts import (
     DocumentStatus,
@@ -90,7 +90,16 @@ class DocumentsReadmodelUseCases:
                     last_event_at=state.last_event_at,
                 )
             )
-        return sorted(items, key=lambda item: item.last_event_at or datetime.min, reverse=True)
+        return sorted(items, key=lambda item: self._sortable_utc(item.last_event_at), reverse=True)
+
+    @staticmethod
+    def _sortable_utc(value: datetime | None) -> datetime:
+        """Normalize values so naive/aware/None can be compared safely."""
+        if value is None:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     def list_current_released_documents(self) -> list[ReleasedDocumentItem]:
         items: list[ReleasedDocumentItem] = []

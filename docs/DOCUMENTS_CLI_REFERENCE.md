@@ -59,10 +59,18 @@ python -m interfaces.cli.main documents editing-complete \
 
 Accept:
 
+If profile transition `IN_REVIEW->IN_APPROVAL` requires signature, pass sign parameters:
+
 ```bash
 python -m interfaces.cli.main login --username reviewer --password "<strong-password>"
 python -m interfaces.cli.main documents review-accept \
-  --document-id DOC-100 --version 1
+  --document-id DOC-100 --version 1 \
+  --sign-input C:/tmp/input.pdf \
+  --sign-output C:/tmp/output.pdf \
+  --sign-signature-png C:/tmp/signature.png \
+  --sign-page 0 --sign-x 100 --sign-y 100 --sign-width 120 \
+  --signer-password reviewer \
+  --sign-dry-run
 ```
 
 Reject (template and/or free text required):
