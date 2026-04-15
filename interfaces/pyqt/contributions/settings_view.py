@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import tempfile
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
@@ -608,7 +610,7 @@ class _SignatureSettingsWidget(QWidget):
             dialog = SignaturePlacementDialog(
                 input_pdf=Path(pdf_path),
                 placement=self._current_profile_placement,
-                layout=self._current_profile_layout,
+                layout=self._runtime_preview_layout(self._current_profile_layout),
                 signature_pixmap=self._preview_sig_pixmap,
                 parent=self,
             )
@@ -616,7 +618,11 @@ class _SignatureSettingsWidget(QWidget):
             if dialog.exec() != dialog.DialogCode.Accepted:
                 return
             self._current_profile_placement = dialog.placement()
-            self._current_profile_layout = dialog.layout_result()
+            self._current_profile_layout = replace(
+                dialog.layout_result(),
+                name_text=self._current_profile_layout.name_text,
+                date_text=self._current_profile_layout.date_text,
+            )
             created = self._signature.create_user_signature_template(
                 owner_user_id=user.user_id,
                 name=profile_name,
@@ -647,7 +653,7 @@ class _SignatureSettingsWidget(QWidget):
             dialog = SignaturePlacementDialog(
                 input_pdf=Path(pdf_path),
                 placement=selected.placement,
-                layout=selected.layout,
+                layout=self._runtime_preview_layout(selected.layout),
                 signature_pixmap=self._preview_sig_pixmap,
                 parent=self,
             )
@@ -655,12 +661,17 @@ class _SignatureSettingsWidget(QWidget):
             if dialog.exec() != dialog.DialogCode.Accepted:
                 return
             updated_name = self._profile_name.text().strip() or selected.name
+            updated_layout = replace(
+                dialog.layout_result(),
+                name_text=selected.layout.name_text,
+                date_text=selected.layout.date_text,
+            )
             updated = self._signature.update_signature_template(
                 template_id=template_id,
                 owner_user_id=user.user_id,
                 name=updated_name,
                 placement=dialog.placement(),
-                layout=dialog.layout_result(),
+                layout=updated_layout,
             )
             self._append("SIGNATUR_PROFIL_GEAENDERT", {"template_id": updated.template_id, "name": updated.name})
             self._load_profiles()
@@ -720,21 +731,27 @@ class _SignatureSettingsWidget(QWidget):
         pixmap.fill(QColor("#e6e6e6"))
         painter = QPainter(pixmap)
 
-        page_x, page_y = 20, 16
-        page_w, page_h = 480, 180
-        painter.fillRect(page_x, page_y, page_w, page_h, QColor("white"))
+        area_x, area_y = 20, 16
+        area_w, area_h = 480, 180
+        painter.fillRect(area_x, area_y, area_w, area_h, QColor("white"))
         painter.setPen(QPen(QColor("#7a7a7a"), 2))
-        painter.drawRect(page_x, page_y, page_w, page_h)
+        painter.drawRect(area_x, area_y, area_w, area_h)
 
         placement = self._current_profile_placement
-        layout = self._current_profile_layout
+        layout = self._runtime_preview_layout(self._current_profile_layout)
 
-        # Keep the same geometry assumptions as placement dialog.
-        scale = page_w / 595.0
-        sig_x = page_x + int(placement.x * scale)
+        # Settings preview shows composition only, not absolute page placement.
+        scale = 1.0
         sig_w = max(1, int(placement.target_width * scale))
         sig_h = max(1, int(max(6.0, placement.target_width * 0.3) * scale))
-        sig_y = page_y + page_h - int((placement.y + max(6.0, placement.target_width * 0.3)) * scale)
+        max_preview_width = int(area_w * 0.58)
+        if sig_w > max_preview_width:
+            scale = max_preview_width / max(1, sig_w)
+            sig_w = max(1, int(placement.target_width * scale))
+            sig_h = max(1, int(max(6.0, placement.target_width * 0.3) * scale))
+
+        sig_x = area_x + max(12, int(area_w * 0.18))
+        sig_y = area_y + max(18, int((area_h - sig_h) * 0.48))
 
         # --- Aktive Signatur anzeigen oder Platzhalter zeichnen ---
         if self._preview_sig_pixmap is not None:
@@ -774,7 +791,11 @@ class _SignatureSettingsWidget(QWidget):
                 offset_below=layout.name_below,
                 x_offset=layout.x_offset,
             )
-            painter.drawText(int(sig_x + name_local.x()), int(sig_y + name_local.y() + name_px), "Max Mustermann")
+            painter.drawText(
+                int(sig_x + name_local.x()),
+                int(sig_y + name_local.y() + name_px),
+                layout.name_text or "",
+            )
 
         # --- Datum-Label ---
         if layout.show_date and date_pos != "off":
@@ -794,7 +815,11 @@ class _SignatureSettingsWidget(QWidget):
                 offset_below=layout.date_below,
                 x_offset=layout.x_offset,
             )
-            painter.drawText(int(sig_x + date_local.x()), int(sig_y + date_local.y() + date_px), "2025-01-15")
+            painter.drawText(
+                int(sig_x + date_local.x()),
+                int(sig_y + date_local.y() + date_px),
+                layout.date_text or "",
+            )
 
         painter.end()
         self._preview_canvas.setPixmap(pixmap)
@@ -803,15 +828,36 @@ class _SignatureSettingsWidget(QWidget):
             "\n".join(
                 [
                     f"Profil: {self._profile_name.text().strip() or 'Neu'}",
-                    f"Seite: {placement.page_index}",
-                    f"Position: x={placement.x}, y={placement.y}",
-                    f"Breite: {placement.target_width}",
+                    f"Gespeicherte Seite: {placement.page_index}",
+                    f"Gespeicherte Position: x={placement.x}, y={placement.y}",
+                    f"Signaturbreite: {placement.target_width}",
                     f"Name: {'an' if layout.show_name else 'aus'} ({name_pos}, {name_fs}pt)",
                     f"Datum: {'an' if layout.show_date else 'aus'} ({date_pos}, {date_fs}pt)",
                     f"Name rel: x={layout.name_rel_x if layout.name_rel_x is not None else '-'}, y={layout.name_rel_y if layout.name_rel_y is not None else '-'}",
                     f"Datum rel: x={layout.date_rel_x if layout.date_rel_x is not None else '-'}, y={layout.date_rel_y if layout.date_rel_y is not None else '-'}",
                 ]
             )
+        )
+
+    def _current_user_display_name(self) -> str:
+        user = self._um.get_current_user()
+        if user is None:
+            return ""
+        first = (getattr(user, "first_name", None) or "").strip()
+        last = (getattr(user, "last_name", None) or "").strip()
+        if first and last:
+            return f"{first}, {last}"
+        if first:
+            return first
+        if last:
+            return last
+        return (getattr(user, "display_name", None) or user.username or user.user_id).strip()
+
+    def _runtime_preview_layout(self, layout: LabelLayoutInput) -> LabelLayoutInput:
+        return replace(
+            layout,
+            name_text=self._current_user_display_name() if layout.show_name else layout.name_text,
+            date_text=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if layout.show_date else layout.date_text,
         )
 
     def _open_canvas(self) -> None:

@@ -1,3 +1,4 @@
 # Optional GUI stack (PyQt6). Install alongside base requirements:
 #   pip install -r requirements.txt -r requirements-pyqt.txt
 PyQt6>=6.8.0
+pyqt6-sip>=13.8.0

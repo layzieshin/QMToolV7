@@ -10,6 +10,7 @@ from PyQt6.QtGui import (
     QFont,
     QImage,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
     QTransform,
@@ -99,11 +100,7 @@ class _ZoomableView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[override]
-        if (
-            event.button() == Qt.MouseButton.LeftButton
-            and self._click_callback is not None
-            and self.itemAt(event.position().toPoint()) is None
-        ):
+        if event.button() == Qt.MouseButton.LeftButton and self._click_callback is not None:
             self._click_callback(self.mapToScene(event.position().toPoint()))
             event.accept()
             return
@@ -140,6 +137,22 @@ class _DraggableSignatureItem(QGraphicsPixmapItem):
         self.setAcceptHoverEvents(True)
         self._on_moved = on_moved
         self._constrain_position = constrain_position
+        # 100% larger hitbox: 50% extension per side.
+        self._hit_pad_x = max(6.0, float(pixmap.width()) * 0.5)
+        self._hit_pad_y = max(6.0, float(pixmap.height()) * 0.5)
+
+    def boundingRect(self) -> QRectF:  # type: ignore[override]
+        return super().boundingRect().adjusted(
+            -self._hit_pad_x,
+            -self._hit_pad_y,
+            self._hit_pad_x,
+            self._hit_pad_y,
+        )
+
+    def shape(self) -> QPainterPath:  # type: ignore[override]
+        path = QPainterPath()
+        path.addRect(self.boundingRect())
+        return path
 
     def itemChange(self, change, value):  # type: ignore[override]
         if (
@@ -606,6 +619,7 @@ class SignaturePlacementDialog(QDialog):
                 )
                 self._sig_item.setPos(QPointF(sx, sy))
                 self._scene.addItem(self._sig_item)
+                sig_item = self._sig_item
 
                 color = QColor(self._opt_color_hex.text())
                 if not color.isValid():
@@ -613,7 +627,7 @@ class SignaturePlacementDialog(QDialog):
 
                 if self._opt_show_name.isChecked() and self._opt_name_pos.currentText() != "off":
                     self._add_text_item(
-                        parent=self._sig_item,
+                        parent=sig_item,
                         text=(self._layout.name_text or "").strip(),
                         sh=sh,
                         position=self._opt_name_pos.currentText(),
@@ -629,7 +643,7 @@ class SignaturePlacementDialog(QDialog):
 
                 if self._opt_show_date.isChecked() and self._opt_date_pos.currentText() != "off":
                     self._add_text_item(
-                        parent=self._sig_item,
+                        parent=sig_item,
                         text=(self._layout.date_text or "").strip(),
                         sh=sh,
                         position=self._opt_date_pos.currentText(),
