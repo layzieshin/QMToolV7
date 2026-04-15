@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,12 +54,13 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     edit_signature_done, valid_from, valid_until, next_review_at,
                     review_completed_at, review_completed_by, approval_completed_at, approval_completed_by,
                     released_at, archived_at, archived_by, superseded_by_version,
-                    extension_count, custom_fields_json, last_event_id, last_event_at, last_actor_user_id, updated_at
+                    extension_count, custom_fields_json, last_event_id, last_event_at, last_actor_user_id,
+                    created_at, created_by, updated_at
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?
+                    ?, ?, ?, ?, ?
                 )
                 ON CONFLICT(document_id, version) DO UPDATE SET
                     title = excluded.title,
@@ -92,6 +94,8 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     last_event_id = excluded.last_event_id,
                     last_event_at = excluded.last_event_at,
                     last_actor_user_id = excluded.last_actor_user_id,
+                    created_at = COALESCE(document_versions.created_at, excluded.created_at),
+                    created_by = COALESCE(document_versions.created_by, excluded.created_by),
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -128,6 +132,8 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     state.last_event_id,
                     state.last_event_at.isoformat() if state.last_event_at else None,
                     state.last_actor_user_id,
+                    state.created_at.isoformat() if state.created_at else None,
+                    state.created_by,
                     self._utcnow_iso(),
                 ),
             )
@@ -327,15 +333,21 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             ("last_event_id", "TEXT"),
             ("last_event_at", "TEXT"),
             ("last_actor_user_id", "TEXT"),
+            ("created_at", "TEXT"),
+            ("created_by", "TEXT"),
         ]
         for col_name, sql_type in alter_specs:
             if col_name not in cols:
                 conn.execute(f"ALTER TABLE document_versions ADD COLUMN {col_name} {sql_type}")
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     @staticmethod
     def _profile_to_json(profile: WorkflowProfile | None) -> str | None:
@@ -429,6 +441,8 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             last_event_id=str(row["last_event_id"]) if "last_event_id" in row.keys() and row["last_event_id"] else None,
             last_event_at=self._parse_dt(row["last_event_at"]) if "last_event_at" in row.keys() else None,
             last_actor_user_id=str(row["last_actor_user_id"]) if "last_actor_user_id" in row.keys() and row["last_actor_user_id"] else None,
+            created_at=self._parse_dt(row["created_at"]) if "created_at" in row.keys() else None,
+            created_by=str(row["created_by"]) if "created_by" in row.keys() and row["created_by"] else None,
         )
 
     @staticmethod

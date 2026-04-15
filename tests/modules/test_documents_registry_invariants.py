@@ -45,7 +45,7 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
             v1 = service.assign_workflow_roles(v1, editors={"ed"}, reviewers={"rv"}, approvers={"ap"})
             v1 = service.start_workflow(v1, WorkflowProfile.long_release_path())
             v1 = service.complete_editing(v1, sign_request={"step": "edit"})
-            v1 = service.accept_review(v1, "rv")
+            v1 = service.accept_review(v1, "rv", sign_request={"step": "review_accept"})
             v1 = service.accept_approval(v1, "ap", sign_request={"step": "approve"})
             self.assertEqual(v1.status, DocumentStatus.APPROVED)
 
@@ -53,7 +53,7 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
             v2 = service.assign_workflow_roles(v2, editors={"ed"}, reviewers={"rv"}, approvers={"ap"})
             v2 = service.start_workflow(v2, WorkflowProfile.long_release_path())
             v2 = service.complete_editing(v2, sign_request={"step": "edit"})
-            v2 = service.accept_review(v2, "rv")
+            v2 = service.accept_review(v2, "rv", sign_request={"step": "review_accept"})
             v2 = service.accept_approval(v2, "ap", sign_request={"step": "approve"})
             self.assertEqual(v2.status, DocumentStatus.APPROVED)
 
@@ -88,7 +88,7 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
             state = service.assign_workflow_roles(state, editors={"ed"}, reviewers={"rv"}, approvers={"ap"})
             state = service.start_workflow(state, WorkflowProfile.long_release_path())
             state = service.complete_editing(state, sign_request={"step": "edit"})
-            state = service.accept_review(state, "rv")
+            state = service.accept_review(state, "rv", sign_request={"step": "review_accept"})
             state = service.accept_approval(state, "ap", sign_request={"step": "approve"})
 
             entry = registry.get_entry("DOC-REG")

@@ -55,7 +55,7 @@ class DocumentsInfrastructureTest(unittest.TestCase):
             )
             approved = service.start_workflow(approved, WorkflowProfile.long_release_path())
             approved = service.complete_editing(approved, sign_request={"step": "edit_complete"})
-            approved = service.accept_review(approved, "rv")
+            approved = service.accept_review(approved, "rv", sign_request={"step": "review_accept"})
             approved = service.accept_approval(approved, "ap", sign_request={"step": "approve"})
 
             self.assertEqual(planned.status, DocumentStatus.PLANNED)

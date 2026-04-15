@@ -105,7 +105,7 @@ class WorkflowProfile:
                 DocumentStatus.APPROVED,
             ),
             four_eyes_required=True,
-            signature_required_transitions=("IN_PROGRESS->IN_REVIEW", "IN_APPROVAL->APPROVED"),
+            signature_required_transitions=("IN_PROGRESS->IN_REVIEW", "IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED"),
             requires_editors=True,
             requires_reviewers=True,
             requires_approvers=True,
@@ -168,6 +168,8 @@ class DocumentVersionState:
     last_event_id: str | None = None
     last_event_at: datetime | None = None
     last_actor_user_id: str | None = None
+    created_at: datetime | None = None
+    created_by: str | None = None
 
 
 @dataclass(frozen=True)

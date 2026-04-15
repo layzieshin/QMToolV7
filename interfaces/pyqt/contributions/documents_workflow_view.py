@@ -749,14 +749,31 @@ class DocumentsWorkflowWidget(QWidget):
                 ("Version", str(state.version)),
                 ("Titel", state.title or ""),
                 ("Status", state.status.value),
-                ("Owner", str(state.owner_user_id or "-")),
+                ("Owner / Erstellt von", str(state.created_by or state.owner_user_id or "-")),
+                ("Erstellt am", self._format_dt(state.created_at)),
                 ("Workflow aktiv", "Ja" if state.workflow_active else "Nein"),
+                ("Workflowprofil", state.workflow_profile_id or "-"),
                 ("Dokumenttyp", state.doc_type.value),
                 ("Kontrollklasse", state.control_class.value),
-                ("Workflowprofil", state.workflow_profile_id or "-"),
                 ("Department", str(getattr(header, "department", "") or "-")),
                 ("Standort", str(getattr(header, "site", "") or "-")),
                 ("Regulatory Scope", str(getattr(header, "regulatory_scope", "") or "-")),
+                ("── Prüfung ──", ""),
+                ("Geprüft am", self._format_dt(state.review_completed_at)),
+                ("Geprüft durch", str(state.review_completed_by or "-")),
+                ("── Freigabe ──", ""),
+                ("Freigegeben am", self._format_dt(state.released_at or state.approval_completed_at)),
+                ("Freigegeben durch", str(state.approval_completed_by or "-")),
+                ("Gültig ab", self._format_dt(state.valid_from)),
+                ("Gültig bis", self._format_dt(state.valid_until)),
+                ("Nächste Prüfung", self._format_dt(state.next_review_at)),
+                ("── Archivierung ──", ""),
+                ("Archiviert am", self._format_dt(state.archived_at)),
+                ("Archiviert durch", str(state.archived_by or "-")),
+                ("── Letzte Änderung ──", ""),
+                ("Zuletzt geändert am", self._format_dt(state.last_event_at)),
+                ("Zuletzt geändert durch", str(state.last_actor_user_id or "-")),
+                ("Letztes Event-ID", str(state.last_event_id or "-")),
             ],
         )
         self._fill_two_col_table(
@@ -770,6 +787,14 @@ class DocumentsWorkflowWidget(QWidget):
         )
         # Baue Verlauf aus echten Zustandsänderungen
         history_rows: list[tuple[str, str, str, str, str]] = []
+        if state.created_at:
+            history_rows.append((
+                str(state.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+                "Version angelegt",
+                str(state.created_by or state.owner_user_id or "-"),
+                "PLANNED",
+                f"Profil: {state.workflow_profile_id or '-'}",
+            ))
         if state.released_at:
             history_rows.append((
                 str(state.released_at.strftime("%Y-%m-%d %H:%M:%S") if state.released_at else "-"),
@@ -791,8 +816,8 @@ class DocumentsWorkflowWidget(QWidget):
                 str(state.review_completed_at.strftime("%Y-%m-%d %H:%M:%S")),
                 "Pruefung abgeschlossen",
                 str(state.review_completed_by or "-"),
-                "IN_PROGRESS->IN_REVIEW",
-                ""
+                "IN_REVIEW->IN_APPROVAL",
+                "",
             ))
         if state.last_event_at and state.last_event_id:
             history_rows.append((
@@ -1185,6 +1210,28 @@ class DocumentsWorkflowWidget(QWidget):
     
     def _edit_docx(self) -> None:
         try:
+            state = self._state_from_selection()
+            # Ab IN_REVIEW nur noch PDF öffnen – DOCX darf nicht mehr bearbeitet werden
+            post_edit_statuses = {
+                DocumentStatus.IN_REVIEW,
+                DocumentStatus.IN_APPROVAL,
+                DocumentStatus.APPROVED,
+                DocumentStatus.ARCHIVED,
+            }
+            if state.status in post_edit_statuses:
+                # Öffne die höchstwertige verfügbare PDF
+                priorities = DocumentsWorkflowPresenter.default_artifact_priority(state.status)
+                for artifact_type in priorities:
+                    if self._open_artifact(artifact_type):
+                        self._append(
+                            "PDF_GEOEFFNET",
+                            {"reason": "post-edit phase – DOCX gesperrt", "type": artifact_type.value},
+                        )
+                        return
+                raise RuntimeError(
+                    f"Status ist '{state.status.value}' – DOCX ist gesperrt. "
+                    "Keine PDF-Datei für diese Phase gefunden."
+                )
             if not self._open_artifact(ArtifactType.SOURCE_DOCX):
                 raise RuntimeError("Kein lokaler DOCX-Pfad im Artefakt verfuegbar")
         except Exception as exc:  # noqa: BLE001
@@ -1307,8 +1354,36 @@ class DocumentsWorkflowWidget(QWidget):
     def _review_accept(self) -> None:
         try:
             user, role = self._current_user_role()
-            payload = self._wf.accept_review(self._state_from_selection(), user.user_id, actor_role=role)
+            state = self._state_from_selection()
+            sign_request = self._build_sign_request_or_none("IN_REVIEW->IN_APPROVAL")
+            if (
+                state.workflow_profile
+                and "IN_REVIEW->IN_APPROVAL" in set(state.workflow_profile.signature_required_transitions)
+                and sign_request is None
+            ):
+                self._inline_notice.setText("Signaturvorgang abgebrochen.")
+                self._audit(
+                    action="documents.workflow.review.accept",
+                    actor=str(user.user_id),
+                    target=f"{state.document_id}:{state.version}",
+                    result="cancelled",
+                    reason="signature_cancelled",
+                )
+                return
+            payload = self._wf.accept_review(
+                self._state_from_selection(),
+                user.user_id,
+                sign_request=sign_request,
+                actor_role=role,
+            )
             self._append("PRUEFUNG_ANGENOMMEN", payload)
+            self._audit(
+                action="documents.workflow.review.accept",
+                actor=str(user.user_id),
+                target=f"{state.document_id}:{state.version}",
+                result="ok",
+                reason="IN_REVIEW->IN_APPROVAL",
+            )
             self._reload_table()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)

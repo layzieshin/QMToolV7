@@ -37,7 +37,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
             actor_role=SystemRole.USER,
         )
         states.append(("IN_REVIEW", in_review))
-        in_approval = service.accept_review(in_review, "reviewer-1")
+        in_approval = service.accept_review(in_review, "reviewer-1", sign_request={"step": "review_accept"})
         states.append(("IN_APPROVAL", in_approval))
 
         for label, candidate in states:
@@ -58,7 +58,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
         self.assertEqual(review_rejected.status, DocumentStatus.IN_PROGRESS)
 
         state = service.complete_editing(review_rejected, sign_request={"step": "edit_complete"})
-        state = service.accept_review(state, "reviewer-1")
+        state = service.accept_review(state, "reviewer-1", sign_request={"step": "review_accept"})
         approval_rejected = service.reject_approval(
             state,
             "approver-1",
@@ -70,7 +70,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
         profile = WorkflowProfile.long_release_path()
         service, state = self._state_for_profile(profile, document_id="DOC-YEARLY-MATRIX")
         state = service.complete_editing(state, sign_request={"step": "edit_complete"})
-        state = service.accept_review(state, "reviewer-1")
+        state = service.accept_review(state, "reviewer-1", sign_request={"step": "review_accept"})
         state = service.accept_approval(state, "approver-1", sign_request={"step": "approve"})
 
         for expected_count in (1, 2, 3):
@@ -114,7 +114,9 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
                 )
                 state = service.start_workflow(state, profile, actor_user_id="owner-1", actor_role=SystemRole.USER)
                 state = service.complete_editing(state, sign_request={"step": "edit_complete"})
-                state = service.accept_review(state, "alice")
+                # sign_request nur nötig wenn IN_REVIEW->IN_APPROVAL im Profil konfiguriert ist
+                review_sign = {"step": "review_accept"} if "IN_REVIEW->IN_APPROVAL" in profile.signature_required_transitions else None
+                state = service.accept_review(state, "alice", sign_request=review_sign)
                 if must_block:
                     with self.assertRaises(PermissionDeniedError):
                         service.accept_approval(state, "alice", sign_request={"step": "approve"})

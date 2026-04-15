@@ -185,9 +185,16 @@ class DocumentsWorkflowApi:
         self,
         state: DocumentVersionState,
         actor_user_id: str,
+        *,
+        sign_request: object | None = None,
         actor_role: SystemRole | None = None,
     ) -> DocumentVersionState:
-        return self._service.accept_review(state, actor_user_id, actor_role=actor_role)
+        return self._service.accept_review(
+            state,
+            actor_user_id,
+            sign_request=sign_request,
+            actor_role=actor_role,
+        )
 
     def reject_review(
         self,

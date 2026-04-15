@@ -6,7 +6,7 @@
       "control_class": "CONTROLLED",
       "phases": ["IN_PROGRESS", "IN_REVIEW", "IN_APPROVAL", "APPROVED"],
       "four_eyes_required": true,
-      "signature_required_transitions": ["IN_PROGRESS->IN_REVIEW", "IN_APPROVAL->APPROVED"],
+      "signature_required_transitions": ["IN_PROGRESS->IN_REVIEW", "IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED"],
       "requires_editors": true,
       "requires_reviewers": true,
       "requires_approvers": true,

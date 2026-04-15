@@ -824,7 +824,17 @@ def cmd_documents(args: argparse.Namespace) -> int:
 
         if args.documents_command == "review-accept":
             state = _load_documents_state(service, args.document_id, args.version)
-            state = workflow_api.accept_review(state, current_user.user_id, actor_role=current_role)
+            sign_request = (
+                _build_sign_request(args, "documents.review_accept", current_user.username)
+                if args.sign_input
+                else None
+            )
+            state = workflow_api.accept_review(
+                state,
+                current_user.user_id,
+                sign_request=sign_request,
+                actor_role=current_role,
+            )
             _print_documents_state("OK", state)
             return 0
 
@@ -1545,6 +1555,7 @@ def main() -> int:
     doc_review_accept = documents_sub.add_parser("review-accept", help="Accept review")
     doc_review_accept.add_argument("--document-id", required=True)
     doc_review_accept.add_argument("--version", type=int, required=True)
+    _add_sign_args(doc_review_accept)
 
     doc_review_reject = documents_sub.add_parser("review-reject", help="Reject review")
     doc_review_reject.add_argument("--document-id", required=True)

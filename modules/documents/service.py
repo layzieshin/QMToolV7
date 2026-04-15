@@ -228,6 +228,8 @@ class DocumentsService:
             workflow_profile_id=workflow_profile_id,
             owner_user_id=owner_user_id,
             custom_fields=fields,
+            created_at=datetime.now(timezone.utc),
+            created_by=owner_user_id,
         )
         self._store_header(
             DocumentHeader(
@@ -526,8 +528,20 @@ class DocumentsService:
             actor_role=actor_role,
         )
 
-    def accept_review(self, state: DocumentVersionState, actor_user_id: str, actor_role: SystemRole | None = None) -> DocumentVersionState:
-        return self._workflow_use_cases.accept_review(state, actor_user_id, actor_role=actor_role)
+    def accept_review(
+        self,
+        state: DocumentVersionState,
+        actor_user_id: str,
+        *,
+        sign_request: object | None = None,
+        actor_role: SystemRole | None = None,
+    ) -> DocumentVersionState:
+        return self._workflow_use_cases.accept_review(
+            state,
+            actor_user_id,
+            sign_request=sign_request,
+            actor_role=actor_role,
+        )
 
     def reject_review(
         self,

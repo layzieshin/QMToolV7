@@ -200,7 +200,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
         self.assertEqual(updated.assignments.reviewers, frozenset({"reviewer-2"}))
         self.assertEqual(updated.assignments.approvers, frozenset({"approver-2"}))
 
-        updated = service.accept_review(updated, "reviewer-2")
+        updated = service.accept_review(updated, "reviewer-2", sign_request={"step": "review_accept"})
         with self.assertRaises(PermissionDeniedError):
             service.assign_workflow_roles(
                 updated,

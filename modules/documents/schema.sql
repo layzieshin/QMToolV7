@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS document_versions (
     last_event_id TEXT,
     last_event_at TEXT,
     last_actor_user_id TEXT,
+    created_at TEXT,
+    created_by TEXT,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (document_id, version)
 );

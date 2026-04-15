@@ -126,7 +126,7 @@ class DocumentsEventContractsTest(unittest.TestCase):
             actor_user_id="owner-1",
             actor_role=SystemRole.USER,
         )
-        state = service.accept_review(state, "reviewer-1")
+        state = service.accept_review(state, "reviewer-1", sign_request={"step": "review_accept"})
         state = service.reject_approval(
             state,
             "approver-1",
@@ -140,7 +140,7 @@ class DocumentsEventContractsTest(unittest.TestCase):
             actor_user_id="owner-1",
             actor_role=SystemRole.USER,
         )
-        state = service.accept_review(state, "reviewer-1")
+        state = service.accept_review(state, "reviewer-1", sign_request={"step": "review_accept"})
         state = service.accept_approval(state, "approver-1", sign_request={"step": "approve"})
         state, _ = service.extend_annual_validity(state, signature_present=True)
         service.archive_approved(state, SystemRole.QMB)
@@ -182,7 +182,7 @@ class DocumentsEventContractsTest(unittest.TestCase):
             state = service.assign_workflow_roles(state, editors={"owner-1"}, reviewers={"reviewer-1"}, approvers={"approver-1"})
             state = service.start_workflow(state, WorkflowProfile.long_release_path(), actor_user_id="owner-1", actor_role=SystemRole.USER)
             state = service.complete_editing(state, sign_request={"step": "edit_complete"}, actor_user_id="owner-1", actor_role=SystemRole.USER)
-            state = service.accept_review(state, "reviewer-1")
+            state = service.accept_review(state, "reviewer-1", sign_request={"step": "review_accept"})
             service.accept_approval(state, "approver-1", sign_request={"step": "approve"})
             entry = registry.get_entry("DOC-EVT-REG")
             self.assertIsNotNone(entry)
@@ -217,7 +217,7 @@ class DocumentsEventContractsTest(unittest.TestCase):
             self.assertTrue(entry.is_findable)
 
             state = service.complete_editing(state, sign_request={"step": "edit_complete"}, actor_user_id="owner-1", actor_role=SystemRole.USER)
-            state = service.accept_review(state, "reviewer-1")
+            state = service.accept_review(state, "reviewer-1", sign_request={"step": "review_accept"})
             state = service.accept_approval(state, "approver-1", sign_request={"step": "approve"})
             entry = registry.get_entry("DOC-EVT-CONSIST")
             assert entry is not None

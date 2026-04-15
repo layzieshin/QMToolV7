@@ -96,10 +96,15 @@ class UiController:
             actor_role=current_role,
         )
 
-    def review_accept(self, document_id: str, version: int):
+    def review_accept(self, document_id: str, version: int, sign_request: object | None = None):
         current_user, current_role = self._require_user_and_role()
         state = self.get_document(document_id, version)
-        return self.documents_workflow_api.accept_review(state, current_user.user_id, actor_role=current_role)
+        return self.documents_workflow_api.accept_review(
+            state,
+            current_user.user_id,
+            sign_request=sign_request,
+            actor_role=current_role,
+        )
 
     def review_reject(self, document_id: str, version: int, reason_text: str):
         current_user, current_role = self._require_user_and_role()

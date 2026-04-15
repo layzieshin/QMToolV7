@@ -34,12 +34,14 @@ class DocumentsServiceTest(unittest.TestCase):
         )
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
         state = service.complete_editing(state, sign_request={"step": "edit_complete"})
-        state = service.accept_review(state, "alice")
+        # long_release erfordert jetzt auch für IN_REVIEW->IN_APPROVAL eine Signatur
+        state = service.accept_review(state, "alice", sign_request={"step": "review_accept"})
         with self.assertRaises(PermissionDeniedError):
             service.accept_approval(state, "alice", sign_request={"step": "approve"})
         state = service.accept_approval(state, "bob", sign_request={"step": "approve"})
         self.assertEqual(state.status, DocumentStatus.APPROVED)
-        self.assertEqual(len(signature_api.calls), 2)
+        # 3 Signaturaufrufe: edit_complete + review_accept + approve
+        self.assertEqual(len(signature_api.calls), 3)
 
     def test_custom_profile_can_disable_four_eyes(self) -> None:
         service = DocumentsService(signature_api=_FakeSignatureApi())
@@ -98,7 +100,7 @@ class DocumentsServiceTest(unittest.TestCase):
         )
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
         state = service.complete_editing(state, sign_request={"step": "edit_complete"})
-        state = service.accept_review(state, "rev-1")
+        state = service.accept_review(state, "rev-1", sign_request={"step": "review_accept"})
         state = service.accept_approval(state, "app-1", sign_request={"step": "approve"})
         with self.assertRaises(PermissionDeniedError):
             service.archive_approved(state, SystemRole.USER)
@@ -116,7 +118,7 @@ class DocumentsServiceTest(unittest.TestCase):
         )
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
         state = service.complete_editing(state, sign_request={"step": "edit_complete"})
-        state = service.accept_review(state, "rev-1")
+        state = service.accept_review(state, "rev-1", sign_request={"step": "review_accept"})
         state = service.accept_approval(state, "app-1", sign_request={"step": "approve"})
 
         state, must_recreate = service.extend_annual_validity(state, signature_present=True)
@@ -143,7 +145,7 @@ class DocumentsServiceTest(unittest.TestCase):
         )
         approved = service.start_workflow(approved, WorkflowProfile.long_release_path())
         approved = service.complete_editing(approved, sign_request={"step": "edit_complete"})
-        approved = service.accept_review(approved, "rev-1")
+        approved = service.accept_review(approved, "rev-1", sign_request={"step": "review_accept"})
         approved = service.accept_approval(approved, "app-1", sign_request={"step": "approve"})
 
         planned_entries = service.list_by_status(DocumentStatus.PLANNED)
@@ -163,6 +165,21 @@ class DocumentsServiceTest(unittest.TestCase):
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
         with self.assertRaises(ValidationError):
             service.complete_editing(state)
+
+    def test_review_accept_requires_signature_for_long_release(self) -> None:
+        """accept_review ohne sign_request muss für long_release fehlschlagen."""
+        service = DocumentsService(signature_api=_FakeSignatureApi())
+        state = service.create_document_version("DOC-SIG2", 1)
+        state = service.assign_workflow_roles(
+            state,
+            editors={"editor-1"},
+            reviewers={"rev-1"},
+            approvers={"app-1"},
+        )
+        state = service.start_workflow(state, WorkflowProfile.long_release_path())
+        state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+        with self.assertRaises(ValidationError):
+            service.accept_review(state, "rev-1")  # kein sign_request → ValidationError
 
     def test_workflow_start_requires_all_role_sets(self) -> None:
         service = DocumentsService(signature_api=_FakeSignatureApi())

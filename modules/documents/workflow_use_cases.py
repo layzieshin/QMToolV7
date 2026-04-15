@@ -183,12 +183,20 @@ class DocumentsWorkflowUseCases:
         )
         return updated
 
-    def accept_review(self, state: DocumentVersionState, actor_user_id: str, actor_role: SystemRole | None = None) -> DocumentVersionState:
+    def accept_review(
+        self,
+        state: DocumentVersionState,
+        actor_user_id: str,
+        *,
+        sign_request: object | None = None,
+        actor_role: SystemRole | None = None,
+    ) -> DocumentVersionState:
         self._service._assert_active_profile(state)
         if state.status != DocumentStatus.IN_REVIEW:
             raise InvalidTransitionError("review accept can only be executed in IN_REVIEW")
         if actor_user_id not in state.assignments.reviewers:
             raise PermissionDeniedError("actor is not assigned as reviewer")
+        self._service._enforce_signature_transition(state, "IN_REVIEW->IN_APPROVAL", sign_request)
         next_status = self._service._next_status_from_profile(state.workflow_profile, DocumentStatus.IN_REVIEW)
         updated = replace(
             state,
@@ -441,6 +449,7 @@ class DocumentsWorkflowUseCases:
             doc_type=state.doc_type,
             control_class=state.control_class,
             workflow_profile_id=state.workflow_profile_id,
+            created_at=_utcnow(),
         )
         self._service._store_state(created)
         self._service._sync_registry(created, None)
