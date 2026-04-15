@@ -14,9 +14,18 @@ class UsersAdminPresenter:
         normalized_search = search.strip().lower()
         rows: list[object] = []
         for user in self._all_users:
-            if selected_role != "Alle" and str(user.role) != selected_role:
+            if selected_role != "Alle" and str(getattr(user, "role", "")) != selected_role:
                 continue
-            if normalized_search and normalized_search not in str(user.username).lower() and normalized_search not in str(user.user_id).lower():
-                continue
+            if normalized_search:
+                haystack = " ".join(
+                    [
+                        str(getattr(user, "username", "")),
+                        str(getattr(user, "user_id", "")),
+                        str(getattr(user, "first_name", "") or ""),
+                        str(getattr(user, "last_name", "") or ""),
+                    ]
+                ).lower()
+                if normalized_search not in haystack:
+                    continue
             rows.append(user)
         return rows

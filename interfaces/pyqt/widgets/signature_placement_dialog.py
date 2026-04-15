@@ -40,13 +40,39 @@ from PyQt6.QtWidgets import (
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
 
 
+def compute_label_local_position(
+    *,
+    position: str,
+    sig_height: float,
+    pixel_size: int,
+    scale: float,
+    rel_x: float | None,
+    rel_y: float | None,
+    offset_above: float,
+    offset_below: float,
+    x_offset: float,
+) -> QPointF:
+    """Compute label position in signature-local coordinates.
+
+    rel_x/rel_y use signature-local units (PDF-space before scale). Y grows downward.
+    """
+
+    base_x = x_offset * scale
+    base_y = -pixel_size - offset_above * scale if position == "above" else sig_height + offset_below * scale * 0.4
+    tx = rel_x * scale if rel_x is not None else base_x
+    ty = rel_y * scale if rel_y is not None else base_y
+    return QPointF(tx, ty)
+
+
 class _ZoomableView(QGraphicsView):
-    """QGraphicsView that supports Ctrl+scroll zoom and click-to-place."""
+    """QGraphicsView that supports Ctrl+scroll zoom and double-click-to-place."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._zoom_slider: QSlider | None = None
         self._click_callback = None
+        self._pan_active = False
+        self._pan_last_pos = None
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
     def wheelEvent(self, event) -> None:  # type: ignore[override]
@@ -64,6 +90,15 @@ class _ZoomableView(QGraphicsView):
             super().wheelEvent(event)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.RightButton:
+            self._pan_active = True
+            self._pan_last_pos = event.position().toPoint()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[override]
         if (
             event.button() == Qt.MouseButton.LeftButton
             and self._click_callback is not None
@@ -72,20 +107,47 @@ class _ZoomableView(QGraphicsView):
             self._click_callback(self.mapToScene(event.position().toPoint()))
             event.accept()
             return
-        super().mousePressEvent(event)
+        super().mouseDoubleClickEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+        if self._pan_active and self._pan_last_pos is not None:
+            current = event.position().toPoint()
+            delta = current - self._pan_last_pos
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            self._pan_last_pos = current
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.RightButton and self._pan_active:
+            self._pan_active = False
+            self._pan_last_pos = None
+            self.unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class _DraggableSignatureItem(QGraphicsPixmapItem):
     """Signatur-Hauptobjekt; alle Textlabels hängen als Kinder daran."""
 
-    def __init__(self, pixmap: QPixmap, on_moved) -> None:
+    def __init__(self, pixmap: QPixmap, on_moved, constrain_position=None) -> None:
         super().__init__(pixmap)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setAcceptHoverEvents(True)
         self._on_moved = on_moved
+        self._constrain_position = constrain_position
 
     def itemChange(self, change, value):  # type: ignore[override]
+        if (
+            change == QGraphicsItem.GraphicsItemChange.ItemPositionChange
+            and self._constrain_position is not None
+            and isinstance(value, QPointF)
+        ):
+            return self._constrain_position(value)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self._on_moved()
         return super().itemChange(change, value)
@@ -121,6 +183,10 @@ class SignaturePlacementDialog(QDialog):
         self._pix_width: float = 0.0
         self._pix_height: float = 0.0
         self._target_height: float = 0.0
+        self._sig_scene_w: float = 0.0
+        self._sig_scene_h: float = 0.0
+        self._pdf_page_width: float = 0.0
+        self._pdf_page_height: float = 0.0
         self._sig_item: _DraggableSignatureItem | None = None
         self._fit_scale: float = 0.0
         self._updating_from_drag = False
@@ -147,6 +213,7 @@ class SignaturePlacementDialog(QDialog):
         self._view = _ZoomableView(self)
         self._view.setScene(self._scene)
         self._view.setMinimumSize(860, 620)
+        self._view.setBackgroundBrush(QBrush(QColor("#e6e6e6")))
 
         self._zoom_slider = QSlider(Qt.Orientation.Horizontal)
         self._zoom_slider.setRange(25, 500)
@@ -198,7 +265,7 @@ class SignaturePlacementDialog(QDialog):
         content_row.addWidget(self._options_panel)
 
         hint = QLabel(
-            "Ctrl+Scroll = Zoom • Klick in die Seite = Signaturblock platzieren • Ziehen = Signatur, Name und Datum gemeinsam verschieben"
+            "Ctrl+Scroll = Zoom • Doppelklick in die Seite = Signaturblock platzieren • Ziehen = Signatur, Name und Datum gemeinsam verschieben"
         )
         hint.setWordWrap(True)
 
@@ -401,6 +468,31 @@ class SignaturePlacementDialog(QDialog):
         except ValueError:
             return default
 
+    def _clamp_pdf_xy(
+        self,
+        x: float,
+        y: float,
+        target_width: float,
+        target_height: float,
+    ) -> tuple[float, float]:
+        page_w = self._pdf_page_width if self._pdf_page_width > 0 else (
+            self._pix_width / self._current_scale if self._current_scale > 0 else 0.0
+        )
+        page_h = self._pdf_page_height if self._pdf_page_height > 0 else (
+            self._pix_height / self._current_scale if self._current_scale > 0 else 0.0
+        )
+        max_x = max(0.0, page_w - target_width)
+        max_y = max(0.0, page_h - target_height)
+        return (max(0.0, min(x, max_x)), max(0.0, min(y, max_y)))
+
+    def _clamp_scene_pos(self, pos: QPointF) -> QPointF:
+        max_x = max(0.0, self._pix_width - self._sig_scene_w)
+        max_y = max(0.0, self._pix_height - self._sig_scene_h)
+        return QPointF(
+            max(0.0, min(pos.x(), max_x)),
+            max(0.0, min(pos.y(), max_y)),
+        )
+
     def _on_text_changed(self) -> None:
         if self._updating_from_drag:
             return
@@ -411,12 +503,9 @@ class SignaturePlacementDialog(QDialog):
             return
         target_width = max(1.0, self._safe_float(self._width.text(), 120.0))
         target_height = max(6.0, target_width * 0.3)
-        page_w = self._pix_width / self._current_scale
-        page_h = self._pix_height / self._current_scale
         pdf_x = (scene_pos.x() / self._current_scale) - (target_width / 2.0)
         pdf_y = ((self._pix_height - scene_pos.y()) / self._current_scale) - (target_height / 2.0)
-        pdf_x = max(0.0, min(pdf_x, max(0.0, page_w - target_width)))
-        pdf_y = max(0.0, min(pdf_y, max(0.0, page_h - target_height)))
+        pdf_x, pdf_y = self._clamp_pdf_xy(pdf_x, pdf_y, target_width, target_height)
         self._updating_from_drag = True
         try:
             self._x.setText(f"{pdf_x:.1f}")
@@ -457,9 +546,15 @@ class SignaturePlacementDialog(QDialog):
                 image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888).copy()
                 pdf_pixmap = QPixmap.fromImage(image)
                 self._scene.addPixmap(pdf_pixmap)
+                self._scene.addRect(
+                    QRectF(0, 0, pix.width, pix.height),
+                    QPen(QColor("#7a7a7a"), 2),
+                )
                 self._scene.setSceneRect(QRectF(0, 0, pix.width, pix.height))
                 self._pix_width = float(pix.width)
                 self._pix_height = float(pix.height)
+                self._pdf_page_width = float(page.rect.width)
+                self._pdf_page_height = float(page.rect.height)
 
                 x = self._safe_float(self._x.text(), 0.0)
                 y = self._safe_float(self._y.text(), 0.0)
@@ -471,10 +566,23 @@ class SignaturePlacementDialog(QDialog):
                 self._current_scale = scale
                 self._target_height = target_height
 
+                clamped_x, clamped_y = self._clamp_pdf_xy(x, y, target_width, target_height)
+                if abs(clamped_x - x) > 0.05 or abs(clamped_y - y) > 0.05:
+                    self._updating_from_drag = True
+                    try:
+                        self._x.setText(f"{clamped_x:.1f}")
+                        self._y.setText(f"{clamped_y:.1f}")
+                    finally:
+                        self._updating_from_drag = False
+                    self._render_error.setText("Hinweis: Position wurde auf die sichtbare Seitengrenze begrenzt.")
+                x, y = clamped_x, clamped_y
+
                 sx = x * scale
                 sw = target_width * scale
                 sh = target_height * scale
                 sy = pix.height - (y + target_height) * scale
+                self._sig_scene_w = sw
+                self._sig_scene_h = sh
 
                 if self._signature_pixmap is not None and not self._signature_pixmap.isNull():
                     overlay_px = self._signature_pixmap.scaled(
@@ -491,7 +599,11 @@ class SignaturePlacementDialog(QDialog):
                     painter.drawRect(1, 1, max(1, overlay_px.width() - 2), max(1, overlay_px.height() - 2))
                     painter.end()
 
-                self._sig_item = _DraggableSignatureItem(overlay_px, self._on_sig_dragged)
+                self._sig_item = _DraggableSignatureItem(
+                    overlay_px,
+                    self._on_sig_dragged,
+                    constrain_position=self._clamp_scene_pos,
+                )
                 self._sig_item.setPos(QPointF(sx, sy))
                 self._scene.addItem(self._sig_item)
 
@@ -567,23 +679,47 @@ class SignaturePlacementDialog(QDialog):
         item.setFont(font)
         item.setBrush(QBrush(color))
 
-        if rel_x_raw and rel_y_raw:
+        rel_x: float | None = None
+        rel_y: float | None = None
+        if rel_x_raw:
             try:
-                item.setPos(QPointF(float(rel_x_raw) * scale, -float(rel_y_raw) * scale))
-                return
+                rel_x = float(rel_x_raw)
             except ValueError:
-                pass
+                rel_x = None
+        if rel_y_raw:
+            try:
+                rel_y = float(rel_y_raw)
+            except ValueError:
+                rel_y = None
 
-        tx = x_offset * scale
-        ty = -pixel_size - offset_above * scale if position == "above" else sh + offset_below * scale * 0.4
-        item.setPos(QPointF(tx, ty))
+        item.setPos(
+            compute_label_local_position(
+                position=position,
+                sig_height=sh,
+                pixel_size=pixel_size,
+                scale=scale,
+                rel_x=rel_x,
+                rel_y=rel_y,
+                offset_above=offset_above,
+                offset_below=offset_below,
+                x_offset=x_offset,
+            )
+        )
 
     def placement(self) -> SignaturePlacementInput:
+        width = self._safe_float(self._width.text(), 120.0)
+        height = max(6.0, width * 0.3)
+        x, y = self._clamp_pdf_xy(
+            self._safe_float(self._x.text(), 0.0),
+            self._safe_float(self._y.text(), 0.0),
+            width,
+            height,
+        )
         return SignaturePlacementInput(
             page_index=int(self._page.value()),
-            x=self._safe_float(self._x.text(), 0.0),
-            y=self._safe_float(self._y.text(), 0.0),
-            target_width=self._safe_float(self._width.text(), 120.0),
+            x=x,
+            y=y,
+            target_width=width,
         )
 
     def layout_result(self) -> LabelLayoutInput:

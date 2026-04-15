@@ -8,7 +8,7 @@ class SettingsProfilePresenter:
             [
                 f"Benutzer: {user.username}",
                 f"Rolle: {user.role}",
-                "Anzeigename und E-Mail koennen selbst gepflegt werden.",
+                "Vorname, Nachname und E-Mail koennen selbst gepflegt werden.",
                 "Weitere Stammdaten werden administrativ verwaltet.",
             ]
         )

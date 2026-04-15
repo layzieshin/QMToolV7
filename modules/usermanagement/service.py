@@ -122,10 +122,26 @@ class UserManagementService:
         )
         return user
 
-    def update_user_profile(self, username: str, *, display_name: str | None, email: str | None) -> AuthenticatedUser:
+    def update_user_profile(
+        self,
+        username: str,
+        *,
+        first_name: str | None,
+        last_name: str | None,
+        email: str | None,
+        display_name: str | None = None,
+    ) -> AuthenticatedUser:
         username = username.strip()
         if not username:
             raise ValueError("username is required")
+        resolved_first = (first_name or "").strip() or None
+        resolved_last = (last_name or "").strip() or None
+        if resolved_first is None and resolved_last is None and display_name:
+            parts = [p.strip() for p in display_name.split(",", 1)]
+            resolved_first = parts[0] or None
+            resolved_last = parts[1] if len(parts) > 1 and parts[1] else None
+        name_parts = [part for part in (resolved_first, resolved_last) if part is not None]
+        resolved_display = ", ".join(name_parts) if name_parts else None
         if self.repository is None:
             existing = self._users.get(username)
             if existing is None:
@@ -135,10 +151,18 @@ class UserManagementService:
                 user_id=username,
                 username=username,
                 role=role,
-                display_name=display_name,
+                first_name=resolved_first,
+                last_name=resolved_last,
+                display_name=resolved_display,
                 email=email,
             )
-        return self.repository.update_user_profile(username, display_name=display_name, email=email)
+        return self.repository.update_user_profile(
+            username,
+            first_name=resolved_first,
+            last_name=resolved_last,
+            display_name=resolved_display,
+            email=email,
+        )
 
     def update_user_admin_fields(
         self,

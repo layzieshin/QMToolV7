@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import importlib.util
 from pathlib import Path
 
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
@@ -14,6 +15,25 @@ from qm_platform.sdk.module_contract import SettingsContribution
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
 from qm_platform.settings.settings_store import SettingsStore
+
+
+def _create_pdf(path: Path) -> None:
+    if importlib.util.find_spec("pypdf") is not None:
+        from pypdf import PdfWriter
+
+        writer = PdfWriter()
+        writer.add_blank_page(width=595, height=842)
+        with path.open("wb") as fh:
+            writer.write(fh)
+        return
+    path.write_bytes(
+        b"%PDF-1.4\n"
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >> endobj\n"
+        b"xref\n0 4\n0000000000 65535 f \n0000000010 00000 n \n0000000062 00000 n \n0000000117 00000 n \n"
+        b"trailer << /Root 1 0 R /Size 4 >>\nstartxref\n188\n%%EOF\n"
+    )
 
 
 class ModuleEventsTest(unittest.TestCase):
@@ -33,7 +53,7 @@ class ModuleEventsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             pdf = root / "input.pdf"
-            pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            _create_pdf(pdf)
 
             bus = EventBus()
             events: list[str] = []

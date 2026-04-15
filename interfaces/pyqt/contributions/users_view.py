@@ -31,11 +31,11 @@ class UsersAdminWidget(QWidget):
         self._presenter = UsersAdminPresenter()
         self._visible_users: list[object] = []
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Suche nach Benutzername oder User-ID")
+        self._search.setPlaceholderText("Suche nach Loginname, User-ID, Vorname oder Nachname")
         self._role_filter = QComboBox()
         self._role_filter.addItems(["Alle", "Admin", "QMB", "User"])
-        self._table = QTableWidget(0, 3)
-        self._table.setHorizontalHeaderLabels(["Benutzername", "User-ID", "Rolle"])
+        self._table = QTableWidget(0, 5)
+        self._table.setHorizontalHeaderLabels(["Loginname", "User-ID", "Vorname", "Nachname", "Rolle"])
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -44,6 +44,10 @@ class UsersAdminWidget(QWidget):
         self._detail_user.setReadOnly(True)
         self._detail_user_id = QLineEdit()
         self._detail_user_id.setReadOnly(True)
+        self._detail_first_name = QLineEdit()
+        self._detail_first_name.setReadOnly(True)
+        self._detail_last_name = QLineEdit()
+        self._detail_last_name.setReadOnly(True)
         self._detail_role = QLineEdit()
         self._detail_role.setReadOnly(True)
         self._detail_department = QLineEdit()
@@ -67,7 +71,7 @@ class UsersAdminWidget(QWidget):
         self._out.setReadOnly(True)
 
         outer = QVBoxLayout(self)
-        outer.addWidget(QLabel("Benutzerverwaltung mit Tabelle + Detail-Drawer (QMB/Admin)."))
+        outer.addWidget(QLabel("Benutzerverwaltung mit klarem Rollenmodell: Loginname, stabile User-ID, Vorname/Nachname."))
 
         filters = QHBoxLayout()
         filters.addWidget(self._search)
@@ -97,8 +101,10 @@ class UsersAdminWidget(QWidget):
         right_layout = QVBoxLayout(right)
         right_layout.addWidget(QLabel("Detail / sensible Aktionen"))
         detail_form = QFormLayout()
-        detail_form.addRow("Benutzername", self._detail_user)
-        detail_form.addRow("User-ID", self._detail_user_id)
+        detail_form.addRow("Loginname", self._detail_user)
+        detail_form.addRow("User-ID (stabil)", self._detail_user_id)
+        detail_form.addRow("Vorname", self._detail_first_name)
+        detail_form.addRow("Nachname", self._detail_last_name)
         detail_form.addRow("Rolle", self._detail_role)
         detail_form.addRow("Neue Rolle", self._detail_new_role)
         detail_form.addRow("Abteilung", self._detail_department)
@@ -147,9 +153,11 @@ class UsersAdminWidget(QWidget):
         self._visible_users = self._presenter.filtered_users(search=search, selected_role=selected_role)
         self._table.setRowCount(len(self._visible_users))
         for idx, user in enumerate(self._visible_users):
-            self._table.setItem(idx, 0, QTableWidgetItem(str(user.username)))
-            self._table.setItem(idx, 1, QTableWidgetItem(str(user.user_id)))
-            self._table.setItem(idx, 2, QTableWidgetItem(str(user.role)))
+            self._table.setItem(idx, 0, QTableWidgetItem(str(getattr(user, "username", ""))))
+            self._table.setItem(idx, 1, QTableWidgetItem(str(getattr(user, "user_id", ""))))
+            self._table.setItem(idx, 2, QTableWidgetItem(str(getattr(user, "first_name", "") or "")))
+            self._table.setItem(idx, 3, QTableWidgetItem(str(getattr(user, "last_name", "") or "")))
+            self._table.setItem(idx, 4, QTableWidgetItem(str(getattr(user, "role", ""))))
         self._table.resizeColumnsToContents()
 
     def _on_select(self) -> None:
@@ -157,9 +165,11 @@ class UsersAdminWidget(QWidget):
         if row < 0 or row >= len(self._visible_users):
             return
         user = self._visible_users[row]
-        self._detail_user.setText(str(user.username))
-        self._detail_user_id.setText(str(user.user_id))
-        self._detail_role.setText(str(user.role))
+        self._detail_user.setText(str(getattr(user, "username", "")))
+        self._detail_user_id.setText(str(getattr(user, "user_id", "")))
+        self._detail_first_name.setText(str(getattr(user, "first_name", "") or ""))
+        self._detail_last_name.setText(str(getattr(user, "last_name", "") or ""))
+        self._detail_role.setText(str(getattr(user, "role", "")))
         self._detail_new_role.setCurrentIndex(0)
         self._detail_department.setText(str(getattr(user, "department", "") or ""))
         self._detail_scope.setText(str(getattr(user, "scope", "") or ""))

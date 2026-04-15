@@ -29,7 +29,15 @@ class UserRepository(ABC):
         pass
 
     @abstractmethod
-    def update_user_profile(self, username: str, *, display_name: str | None, email: str | None) -> AuthenticatedUser:
+    def update_user_profile(
+        self,
+        username: str,
+        *,
+        first_name: str | None,
+        last_name: str | None,
+        email: str | None,
+        display_name: str | None = None,
+    ) -> AuthenticatedUser:
         pass
 
     @abstractmethod

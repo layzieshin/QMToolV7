@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import importlib.util
 from pathlib import Path
 
 from PIL import Image
@@ -34,16 +35,22 @@ class DocumentsCliTest(unittest.TestCase):
 
     @staticmethod
     def _write_test_pdf(path: Path) -> None:
-        pdf_bytes = (
+        if importlib.util.find_spec("pypdf") is not None:
+            from pypdf import PdfWriter
+
+            writer = PdfWriter()
+            writer.add_blank_page(width=595, height=842)
+            with path.open("wb") as fh:
+                writer.write(fh)
+            return
+        path.write_bytes(
             b"%PDF-1.4\n"
             b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
             b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
-            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >> endobj\n"
-            b"4 0 obj << /Length 35 >> stream\nBT /F1 12 Tf 72 800 Td (Documents Test) Tj ET\nendstream endobj\n"
-            b"xref\n0 5\n0000000000 65535 f \n0000000010 00000 n \n0000000062 00000 n \n"
-            b"0000000120 00000 n \n0000000213 00000 n \ntrailer << /Root 1 0 R /Size 5 >>\nstartxref\n303\n%%EOF\n"
+            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >> endobj\n"
+            b"xref\n0 4\n0000000000 65535 f \n0000000010 00000 n \n0000000062 00000 n \n0000000117 00000 n \n"
+            b"trailer << /Root 1 0 R /Size 4 >>\nstartxref\n188\n%%EOF\n"
         )
-        path.write_bytes(pdf_bytes)
 
     @staticmethod
     def _write_test_png(path: Path) -> None:

@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
     role TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
     display_name TEXT,
     email TEXT,
     department TEXT,

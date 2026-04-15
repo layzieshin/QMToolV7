@@ -238,6 +238,14 @@ class SignatureSignWizard(QDialog):
         return user
 
     def _display_name(self, user) -> str:
+        first = (getattr(user, "first_name", None) or "").strip()
+        last = (getattr(user, "last_name", None) or "").strip()
+        if first and last:
+            return f"{first}, {last}"
+        if first:
+            return first
+        if last:
+            return last
         return (getattr(user, "display_name", None) or user.username or user.user_id).strip()
 
     def _resolved_runtime_layout(self, layout: LabelLayoutInput) -> LabelLayoutInput:
