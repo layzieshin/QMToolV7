@@ -10,6 +10,7 @@ This file tracks executable coverage for the `documents` domain using an action-
 - Existing service/infrastructure regression tests:
   - `tests/modules/test_documents_service.py`
   - `tests/modules/test_documents_infrastructure.py`
+  - `tests/modules/test_documents_release_filename.py`
 - CLI matrix and end-to-end behavior:
   - `tests/e2e_cli/test_documents_cli_authorization_matrix.py`
   - `tests/e2e_cli/test_documents_cli.py`
@@ -157,6 +158,21 @@ This file tracks executable coverage for the `documents` domain using an action-
       "covered_by": [
         "tests/modules/test_documents_service.py::test_annual_extension_limited_to_three_per_version",
         "tests/modules/test_documents_variants_matrix.py::test_annual_extension_limit_matrix"
+      ]
+    },
+    {
+      "action": "released_pdf_filename_policy",
+      "statuses": ["APPROVED"],
+      "authorization": {
+        "ascii_transliteration_for_umlauts": "true",
+        "empty_or_invalid_title_fallback": "Dokument",
+        "outer_separator_trim": "true"
+      },
+      "covered_by": [
+        "tests/modules/test_documents_release_filename.py::test_build_released_filename_transliterates_umlauts",
+        "tests/modules/test_documents_release_filename.py::test_build_released_filename_uses_fallback_when_title_sanitizes_to_empty",
+        "tests/modules/test_documents_release_filename.py::test_build_released_filename_strips_outer_separators",
+        "tests/modules/test_documents_release_filename.py::test_build_released_filename_transliterates_mixed_umlauts_and_sharp_s"
       ]
     },
     {

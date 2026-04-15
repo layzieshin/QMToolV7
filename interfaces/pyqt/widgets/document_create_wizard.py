@@ -1,10 +1,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QLineEdit, QVBoxLayout
 
 from modules.documents.contracts import DocumentType
+
+
+
+def transliterate_umlauts(raw: str) -> str:
+    return (
+        raw.replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("Ä", "Ae")
+        .replace("Ö", "Oe")
+        .replace("Ü", "Ue")
+        .replace("ß", "ss")
+    )
+
+
+def parse_document_id_and_title_from_filename(file_path: str) -> tuple[str, str]:
+    stem = transliterate_umlauts(Path(file_path).stem.strip())
+    if not stem or "_" not in stem:
+        return "", ""
+    document_id, title = stem.split("_", 1)
+    document_id = document_id.strip()
+    title = title.strip().replace("_", " ")
+    return document_id, title
 
 
 @dataclass
@@ -71,6 +95,11 @@ class DocumentCreateWizard(QDialog):
             path, _ = QFileDialog.getOpenFileName(self, "DOCX", "", "Word (*.docx)")
         if path:
             self._source.setText(path)
+            parsed_id, parsed_title = parse_document_id_and_title_from_filename(path)
+            if parsed_id and not self._document_id.text().strip():
+                self._document_id.setText(parsed_id)
+            if parsed_title and not self._title.text().strip():
+                self._title.setText(parsed_title)
 
     def payload(self) -> DocumentCreatePayload:
         return DocumentCreatePayload(

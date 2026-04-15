@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+import tempfile
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -19,11 +22,9 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSplitter,
     QTableView,
     QTableWidget,
     QTabWidget,
-    QToolButton,
     QPlainTextEdit,
     QVBoxLayout,
     QWidget,
@@ -31,16 +32,17 @@ from PyQt6.QtWidgets import (
 
 from interfaces.pyqt.contributions.common import parse_csv_set, role_to_system_role
 from interfaces.pyqt.widgets.document_create_wizard import DocumentCreateWizard
+from interfaces.pyqt.widgets.workflow_profile_wizard import WorkflowProfileWizardDialog
 from interfaces.pyqt.widgets.reject_reason_dialog import RejectReasonDialog
-from interfaces.pyqt.widgets.action_bar import ActionBar
 from interfaces.pyqt.widgets.drawer_panel import DrawerPanel
-from interfaces.pyqt.widgets.signature_request_form import SignatureRequestForm
 from interfaces.pyqt.widgets.table_helpers import configure_readonly_table, fill_table
 from interfaces.pyqt.widgets.workflow_start_wizard import WorkflowStartWizard
+from interfaces.pyqt.widgets.signature_placement_dialog import SignaturePlacementDialog
 from interfaces.pyqt.presenters.documents_workflow_filter_presenter import DocumentsWorkflowFilterPresenter
 from interfaces.pyqt.presenters.documents_workflow_presenter import DocumentsWorkflowPresenter
 from interfaces.pyqt.registry.contribution import QtModuleContribution
-from modules.documents.contracts import ArtifactType, ControlClass, DocumentStatus, DocumentType, RejectionReason
+from modules.documents.contracts import ArtifactType, ControlClass, DocumentStatus, DocumentType, RejectionReason, SystemRole, WorkflowProfile
+from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 from qm_platform.runtime.container import RuntimeContainer
 
 
@@ -226,6 +228,8 @@ class DocumentsWorkflowWidget(QWidget):
         self._docs_service = container.get_port("documents_service")
         self._pool = container.get_port("documents_pool_api")
         self._wf = container.get_port("documents_workflow_api")
+        self._signature_api = container.get_port("signature_api") if container.has_port("signature_api") else None
+        self._audit_logger = container.get_port("audit_logger") if container.has_port("audit_logger") else None
         self._artifacts_root = self._resolve_artifacts_root()
         self._presenter = DocumentsWorkflowPresenter()
         self._filter_presenter = DocumentsWorkflowFilterPresenter()
@@ -246,9 +250,6 @@ class DocumentsWorkflowWidget(QWidget):
         self._scope_filter.addItem("Alle", "all")
         self._scope_filter.addItem("Meine Dokumente", "mine")
         self._scope_filter.addItem("Meine Aufgaben", "tasks")
-        self._density = QComboBox()
-        self._density.addItem("Kompakt", "compact")
-        self._density.addItem("Komfortabel", "comfortable")
         self._model = _WorkflowTableModel()
         self._table = QTableView()
         self._table.setModel(self._model)
@@ -280,12 +281,11 @@ class DocumentsWorkflowWidget(QWidget):
         self._reviewers = QLineEdit()
         self._approvers = QLineEdit()
         self._next_version = QLineEdit("2")
-        self._sign_form = SignatureRequestForm()
         self._extend_signature = QCheckBox("Signatur fuer Jahresverlaengerung liegt vor")
         self._extend_signature.setChecked(False)
 
         self._tab_overview = self._new_readonly_table(["Feld", "Wert"])
-        self._tab_workflow = self._new_readonly_table(["Aspekt", "Wert"])
+        self._tab_roles = self._new_readonly_table(["Aspekt", "Wert"])
         self._tab_comments = QPlainTextEdit()
         self._tab_comments.setReadOnly(True)
         self._tab_comments.setPlainText("Kommentare werden vorbereitet. Datenanbindung folgt ueber vorhandene Ports.")
@@ -296,94 +296,122 @@ class DocumentsWorkflowWidget(QWidget):
         self._inline_notice = QLabel("")
         self._inline_notice.setWordWrap(True)
 
-        self._actions = self._build_action_bar()
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
-        left_layout.addWidget(self._actions["widget"])
-        chips = QHBoxLayout()
-        self._chip_my_tasks = QToolButton()
-        self._chip_my_tasks.setText("Meine Aufgaben")
-        self._chip_my_tasks.clicked.connect(lambda: self._apply_quick_filter("tasks"))
-        self._chip_review = QToolButton()
-        self._chip_review.setText("In Prüfung")
-        self._chip_review.clicked.connect(lambda: self._apply_quick_filter("review"))
-        self._chip_approval = QToolButton()
-        self._chip_approval.setText("In Freigabe")
-        self._chip_approval.clicked.connect(lambda: self._apply_quick_filter("approval"))
-        self._chip_all = QToolButton()
-        self._chip_all.setText("Alle")
-        self._chip_all.clicked.connect(lambda: self._apply_quick_filter("all"))
-        for chip in (self._chip_my_tasks, self._chip_review, self._chip_approval, self._chip_all):
-            chips.addWidget(chip)
-        chips.addStretch(1)
-        left_layout.addLayout(chips)
-        filters = QFormLayout()
-        filters.addRow("Status", self._status_filter)
-        filters.addRow("Scope", self._scope_filter)
-        filters.addRow("Dichte", self._density)
-        left_layout.addLayout(filters)
-        left_layout.addWidget(self._inline_notice)
-        left_layout.addWidget(self._table, stretch=1)
-        left_layout.addWidget(QLabel("Ergebnis / Fehler"))
-        left_layout.addWidget(self._out, stretch=1)
+        self._metadata_inputs = [
+            self._title,
+            self._description,
+            self._doc_type,
+            self._control_class,
+            self._profile,
+            self._department,
+            self._site,
+            self._regulatory_scope,
+            self._valid_until,
+            self._next_review,
+            self._custom_fields,
+        ]
+        self._role_inputs = [self._editors, self._reviewers, self._approvers]
+        self._metadata_buttons: list[QPushButton] = []
+        self._roles_buttons: list[QPushButton] = []
+
+        self._top_actions = self._build_top_filter_bar()
+        self._workflow_actions = self._build_workflow_action_bar()
+        center = QWidget()
+        center_layout = QVBoxLayout(center)
+        center_layout.addLayout(self._top_actions["layout"])
+        filters = QHBoxLayout()
+        filters.addWidget(QLabel("Status"))
+        filters.addWidget(self._status_filter)
+        filters.addWidget(QLabel("Scope"))
+        filters.addWidget(self._scope_filter)
+        filters.addStretch(1)
+        center_layout.addLayout(filters)
+        center_layout.addWidget(self._inline_notice)
+        center_layout.addWidget(self._table, stretch=1)
+        center_layout.addWidget(QLabel("Ergebnis / Fehler"))
+        center_layout.addWidget(self._out, stretch=1)
+        center_layout.addLayout(self._workflow_actions["layout"])
 
         self._details = self._build_detail_drawer()
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(left)
-        splitter.addWidget(self._details)
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 3)
-        self._details.setVisible(False)
+        self._details_toggle = self._details.toggle_button()
+        self._details_toggle.setText("Details")
+        self._details_toggle.setMinimumWidth(36)
+        self._details_toggle.setMaximumWidth(44)
+        self._details_toggle.setStyleSheet("background-color: #666666; color: white; font-weight: bold; padding: 5px;")
+        self._details_toggle.setToolTip("Details ein-/ausblenden")
+
+        content_row = QHBoxLayout()
+        content_row.addWidget(center, stretch=4)
+        content_row.addWidget(self._details_toggle)
+        content_row.addWidget(self._details, stretch=3)
+        self._set_details_open(False)
 
         layout = QVBoxLayout(self)
         intro = QLabel(
-            "Dokumentenlenkung als arbeitsorientierter Bereich: Aktionsleiste, Tabelle und ausklappbare Detailansicht."
+            "Dokumentenlenkung mit dreiteiligem Aufbau: Filterbereich oben, Dokumentenanzeige in der Mitte, Workflowsteuerung unten."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
-        layout.addWidget(splitter, stretch=1)
+        layout.addLayout(content_row, stretch=1)
 
         self._status_filter.currentIndexChanged.connect(lambda _i: self._reload_table())
         self._scope_filter.currentIndexChanged.connect(lambda _i: self._reload_table())
-        self._density.currentIndexChanged.connect(lambda _i: self._apply_table_density())
         self._scope_filter.setCurrentIndex(self._scope_filter.findData("tasks"))
         self._apply_table_density()
         self._reload_table()
+        self._apply_editor_permissions()
+        self._update_action_visibility()
 
-    def _build_action_bar(self) -> dict[str, object]:
-        bar = ActionBar()
+    def _build_top_filter_bar(self) -> dict[str, object]:
+        row = QHBoxLayout()
         buttons: dict[str, QPushButton] = {}
         for key, label, handler in [
-            ("new", "Neu / Importieren", self._new_import),
             ("refresh", "Aktualisieren", self._reload_table),
-            ("filter", "Schnellfilter anwenden", self._reload_table),
             ("filter_advanced", "Erweiterter Filter", self._open_advanced_filter),
-            ("edit", "Bearbeiten", self._edit_docx),
+            ("filter", "Filter anwenden", self._reload_table),
+            ("profile_manager", "Workflowprofil-Manager", self._open_workflow_profile_manager),
+        ]:
+            btn = QPushButton(label)
+            btn.clicked.connect(handler)
+            buttons[key] = btn
+            row.addWidget(btn)
+        row.addStretch(1)
+        return {"layout": row, "buttons": buttons}
+
+    def _build_workflow_action_bar(self) -> dict[str, object]:
+        row = QHBoxLayout()
+        buttons: dict[str, QPushButton] = {}
+        for key, label, handler in [
+            ("new", "Neu / Import", self._new_import),
             ("start", "Workflow starten", self._start_workflow),
-            ("complete", "Phase abschliessen", self._complete_editing),
             ("abort", "Workflow abbrechen", self._abort_workflow),
+            ("edit", "Oeffnen / Bearbeiten", self._edit_docx),
+            ("complete", "Bearbeitung annehmen", self._complete_editing),
             ("review_accept", "Pruefung annehmen", self._review_accept),
             ("review_reject", "Pruefung ablehnen", self._review_reject),
             ("approval_accept", "Freigabe annehmen", self._approval_accept),
             ("approval_reject", "Freigabe ablehnen", self._approval_reject),
-            ("archive", "Archivieren", self._archive_approved),
-            ("details", "Details", self._toggle_details),
         ]:
-            btn = bar.add_action(key, label, handler)
+            btn = QPushButton(label)
+            btn.clicked.connect(handler)
             buttons[key] = btn
-        bar.finish()
-        return {"widget": bar, "buttons": buttons}
+            row.addWidget(btn)
+        buttons["new"].setStyleSheet("background-color: #9e9e9e; color: #111111;")
+        buttons["start"].setStyleSheet("background-color: #b7f0b1; color: #111111;")
+        buttons["abort"].setStyleSheet("background-color: #ffb3b3; color: #111111;")
+        row.addStretch(1)
+        return {"layout": row, "buttons": buttons}
 
-    def _build_detail_drawer(self) -> QWidget:
+    def _build_detail_drawer(self) -> DrawerPanel:
         panel = DrawerPanel("Details")
         content = QWidget()
         layout = QVBoxLayout(content)
         self._detail_tabs = QTabWidget()
         self._detail_tabs.addTab(self._tab_overview, "Ueberblick")
         self._detail_tabs.addTab(self._build_metadata_tab(), "Metadaten")
-        self._detail_tabs.addTab(self._build_workflow_tab(), "Workflow")
+        self._detail_tabs.addTab(self._build_roles_tab(), "Rollen")
         self._detail_tabs.addTab(self._tab_comments, "Kommentare")
         self._history_tab_index = self._detail_tabs.addTab(self._tab_history, "Verlauf")
+        self._detail_tabs.addTab(self._build_extension_tab(), "Verlaengerung")
         layout.addWidget(self._history_notice)
         layout.addWidget(self._detail_tabs)
         panel.set_content_widget(content)
@@ -412,28 +440,40 @@ class DocumentsWorkflowWidget(QWidget):
         btn_meta.clicked.connect(self._update_metadata)
         btn_header = QPushButton("Header speichern")
         btn_header.clicked.connect(self._update_header)
+        self._metadata_buttons.extend([btn_meta, btn_header])
         row.addWidget(btn_meta)
         row.addWidget(btn_header)
         row.addStretch(1)
         layout.addLayout(row)
         return tab
 
-    def _build_workflow_tab(self) -> QWidget:
+    def _build_roles_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout(tab)
         assignments = QFormLayout()
         assignments.addRow("Editoren CSV", self._editors)
         assignments.addRow("Pruefer CSV", self._reviewers)
         assignments.addRow("Freigeber CSV", self._approvers)
-        assignments.addRow("Naechste Version", self._next_version)
-        assignments.addRow("", self._extend_signature)
         layout.addLayout(assignments)
-        layout.addWidget(QLabel("Optionaler Signaturdialog fuer Phasenuebergaenge"))
-        layout.addWidget(self._sign_form)
+        row = QHBoxLayout()
+        btn_roles = QPushButton("Rollen speichern")
+        btn_roles.clicked.connect(self._assign_roles)
+        self._roles_buttons.append(btn_roles)
+        row.addWidget(btn_roles)
+        row.addStretch(1)
+        layout.addLayout(row)
+        layout.addWidget(self._tab_roles, stretch=1)
+        return tab
+
+    def _build_extension_tab(self) -> QWidget:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        form = QFormLayout()
+        form.addRow("Naechste Version", self._next_version)
+        layout.addLayout(form)
         row = QHBoxLayout()
         for label, handler in [
-            ("Rollen speichern", self._assign_roles),
-            ("Jahresgueltigkeit verlaengern", self._extend_validity),
+            ("Verlaengern (mit Signatur)", self._extend_validity),
             ("Neue Version nach Archiv", self._new_version_after_archive),
         ]:
             b = QPushButton(label)
@@ -441,8 +481,18 @@ class DocumentsWorkflowWidget(QWidget):
             row.addWidget(b)
         row.addStretch(1)
         layout.addLayout(row)
-        layout.addWidget(self._tab_workflow, stretch=1)
+        layout.addWidget(QLabel("Verlaengerung und Folgeschritte fuer archivierte Versionen. Gueltigkeitsverlängerung erfordert Signatur und erhöht das Review-Datum um 1 Jahr."))
         return tab
+
+    @staticmethod
+    def _format_dt(dt: object) -> str:
+        """Format a datetime to German locale string, returns '-' for None."""
+        if dt is None:
+            return "-"
+        try:
+            return dt.strftime("%d.%m.%Y %H:%M")  # type: ignore[union-attr]
+        except Exception:
+            return str(dt)
 
     def _new_readonly_table(self, headers: list[str]) -> QTableWidget:
         table = QTableWidget(0, len(headers))
@@ -459,6 +509,33 @@ class DocumentsWorkflowWidget(QWidget):
         self._out.appendPlainText(f"{title}: {payload}\n")
         self._inline_notice.setText(f"Info: {title}")
 
+    def _audit(self, *, action: str, actor: str, target: str, result: str, reason: str = "") -> None:
+        emit = getattr(self._audit_logger, "emit", None) if self._audit_logger is not None else None
+        if callable(emit):
+            emit(action=action, actor=actor, target=target, result=result, reason=reason)
+
+    def _set_details_open(self, open_state: bool) -> None:
+        self._details.set_open(open_state)
+
+    def _is_qmb(self) -> bool:
+        user = self._um.get_current_user()
+        return bool(user and role_to_system_role(user.role) == SystemRole.QMB)
+
+    def _apply_editor_permissions(self) -> None:
+        can_edit = self._is_qmb()
+        self._doc_id.setReadOnly(True)
+        self._version.setReadOnly(True)
+        for widget in self._metadata_inputs:
+            if hasattr(widget, "setReadOnly"):
+                widget.setReadOnly(not can_edit)
+            else:
+                widget.setEnabled(can_edit)
+        for widget in self._role_inputs:
+            widget.setReadOnly(not can_edit)
+        for button in self._metadata_buttons + self._roles_buttons:
+            button.setVisible(can_edit)
+            button.setEnabled(can_edit)
+
     def _show_error(self, exc: Exception, *, critical: bool = False) -> None:
         if critical:
             QMessageBox.warning(self, "Dokumentenlenkung", str(exc))
@@ -466,12 +543,65 @@ class DocumentsWorkflowWidget(QWidget):
         self._append("ERROR", {"message": str(exc)})
 
     def _apply_table_density(self) -> None:
-        mode = self._density.currentData()
-        if mode == "compact":
-            self._table.verticalHeader().setDefaultSectionSize(24)
-        else:
-            self._table.verticalHeader().setDefaultSectionSize(34)
-        self._inline_notice.setText(f"Tabellendichte aktiv: {'Kompakt' if mode == 'compact' else 'Komfortabel'}")
+        self._table.verticalHeader().setDefaultSectionSize(24)
+        self._inline_notice.setText("Tabellendichte aktiv: Kompakt")
+
+    def _is_profile_manager_allowed(self) -> bool:
+        user = self._um.get_current_user()
+        if user is None:
+            return False
+        role = role_to_system_role(user.role)
+        if role in (SystemRole.ADMIN, SystemRole.QMB):
+            return True
+        if self._current_state is None:
+            return False
+        return str(self._current_state.owner_user_id or "") == str(user.user_id)
+
+    def _profiles_file_path(self) -> Path:
+        if not self._container.has_port("settings_service"):
+            return self._app_home / "modules" / "documents" / "workflow_profiles.json"
+        cfg = self._container.get_port("settings_service").get_module_settings("documents")
+        raw = str(cfg.get("profiles_file", "modules/documents/workflow_profiles.json")).strip()
+        path = Path(raw)
+        return path if path.is_absolute() else self._app_home / path
+
+    def _open_workflow_profile_manager(self) -> None:
+        try:
+            if not self._is_profile_manager_allowed():
+                raise RuntimeError("Workflowprofil-Manager ist nur fuer Admin, QMB oder Dokumenteneigner verfuegbar")
+            dialog = WorkflowProfileWizardDialog(self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            payload = dialog.payload()
+            if not payload.profile_id:
+                raise RuntimeError("Profil-ID ist erforderlich")
+            file_path = self._profiles_file_path()
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {"profiles": []}
+            if file_path.exists():
+                data = json.loads(file_path.read_text(encoding="utf-8"))
+            profiles = list(data.get("profiles", []))
+            profiles = [p for p in profiles if str(p.get("profile_id", "")) != payload.profile_id]
+            profiles.append(payload.as_json_dict())
+            data["profiles"] = profiles
+            file_path.write_text(json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8")
+            self._append("WORKFLOWPROFIL_GESPEICHERT", {"profile_id": payload.profile_id, "path": str(file_path)})
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc, critical=True)
+
+    def _available_profiles_for_control_class(self, control_class: ControlClass) -> list[str]:
+        try:
+            file_path = self._profiles_file_path()
+            payload = json.loads(file_path.read_text(encoding="utf-8")) if file_path.exists() else {"profiles": []}
+            profiles = []
+            for item in payload.get("profiles", []):
+                if str(item.get("control_class", "")).strip() == control_class.value:
+                    profile_id = str(item.get("profile_id", "")).strip()
+                    if profile_id:
+                        profiles.append(profile_id)
+            return sorted(set(profiles))
+        except Exception:
+            return []
 
     def _apply_quick_filter(self, mode: str) -> None:
         preset = self._filter_presenter.preset(mode)
@@ -546,6 +676,7 @@ class DocumentsWorkflowWidget(QWidget):
                 "TABELLE_AKTUALISIERT",
                 {"rows": len(rows), "scope": scope, "status_filter": str(status_filter), "advanced": self._advanced_filters},
             )
+            self._update_action_visibility()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -553,6 +684,8 @@ class DocumentsWorkflowWidget(QWidget):
         selected = self._table.selectionModel().selectedRows()
         if not selected:
             self._current_state = None
+            self._set_details_open(False)
+            self._detail_tabs.setCurrentIndex(0)
             self._update_action_visibility()
             return
         self._current_state = self._model._rows[selected[0].row()]
@@ -562,28 +695,28 @@ class DocumentsWorkflowWidget(QWidget):
         self._update_action_visibility()
 
     def _update_action_visibility(self) -> None:
-        buttons = self._actions["buttons"]
-        always = {"new", "refresh", "filter", "filter_advanced"}
-        for key, button in buttons.items():
-            button.setVisible(key in always)
-            button.setEnabled(key in always)
-        if self._current_state is None:
-            return
-        status = self._current_state.status
-        visible_for = self._presenter.visible_actions(status)
-        enable_for = visible_for
-        for key in visible_for:
-            buttons[key].setVisible(True)
-        for key in enable_for:
-            buttons[key].setEnabled(True)
-        for key in visible_for:
-            if not buttons[key].isEnabled():
-                buttons[key].setToolTip("Aktion im aktuellen Kontext nicht zulässig.")
+        workflow_buttons = self._workflow_actions["buttons"]
+        user = self._um.get_current_user()
+        user_id = str(user.user_id) if user is not None else None
+        user_role = role_to_system_role(user.role) if user is not None else None
+        visible_for = self._presenter.visible_actions_for_context(self._current_state, user_id=user_id, user_role=user_role)
+        for key, button in workflow_buttons.items():
+            allowed = key in visible_for
+            button.setVisible(allowed)
+            button.setEnabled(allowed)
+            if not allowed:
+                button.setToolTip("")
+
+        top_buttons = self._top_actions["buttons"]
+        top_buttons["profile_manager"].setVisible(self._is_profile_manager_allowed())
+        top_buttons["profile_manager"].setEnabled(self._is_profile_manager_allowed())
+
+        self._apply_editor_permissions()
 
     def _open_details_from_table(self) -> None:
         if self._current_state is None:
             return
-        self._details.setVisible(True)
+        self._set_details_open(True)
         self._inline_notice.setText("Details geöffnet.")
 
     def _run_default_table_action(self) -> None:
@@ -603,9 +736,6 @@ class DocumentsWorkflowWidget(QWidget):
                 return
         self._open_details_from_table()
         self._inline_notice.setText("Keine lesbare Datei gefunden. Details wurden geöffnet.")
-
-    def _toggle_details(self) -> None:
-        self._details.setVisible(not self._details.isVisible())
 
     def _refresh_details(self) -> None:
         if self._current_state is None:
@@ -630,16 +760,62 @@ class DocumentsWorkflowWidget(QWidget):
             ],
         )
         self._fill_two_col_table(
-            self._tab_workflow,
+            self._tab_roles,
             [
                 ("Editoren", ", ".join(sorted(state.assignments.editors)) or "-"),
                 ("Pruefer", ", ".join(sorted(state.assignments.reviewers)) or "-"),
                 ("Freigeber", ", ".join(sorted(state.assignments.approvers)) or "-"),
-                ("Naechster Schritt", "Aktionen sind statusabhaengig in der Aktionsleiste freigeschaltet."),
+                ("Naechster Schritt", "Workflowsteuerung unten blendet Aktionen status- und rollenabhaengig ein."),
             ],
         )
-        self._fill_history_table(
-            [
+        # Baue Verlauf aus echten Zustandsänderungen
+        history_rows: list[tuple[str, str, str, str, str]] = []
+        if state.released_at:
+            history_rows.append((
+                str(state.released_at.strftime("%Y-%m-%d %H:%M:%S") if state.released_at else "-"),
+                "Freigegeben",
+                str(state.last_actor_user_id or "-"),
+                "APPROVED",
+                ""
+            ))
+        if state.approval_completed_at:
+            history_rows.append((
+                str(state.approval_completed_at.strftime("%Y-%m-%d %H:%M:%S")),
+                "Freigabe abgeschlossen",
+                str(state.approval_completed_by or "-"),
+                "IN_APPROVAL->APPROVED",
+                ""
+            ))
+        if state.review_completed_at:
+            history_rows.append((
+                str(state.review_completed_at.strftime("%Y-%m-%d %H:%M:%S")),
+                "Pruefung abgeschlossen",
+                str(state.review_completed_by or "-"),
+                "IN_PROGRESS->IN_REVIEW",
+                ""
+            ))
+        if state.last_event_at and state.last_event_id:
+            history_rows.append((
+                str(state.last_event_at.strftime("%Y-%m-%d %H:%M:%S")),
+                "Letzte Aenderung",
+                str(state.last_actor_user_id or "-"),
+                str(state.last_event_id or "-"),
+                f"Extension Count: {state.extension_count}" if state.extension_count > 0 else ""
+            ))
+        if state.archived_at:
+            history_rows.append((
+                str(state.archived_at.strftime("%Y-%m-%d %H:%M:%S")),
+                "Archiviert",
+                str(state.archived_by or "-"),
+                "APPROVED->ARCHIVED",
+                ""
+            ))
+        
+        if history_rows:
+            self._fill_history_table(history_rows)
+        else:
+            # Fallback wenn keine Events vorhanden sind
+            self._fill_history_table([
                 (
                     str(state.last_event_at or "-"),
                     "Letztes Event",
@@ -657,8 +833,7 @@ class DocumentsWorkflowWidget(QWidget):
                 ),
                 (str(state.released_at or "-"), "Freigegeben", str(state.last_actor_user_id or "-"), "", ""),
                 (str(state.archived_at or "-"), "Archiviert", str(state.archived_by or "-"), "", ""),
-            ],
-        )
+            ])
         state_key = f"{state.document_id}:{state.version}"
         old_event = self._seen_event_ids.get(state_key)
         new_event = state.last_event_id
@@ -672,6 +847,9 @@ class DocumentsWorkflowWidget(QWidget):
         self._title.setText(state.title or "")
         self._description.setText(state.description or "")
         self._profile.setText(state.workflow_profile_id or "")
+        self._editors.setText(", ".join(sorted(state.assignments.editors)))
+        self._reviewers.setText(", ".join(sorted(state.assignments.reviewers)))
+        self._approvers.setText(", ".join(sorted(state.assignments.approvers)))
         if header is not None:
             self._department.setText(header.department or "")
             self._site.setText(header.site or "")
@@ -728,15 +906,283 @@ class DocumentsWorkflowWidget(QWidget):
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc, critical=True)
 
-    def _build_sign_request_or_none(self):
-        if not self._sign_form.has_input():
+    def _build_sign_request_or_none(self, transition: str) -> SignRequest | None:
+        state = self._state_from_selection()
+        profile = state.workflow_profile
+        if profile is None or transition not in set(profile.signature_required_transitions):
             return None
-        user, _ = self._current_user_role()
-        return self._sign_form.build_request(
-            signer_user=user.username,
-            reason="pyqt_documents_workflow",
+        user = self._um.get_current_user()
+        if user is None:
+            raise RuntimeError("Anmeldung erforderlich")
+
+        input_path = self._find_pdf_for_signature()
+        if input_path is None:
+            raise RuntimeError("Fuer den signaturpflichtigen Uebergang wurde keine PDF-Datei gefunden")
+
+        signature_png = self._export_active_signature_png(str(user.user_id))
+        signature_pixmap = QPixmap(str(signature_png))
+        if signature_pixmap.isNull():
+            raise RuntimeError("Aktive Signatur konnte nicht als Vorschau geladen werden")
+
+        default_placement = SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=140.0)
+        default_layout = self._resolved_runtime_layout(
+            LabelLayoutInput(show_signature=True, show_name=True, show_date=True),
+            user,
+        )
+        self._audit(
+            action="documents.workflow.signature.placement.opened",
+            actor=str(user.user_id),
+            target=f"{state.document_id}:{state.version}",
+            result="ok",
+            reason=transition,
+        )
+        place_dialog = SignaturePlacementDialog(
+            input_pdf=input_path,
+            placement=default_placement,
+            layout=default_layout,
+            signature_pixmap=signature_pixmap,
+            template_save_callback=self._save_signature_template_from_workflow,
+            parent=self,
+        )
+        place_dialog.showFullScreen()
+        if place_dialog.exec() != QDialog.DialogCode.Accepted:
+            self._audit(
+                action="documents.workflow.signature.placement.cancelled",
+                actor=str(user.user_id),
+                target=f"{state.document_id}:{state.version}",
+                result="cancelled",
+                reason=transition,
+            )
+            return None
+        placement = place_dialog.placement()
+        layout_result = place_dialog.layout_result()
+
+        pwd_dialog = QDialog(self)
+        pwd_dialog.setWindowTitle("Signatur fuer Uebergang erforderlich")
+        password = QLineEdit()
+        password.setEchoMode(QLineEdit.EchoMode.Password)
+        form = QFormLayout()
+        form.addRow("Signatur-Passwort", password)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(pwd_dialog.accept)
+        buttons.rejected.connect(pwd_dialog.reject)
+        layout = QVBoxLayout(pwd_dialog)
+        layout.addWidget(
+            QLabel(
+                "Dieser Workflowschritt erfordert eine Signatur. Es wird automatisch eine visuelle Markierung mit Namens-/Datumslabel gesetzt."
+            )
+        )
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+        if pwd_dialog.exec() != QDialog.DialogCode.Accepted:
+            self._audit(
+                action="documents.workflow.signature.password.cancelled",
+                actor=str(user.user_id),
+                target=f"{state.document_id}:{state.version}",
+                result="cancelled",
+                reason=transition,
+            )
+            return None
+
+        safe_title = self._safe_document_title_token(state.title)
+        output_name = f"{state.document_id}_{safe_title}_signed.pdf"
+        output_path = Path(tempfile.gettempdir()) / output_name
+        return SignRequest(
+            input_pdf=input_path,
+            output_pdf=output_path,
+            signature_png=signature_png,
+            placement=placement,
+            layout=layout_result,
+            overwrite_output=True,
+            dry_run=False,
+            sign_mode="visual",
+            signer_user=str(user.user_id),
+            password=password.text().strip() or None,
+            reason="documents_workflow_transition",
         )
 
+    def _save_signature_template_from_workflow(
+        self,
+        name: str,
+        placement: SignaturePlacementInput,
+        layout: LabelLayoutInput,
+    ) -> None:
+        user = self._um.get_current_user()
+        if user is None:
+            raise RuntimeError("Anmeldung erforderlich")
+        create = getattr(self._signature_api, "create_user_signature_template", None)
+        get_active = getattr(self._signature_api, "get_active_signature_asset_id", None)
+        if not callable(create) or not callable(get_active):
+            raise RuntimeError("Signatur-API unterstuetzt Vorlagen nicht")
+        template_name = name.strip()
+        if not template_name:
+            raise RuntimeError("Bitte einen Vorlagennamen eingeben")
+        signature_asset_id = get_active(user.user_id)
+        if layout.show_signature and not signature_asset_id:
+            raise RuntimeError("Keine aktive Signatur vorhanden. Bitte zuerst eine Signatur aktivieren.")
+        create(
+            owner_user_id=user.user_id,
+            name=template_name,
+            placement=placement,
+            layout=replace(layout, name_text=None, date_text=None),
+            signature_asset_id=signature_asset_id,
+            scope="user",
+        )
+        self._audit(
+            action="documents.workflow.signature.template.saved",
+            actor=str(user.user_id),
+            target=f"{self._state_from_selection().document_id}:{self._state_from_selection().version}",
+            result="ok",
+            reason=template_name,
+        )
+
+    def _display_name(self, user) -> str:
+        first = (getattr(user, "first_name", None) or "").strip()
+        last = (getattr(user, "last_name", None) or "").strip()
+        if first and last:
+            return f"{first}, {last}"
+        if first:
+            return first
+        if last:
+            return last
+        return (getattr(user, "display_name", None) or getattr(user, "username", None) or str(user.user_id)).strip()
+
+    def _resolved_runtime_layout(self, layout: LabelLayoutInput, user) -> LabelLayoutInput:
+        display_name = self._display_name(user)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        seeded = replace(
+            layout,
+            name_text=display_name if layout.show_name else None,
+            date_text=timestamp if layout.show_date else None,
+        )
+        resolver = getattr(self._signature_api, "resolve_runtime_layout", None)
+        if callable(resolver):
+            return resolver(seeded, signer_user=display_name)
+        return seeded
+
+    def _export_active_signature_png(self, user_id: str) -> Path:
+        get_active = getattr(self._signature_api, "get_active_signature_asset_id", None)
+        export = getattr(self._signature_api, "export_active_signature", None)
+        if not callable(get_active) or not callable(export):
+            raise RuntimeError("Signatur-API unterstuetzt aktive Signaturvorschau nicht")
+        active_asset_id = get_active(user_id)
+        if not active_asset_id:
+            raise RuntimeError("Keine aktive Signatur vorhanden. Bitte zuerst im Signaturmodul hinterlegen.")
+        target = Path(tempfile.gettempdir()) / f"qmtool-signature-{uuid4().hex}.png"
+        exported = export(user_id, target)
+        if not exported.exists() or exported.stat().st_size == 0:
+            raise RuntimeError("Aktive Signatur konnte nicht exportiert werden")
+        return exported
+
+    @staticmethod
+    def _safe_document_title_token(title: str | None) -> str:
+        token = (title or "").strip().replace(" ", "_")
+        token = (
+            token.replace("ä", "ae")
+            .replace("ö", "oe")
+            .replace("ü", "ue")
+            .replace("Ä", "Ae")
+            .replace("Ö", "Oe")
+            .replace("Ü", "Ue")
+            .replace("ß", "ss")
+        )
+        safe = "".join(ch for ch in token if ch.isalnum() or ch in ("_", "-")).strip("_-")
+        return safe or "Dokument"
+
+    def _require_signature_call(self, sign_request: SignRequest) -> None:
+        sign = getattr(self._signature_api, "sign_with_fixed_position", None)
+        if not callable(sign):
+            raise RuntimeError("signature_api ist nicht verfuegbar oder unterstuetzt sign_with_fixed_position nicht")
+        sign(sign_request)
+
+    def _find_pdf_for_signature(self) -> Path | None:
+        state = self._state_from_selection()
+        artifacts = self._pool.list_artifacts(state.document_id, state.version)
+        priorities = [ArtifactType.SIGNED_PDF, ArtifactType.RELEASED_PDF, ArtifactType.SOURCE_PDF]
+        ordered_artifacts = sorted(artifacts, key=lambda artifact: 0 if getattr(artifact, "is_current", False) else 1)
+        for artifact_type in priorities:
+            for artifact in ordered_artifacts:
+                if artifact.artifact_type != artifact_type:
+                    continue
+                for path in self._resolve_openable_artifact_paths(artifact):
+                    if path.exists() and path.suffix.lower() == ".pdf":
+                        return path
+        
+        # Fallback: Versuche SOURCE_DOCX zu PDF zu konvertieren
+        conversion_errors: list[str] = []
+        for artifact in ordered_artifacts:
+            if artifact.artifact_type != ArtifactType.SOURCE_DOCX:
+                continue
+            for docx_path in self._resolve_openable_artifact_paths(artifact):
+                if docx_path.exists() and docx_path.suffix.lower() == ".docx":
+                    try:
+                        converted = self._convert_docx_to_temp_pdf(docx_path)
+                    except RuntimeError as exc:
+                        conversion_errors.append(str(exc))
+                        continue
+                    if converted is not None:
+                        return converted
+        if conversion_errors:
+            raise RuntimeError(conversion_errors[0])
+        return None
+
+    def _convert_docx_to_temp_pdf(self, docx_path: Path) -> Path | None:
+        """Convert DOCX to a temporary PDF without markup (tracked changes/comments)."""
+        if os.name != "nt":
+            raise RuntimeError("DOCX-zu-PDF Fallback wird nur unter Windows unterstuetzt")
+        safe_stem = self._safe_document_title_token(docx_path.stem)
+        output_name = f"{safe_stem}_{uuid4().hex[:8]}.pdf"
+        output_path = Path(tempfile.gettempdir()) / output_name
+        try:
+            import win32com.client  # type: ignore[import]
+
+            word = win32com.client.Dispatch("Word.Application")
+            word.Visible = False
+            word.DisplayAlerts = False
+            try:
+                doc = word.Documents.Open(str(docx_path.resolve()))
+                try:
+                    # Alle Überarbeitungen annehmen, damit kein Markup im PDF erscheint
+                    if doc.Revisions.Count > 0:
+                        doc.Revisions.AcceptAll()
+                    # wdFormatPDF=17, Item=0 (wdExportDocumentContent = kein Markup)
+                    doc.ExportAsFixedFormat(
+                        str(output_path.resolve()),
+                        17,     # wdFormatPDF
+                        False,  # OpenAfterExport
+                        0,      # OptimizeFor: wdExportOptimizeForPrint
+                        0,      # Range: wdExportAllDocument
+                        1,      # From
+                        1,      # To
+                        0,      # Item: wdExportDocumentContent (ohne Markup)
+                        True,   # IncludeDocProps
+                        True,   # KeepIRM
+                        0,      # CreateBookmarks: wdExportCreateNoBookmarks
+                        True,   # DocStructureTags
+                        True,   # BitmapMissingFonts
+                        False,  # UseISO19005_1
+                    )
+                finally:
+                    doc.Close(False)  # Ohne Speichern schließen
+            finally:
+                word.Quit()
+        except ImportError:
+            # Fallback: docx2pdf (kein Markup-Steuerung, aber besser als nichts)
+            try:
+                from docx2pdf import convert  # type: ignore[import]
+
+                convert(str(docx_path), str(output_path))
+            except ImportError:
+                raise RuntimeError(
+                    "Weder pywin32 noch docx2pdf verfuegbar. "
+                    "Bitte installieren: pip install pywin32 (empfohlen) oder pip install docx2pdf"
+                )
+        except Exception as exc:
+            raise RuntimeError(f"Fehler bei DOCX-zu-PDF Konvertierung: {exc}") from exc
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return output_path
+        raise RuntimeError(f"DOCX-zu-PDF Konvertierung fehlgeschlagen fuer {docx_path}")
+    
     def _edit_docx(self) -> None:
         try:
             if not self._open_artifact(ArtifactType.SOURCE_DOCX):
@@ -748,14 +1194,23 @@ class DocumentsWorkflowWidget(QWidget):
         try:
             user, role = self._current_user_role()
             state = self._state_from_selection()
-            wizard = WorkflowStartWizard(self._profile.text().strip() or state.workflow_profile_id, self)
+            users = self._um.list_users()
+            wizard = WorkflowStartWizard(
+                self._profile.text().strip() or state.workflow_profile_id,
+                profile_ids=self._available_profiles_for_control_class(state.control_class),
+                available_user_ids=[u.user_id for u in users],
+                current_editors=set(state.assignments.editors),
+                current_reviewers=set(state.assignments.reviewers),
+                current_approvers=set(state.assignments.approvers),
+                parent=self,
+            )
             if wizard.exec() != QDialog.DialogCode.Accepted:
                 return
             cfg = wizard.payload()
             profile = self._docs_service.get_profile(cfg.profile_id)
-            desired_editors = parse_csv_set(cfg.editors_csv) if cfg.editors_csv else set(state.assignments.editors)
-            desired_reviewers = parse_csv_set(cfg.reviewers_csv) if cfg.reviewers_csv else set(state.assignments.reviewers)
-            desired_approvers = parse_csv_set(cfg.approvers_csv) if cfg.approvers_csv else set(state.assignments.approvers)
+            desired_editors = cfg.editors if cfg.editors else set(state.assignments.editors)
+            desired_reviewers = cfg.reviewers if cfg.reviewers else set(state.assignments.reviewers)
+            desired_approvers = cfg.approvers if cfg.approvers else set(state.assignments.approvers)
             if (
                 desired_editors != set(state.assignments.editors)
                 or desired_reviewers != set(state.assignments.reviewers)
@@ -779,15 +1234,55 @@ class DocumentsWorkflowWidget(QWidget):
     def _complete_editing(self) -> None:
         try:
             user, role = self._current_user_role()
+            state = self._state_from_selection()
+            self._wf.ensure_source_pdf_for_signing(state, actor_user_id=user.user_id, actor_role=role)
+            self._audit(
+                action="documents.workflow.editing.prepare_pdf",
+                actor=str(user.user_id),
+                target=f"{state.document_id}:{state.version}",
+                result="ok",
+                reason="complete_editing",
+            )
+            sign_request = self._build_sign_request_or_none("IN_PROGRESS->IN_REVIEW")
+            if self._state_from_selection().workflow_profile and "IN_PROGRESS->IN_REVIEW" in set(
+                self._state_from_selection().workflow_profile.signature_required_transitions
+            ) and sign_request is None:
+                self._inline_notice.setText("Signaturvorgang abgebrochen.")
+                self._audit(
+                    action="documents.workflow.editing.complete",
+                    actor=str(user.user_id),
+                    target=f"{state.document_id}:{state.version}",
+                    result="cancelled",
+                    reason="signature_cancelled",
+                )
+                return
             payload = self._wf.complete_editing(
                 self._state_from_selection(),
-                sign_request=self._build_sign_request_or_none(),
+                sign_request=sign_request,
                 actor_user_id=user.user_id,
                 actor_role=role,
             )
             self._append("PHASE_ABGESCHLOSSEN", payload)
+            self._audit(
+                action="documents.workflow.editing.complete",
+                actor=str(user.user_id),
+                target=f"{state.document_id}:{state.version}",
+                result="ok",
+                reason="IN_PROGRESS->IN_REVIEW",
+            )
             self._reload_table()
         except Exception as exc:  # noqa: BLE001
+            try:
+                state = self._state_from_selection()
+                self._audit(
+                    action="documents.workflow.editing.complete",
+                    actor=str(getattr(user, "user_id", "system") if "user" in locals() else "system"),
+                    target=f"{state.document_id}:{state.version}",
+                    result="error",
+                    reason=str(exc),
+                )
+            except Exception:  # noqa: BLE001
+                pass
             self._show_error(exc)
 
     def _abort_workflow(self) -> None:
@@ -840,10 +1335,16 @@ class DocumentsWorkflowWidget(QWidget):
             if confirm != QMessageBox.StandardButton.Yes:
                 return
             user, role = self._current_user_role()
+            sign_request = self._build_sign_request_or_none("IN_APPROVAL->APPROVED")
+            if self._state_from_selection().workflow_profile and "IN_APPROVAL->APPROVED" in set(
+                self._state_from_selection().workflow_profile.signature_required_transitions
+            ) and sign_request is None:
+                self._inline_notice.setText("Signaturvorgang abgebrochen.")
+                return
             payload = self._wf.accept_approval(
                 self._state_from_selection(),
                 user.user_id,
-                sign_request=self._build_sign_request_or_none(),
+                sign_request=sign_request,
                 actor_role=role,
             )
             self._append("FREIGABE_ANGENOMMEN", payload)
@@ -859,15 +1360,6 @@ class DocumentsWorkflowWidget(QWidget):
             user, role = self._current_user_role()
             payload = self._wf.reject_approval(self._state_from_selection(), user.user_id, dlg.reason(), actor_role=role)
             self._append("FREIGABE_ABGELEHNT", payload)
-            self._reload_table()
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _archive_approved(self) -> None:
-        try:
-            user, role = self._current_user_role()
-            payload = self._wf.archive_approved(self._state_from_selection(), role, actor_user_id=user.user_id)
-            self._append("ARCHIVIERT", payload)
             self._reload_table()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
@@ -931,11 +1423,92 @@ class DocumentsWorkflowWidget(QWidget):
 
     def _extend_validity(self) -> None:
         try:
-            payload = self._wf.extend_annual_validity(
-                self._state_from_selection(),
-                signature_present=self._extend_signature.isChecked(),
+            state = self._state_from_selection()
+            user, _role = self._current_user_role()
+
+            # Pruefe ob Verlaengerung moeglich ist.
+            if state.status != DocumentStatus.APPROVED:
+                raise RuntimeError("Verlaengerung ist nur im Status APPROVED moeglich")
+            if state.extension_count >= 3:
+                raise RuntimeError("Maximale Anzahl von Verlaengerungen (3) erreicht")
+
+            # Fordere Signatur an fuer die Verlaengerung.
+            input_path = self._find_pdf_for_signature()
+            if input_path is None:
+                raise RuntimeError("Keine PDF-Datei fuer Signatur gefunden. Bitte pruefen Sie die Artefakte.")
+
+            signature_png = self._export_active_signature_png(str(user.user_id))
+            signature_pixmap = QPixmap(str(signature_png))
+            if signature_pixmap.isNull():
+                raise RuntimeError("Aktive Signatur konnte nicht als Vorschau geladen werden")
+            placement_dialog = SignaturePlacementDialog(
+                input_pdf=input_path,
+                placement=SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=140.0),
+                layout=self._resolved_runtime_layout(
+                    LabelLayoutInput(show_signature=True, show_name=True, show_date=True),
+                    user,
+                ),
+                signature_pixmap=signature_pixmap,
+                parent=self,
             )
-            self._append("JAHRESVERLAENGERUNG", payload)
+            placement_dialog.showFullScreen()
+            if placement_dialog.exec() != QDialog.DialogCode.Accepted:
+                self._inline_notice.setText("Verlaengerungsvorgang abgebrochen.")
+                return
+            placement = placement_dialog.placement()
+            layout_result = placement_dialog.layout_result()
+
+            # Passwortdialog fuer die Signatur.
+            pwd_dialog = QDialog(self)
+            pwd_dialog.setWindowTitle("Signatur fuer Verlaengerung erforderlich")
+            password = QLineEdit()
+            password.setEchoMode(QLineEdit.EchoMode.Password)
+            form = QFormLayout()
+            form.addRow("Signatur-Passwort", password)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(pwd_dialog.accept)
+            buttons.rejected.connect(pwd_dialog.reject)
+            layout = QVBoxLayout(pwd_dialog)
+            layout.addWidget(QLabel("Diese Gueltigkeitsverlaengerung erfordert eine Signatur."))
+            layout.addLayout(form)
+            layout.addWidget(buttons)
+
+            if pwd_dialog.exec() != QDialog.DialogCode.Accepted:
+                self._inline_notice.setText("Verlaengerungsvorgang abgebrochen.")
+                return
+
+            # Erstelle SignRequest.
+            safe_title = self._safe_document_title_token(state.title)
+            output_name = f"{state.document_id}_{safe_title}_extended.pdf"
+            output_path = Path(tempfile.gettempdir()) / output_name
+
+            sign_request = SignRequest(
+                input_pdf=input_path,
+                output_pdf=output_path,
+                signature_png=signature_png,
+                placement=placement,
+                layout=layout_result,
+                overwrite_output=True,
+                dry_run=False,
+                sign_mode="visual",
+                signer_user=str(user.user_id),
+                password=password.text().strip() or None,
+                reason="documents_extension_validity",
+            )
+
+            # Signiere die PDF. Bei fehlender API wird explizit abgebrochen.
+            self._require_signature_call(sign_request)
+
+            # Fuehre Verlaengerung nur nach erfolgreicher Signatur aus.
+            payload, is_maxed = self._wf.extend_annual_validity(
+                state,
+                signature_present=True,
+            )
+            self._append("JAHRESVERLAENGERUNG", {
+                "new_extension_count": payload.extension_count,
+                "is_maxed": is_maxed,
+                "next_review_at": str(payload.next_review_at)
+            })
             self._reload_table()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
@@ -988,9 +1561,12 @@ class DocumentsWorkflowWidget(QWidget):
             if not value:
                 continue
             raw = Path(value)
-            candidates.append(raw if raw.is_absolute() else self._app_home / raw)
+            candidate = raw if raw.is_absolute() else self._app_home / raw
+            if self._is_allowed_artifact_path(candidate):
+                candidates.append(candidate)
         storage_path = self._artifacts_root / artifact.storage_key
-        candidates.append(storage_path)
+        if self._is_allowed_artifact_path(storage_path):
+            candidates.append(storage_path)
         unique: list[Path] = []
         seen: set[str] = set()
         for candidate in candidates:
@@ -1000,6 +1576,15 @@ class DocumentsWorkflowWidget(QWidget):
             seen.add(token)
             unique.append(candidate)
         return unique
+
+    def _is_allowed_artifact_path(self, candidate: Path) -> bool:
+        try:
+            resolved = candidate.resolve(strict=False)
+            app_home = self._app_home.resolve(strict=False)
+            artifacts_root = self._artifacts_root.resolve(strict=False)
+            return resolved.is_relative_to(app_home) or resolved.is_relative_to(artifacts_root)
+        except Exception:
+            return False
 
 
 def _build(container: RuntimeContainer) -> QWidget:

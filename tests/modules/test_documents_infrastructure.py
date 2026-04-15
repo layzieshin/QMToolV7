@@ -9,11 +9,24 @@ from modules.documents.profile_store import WorkflowProfileStoreJSON
 from modules.documents.service import DocumentsService
 from modules.documents.sqlite_repository import SQLiteDocumentsRepository
 from modules.documents.storage import FileSystemDocumentsStorage
+from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 
 
 class _FakeSignatureApi:
     def sign_with_fixed_position(self, request: object) -> object:
+        output_pdf = getattr(request, "output_pdf", None)
+        if isinstance(output_pdf, Path):
+            output_pdf.parent.mkdir(parents=True, exist_ok=True)
+            output_pdf.write_bytes(b"%PDF-1.4\n%fake-signed\n")
         return request
+
+
+class _FakeAuditLogger:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str, str, str]] = []
+
+    def emit(self, action: str, actor: str, target: str, result: str, reason: str = "") -> None:
+        self.calls.append((action, actor, target, result, reason))
 
 
 class DocumentsInfrastructureTest(unittest.TestCase):
@@ -83,6 +96,94 @@ class DocumentsInfrastructureTest(unittest.TestCase):
             docx_artifacts = [a for a in artifacts if a.artifact_type == ArtifactType.SOURCE_DOCX]
             self.assertEqual(len(docx_artifacts), 2)
             self.assertEqual(sum(1 for a in docx_artifacts if a.is_current), 1)
+
+    def test_complete_editing_generates_source_pdf_from_docx_and_marks_current(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="qmtool-docs-infra-"))
+        db_path = root / "documents.db"
+        schema_path = Path("modules/documents/schema.sql")
+        storage = FileSystemDocumentsStorage(root / "artifacts")
+        repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+        audit = _FakeAuditLogger()
+
+        def _fake_docx_to_pdf(source: Path, target: Path) -> None:
+            target.write_bytes(b"%PDF-1.4\n%fake\n")
+
+        service = DocumentsService(
+            repository=repo,
+            storage_port=storage,
+            signature_api=_FakeSignatureApi(),
+            audit_logger=audit,
+            docx_to_pdf_converter=_fake_docx_to_pdf,
+        )
+
+        source_docx = root / "workflow.docx"
+        source_docx.write_bytes(b"docx-content")
+        state = service.import_existing_docx(
+            "DOC-WF",
+            1,
+            source_docx,
+            actor_user_id="admin",
+            actor_role=SystemRole.ADMIN,
+        )
+        state = service.assign_workflow_roles(state, editors={"ed"}, reviewers={"rv"}, approvers={"ap"})
+        state = service.start_workflow(state, WorkflowProfile.long_release_path())
+        service.complete_editing(state, sign_request={"step": "edit_complete"})
+
+        artifacts = service.list_artifacts("DOC-WF", 1)
+        source_pdfs = [a for a in artifacts if a.artifact_type == ArtifactType.SOURCE_PDF]
+        self.assertGreaterEqual(len(source_pdfs), 1)
+        self.assertEqual(sum(1 for a in source_pdfs if a.is_current), 1)
+        self.assertTrue(any(call[0] == "documents.artifact.source_pdf.generated" for call in audit.calls))
+
+    def test_complete_editing_persists_signed_pdf_for_followup_phases(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="qmtool-docs-sign-"))
+        db_path = root / "documents.db"
+        schema_path = Path("modules/documents/schema.sql")
+        storage = FileSystemDocumentsStorage(root / "artifacts")
+        repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+
+        def _fake_docx_to_pdf(_source: Path, target: Path) -> None:
+            target.write_bytes(b"%PDF-1.4\n%source\n")
+
+        service = DocumentsService(
+            repository=repo,
+            storage_port=storage,
+            signature_api=_FakeSignatureApi(),
+            docx_to_pdf_converter=_fake_docx_to_pdf,
+        )
+
+        source_docx = root / "review.docx"
+        source_docx.write_bytes(b"docx-review")
+        state = service.import_existing_docx(
+            "DOC-SIGNED",
+            1,
+            source_docx,
+            actor_user_id="admin",
+            actor_role=SystemRole.ADMIN,
+        )
+        state = service.assign_workflow_roles(state, editors={"ed"}, reviewers={"rv"}, approvers={"ap"})
+        state = service.start_workflow(state, WorkflowProfile.long_release_path())
+        source_pdf = service.ensure_source_pdf_for_signing(state)
+        self.assertIsNotNone(source_pdf)
+        sign_request = SignRequest(
+            input_pdf=Path(source_pdf),
+            output_pdf=root / "signed-in-progress.pdf",
+            signature_png=None,
+            placement=SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=120.0),
+            layout=LabelLayoutInput(show_signature=False, show_name=True, show_date=True),
+            overwrite_output=True,
+            dry_run=False,
+            sign_mode="visual",
+            signer_user="ed",
+            password="secret",
+            reason="test-transition",
+        )
+        service.complete_editing(state, sign_request=sign_request)
+
+        artifacts = service.list_artifacts("DOC-SIGNED", 1)
+        signed_pdfs = [a for a in artifacts if a.artifact_type == ArtifactType.SIGNED_PDF]
+        self.assertGreaterEqual(len(signed_pdfs), 1)
+        self.assertEqual(sum(1 for a in signed_pdfs if a.is_current), 1)
 
 
 if __name__ == "__main__":

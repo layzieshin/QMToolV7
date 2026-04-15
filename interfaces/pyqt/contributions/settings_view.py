@@ -39,6 +39,7 @@ from interfaces.pyqt.contributions.users_view import UsersAdminWidget
 from interfaces.pyqt.widgets.access_guards import require_admin_or_qmb
 from interfaces.pyqt.widgets.signature_canvas_dialog import SignatureCanvasDialog
 from interfaces.pyqt.widgets.signature_placement_dialog import SignaturePlacementDialog, compute_label_local_position
+from interfaces.pyqt.widgets.workflow_profile_wizard import WorkflowProfileWizardDialog
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from qm_platform.runtime.container import RuntimeContainer
@@ -221,9 +222,12 @@ class _WorkflowProfilesWidget(QWidget):
         tools = QHBoxLayout()
         btn_reload = QPushButton("Profile laden")
         btn_reload.clicked.connect(self._reload)
+        btn_wizard = QPushButton("Profil-Assistent")
+        btn_wizard.clicked.connect(self._open_wizard)
         btn_save = QPushButton("Profile speichern")
         btn_save.clicked.connect(self._save)
         tools.addWidget(btn_reload)
+        tools.addWidget(btn_wizard)
         tools.addWidget(btn_save)
         tools.addStretch(1)
         layout.addLayout(tools)
@@ -233,7 +237,10 @@ class _WorkflowProfilesWidget(QWidget):
         self._reload()
 
     def _require_privileged(self) -> None:
-        require_admin_or_qmb(self._um)
+        user = self._um.get_current_user()
+        role = normalize_role(user.role) if user is not None else ""
+        if role != "ADMIN":
+            raise RuntimeError("Nur Admin darf Workflow-Profile bearbeiten")
 
     def _profiles_file(self) -> Path:
         cfg = self._svc.get_module_settings("documents")
@@ -269,6 +276,25 @@ class _WorkflowProfilesWidget(QWidget):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Workflow-Profile", str(exc))
             self._out.setPlainText(as_json_text({"error": str(exc)}))
+
+    def _open_wizard(self) -> None:
+        try:
+            self._require_privileged()
+            dialog = WorkflowProfileWizardDialog(self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            payload = dialog.payload()
+            if not payload.profile_id:
+                raise RuntimeError("Profil-ID ist erforderlich")
+            current = json.loads(self._editor.toPlainText().strip() or "{}")
+            profiles = list(current.get("profiles", []))
+            profiles = [p for p in profiles if str(p.get("profile_id", "")) != payload.profile_id]
+            profiles.append(payload.as_json_dict())
+            current["profiles"] = profiles
+            self._editor.setPlainText(json.dumps(current, indent=2, ensure_ascii=True))
+            self._out.setPlainText(as_json_text({"status": "wizard_ok", "profile_id": payload.profile_id}))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Workflow-Profile", str(exc))
 
 
 class _ModuleSettingsWidget(QWidget):
@@ -1132,8 +1158,8 @@ class SettingsAdminWidget(QWidget):
         if role in ("ADMIN", "QMB"):
             self._add_section("Benutzerverwaltung", UsersAdminWidget(self._container))
             self._add_section("Lizenzverwaltung", _LicenseManagementWidget(self._container))
-            self._add_section("Workflow-Profile", _WorkflowProfilesWidget(self._container))
         if role == "ADMIN":
+            self._add_section("Workflow-Profile", _WorkflowProfilesWidget(self._container))
             self._add_section("Modul-Einstellungen", _ModuleSettingsWidget(self._container))
             self._add_section("Geplante Optionen", _PlannedOptionsWidget())
 

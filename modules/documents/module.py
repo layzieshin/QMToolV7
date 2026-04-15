@@ -76,6 +76,7 @@ def register_documents_ports(container) -> None:
         signature_api=container.get_port("signature_api"),
         storage_port=storage_port,
         registry_projection_api=container.get_port("registry_projection_api"),
+        audit_logger=container.get_port("audit_logger"),
     )
     container.register_port("documents_service", service)
     container.register_port("documents_pool_api", DocumentsPoolApi(service))

@@ -168,6 +168,19 @@ class DocumentsWorkflowApi:
             actor_role=actor_role,
         )
 
+    def ensure_source_pdf_for_signing(
+        self,
+        state: DocumentVersionState,
+        *,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+    ) -> Path | None:
+        return self._service.ensure_source_pdf_for_signing(
+            state,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
+
     def accept_review(
         self,
         state: DocumentVersionState,

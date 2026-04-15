@@ -90,6 +90,7 @@ Contract framing:
 - Specialized write/workflow view: `documents_workflow_api`.
 - Business state ownership remains in documents only.
 - Write-owner rule: all business writes must end in `documents_service`; adapters must not bypass service invariants.
+- PyQt workflow adapter (`interfaces/pyqt/contributions/documents_workflow_view.py`) behandelt signaturpflichtige Uebergaenge und Jahresverlaengerung als harte Signaturschritte; ohne callable `signature_api.sign_with_fixed_position` darf kein erfolgreicher Abschluss signalisiert werden.
 
 ### Settings
 
@@ -105,6 +106,7 @@ Contract framing:
 
 - SQLite document DB (`documents_db_path`)
 - Artifact storage filesystem (`artifacts_root`)
+- Released-PDF-Dateinamensregel (`DocumentsService._build_released_filename`): Umlaute werden transliteriert (`ae/oe/ue/ss`), unsichere Zeichen entfernt, leerer Titel faellt auf `Dokument` zurueck.
 - Schema: `modules/documents/schema.sql`
 - Profile config: `modules/documents/workflow_profiles.json`
 - Master/Version split:

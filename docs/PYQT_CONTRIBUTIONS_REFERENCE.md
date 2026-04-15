@@ -1,4 +1,4 @@
-# PyQt Contributions Reference
+t# PyQt Contributions Reference
 
 Status: Canonical (P0)  
 Valid from: 2026-04-13  
@@ -18,7 +18,7 @@ This reference documents active PyQt contributions in `interfaces/pyqt/*` with t
 | Contribution ID | View file | Inputs | Outputs | Interfaces (ports) | Contracts |
 | --- | --- | --- | --- | --- | --- |
 | `shell.home` | `interfaces/pyqt/contributions/home_view.py` | Dashboard refresh, card click | Navigates to target contribution; dashboard rows | `usermanagement_service`, `documents_pool_api`, `training_api` | `DocumentTaskItem`, `ReviewActionItem`, `RecentDocumentItem`, training assignment readmodels |
-| `documents.workflow` | `interfaces/pyqt/contributions/documents_workflow_view.py` | Filters, row select, action-bar clicks, wizard submits | Document state transitions, metadata/header updates, artifact opens | `usermanagement_service`, `documents_service`, `documents_pool_api`, `documents_workflow_api` | `DocumentVersionState`, `DocumentHeader`, `DocumentStatus`, `DocumentType`, `ControlClass`, `RejectionReason` |
+| `documents.workflow` | `interfaces/pyqt/contributions/documents_workflow_view.py` | Filters, row select, action-bar clicks, wizard submits | Document state transitions, metadata/header updates, artifact opens, signature-required transitions (incl. annual extension) | `usermanagement_service`, `documents_service`, `documents_pool_api`, `documents_workflow_api`, `signature_api` | `DocumentVersionState`, `DocumentHeader`, `DocumentStatus`, `DocumentType`, `ControlClass`, `RejectionReason`, `SignRequest`, `SignaturePlacementInput`, `LabelLayoutInput` |
 | `documents.pool` | `interfaces/pyqt/contributions/documents_pool_view.py` | Refresh, search/select, read/open | Released documents list and read action | `usermanagement_service`, `documents_pool_api` | `ReleasedDocumentItem`, `DocumentStatus`, artifact DTOs |
 | `signature.workspace` | `interfaces/pyqt/contributions/signature_view.py` | Input/signature file pickers, canvas dialog, sign trigger, profile select | Ad-hoc sign result, profile preview, audit conflict feedback | `signature_api`, `usermanagement_service`, optional `audit_logger` | `SignRequest`, `SignResult`, `SignaturePlacementInput`, `LabelLayoutInput`, `UserSignatureTemplate` |
 | `training.workspace` | `interfaces/pyqt/contributions/training_placeholder.py` | Assignment reload, read confirm, quiz start/submit, admin actions | Training overview updates, quiz sessions/results, admin assignment sync | `training_api`, `training_admin_api`, `usermanagement_service` | `TrainingAssignment`, `TrainingOverviewItem`, `OpenTrainingAssignmentItem`, `QuizSession`, `QuizResult` |

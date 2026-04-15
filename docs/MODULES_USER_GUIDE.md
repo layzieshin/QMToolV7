@@ -61,6 +61,10 @@ Manage document lifecycle from planning to archive with strict role and status c
   - `python -m interfaces.cli.main documents assign-roles --document-id DOC-100 --version 1 --editors admin --reviewers user --approvers qmb`
 - Start workflow:
   - `python -m interfaces.cli.main documents workflow-start --document-id DOC-100 --version 1`
+- In der GUI (`Dokumentenlenkung`) bei `Bearbeitung annehmen`:
+  - SOURCE_DOCX wird zuerst in SOURCE_PDF ueberfuehrt; ab dann ist SOURCE_PDF das aktive PDF-Asset.
+  - Danach oeffnet sich der Signatur-Platzierungsdialog; ohne bestaetigte Platzierung wird der Schritt abgebrochen.
+  - Aktionen (Vorbereitung, Platzierung, Abschluss) werden in der Audithistorie erfasst.
 - Continue workflow (review/approval/archive) using role-appropriate accounts.
 - Read central registry evidence:
   - `python -m interfaces.cli.main documents pool-get-register --document-id DOC-100`
@@ -96,6 +100,10 @@ Manage document lifecycle from planning to archive with strict role and status c
   - `valid_until` / `next_review_at` are protected and cannot steer early workflow phases.
 - Signature-required transition blocked:
   - Provide required sign parameters where transition requires signature.
+- Signature-required GUI step blocked (`documents.workflow`):
+  - For annual extension and required transitions, a callable signature backend is mandatory; if unavailable, the action is intentionally aborted.
+- `Keine PDF-Datei fuer Signatur gefunden` / DOCX fallback errors:
+  - Ensure a PDF artifact exists first; DOCX->PDF fallback requires Windows + `docx2pdf` and an available MS Word installation.
 
 ### Migration note for users
 

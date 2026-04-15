@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import re
+import shutil
+import tempfile
 import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
 from modules.signature.errors import SignatureError
 from qm_platform.events.event_envelope import EventEnvelope
@@ -75,6 +78,8 @@ class DocumentsService:
         signature_api: object | None = None,
         storage_port: DocumentsStoragePort | None = None,
         registry_projection_api: object | None = None,
+        audit_logger: object | None = None,
+        docx_to_pdf_converter: Callable[[Path, Path], None] | None = None,
     ) -> None:
         self._event_bus = event_bus
         self._states: dict[tuple[str, int], DocumentVersionState] = {}
@@ -83,11 +88,115 @@ class DocumentsService:
         self._signature_api = signature_api
         self._storage_port = storage_port
         self._registry_projection_api = registry_projection_api
+        self._audit_logger = audit_logger
+        self._docx_to_pdf_converter = docx_to_pdf_converter
         self._readmodels = DocumentsReadmodelUseCases(
             iter_states=self._iter_all_states,
             matches_user_context=lambda state, user_id, role: self._matches_user_context(state, user_id=user_id, role=role),
         )
         self._workflow_use_cases = DocumentsWorkflowUseCases(self)
+
+    def _emit_audit(self, *, action: str, actor: str, target: str, result: str, reason: str = "") -> None:
+        if self._audit_logger is None:
+            return
+        emit = getattr(self._audit_logger, "emit", None)
+        if not callable(emit):
+            return
+        emit(action=action, actor=actor, target=target, result=result, reason=reason)
+
+    def _ensure_source_pdf_artifact_for_signing(
+        self,
+        state: DocumentVersionState,
+        *,
+        actor_user_id: str | None = None,
+    ) -> Path | None:
+        source_pdf = self._resolve_source_pdf_artifact_path(state)
+        if source_pdf is not None:
+            return source_pdf
+        source_docx = self._resolve_source_docx_artifact_path(state)
+        if source_docx is None:
+            return None
+
+        staged_pdf = self._convert_docx_to_temp_pdf_for_workflow(state, source_docx)
+        artifact = self._create_artifact(
+            state=state,
+            source_path=staged_pdf,
+            artifact_type=ArtifactType.SOURCE_PDF,
+            source_type=ArtifactSourceType.GENERATED,
+            metadata={
+                "generated_from": str(source_docx),
+                "intake_mode": "docx_to_pdf_for_editing_complete",
+            },
+        )
+        actor = actor_user_id or state.owner_user_id or "system"
+        event = self._publish(
+            "domain.documents.artifact.imported.v1",
+            state,
+            {
+                "artifact_id": artifact.artifact_id,
+                "artifact_type": ArtifactType.SOURCE_PDF.value,
+                "source_type": ArtifactSourceType.GENERATED.value,
+            },
+            actor_user_id=actor_user_id,
+        )
+        self._sync_registry(state, event)
+        self._emit_audit(
+            action="documents.artifact.source_pdf.generated",
+            actor=str(actor),
+            target=f"{state.document_id}:{state.version}",
+            result="ok",
+            reason="docx_to_pdf_before_editing_complete",
+        )
+        return self._resolve_artifact_path(artifact) or staged_pdf
+
+    def _resolve_source_pdf_artifact_path(self, state: DocumentVersionState) -> Path | None:
+        if self._repository is None:
+            return None
+        artifacts = self._repository.list_artifacts(state.document_id, state.version)
+        for artifact in sorted(artifacts, key=lambda item: 0 if item.is_current else 1):
+            if artifact.artifact_type != ArtifactType.SOURCE_PDF:
+                continue
+            resolved = self._resolve_artifact_path(artifact)
+            if resolved is not None and resolved.exists() and resolved.suffix.lower() == ".pdf":
+                return resolved
+        return None
+
+    def _resolve_source_docx_artifact_path(self, state: DocumentVersionState) -> Path | None:
+        if self._repository is None:
+            return None
+        artifacts = self._repository.list_artifacts(state.document_id, state.version)
+        for artifact in sorted(artifacts, key=lambda item: 0 if item.is_current else 1):
+            if artifact.artifact_type != ArtifactType.SOURCE_DOCX:
+                continue
+            resolved = self._resolve_artifact_path(artifact)
+            if resolved is not None and resolved.exists() and resolved.suffix.lower() == ".docx":
+                return resolved
+        return None
+
+    def _convert_docx_to_temp_pdf_for_workflow(self, state: DocumentVersionState, source_docx: Path) -> Path:
+        output_name = f"{state.document_id}_{state.version}_source.pdf"
+        with tempfile.TemporaryDirectory(prefix="qmtool-docx2pdf-") as tmp_dir:
+            out_path = Path(tmp_dir) / output_name
+            try:
+                if self._docx_to_pdf_converter is not None:
+                    self._docx_to_pdf_converter(source_docx, out_path)
+                else:
+                    try:
+                        from docx2pdf import convert
+                    except ImportError as exc:
+                        raise ValidationError(
+                            "docx2pdf is required to convert SOURCE_DOCX before editing completion"
+                        ) from exc
+                    convert(str(source_docx), str(out_path))
+                if not out_path.exists() or out_path.stat().st_size == 0:
+                    raise ValidationError(f"docx to pdf conversion produced no output: {source_docx}")
+                persisted = Path(tempfile.gettempdir()) / f"{uuid.uuid4().hex}_source.pdf"
+                shutil.copy2(out_path, persisted)
+                return persisted
+            except Exception as exc:
+                if isinstance(exc, ValidationError):
+                    raise
+                raise ValidationError(f"docx to pdf conversion failed: {exc}") from exc
 
     def create_document_version(
         self,
@@ -485,6 +594,105 @@ class DocumentsService:
     def create_new_version_after_archive(self, state: DocumentVersionState, next_version: int) -> DocumentVersionState:
         return self._workflow_use_cases.create_new_version_after_archive(state, next_version)
 
+    def ensure_source_pdf_for_signing(
+        self,
+        state: DocumentVersionState,
+        *,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+    ) -> Path | None:
+        if actor_user_id is not None and actor_role is not None:
+            self._ensure_editor_or_owner_or_privileged(state, actor_user_id, actor_role)
+        return self._ensure_source_pdf_artifact_for_signing(state, actor_user_id=actor_user_id)
+
+    def _ensure_release_pdf_artifact(self, state: DocumentVersionState) -> None:
+        if self._repository is None or self._storage_port is None:
+            return
+        source_path = self._resolve_release_pdf_source_path(state)
+        if source_path is None or not source_path.exists():
+            return
+        generated_name = self._build_released_filename(state)
+        with tempfile.TemporaryDirectory(prefix="qmtool-release-") as tmp_dir:
+            staged_path = Path(tmp_dir) / generated_name
+            self._protect_pdf_copy(source_path, staged_path)
+            self._create_artifact(
+                state=state,
+                source_path=staged_path,
+                artifact_type=ArtifactType.RELEASED_PDF,
+                source_type=ArtifactSourceType.GENERATED,
+                metadata={
+                    "generated_filename": generated_name,
+                    "source": str(source_path),
+                    "protected": "true",
+                },
+            )
+
+    def _resolve_release_pdf_source_path(self, state: DocumentVersionState) -> Path | None:
+        assert self._repository is not None
+        artifacts = self._repository.list_artifacts(state.document_id, state.version)
+        priorities = [ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF]
+        for artifact_type in priorities:
+            for artifact in artifacts:
+                if artifact.artifact_type != artifact_type:
+                    continue
+                resolved = self._resolve_artifact_path(artifact)
+                if resolved is not None and resolved.exists() and resolved.suffix.lower() == ".pdf":
+                    return resolved
+        return None
+
+    def _resolve_artifact_path(self, artifact: DocumentArtifact) -> Path | None:
+        for key in ("absolute_path", "file_path", "path"):
+            value = artifact.metadata.get(key)
+            if value:
+                candidate = Path(value)
+                if candidate.exists():
+                    return candidate
+        root = getattr(self._storage_port, "_root_path", None)
+        if isinstance(root, Path):
+            return root / artifact.storage_key
+        return None
+
+    @staticmethod
+    def _build_released_filename(state: DocumentVersionState) -> str:
+        title = DocumentsService._transliterate_umlauts((state.title or "").strip().replace(" ", "_"))
+        safe_title = "".join(ch for ch in title if ch.isalnum() or ch in ("_", "-")).strip("_-")
+        if not safe_title:
+            safe_title = "Dokument"
+        return f"{state.document_id}_{safe_title}.pdf"
+
+    @staticmethod
+    def _transliterate_umlauts(raw: str) -> str:
+        return (
+            raw.replace("ä", "ae")
+            .replace("ö", "oe")
+            .replace("ü", "ue")
+            .replace("Ä", "Ae")
+            .replace("Ö", "Oe")
+            .replace("Ü", "Ue")
+            .replace("ß", "ss")
+        )
+
+    @staticmethod
+    def _protect_pdf_copy(source_path: Path, target_path: Path) -> None:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            from pypdf import PdfReader, PdfWriter
+            from pypdf.constants import UserAccessPermissions
+
+            reader = PdfReader(str(source_path))
+            writer = PdfWriter()
+            for page in reader.pages:
+                writer.add_page(page)
+            writer.encrypt(
+                user_password="",
+                owner_password=uuid.uuid4().hex,
+                permissions_flag=UserAccessPermissions.PRINT,
+            )
+            with target_path.open("wb") as fh:
+                writer.write(fh)
+        except Exception:
+            shutil.copy2(source_path, target_path)
+
     def _store_state(self, state: DocumentVersionState) -> None:
         self._assert_state_invariants(state)
         self._states[(state.document_id, state.version)] = state
@@ -687,6 +895,24 @@ class DocumentsService:
             sign(sign_request)
         except SignatureError as exc:
             raise ValidationError(f"signature step failed: {exc}") from exc
+        output_pdf = getattr(sign_request, "output_pdf", None)
+        if (
+            self._repository is not None
+            and self._storage_port is not None
+            and isinstance(output_pdf, Path)
+            and output_pdf.exists()
+            and output_pdf.suffix.lower() == ".pdf"
+        ):
+            self._create_artifact(
+                state=state,
+                source_path=output_pdf,
+                artifact_type=ArtifactType.SIGNED_PDF,
+                source_type=ArtifactSourceType.GENERATED,
+                metadata={
+                    "transition": transition,
+                    "generated_from": str(getattr(sign_request, "input_pdf", "")),
+                },
+            )
 
     @staticmethod
     def _is_signature_required(state: DocumentVersionState, transition: str) -> bool:

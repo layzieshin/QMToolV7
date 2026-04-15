@@ -14,6 +14,9 @@ class SignatureApi:
     def sign_with_fixed_position(self, request: SignRequest) -> SignResult:
         return self.service.sign_with_fixed_position(request)
 
+    def resolve_runtime_layout(self, layout: LabelLayoutInput, *, signer_user: str | None = None) -> LabelLayoutInput:
+        return self.service.resolve_runtime_layout(layout, signer_user=signer_user)
+
     def import_signature_asset(self, owner_user_id: str, source_path: Path) -> SignatureAsset:
         return self.service.import_signature_asset(owner_user_id, source_path)
 

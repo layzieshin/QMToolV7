@@ -89,6 +89,8 @@ Zusatz: `Admin/Debug` ist für Admins persistent ein-/ausblendbar (`Ansicht -> A
 ## Letzter One-Run Fortschritt
 
 - Dokumentenlenkung nutzt lesbare Tabellen statt JSON-Rohsichten in Überblick/Workflow/Verlauf.
+- Dokumentenlenkung erzwingt Signaturausfuehrung fuer signaturpflichtige Uebergaenge und fuer Jahresverlaengerung; ohne Signatur-API wird der Schritt sauber blockiert.
+- Signatur-Fallback sucht PDF-Artefakte bevorzugt aus aktuellen Artefakten; DOCX->PDF-Fallback nutzt `docx2pdf` unter Windows und meldet fehlende Voraussetzungen klar.
 - Start-Dashboard nutzt klickbare Arbeitskarten mit Navigation in `Dokumentenlenkung`, `Dokumente` und `Schulung`.
 - Signaturbereich setzt Ausgabe automatisch (`_signiert.pdf`), blockiert existierende Zieldateien und bietet Canvas-Zeichnen für Signaturen.
 - Audit-&-Logs-Ansicht nutzt Tabellen + Filter + CSV/PDF-Export auf Basis `log_query_service`.

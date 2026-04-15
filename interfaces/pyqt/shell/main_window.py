@@ -67,6 +67,7 @@ class MainWindow(QMainWindow):
         self._all_contributions: dict[str, QtModuleContribution] = {c.contribution_id: c for c in ordered}
         self._visible_ids: list[str] = []
         self._lazy_widgets: dict[str, QWidget] = {}
+        self._session_fingerprint: tuple[str, str] | None = None
         self._stopping = False
         self._preferences = ShellPreferences()
         self._debug_toggle_enabled = self._preferences.load_admin_debug_toggle()
@@ -174,6 +175,10 @@ class MainWindow(QMainWindow):
 
     def _refresh_shell_for_session(self) -> None:
         user = self._current_user()
+        session_fingerprint = self._session_fingerprint_for_user(user)
+        if session_fingerprint != self._session_fingerprint:
+            self._reset_contribution_widgets()
+            self._session_fingerprint = session_fingerprint
         self._nav.blockSignals(True)
         self._nav.clear()
         self._visible_ids = []
@@ -219,6 +224,19 @@ class MainWindow(QMainWindow):
             self._nav.setCurrentRow(0)
         else:
             self._stack.setCurrentWidget(self._locked)
+
+    @staticmethod
+    def _session_fingerprint_for_user(user) -> tuple[str, str] | None:
+        if user is None:
+            return None
+        return (str(getattr(user, "user_id", "")), normalize_role(getattr(user, "role", None)))
+
+    def _reset_contribution_widgets(self) -> None:
+        for widget in list(self._lazy_widgets.values()):
+            self._stack.removeWidget(widget)
+            widget.deleteLater()
+        self._lazy_widgets.clear()
+        self._stack.setCurrentWidget(self._locked)
 
     def _on_toggle_admin_debug(self, enabled: bool) -> None:
         user = self._current_user()
