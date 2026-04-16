@@ -75,12 +75,18 @@ class HomeDashboardWidget(QWidget):
             parent = parent.parent()
 
     def _reload(self) -> None:
-        user = self._current_user()
+        user = self._um.get_current_user()
+        if user is None:
+            self._set("tasks", 0, [])
+            self._set("reviews", 0, [])
+            self._set("training", 0, [])
+            self._set("recent", 0, [])
+            return
         role = normalize_role(user.role)
         tasks = self._pool.list_tasks_for_user(user.user_id, role)
         review_items = self._pool.list_review_actions_for_user(user.user_id, role)
         recent_docs = self._pool.list_recent_documents_for_user(user.user_id, role)
-        training_required = self._training.list_required_for_user(user.user_id)
+        training_required = self._training.list_training_inbox_for_user(user.user_id, open_only=True)
         self._set(
             "tasks",
             len(tasks),

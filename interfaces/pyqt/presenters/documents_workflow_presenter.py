@@ -9,7 +9,7 @@ class DocumentsWorkflowPresenter:
         if status in (DocumentStatus.PLANNED, DocumentStatus.IN_PROGRESS):
             return [ArtifactType.SOURCE_DOCX]
         if status in (DocumentStatus.IN_REVIEW, DocumentStatus.IN_APPROVAL):
-            return [ArtifactType.SOURCE_PDF, ArtifactType.SIGNED_PDF]
+            return [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF]
         if status in (DocumentStatus.APPROVED, DocumentStatus.ARCHIVED):
             return [ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF]
         return []

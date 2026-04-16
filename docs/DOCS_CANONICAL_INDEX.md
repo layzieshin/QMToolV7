@@ -9,6 +9,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/GUI_ARCHITECTURE_PROJECT.md`
 - `docs/PYQT_CONTRIBUTIONS_REFERENCE.md`
 - `docs/MODULES_DEVELOPER_GUIDE.md`
+- `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`
 - `docs/OPERATIONS_CANONICAL.md`
 - `docs/TEST_SMOKE_GATES.md`
 
@@ -35,3 +36,4 @@ This file defines document priority and decision authority for the repository.
 ## Rule
 
 When documents disagree, P0 overrules P1 and P2.
+For architecture refactor decisions, `docs/ARCHITECTURE_REFACTOR_CANONICAL.md` is authoritative; legacy roadmap docs in P2 are history only.

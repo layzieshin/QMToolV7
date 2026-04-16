@@ -77,10 +77,17 @@ Manage document lifecycle from planning to archive with strict role and status c
 
 ### Metadata model quick note
 
+- `document_id` ist die fachliche Dokumentenkennung (z. B. `VA-2024-001`) und bleibt über Versionen gleich.
 - `doc_type` describes the fachliche Dokumentart (for filtering/reporting).
 - `control_class` describes governance strictness.
 - `workflow_profile_id` selects the concrete executable workflow within the chosen control class.
 - `doc_type` and `control_class` are intentionally separate and both required for clear audit semantics.
+
+### Signatur- und Artefaktregeln (GUI Dokumentenlenkung)
+
+- `IN_PROGRESS -> IN_REVIEW`: Falls nur DOCX vorliegt, wird zuerst nach PDF konvertiert; signiert wird auf PDF.
+- `IN_REVIEW -> IN_APPROVAL` und `IN_APPROVAL -> APPROVED`: Signatur arbeitet immer auf der zuletzt signierten PDF (`SIGNED_PDF`).
+- Der Platzierungsdialog unterstuetzt Vorlagenliste + Vorlagenladen (Preset-Auswahl), damit wiederverwendbare Positionen direkt waehlbar sind.
 
 ### Frequent issues
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from interfaces.pyqt.presenters.documents_workflow_filter_presenter import DocumentsWorkflowFilterPresenter
 from interfaces.pyqt.presenters.documents_workflow_presenter import DocumentsWorkflowPresenter
-from modules.documents.contracts import DocumentStatus, SystemRole
+from modules.documents.contracts import ArtifactType, DocumentStatus, SystemRole
 
 
 @dataclass
@@ -56,7 +56,8 @@ class DocumentsWorkflowFilterPresenterTest(unittest.TestCase):
             workflow_active="true",
             active_version="true",
         )
-        self.assertEqual([(r.document_id, r.version) for r in result], [("DOC-3", 2)])
+        typed_result = [r for r in result if isinstance(r, _Row)]
+        self.assertEqual([(r.document_id, r.version) for r in typed_result], [("DOC-3", 2)])
 
 
 class DocumentsWorkflowPresenterVisibilityTest(unittest.TestCase):
@@ -149,6 +150,12 @@ class DocumentsWorkflowPresenterVisibilityTest(unittest.TestCase):
         )
         self.assertIn("edit", visible_in_progress)
         self.assertNotIn("edit", visible_in_review)
+
+    def test_default_artifact_priority_prefers_signed_pdf_in_review_and_approval(self) -> None:
+        review_order = self.presenter.default_artifact_priority(DocumentStatus.IN_REVIEW)
+        approval_order = self.presenter.default_artifact_priority(DocumentStatus.IN_APPROVAL)
+        self.assertEqual(review_order[:2], [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF])
+        self.assertEqual(approval_order[:2], [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF])
 
 
 if __name__ == "__main__":

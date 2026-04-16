@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from qm_platform.events.event_envelope import EventEnvelope
 from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
 
-from .api import TrainingAdminApi, TrainingApi
-from .secure_store import EncryptedTrainingBlobStore
-from .service import TrainingService
-from .sqlite_repository import SQLiteTrainingRepository
+from .wiring import register_training_ports
 
 
 TRAINING_SETTINGS_CONTRIBUTION = SettingsContribution(
@@ -33,29 +29,6 @@ TRAINING_SETTINGS_CONTRIBUTION = SettingsContribution(
     migrations=[],
 )
 
-
-def register_training_ports(container) -> None:
-    settings_service = container.get_port("settings_service")
-    app_home = container.get_port("app_home")
-    cfg = settings_service.get_module_settings("training")
-    repository = SQLiteTrainingRepository(
-        db_path=app_home / cfg.get("training_db_path", "storage/training/training.db"),
-        schema_path=Path(__file__).with_name("schema.sql"),
-    )
-    secure_store = EncryptedTrainingBlobStore(
-        root=app_home / cfg.get("quiz_blob_root", "storage/training/quiz_blobs"),
-        key_file=app_home / cfg.get("quiz_master_key_path", "storage/platform/training_quiz_master.key"),
-    )
-    service = TrainingService(
-        repository=repository,
-        documents_pool_api=container.get_port("documents_pool_api"),
-        usermanagement_service=container.get_port("usermanagement_service"),
-        secure_store=secure_store,
-        event_bus=container.get_port("event_bus"),
-    )
-    container.register_port("training_service", service)
-    container.register_port("training_api", TrainingApi(service))
-    container.register_port("training_admin_api", TrainingAdminApi(service))
 
 
 def start_training_module(container) -> None:
@@ -88,7 +61,7 @@ def create_training_module_contract() -> ModuleContract:
             "documents_pool_api",
             "usermanagement_service",
         ],
-        provided_ports=["training_service", "training_api", "training_admin_api"],
+        provided_ports=["training_api", "training_admin_api"],
         required_capabilities=[],
         provided_capabilities=["training.assignment.manage", "training.quiz.execute"],
         settings_contribution=TRAINING_SETTINGS_CONTRIBUTION,

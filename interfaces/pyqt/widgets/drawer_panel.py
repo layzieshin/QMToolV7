@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import QPushButton, QStyle, QStyleOptionButton, QStylePaint
 
 
 class VerticalFlowButton(QPushButton):
-    """Button with text rotated 90° clockwise (reads top-to-bottom)."""
+    """Button with vertical text flow (letters stacked top-to-bottom)."""
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QStylePainter(self)
@@ -17,19 +17,17 @@ class VerticalFlowButton(QPushButton):
         if not text:
             return
         painter.save()
-        painter.translate(self.width() / 2.0, self.height() / 2.0)
-        painter.rotate(90)
         metrics = painter.fontMetrics()
-        text_w = metrics.horizontalAdvance(text)
-        text_h = metrics.height()
-        rect = QRect(-text_w // 2, -text_h // 2, text_w, text_h)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+        letters = "\n".join(list(text))
+        text_rect = QRect(0, 0, self.width(), self.height())
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, letters)
         painter.restore()
 
     def sizeHint(self) -> QSize:  # type: ignore[override]
         base = super().sizeHint()
-        # Swap width/height so the button is narrow but tall
-        return QSize(base.height(), base.width())
+        char_h = max(12, self.fontMetrics().height())
+        needed_h = char_h * max(3, len(self.text()) + 2)
+        return QSize(max(42, base.width()), max(needed_h, base.height()))
 
 
 class DrawerPanel(QWidget):

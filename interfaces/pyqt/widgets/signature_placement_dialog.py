@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib
+from collections.abc import Iterable
 from pathlib import Path
+from typing import cast
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
@@ -39,6 +41,7 @@ from PyQt6.QtWidgets import (
 )
 
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
+from modules.signature.layout_math import compute_target_height, resolve_label_pdf_anchor
 
 
 def compute_label_local_position(
@@ -53,16 +56,20 @@ def compute_label_local_position(
     offset_below: float,
     x_offset: float,
 ) -> QPointF:
-    """Compute label position in signature-local coordinates.
-
-    rel_x/rel_y use signature-local units (PDF-space before scale). Y grows downward.
-    """
-
-    base_x = x_offset * scale
-    base_y = -pixel_size - offset_above * scale if position == "above" else sig_height + offset_below * scale * 0.4
-    tx = rel_x * scale if rel_x is not None else base_x
-    ty = rel_y * scale if rel_y is not None else base_y
-    return QPointF(tx, ty)
+    pdf_x, pdf_y = resolve_label_pdf_anchor(
+        placement_x=0.0,
+        placement_y=0.0,
+        signature_height=sig_height,
+        position=cast("Literal['above', 'below', 'off']", position),
+        offset_above=offset_above,
+        offset_below=offset_below,
+        x_offset=x_offset,
+        rel_x=rel_x,
+        rel_y=rel_y,
+    )
+    local_x = pdf_x * scale
+    local_y = (sig_height - pdf_y) * scale - float(pixel_size)
+    return QPointF(local_x, local_y)
 
 
 class _ZoomableView(QGraphicsView):
@@ -183,6 +190,8 @@ class SignaturePlacementDialog(QDialog):
         layout: LabelLayoutInput | None = None,
         signature_pixmap: QPixmap | None = None,
         template_save_callback=None,
+        template_list_provider=None,
+        template_load_callback=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -192,6 +201,11 @@ class SignaturePlacementDialog(QDialog):
         self._signature_pixmap = signature_pixmap
         self._layout = layout or LabelLayoutInput()
         self._template_save_callback = template_save_callback
+        self._template_list_provider = template_list_provider
+        self._template_load_callback = template_load_callback
+        self._signature_aspect: float | None = None
+        if signature_pixmap is not None and not signature_pixmap.isNull() and signature_pixmap.width() > 0:
+            self._signature_aspect = float(signature_pixmap.height()) / float(signature_pixmap.width())
         self._current_scale: float = 1.0
         self._pix_width: float = 0.0
         self._pix_height: float = 0.0
@@ -307,6 +321,11 @@ class SignaturePlacementDialog(QDialog):
         self._save_template_name.setPlaceholderText("Vorlagenname")
         btn_save_template = QPushButton("Signaturposition als Vorlage speichern")
         btn_save_template.clicked.connect(self._save_template)
+        self._template_select = QComboBox()
+        self._template_select.addItem("Preset auswaehlen", "")
+        btn_load_template = QPushButton("Preset laden")
+        btn_load_template.clicked.connect(self._apply_selected_template)
+        self._reload_templates()
 
         self._opt_show_name = QCheckBox("Name anzeigen")
         self._opt_name_pos = QComboBox()
@@ -378,6 +397,10 @@ class SignaturePlacementDialog(QDialog):
         color_row.addWidget(self._opt_color_hex)
         color_row.addWidget(btn_color)
         form.addRow("Farbe", color_row)
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(self._template_select)
+        preset_row.addWidget(btn_load_template)
+        form.addRow("Preset", preset_row)
         form.addRow("Vorlagenname", self._save_template_name)
         form.addRow(btn_save_template)
         form.addRow(btn_update)
@@ -442,6 +465,42 @@ class SignaturePlacementDialog(QDialog):
             )
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Vorlage speichern", str(exc))
+
+    def _reload_templates(self) -> None:
+        if not callable(self._template_list_provider):
+            return
+        self._template_select.clear()
+        self._template_select.addItem("Preset auswaehlen", "")
+        try:
+            rows = self._template_list_provider()
+            if not isinstance(rows, Iterable):
+                return
+            for template_id, name in rows:
+                self._template_select.addItem(name, template_id)
+        except Exception:
+            self._template_select.clear()
+            self._template_select.addItem("Preset auswaehlen", "")
+
+    def _apply_selected_template(self) -> None:
+        template_id = self._template_select.currentData()
+        if not isinstance(template_id, str) or not template_id.strip():
+            return
+        if not callable(self._template_load_callback):
+            return
+        try:
+            result = self._template_load_callback(template_id)
+            if not isinstance(result, tuple) or len(result) != 2:
+                return
+            placement, layout = result
+            self._page.setValue(int(placement.page_index))
+            self._x.setText(str(placement.x))
+            self._y.setText(str(placement.y))
+            self._width.setText(str(placement.target_width))
+            self._layout = layout
+            self._populate_options_from_layout(layout)
+            self._render_page_with_overlay()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Preset laden", str(exc))
 
     def _fit_view(self) -> None:
         if self._pix_width > 0 and self._pix_height > 0:
@@ -515,7 +574,7 @@ class SignaturePlacementDialog(QDialog):
         if self._current_scale <= 0 or self._pix_width <= 0 or self._pix_height <= 0:
             return
         target_width = max(1.0, self._safe_float(self._width.text(), 120.0))
-        target_height = max(6.0, target_width * 0.3)
+        target_height = compute_target_height(target_width, signature_aspect=self._signature_aspect)
         pdf_x = (scene_pos.x() / self._current_scale) - (target_width / 2.0)
         pdf_y = ((self._pix_height - scene_pos.y()) / self._current_scale) - (target_height / 2.0)
         pdf_x, pdf_y = self._clamp_pdf_xy(pdf_x, pdf_y, target_width, target_height)
@@ -572,7 +631,7 @@ class SignaturePlacementDialog(QDialog):
                 x = self._safe_float(self._x.text(), 0.0)
                 y = self._safe_float(self._y.text(), 0.0)
                 target_width = max(1.0, self._safe_float(self._width.text(), 120.0))
-                target_height = max(6.0, target_width * 0.3)
+                target_height = compute_target_height(target_width, signature_aspect=self._signature_aspect)
 
                 page_w = float(page.rect.width)
                 scale = pix.width / page_w if page_w > 0 else 1.0
@@ -612,14 +671,14 @@ class SignaturePlacementDialog(QDialog):
                     painter.drawRect(1, 1, max(1, overlay_px.width() - 2), max(1, overlay_px.height() - 2))
                     painter.end()
 
-                self._sig_item = _DraggableSignatureItem(
+                overlay_item: _DraggableSignatureItem = _DraggableSignatureItem(
                     overlay_px,
                     self._on_sig_dragged,
                     constrain_position=self._clamp_scene_pos,
                 )
-                self._sig_item.setPos(QPointF(sx, sy))
-                self._scene.addItem(self._sig_item)
-                sig_item = self._sig_item
+                self._sig_item = overlay_item
+                overlay_item.setPos(QPointF(sx, sy))
+                self._scene.addItem(overlay_item)
 
                 color = QColor(self._opt_color_hex.text())
                 if not color.isValid():
@@ -627,9 +686,12 @@ class SignaturePlacementDialog(QDialog):
 
                 if self._opt_show_name.isChecked() and self._opt_name_pos.currentText() != "off":
                     self._add_text_item(
-                        parent=sig_item,
+                        text_parent=overlay_item,
                         text=(self._layout.name_text or "").strip(),
-                        sh=sh,
+                        placement_x=x,
+                        placement_y=y,
+                        target_h=target_height,
+                        pix_h=float(pix.height),
                         position=self._opt_name_pos.currentText(),
                         font_size_pt=max(6, int(self._opt_name_font_size.text() or "12")),
                         color=color,
@@ -643,9 +705,12 @@ class SignaturePlacementDialog(QDialog):
 
                 if self._opt_show_date.isChecked() and self._opt_date_pos.currentText() != "off":
                     self._add_text_item(
-                        parent=sig_item,
+                        text_parent=overlay_item,
                         text=(self._layout.date_text or "").strip(),
-                        sh=sh,
+                        placement_x=x,
+                        placement_y=y,
+                        target_h=target_height,
+                        pix_h=float(pix.height),
                         position=self._opt_date_pos.currentText(),
                         font_size_pt=max(6, int(self._opt_date_font_size.text() or "12")),
                         color=color,
@@ -671,9 +736,12 @@ class SignaturePlacementDialog(QDialog):
     def _add_text_item(
         self,
         *,
-        parent: _DraggableSignatureItem,
+        text_parent: _DraggableSignatureItem,
         text: str,
-        sh: float,
+        placement_x: float,
+        placement_y: float,
+        target_h: float,
+        pix_h: float,
         position: str,
         font_size_pt: int,
         color: QColor,
@@ -686,7 +754,7 @@ class SignaturePlacementDialog(QDialog):
     ) -> None:
         if not text:
             return
-        item = QGraphicsSimpleTextItem(text, parent)
+        item = QGraphicsSimpleTextItem(text, text_parent)
         pixel_size = max(6, int(font_size_pt * scale * 0.85))
         font = QFont()
         font.setPixelSize(pixel_size)
@@ -706,23 +774,25 @@ class SignaturePlacementDialog(QDialog):
             except ValueError:
                 rel_y = None
 
-        item.setPos(
-            compute_label_local_position(
-                position=position,
-                sig_height=sh,
-                pixel_size=pixel_size,
-                scale=scale,
-                rel_x=rel_x,
-                rel_y=rel_y,
-                offset_above=offset_above,
-                offset_below=offset_below,
-                x_offset=x_offset,
-            )
+        pdf_x, pdf_y = resolve_label_pdf_anchor(
+            placement_x=placement_x,
+            placement_y=placement_y,
+            signature_height=target_h,
+            position=cast("Literal['above', 'below', 'off']", position),
+            offset_above=offset_above,
+            offset_below=offset_below,
+            x_offset=x_offset,
+            rel_x=rel_x,
+            rel_y=rel_y,
         )
+        scene_x = pdf_x * scale
+        baseline_scene_y = pix_h - (pdf_y * scale)
+        scene_y = baseline_scene_y - pixel_size
+        item.setPos(QPointF(scene_x - text_parent.pos().x(), scene_y - text_parent.pos().y()))
 
     def placement(self) -> SignaturePlacementInput:
         width = self._safe_float(self._width.text(), 120.0)
-        height = max(6.0, width * 0.3)
+        height = compute_target_height(width, signature_aspect=self._signature_aspect)
         x, y = self._clamp_pdf_xy(
             self._safe_float(self._x.text(), 0.0),
             self._safe_float(self._y.text(), 0.0),

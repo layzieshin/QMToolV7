@@ -1,25 +1,36 @@
+"""Training workspace – dreigeteilte Ansicht (§8).
+
+Upper bar: Admin/QMB actions (Import Quiz, Quiz zuordnen, Statistik/Logs, Kommentare)
+Middle: Nutzerabhängige Dokumentenliste (materialisierte Inbox)
+Lower bar: Kontextbezogene Aktionen (Quiz starten, Lesen, Quiz kommentieren)
+"""
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QFormLayout,
+    QDialog,
+    QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
-    QLineEdit,
     QMessageBox,
-    QPushButton,
     QPlainTextEdit,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from interfaces.pyqt.contributions.common import as_json_text, normalize_role
+from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.presenters.training_presenter import TrainingPresenter
 from interfaces.pyqt.registry.contribution import QtModuleContribution
+from interfaces.pyqt.widgets.access_guards import require_admin_or_qmb
 from qm_platform.runtime.container import RuntimeContainer
 
+
+# ---------------------------------------------------------------------------
+# Main workspace widget
+# ---------------------------------------------------------------------------
 
 class TrainingWorkspace(QWidget):
     def __init__(self, container: RuntimeContainer) -> None:
@@ -28,111 +39,76 @@ class TrainingWorkspace(QWidget):
         self._api = container.get_port("training_api")
         self._admin = container.get_port("training_admin_api")
         self._um = container.get_port("usermanagement_service")
+        self._read_api = container.get_port("documents_read_api")
         self._presenter = TrainingPresenter()
+        self._inbox_items: list = []
+        self._selected_item = None
 
-        self._user_id = QLineEdit()
-        self._doc_id = QLineEdit()
-        self._version = QLineEdit("1")
-        self._session_id = QLineEdit()
-        self._answers = QLineEdit("0,0,0")
-        self._comment = QLineEdit()
-        self._last_page_seen = QLineEdit("1")
-        self._total_pages = QLineEdit("1")
-        self._scrolled_to_end = QLineEdit("true")
-        self._category_id = QLineEdit("cat-1")
-        self._category_name = QLineEdit("Kategorie 1")
-        self._category_desc = QLineEdit()
-        self._quiz_json = QPlainTextEdit('{"questions":[{"id":"q1","text":"Frage 1","options":["A","B","C"],"correct_index":0},{"id":"q2","text":"Frage 2","options":["A","B","C"],"correct_index":1},{"id":"q3","text":"Frage 3","options":["A","B","C"],"correct_index":2}]}')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        # --- UPPER: Admin bar ---
+        self._admin_bar = QWidget()
+        admin_row = QHBoxLayout(self._admin_bar)
+        admin_row.setContentsMargins(0, 0, 0, 0)
+        self._btn_import_quiz = QPushButton("Import Quiz")
+        self._btn_import_quiz.clicked.connect(self._on_import_quiz)
+        self._btn_bind_quiz = QPushButton("Quiz zuordnen")
+        self._btn_bind_quiz.clicked.connect(self._on_bind_quiz)
+        self._btn_stats = QPushButton("Statistik / Logs")
+        self._btn_stats.clicked.connect(self._on_statistics)
+        self._btn_comments_admin = QPushButton("Kommentare")
+        self._btn_comments_admin.clicked.connect(self._on_comments_admin)
+        self._btn_doc_tags = QPushButton("Dokument-Tags")
+        self._btn_doc_tags.clicked.connect(self._on_set_document_tags)
+        self._btn_rebuild = QPushButton("Snapshots neu aufbauen")
+        self._btn_rebuild.clicked.connect(self._on_rebuild_snapshots)
+        self._btn_export = QPushButton("Matrix exportieren")
+        self._btn_export.clicked.connect(self._on_export_matrix)
+        for btn in (self._btn_import_quiz, self._btn_bind_quiz, self._btn_stats,
+                    self._btn_comments_admin, self._btn_doc_tags, self._btn_rebuild, self._btn_export):
+            admin_row.addWidget(btn)
+        admin_row.addStretch(1)
+        layout.addWidget(self._admin_bar)
+
+        # --- MIDDLE: Inbox table ---
         self._table = QTableWidget(0, 6)
-        self._table.setHorizontalHeaderLabels(["Dokument", "Version", "gelesen", "Quiz", "bestanden", "letzte Aktion"])
-        self._show_open_only = QLineEdit("true")
+        self._table.setHorizontalHeaderLabels([
+            "Dokumentenkennung", "Titel", "Status", "Owner", "Freigabe am", "Lesestatus",
+        ])
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.currentItemChanged.connect(self._on_selection_changed)
+        layout.addWidget(self._table, stretch=3)
+
+        # --- LOWER: Context action bar ---
+        lower_bar = QHBoxLayout()
+        self._btn_refresh = QPushButton("Aktualisieren")
+        self._btn_refresh.clicked.connect(self._load_inbox)
+        self._btn_read = QPushButton("Lesen")
+        self._btn_read.clicked.connect(self._on_read)
+        self._btn_quiz_start = QPushButton("Quiz starten")
+        self._btn_quiz_start.clicked.connect(self._on_start_quiz)
+        self._btn_comment = QPushButton("Quiz kommentieren")
+        self._btn_comment.clicked.connect(self._on_add_comment)
+        for btn in (self._btn_refresh, self._btn_read, self._btn_quiz_start, self._btn_comment):
+            lower_bar.addWidget(btn)
+        lower_bar.addStretch(1)
+        layout.addLayout(lower_bar)
+
+        # --- Output log ---
         self._out = QPlainTextEdit()
         self._out.setReadOnly(True)
+        self._out.setMaximumHeight(120)
+        layout.addWidget(self._out, stretch=1)
 
-        outer = QVBoxLayout(self)
-        outer.addWidget(QLabel("Schulungsbereich: offene Schulungen, Lesen, Quiz und Verlauf."))
+        # --- Init ---
+        self.refresh_for_session()
 
-        tabs = QTabWidget()
-        tabs.addTab(self._build_user_tab(), "Meine Schulungen")
-        role = normalize_role(self._current_user().role)
-        if role in ("ADMIN", "QMB"):
-            tabs.addTab(self._build_admin_tab(), "Admin / QMB")
-        outer.addWidget(tabs, stretch=1)
-        outer.addWidget(QLabel("Ergebnis"))
-        outer.addWidget(self._out, stretch=1)
-        self._list_required()
-
-    def _build_user_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        row = QHBoxLayout()
-        btn_refresh = QPushButton("Offene Schulungen laden")
-        btn_refresh.clicked.connect(self._list_required)
-        btn_read = QPushButton("Lesen bestätigen")
-        btn_read.clicked.connect(self._confirm_read)
-        btn_quiz_start = QPushButton("Quiz starten")
-        btn_quiz_start.clicked.connect(self._start_quiz)
-        btn_quiz_submit = QPushButton("Quiz abgeben")
-        btn_quiz_submit.clicked.connect(self._submit_answers)
-        row.addWidget(btn_refresh)
-        row.addWidget(btn_read)
-        row.addWidget(btn_quiz_start)
-        row.addWidget(btn_quiz_submit)
-        row.addStretch(1)
-        layout.addLayout(row)
-        layout.addWidget(self._table, stretch=1)
-        form = QFormLayout()
-        form.addRow("Benutzer-ID (optional)", self._user_id)
-        form.addRow("Dokument-ID", self._doc_id)
-        form.addRow("Version", self._version)
-        form.addRow("Quiz-Session-ID", self._session_id)
-        form.addRow("Quiz-Antworten CSV", self._answers)
-        form.addRow("Kommentartext", self._comment)
-        form.addRow("last_page_seen", self._last_page_seen)
-        form.addRow("total_pages", self._total_pages)
-        form.addRow("scrolled_to_end (true/false)", self._scrolled_to_end)
-        form.addRow("Nur offene Schulungen (true/false)", self._show_open_only)
-        layout.addLayout(form)
-        btn_comment = QPushButton("Kommentar speichern")
-        btn_comment.clicked.connect(self._add_comment)
-        layout.addWidget(btn_comment)
-        return tab
-
-    def _build_admin_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        form = QFormLayout()
-        form.addRow("Kategorie-ID", self._category_id)
-        form.addRow("Kategoriename", self._category_name)
-        form.addRow("Kategoriebeschreibung", self._category_desc)
-        layout.addLayout(form)
-        row = QHBoxLayout()
-        for label, fn in [
-            ("Freigegebene Dokumente", self._admin_list_approved),
-            ("Kategorie erstellen", self._admin_create_category),
-            ("Dokument zu Kategorie", self._admin_assign_doc),
-            ("Benutzer zu Kategorie", self._admin_assign_user),
-            ("Zuweisungen synchronisieren", self._admin_sync),
-            ("Matrix anzeigen", self._admin_matrix),
-        ]:
-            btn = QPushButton(label)
-            btn.clicked.connect(fn)
-            row.addWidget(btn)
-        row.addStretch(1)
-        layout.addLayout(row)
-        layout.addWidget(QLabel("Quiz-JSON Import (nur freigegebene, aktuelle Dokumente)"))
-        layout.addWidget(self._quiz_json, stretch=1)
-        btn_import = QPushButton("Quiz für Dokument importieren")
-        btn_import.clicked.connect(self._admin_import_quiz)
-        layout.addWidget(btn_import)
-        return tab
-
-    def _append(self, title: str, payload: object) -> None:
-        self._out.appendPlainText(f"{title}: {payload}\n")
-
-    def _show_error(self, exc: Exception) -> None:
-        QMessageBox.warning(self, "Training", str(exc))
-        self._append("ERROR", {"message": str(exc)})
+    # ---- Role visibility (§13) ----
 
     def _current_user(self):
         user = self._um.get_current_user()
@@ -140,141 +116,414 @@ class TrainingWorkspace(QWidget):
             raise RuntimeError("Anmeldung erforderlich")
         return user
 
-    def _current_user_id(self) -> str:
-        override = self._user_id.text().strip()
-        if override:
-            return override
-        return self._current_user().user_id
+    def _current_user_or_none(self):
+        return self._um.get_current_user()
 
-    def _require_admin_or_qmb(self) -> None:
-        role = normalize_role(self._current_user().role)
-        if role not in ("ADMIN", "QMB"):
-            raise RuntimeError("Nur QMB oder ADMIN dürfen Training-Admin-Aktionen ausführen")
+    def _require_admin_or_qmb(self):
+        return require_admin_or_qmb(self._um)
 
-    def _doc_ref(self) -> tuple[str, int]:
-        return self._doc_id.text().strip(), int(self._version.text().strip())
+    def refresh_for_session(self) -> None:
+        self._apply_role_visibility()
+        self._load_inbox()
+        self._update_action_state()
 
-    def _list_required(self) -> None:
+    def _apply_role_visibility(self) -> None:
+        user = self._current_user_or_none()
+        role = normalize_role(getattr(user, "role", None))
+        is_admin = self._presenter.is_admin(role)
+        self._admin_bar.setVisible(is_admin)
+
+    # ---- Selection / action state (§13.2) ----
+
+    def _on_selection_changed(self) -> None:
+        row = self._table.currentRow()
+        if 0 <= row < len(self._inbox_items):
+            self._selected_item = self._inbox_items[row]
+        else:
+            self._selected_item = None
+        self._update_action_state()
+
+    def _update_action_state(self) -> None:
+        item = self._selected_item
+        self._btn_read.setEnabled(self._presenter.is_read_enabled(item))
+        self._btn_quiz_start.setEnabled(self._presenter.is_quiz_start_enabled(item))
+        # Comment enabled only if quiz was attempted at least once
+        quiz_attempted = False
+        if item is not None:
+            try:
+                quiz_attempted = self._api.list_comments_for_document(item.document_id, item.version) is not None
+                # Better check: quiz_attempted from inbox item quiz availability + progress
+                quiz_attempted = item.quiz_available and (item.quiz_passed or not self._presenter.is_quiz_start_enabled(item) and item.read_confirmed)
+            except Exception:  # noqa: BLE001
+                quiz_attempted = False
+        self._btn_comment.setEnabled(self._presenter.is_comment_enabled(item, quiz_attempted=quiz_attempted))
+
+    # ---- Load inbox (§9.1) ----
+
+    def _load_inbox(self) -> None:
+        user = self._current_user_or_none()
+        if user is None:
+            self._inbox_items = []
+            self._render_table()
+            self._out.setPlainText("Anmeldung erforderlich.")
+            return
         try:
-            payload = self._api.list_training_overview_for_user(self._current_user_id())
-            open_only = self._show_open_only.text().strip().lower() != "false"
-            rows = self._presenter.filter_rows(payload, open_only=open_only)
-            self._append("PFLICHTLISTE_OVERVIEW", self._presenter.status_line(rows=len(rows), open_only=open_only))
-            self._table.setRowCount(len(rows))
-            for i, item in enumerate(rows):
-                self._table.setItem(i, 0, QTableWidgetItem(str(item.document_id)))
-                self._table.setItem(i, 1, QTableWidgetItem(str(item.version)))
-                self._table.setItem(i, 2, QTableWidgetItem("ja" if item.read_confirmed else "nein"))
-                self._table.setItem(i, 3, QTableWidgetItem("ja" if item.quiz_available else "nein"))
-                self._table.setItem(i, 4, QTableWidgetItem("ja" if item.quiz_passed else "nein"))
-                self._table.setItem(i, 5, QTableWidgetItem(str(item.last_action_at or "")))
+            raw = self._api.list_training_inbox_for_user(user.user_id, open_only=False)
+            self._inbox_items = self._presenter.filter_rows(raw, open_only=False)
+            self._render_table()
+            self._out.clear()
+            self._log(self._presenter.status_line(rows=len(self._inbox_items), open_only=False))
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _render_table(self) -> None:
+        self._table.setRowCount(len(self._inbox_items))
+        for i, item in enumerate(self._inbox_items):
+            self._table.setItem(i, 0, QTableWidgetItem(item.document_id))
+            self._table.setItem(i, 1, QTableWidgetItem(item.title))
+            self._table.setItem(i, 2, QTableWidgetItem(item.status))
+            self._table.setItem(i, 3, QTableWidgetItem(item.owner_user_id or ""))
+            self._table.setItem(i, 4, QTableWidgetItem(str(item.released_at or "")))
+            read_text = "✓ gelesen" if item.read_confirmed else "offen"
+            self._table.setItem(i, 5, QTableWidgetItem(read_text))
+        self._table.resizeColumnsToContents()
+        self._selected_item = None
+        self._update_action_state()
+
+    # ---- Read action (§9.2) – via documents_read_api ----
+
+    def _on_read(self) -> None:
+        item = self._selected_item
+        if item is None:
+            return
+        try:
+            self._read_api.open_released_document_for_training(
+                self._current_user().user_id, item.document_id, item.version,
+            )
+            self._read_api.confirm_released_document_read(
+                self._current_user().user_id, item.document_id, item.version, source="training_gui",
+            )
+            self._log(f"Lesebestätigung für {item.document_id} v{item.version} erstellt.")
+            self._load_inbox()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    # ---- Quiz start (§9.3) ----
+
+    def _on_start_quiz(self) -> None:
+        item = self._selected_item
+        if item is None:
+            return
+        try:
+            session, questions = self._api.start_quiz(
+                self._current_user().user_id, item.document_id, item.version,
+            )
+            dlg = _QuizDialog(session, questions, self._api, parent=self)
+            dlg.exec()
+            self._load_inbox()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    # ---- Comment (§9.4) ----
+
+    def _on_add_comment(self) -> None:
+        item = self._selected_item
+        if item is None:
+            return
+        text, ok = QInputDialog.getMultiLineText(self, "Quiz kommentieren", "Kommentar:")
+        if not ok or not text.strip():
+            return
+        try:
+            self._api.add_comment(
+                self._current_user().user_id, item.document_id, item.version, text.strip(),
+                document_title_snapshot=item.title,
+                username_snapshot=self._current_user().username,
+            )
+            self._log(f"Kommentar für {item.document_id} gespeichert.")
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    # ---- Admin actions ----
+
+    def _on_import_quiz(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            path, _ = QFileDialog.getOpenFileName(self, "Quiz-JSON importieren", "", "JSON (*.json)")
+            if not path:
+                return
+            from pathlib import Path
+            raw = Path(path).read_bytes()
+            result = self._admin.import_quiz_json(raw)
+            self._log(f"Quiz importiert: {result.import_id} ({result.question_count} Fragen)")
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _on_bind_quiz(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            pending = self._admin.list_pending_quiz_mappings()
+            if not pending:
+                QMessageBox.information(self, "Quiz zuordnen", "Keine offenen Quiz-Importe vorhanden.")
+                return
+            items_text = [f"{p.import_id[:8]}… → {p.document_id} v{p.document_version}" for p in pending]
+            choice, ok = QInputDialog.getItem(self, "Quiz zuordnen", "Offener Import:", items_text, editable=False)
+            if not ok:
+                return
+            idx = items_text.index(choice)
+            p = pending[idx]
+            # Check replacement conflict
+            conflict = self._admin.check_quiz_replacement_conflict(p.document_id, p.document_version, p.import_id)
+            if conflict.has_conflict:
+                reply = QMessageBox.question(
+                    self, "Quiz-Ersetzung",
+                    f"Für {p.document_id} v{p.document_version} existiert bereits ein aktives Quiz.\n"
+                    "Soll es ersetzt werden?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    result = self._admin.replace_quiz_binding(
+                        p.document_id, p.document_version, p.import_id, self._current_user().user_id,
+                    )
+                    self._log(f"Quiz ersetzt: {result.old_binding_id} → {result.new_binding_id}")
+                return
+            binding = self._admin.bind_quiz_to_document(p.import_id, p.document_id, p.document_version)
+            self._log(f"Quiz gebunden: {binding.binding_id}")
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _on_statistics(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            stats = self._admin.get_training_statistics()
+            log_entries = self._admin.list_training_audit_log()
+            text = (
+                f"Zuweisungen: {stats.total_assignments}  |  "
+                f"Abgeschlossen: {stats.completed}  |  "
+                f"Offen: {stats.open}  |  "
+                f"Fehlgeschlagen: {stats.failed}\n\n"
+                f"Letzte {len(log_entries)} Audit-Einträge:\n"
+            )
+            for entry in log_entries[:20]:
+                text += f"  {entry.timestamp}  {entry.action}  {entry.actor_user_id}\n"
+            QMessageBox.information(self, "Statistik / Logs", text)
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _on_comments_admin(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            dlg = _CommentsAdminDialog(self._admin, parent=self)
+            dlg.exec()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _on_set_document_tags(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            default_doc_id = self._selected_item.document_id if self._selected_item is not None else ""
+            docs = self._admin.list_assignable_documents()
+            labels = [f"{d.document_id} v{d.version} - {d.title}" for d in docs]
+            if labels:
+                selected, ok = QInputDialog.getItem(
+                    self,
+                    "Dokument auswählen",
+                    "Dokument:",
+                    labels,
+                    editable=False,
+                )
+                if not ok:
+                    return
+                idx = labels.index(selected)
+                doc_id = docs[idx].document_id
+            else:
+                doc_id, ok = QInputDialog.getText(self, "Dokument-Tags", "Dokument-ID:", text=default_doc_id)
+                if not ok or not doc_id.strip():
+                    return
+            current = self._admin.list_document_tags(doc_id)
+            csv_default = ", ".join(sorted(current.tags))
+            csv_tags, ok = QInputDialog.getText(
+                self,
+                "Dokument-Tags",
+                "Tags (CSV, positiv/additiv):",
+                text=csv_default,
+            )
+            if not ok:
+                return
+            tags = [t.strip() for t in csv_tags.split(",") if t.strip()]
+            updated = self._admin.set_document_tags(doc_id, tags)
+            self._log(f"Dokument-Tags gespeichert: {doc_id} -> {', '.join(sorted(updated.tags)) or '-'}")
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _on_rebuild_snapshots(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            count = self._admin.rebuild_assignment_snapshots()
+            self._log(f"Snapshots neu aufgebaut: {count} Einträge")
+            self._load_inbox()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _on_export_matrix(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            result = self._admin.export_training_matrix()
+            self._log(f"Matrix exportiert: {result.row_count} Zeilen, Export-ID: {result.export_id}")
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    # ---- Helpers ----
+
+    def _log(self, msg: str) -> None:
+        self._out.appendPlainText(msg)
+
+    def _show_error(self, exc: Exception) -> None:
+        QMessageBox.warning(self, "Training", str(exc))
+        self._out.appendPlainText(f"FEHLER: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Quiz dialog
+# ---------------------------------------------------------------------------
+
+class _QuizDialog(QDialog):
+    def __init__(self, session, questions, api, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Quiz – {session.document_id} v{session.version}")
+        self.setMinimumSize(500, 400)
+        self._session = session
+        self._questions = questions
+        self._api = api
+        self._answer_widgets: list[list[QPushButton]] = []
+
+        layout = QVBoxLayout(self)
+        self._selected_answers: list[int | None] = [None] * len(questions)
+
+        for qi, q in enumerate(questions):
+            layout.addWidget(QLabel(f"<b>Frage {qi+1}:</b> {q.text}"))
+            row = QHBoxLayout()
+            btns: list[QPushButton] = []
+            for ai, a in enumerate(q.answers):
+                btn = QPushButton(a.text)
+                btn.setCheckable(True)
+                btn.clicked.connect(lambda checked, _qi=qi, _ai=ai: self._select_answer(_qi, _ai))
+                row.addWidget(btn)
+                btns.append(btn)
+            self._answer_widgets.append(btns)
+            layout.addLayout(row)
+
+        self._btn_submit = QPushButton("Quiz abgeben")
+        self._btn_submit.clicked.connect(self._submit)
+        layout.addWidget(self._btn_submit)
+
+    def _select_answer(self, qi: int, ai: int) -> None:
+        self._selected_answers[qi] = ai
+        for i, btn in enumerate(self._answer_widgets[qi]):
+            btn.setChecked(i == ai)
+
+    def _submit(self) -> None:
+        if any(a is None for a in self._selected_answers):
+            QMessageBox.warning(self, "Quiz", "Bitte alle Fragen beantworten.")
+            return
+        try:
+            result = self._api.submit_quiz_answers(self._session.session_id, self._selected_answers)
+            if result.passed:
+                QMessageBox.information(self, "Quiz bestanden", f"Ergebnis: {result.score}/{result.total} – bestanden!")
+            else:
+                QMessageBox.warning(self, "Quiz nicht bestanden", f"Ergebnis: {result.score}/{result.total} – nicht bestanden.")
+            self.accept()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Quiz", str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Comments admin dialog (§8.2)
+# ---------------------------------------------------------------------------
+
+class _CommentsAdminDialog(QDialog):
+    def __init__(self, admin_api, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Kommentarübersicht (QMB/Admin)")
+        self.setMinimumSize(700, 400)
+        self._admin = admin_api
+
+        layout = QVBoxLayout(self)
+        self._table = QTableWidget(0, 6)
+        self._table.setHorizontalHeaderLabels([
+            "Dokumentenkennung", "Titel", "Benutzer", "Datum", "Kommentartext", "Status",
+        ])
+        self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self._table, stretch=1)
+
+        row = QHBoxLayout()
+        btn_refresh = QPushButton("Aktualisieren")
+        btn_refresh.clicked.connect(self._load)
+        btn_resolve = QPushButton("Als erledigt markieren")
+        btn_resolve.clicked.connect(self._resolve)
+        btn_inactive = QPushButton("Inaktiv setzen")
+        btn_inactive.clicked.connect(self._inactivate)
+        for btn in (btn_refresh, btn_resolve, btn_inactive):
+            row.addWidget(btn)
+        row.addStretch(1)
+        layout.addLayout(row)
+
+        self._comments: list = []
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            self._comments = self._admin.list_active_comments()
+            self._table.setRowCount(len(self._comments))
+            for i, c in enumerate(self._comments):
+                self._table.setItem(i, 0, QTableWidgetItem(c.document_id))
+                self._table.setItem(i, 1, QTableWidgetItem(c.document_title_snapshot))
+                self._table.setItem(i, 2, QTableWidgetItem(c.username_snapshot))
+                self._table.setItem(i, 3, QTableWidgetItem(str(c.created_at)))
+                self._table.setItem(i, 4, QTableWidgetItem(c.comment_text))
+                self._table.setItem(i, 5, QTableWidgetItem(c.status.value))
             self._table.resizeColumnsToContents()
         except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
+            QMessageBox.warning(self, "Kommentare", str(exc))
 
-    def _confirm_read(self) -> None:
+    def _selected_comment(self):
+        row = self._table.currentRow()
+        if 0 <= row < len(self._comments):
+            return self._comments[row]
+        return None
+
+    def _resolve(self) -> None:
+        c = self._selected_comment()
+        if c is None:
+            return
         try:
-            doc_id, version = self._doc_ref()
-            payload = self._api.confirm_read(
-                user_id=self._current_user_id(),
-                document_id=doc_id,
-                version=version,
-                last_page_seen=int(self._last_page_seen.text().strip() or "1"),
-                total_pages=int(self._total_pages.text().strip() or "1"),
-                scrolled_to_end=self._scrolled_to_end.text().strip().lower() == "true",
-            )
-            self._append("LESEN_BESTAETIGT", payload)
+            note, ok = QInputDialog.getText(self, "Erledigt", "Notiz (optional):")
+            if not ok:
+                return
+            self._admin.resolve_comment(c.comment_id, "admin", note or None)
+            self._load()
         except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
+            QMessageBox.warning(self, "Kommentare", str(exc))
 
-    def _start_quiz(self) -> None:
+    def _inactivate(self) -> None:
+        c = self._selected_comment()
+        if c is None:
+            return
         try:
-            doc_id, version = self._doc_ref()
-            session, questions = self._api.start_quiz(self._current_user_id(), doc_id, version)
-            self._session_id.setText(session.session_id)
-            self._append("QUIZ_START", {"session": session, "questions": questions})
+            note, ok = QInputDialog.getText(self, "Inaktiv setzen", "Notiz (optional):")
+            if not ok:
+                return
+            self._admin.inactivate_comment(c.comment_id, "admin", note or None)
+            self._load()
         except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
+            QMessageBox.warning(self, "Kommentare", str(exc))
 
-    def _submit_answers(self) -> None:
-        try:
-            answers = [int(v.strip()) for v in self._answers.text().split(",") if v.strip()]
-            payload = self._api.submit_quiz_answers(self._session_id.text().strip(), answers)
-            self._append("QUIZ_ABGABE", payload)
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
 
-    def _add_comment(self) -> None:
-        try:
-            doc_id, version = self._doc_ref()
-            payload = self._api.add_comment(self._current_user_id(), doc_id, version, self._comment.text().strip())
-            self._append("KOMMENTAR_HINZUGEFUEGT", payload)
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _admin_list_approved(self) -> None:
-        try:
-            self._require_admin_or_qmb()
-            payload = self._admin.list_quiz_capable_approved_documents()
-            self._append("ADMIN_QUIZ_FAHIGE_DOKUMENTE", payload)
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _admin_create_category(self) -> None:
-        try:
-            self._require_admin_or_qmb()
-            payload = self._admin.create_category(
-                self._category_id.text().strip(),
-                self._category_name.text().strip(),
-                self._category_desc.text().strip() or None,
-            )
-            self._append("ADMIN_KATEGORIE_ERSTELLT", payload)
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _admin_assign_doc(self) -> None:
-        try:
-            self._require_admin_or_qmb()
-            doc_id, _version = self._doc_ref()
-            self._admin.assign_document_to_category(self._category_id.text().strip(), doc_id)
-            self._append("ADMIN_DOKU_ZUGEWIESEN", {"category_id": self._category_id.text().strip(), "document_id": doc_id})
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _admin_assign_user(self) -> None:
-        try:
-            self._require_admin_or_qmb()
-            self._admin.assign_user_to_category(self._category_id.text().strip(), self._current_user_id())
-            self._append("ADMIN_BENUTZER_ZUGEWIESEN", {"category_id": self._category_id.text().strip(), "user_id": self._current_user_id()})
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _admin_sync(self) -> None:
-        try:
-            self._require_admin_or_qmb()
-            payload = self._admin.sync_required_assignments()
-            self._append("ADMIN_SYNC", {"created_or_updated": payload})
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _admin_import_quiz(self) -> None:
-        try:
-            self._require_admin_or_qmb()
-            doc_id, version = self._doc_ref()
-            raw = self._quiz_json.toPlainText().strip()
-            digest = self._admin.import_quiz_questions(doc_id, version, raw.encode("utf-8"))
-            self._append("ADMIN_QUIZ_IMPORT", {"digest": digest, "document_id": doc_id, "version": version})
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
-    def _admin_matrix(self) -> None:
-        try:
-            self._require_admin_or_qmb()
-            payload = self._admin.list_matrix()
-            self._append("ADMIN_MATRIX", payload)
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
-
+# ---------------------------------------------------------------------------
+# Contribution registration
+# ---------------------------------------------------------------------------
 
 def _build(container: RuntimeContainer) -> QWidget:
     return TrainingWorkspace(container)

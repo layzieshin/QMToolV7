@@ -3,21 +3,19 @@ from .contracts import (
     QuizQuestion,
     QuizResult,
     QuizSession,
-    TrainingAssignment,
+    TrainingAssignmentSnapshot,
     TrainingAssignmentStatus,
-    TrainingCategory,
-    TrainingComment,
+    TrainingCommentRecord,
+    TrainingInboxItem,
 )
-from .service import TrainingService
 
 __all__ = [
     "TrainingApi",
     "TrainingAdminApi",
-    "TrainingService",
-    "TrainingAssignment",
+    "TrainingAssignmentSnapshot",
     "TrainingAssignmentStatus",
-    "TrainingCategory",
-    "TrainingComment",
+    "TrainingCommentRecord",
+    "TrainingInboxItem",
     "QuizQuestion",
     "QuizSession",
     "QuizResult",

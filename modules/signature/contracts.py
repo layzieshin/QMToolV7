@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Literal
 from datetime import datetime
 
+from .errors import SignatureError  # noqa: F401 - public re-export for adapters
+
 
 SignMode = Literal["visual", "crypto", "both"]
 TextPosition = Literal["above", "below", "off"]

@@ -76,7 +76,7 @@ class DocumentCreateWizard(QDialog):
         form.addRow("Startart", self._mode)
         form.addRow("Datei", self._source)
         form.addRow("", pick)
-        form.addRow("Dokument-ID", self._document_id)
+        form.addRow("Dokumentenkennung", self._document_id)
         form.addRow("Titel", self._title)
         form.addRow("Kurzbeschreibung", self._description)
         form.addRow("Owner", self._owner)

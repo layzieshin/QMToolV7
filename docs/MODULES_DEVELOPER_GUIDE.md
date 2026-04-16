@@ -120,6 +120,19 @@ Contract framing:
   - Header read/write via service/API (`get_header`, `update_document_header`)
   - Version metadata update via service/API (`update_version_metadata`)
 
+### Identity rule (documents)
+
+- `document_id` ist die fachliche Kennung und wird vom Aufrufer geliefert.
+- Keine automatische UUID-Erzeugung fuer `document_id` in Adaptern oder Services.
+- UUIDs sind nur fuer interne/opake IDs wie `artifact_id` oder `event_id` erlaubt.
+
+### Signature/Artifact execution rules
+
+- `IN_PROGRESS -> IN_REVIEW`: `SOURCE_DOCX` wird bei Bedarf in `SOURCE_PDF` ueberfuehrt, dann signiert.
+- `IN_REVIEW -> IN_APPROVAL` und `IN_APPROVAL -> APPROVED`: kanonischer Input ist `SIGNED_PDF` der aktuellen Version.
+- GUI und PDF-Renderer verwenden gemeinsame Layout-Mathematik aus `modules/signature/layout_math.py`, damit Preview und finales PDF deckungsgleich bleiben.
+- `SignaturePlacementDialog` bleibt der gemeinsame Dialog (inkl. `template_list_provider`/`template_load_callback` fuer Preset-Auswahl).
+
 ### Events
 
 - Intake / template:

@@ -65,6 +65,7 @@ class DocumentsWorkflowUseCases:
                 approvers=frozenset(approvers),
             ),
         )
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.assignments.updated.v1",
             updated,
@@ -114,6 +115,7 @@ class DocumentsWorkflowUseCases:
             reviewed_by=frozenset(),
             approved_by=frozenset(),
         )
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.workflow.started.v1",
             updated,
@@ -163,6 +165,7 @@ class DocumentsWorkflowUseCases:
                 next_review_at=now + timedelta(days=365),
                 workflow_active=False,
             )
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.editing.completed.v1",
             updated,
@@ -205,6 +208,7 @@ class DocumentsWorkflowUseCases:
             review_completed_at=_utcnow(),
             review_completed_by=actor_user_id,
         )
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.review.accepted.v1",
             updated,
@@ -236,6 +240,7 @@ class DocumentsWorkflowUseCases:
             raise PermissionDeniedError("actor is not assigned as reviewer")
         self._service._assert_rejection_reason(reason)
         updated = replace(state, status=DocumentStatus.IN_PROGRESS)
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.review.rejected.v1",
             updated,
@@ -285,6 +290,7 @@ class DocumentsWorkflowUseCases:
             next_review_at=state.next_review_at or (now + timedelta(days=365)),
             workflow_active=False,
         )
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.approval.accepted.v1",
             updated,
@@ -317,6 +323,7 @@ class DocumentsWorkflowUseCases:
             raise PermissionDeniedError("actor is not assigned as approver")
         self._service._assert_rejection_reason(reason)
         updated = replace(state, status=DocumentStatus.IN_PROGRESS)
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.approval.rejected.v1",
             updated,
@@ -347,6 +354,7 @@ class DocumentsWorkflowUseCases:
         if state.status not in (DocumentStatus.IN_PROGRESS, DocumentStatus.IN_REVIEW, DocumentStatus.IN_APPROVAL):
             raise InvalidTransitionError("workflow abort is only allowed during active workflow phases")
         updated = replace(state, status=DocumentStatus.PLANNED, workflow_active=False)
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.workflow.aborted.v1",
             updated,
@@ -382,6 +390,7 @@ class DocumentsWorkflowUseCases:
             archived_at=_utcnow(),
             archived_by=actor_user_id,
         )
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.archived.v1",
             updated,
@@ -420,6 +429,7 @@ class DocumentsWorkflowUseCases:
             valid_until=now + timedelta(days=365),
             next_review_at=now + timedelta(days=365),
         )
+        self._service._store_state(updated)
         event = self._service._publish(
             "domain.documents.validity.extended.v1",
             updated,

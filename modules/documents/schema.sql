@@ -80,3 +80,15 @@ CREATE INDEX IF NOT EXISTS idx_document_artifacts_doc_ver
 CREATE INDEX IF NOT EXISTS idx_document_artifacts_type_current
     ON document_artifacts (document_id, version, artifact_type, is_current);
 
+CREATE TABLE IF NOT EXISTS document_read_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    confirmed_at TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_document_read_receipts_unique
+    ON document_read_receipts (user_id, document_id, version);
+

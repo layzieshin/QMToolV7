@@ -155,6 +155,15 @@ At minimum, these control classes and profiles must exist and be executable:
 - `EXTERNAL` with profile(s) like `external_control`.
 - `RECORD` with profile(s) like `record_light`.
 
+## document_id identity rule (system-wide)
+
+- `document_id` is **always** a caller-provided fachliche Kennung (e.g. `"VA-2024-001"`, `"AA-HR-005"`).
+- The system **never** auto-generates a UUID for `document_id`.
+  - Internal artifact IDs, event IDs, and asset IDs may use UUIDs — these are opaque system identifiers.
+  - `document_id`, `template_id`, `category_id`, `user_id`, and similar business-visible identifiers are explicitly supplied by the caller.
+- This rule applies to all layers: CLI (`--document-id`), API, service, repository, and tests.
+- Violation: accepting or generating `uuid4()` for `document_id` is an invariant breach.
+
 ## Non-negotiable invariants
 
 1. `document_id` is stable across all versions.

@@ -9,6 +9,8 @@ def utcnow() -> datetime:
 from enum import Enum
 from typing import Any
 
+from .errors import DocumentWorkflowError  # noqa: F401 - public re-export for adapters
+
 
 class SystemRole(str, Enum):
     USER = "USER"
@@ -116,6 +118,9 @@ class WorkflowProfile:
 
 @dataclass(frozen=True)
 class DocumentHeader:
+    # document_id is ALWAYS a caller-provided fachliche Kennung (e.g. "VA-2024-001").
+    # The system NEVER auto-generates UUIDs for document_id.
+    # Stability invariant: document_id is immutable across all versions of the same document.
     document_id: str
     doc_type: DocumentType
     control_class: ControlClass
@@ -228,3 +233,23 @@ class ReleasedDocumentItem:
     valid_until: datetime | None
     released_at: datetime | None
     owner_user_id: str | None
+
+
+@dataclass(frozen=True)
+class DocumentReadSession:
+    session_id: str
+    user_id: str
+    document_id: str
+    version: int
+    opened_at: datetime
+
+
+@dataclass(frozen=True)
+class DocumentReadReceipt:
+    receipt_id: str
+    user_id: str
+    document_id: str
+    version: int
+    confirmed_at: datetime
+    source: str
+

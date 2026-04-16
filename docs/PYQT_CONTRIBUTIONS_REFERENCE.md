@@ -1,4 +1,4 @@
-t# PyQt Contributions Reference
+# PyQt Contributions Reference
 
 Status: Canonical (P0)  
 Valid from: 2026-04-13  
@@ -55,6 +55,7 @@ This reference documents active PyQt contributions in `interfaces/pyqt/*` with t
   - `interfaces/pyqt/widgets/document_create_wizard.py`
   - `interfaces/pyqt/widgets/workflow_start_wizard.py`
   - `interfaces/pyqt/widgets/reject_reason_dialog.py`
+  - `interfaces/pyqt/widgets/signature_placement_dialog.py` (shared placement dialog inkl. Template/Preset-Auswahl)
   - `interfaces/pyqt/widgets/signature_canvas_dialog.py`
 
 ## Notes

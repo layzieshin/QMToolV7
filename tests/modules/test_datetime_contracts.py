@@ -5,7 +5,7 @@ import unittest
 from modules.documents.contracts import DocumentHeader
 from modules.documents.contracts import control_class_for
 from modules.documents.contracts import DocumentType
-from modules.training.contracts import TrainingAssignment, TrainingAssignmentStatus, TrainingCategory
+from modules.training.contracts import TrainingAssignmentSnapshot, TrainingAssignmentStatus, AssignmentSource
 
 
 class DateTimeContractsTest(unittest.TestCase):
@@ -20,19 +20,16 @@ class DateTimeContractsTest(unittest.TestCase):
         self.assertIsNotNone(header.updated_at.tzinfo)
 
     def test_training_contract_defaults_are_timezone_aware(self) -> None:
-        category = TrainingCategory(category_id="cat-1", name="Category 1")
-        self.assertIsNotNone(category.created_at.tzinfo)
-        assignment = TrainingAssignment(
-            assignment_id="a-1",
+        snapshot = TrainingAssignmentSnapshot(
+            snapshot_id="s-1",
             user_id="u-1",
             document_id="DOC-TZ-2",
             version=1,
-            category_id="cat-1",
-            status=TrainingAssignmentStatus.ASSIGNED,
-            active=True,
+            source=AssignmentSource.SCOPE,
+            exempted=False,
         )
-        self.assertIsNotNone(assignment.created_at.tzinfo)
-        self.assertIsNotNone(assignment.updated_at.tzinfo)
+        self.assertIsNotNone(snapshot.created_at.tzinfo)
+        self.assertIsNotNone(snapshot.updated_at.tzinfo)
 
 
 if __name__ == "__main__":

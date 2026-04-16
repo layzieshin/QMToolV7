@@ -12,6 +12,7 @@ from .contracts import (
     ControlClass,
     DocumentArtifact,
     DocumentHeader,
+    DocumentReadReceipt,
     DocumentStatus,
     DocumentType,
     DocumentVersionState,
@@ -486,4 +487,42 @@ class SQLiteDocumentsRepository(DocumentsRepository):
         if value == "OTHER":
             return ControlClass.RECORD
         return ControlClass(value)
+
+    # --- Read Receipts ---
+
+    def create_read_receipt(self, receipt: DocumentReadReceipt) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO document_read_receipts
+                (receipt_id, user_id, document_id, version, confirmed_at, source)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    receipt.receipt_id,
+                    receipt.user_id,
+                    receipt.document_id,
+                    receipt.version,
+                    receipt.confirmed_at.isoformat(),
+                    receipt.source,
+                ),
+            )
+            conn.commit()
+
+    def get_read_receipt(self, user_id: str, document_id: str, version: int) -> DocumentReadReceipt | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM document_read_receipts WHERE user_id = ? AND document_id = ? AND version = ?",
+                (user_id, document_id, version),
+            ).fetchone()
+        if row is None:
+            return None
+        return DocumentReadReceipt(
+            receipt_id=str(row["receipt_id"]),
+            user_id=str(row["user_id"]),
+            document_id=str(row["document_id"]),
+            version=int(row["version"]),
+            confirmed_at=self._parse_dt(str(row["confirmed_at"])) or datetime.now(timezone.utc),
+            source=str(row["source"]),
+        )
 

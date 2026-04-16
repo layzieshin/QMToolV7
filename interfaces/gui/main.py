@@ -1,3 +1,10 @@
+# ──────────────────────────────────────────────────────────────────────
+# LEGACY FROZEN — no new code.
+# This Tk-based GUI is superseded by the PyQt interface.
+# Boundary violations (direct imports from modules.*.errors) are
+# accepted and will NOT be fixed. See ARCHITECTURE_REFACTOR_CANONICAL.md
+# Phase 6.
+# ──────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
 import argparse
@@ -15,7 +22,7 @@ from modules.signature.contracts import LabelLayoutInput, SignRequest, Signature
 from modules.signature.errors import SignatureError
 from qm_platform.runtime.bootstrap import register_core_modules
 
-from interfaces.cli.main import build_container
+from interfaces.cli.bootstrap import build_container
 
 
 def _role_to_system_role(role: str) -> SystemRole:

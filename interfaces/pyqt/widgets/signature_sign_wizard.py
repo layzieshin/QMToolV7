@@ -342,14 +342,18 @@ class SignatureSignWizard(QDialog):
         if "template" in payload:
             template = payload["template"]
             placement = getattr(template, "placement", None)
+            template_layout = getattr(template, "layout", None)
             if placement is None:
+                self._profile_hint.setText("Profilvorschau nicht verfügbar")
+                return
+            if template_layout is None:
                 self._profile_hint.setText("Profilvorschau nicht verfügbar")
                 return
             self._profile_hint.setText(
                 f"Profil: {payload.get('selected_profile', '-')} — gespeicherte Platzierung wird in Schritt 3 geladen."
             )
             self._current_placement = placement
-            self._current_layout = self._resolved_runtime_layout(template.layout)
+            self._current_layout = self._resolved_runtime_layout(template_layout)
             self._sync_form()
         elif payload.get("modus") == "eigene_parameter":
             self._profile_hint.setText("Eigene Parameter aktiv — Platzierung wird in Schritt 3 festgelegt.")
@@ -384,6 +388,8 @@ class SignatureSignWizard(QDialog):
                 layout=layout,
                 signature_pixmap=self._get_sig_pixmap(),
                 template_save_callback=self._save_as_template,
+                template_list_provider=self._list_templates_for_dialog,
+                template_load_callback=self._load_template_for_dialog,
                 parent=self,
             )
             dialog.showFullScreen()
@@ -414,6 +420,17 @@ class SignatureSignWizard(QDialog):
             scope="user",
         )
         self._load_profiles()
+
+    def _list_templates_for_dialog(self) -> list[tuple[str, str]]:
+        user = self._current_user()
+        return self._actions.list_templates_for_select(user.user_id)
+
+    def _load_template_for_dialog(self, template_id: str) -> tuple[SignaturePlacementInput, LabelLayoutInput]:
+        user = self._current_user()
+        template = self._actions.get_template_by_id(user.user_id, template_id)
+        if template is None:
+            raise RuntimeError(f"Signaturprofil '{template_id}' wurde nicht gefunden")
+        return template.placement, self._resolved_runtime_layout(template.layout)
 
     def _ensure_signature_available_for_start(self) -> None:
         try:

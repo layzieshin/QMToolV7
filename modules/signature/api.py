@@ -4,7 +4,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import SignRequest, SignResult, SignatureAsset, SignaturePlacementInput, UserSignatureTemplate, LabelLayoutInput
+from .errors import SignatureError
 from .service import SignatureServiceV2
+
+__all__ = [
+    "SignatureApi",
+    "SignatureError",
+    "SignRequest", "SignResult", "SignatureAsset",
+    "SignaturePlacementInput", "UserSignatureTemplate", "LabelLayoutInput",
+]
 
 
 @dataclass

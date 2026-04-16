@@ -43,7 +43,6 @@ class TrainingModulePortsTest(unittest.TestCase):
             lifecycle.register(create_documents_module_contract())
             lifecycle.register(create_training_module_contract())
             lifecycle.start()
-            self.assertTrue(container.has_port("training_service"))
             self.assertTrue(container.has_port("training_api"))
             self.assertTrue(container.has_port("training_admin_api"))
 

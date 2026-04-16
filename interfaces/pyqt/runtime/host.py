@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from interfaces.cli.main import build_container
+from interfaces.cli.bootstrap import build_container
 from qm_platform.runtime.bootstrap import register_core_modules
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.lifecycle import LifecycleManager

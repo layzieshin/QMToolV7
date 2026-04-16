@@ -6,6 +6,8 @@ from .contracts import (
     ControlClass,
     DocumentArtifact,
     DocumentHeader,
+    DocumentReadReceipt,
+    DocumentReadSession,
     DocumentTaskItem,
     RecentDocumentItem,
     ReleasedDocumentItem,
@@ -17,7 +19,17 @@ from .contracts import (
     SystemRole,
     WorkflowProfile,
 )
+from .errors import DocumentWorkflowError
 from .service import DocumentsService
+
+__all__ = [
+    "DocumentsApi",
+    "DocumentWorkflowError",
+    "ControlClass", "DocumentArtifact", "DocumentHeader", "DocumentTaskItem",
+    "RecentDocumentItem", "ReleasedDocumentItem", "ReviewActionItem",
+    "DocumentStatus", "DocumentType", "DocumentVersionState",
+    "RejectionReason", "SystemRole", "WorkflowProfile",
+]
 
 
 class DocumentsPoolApi:
@@ -61,6 +73,7 @@ class DocumentsWorkflowApi:
         doc_type: DocumentType = DocumentType.OTHER,
         control_class: ControlClass | None = None,
         workflow_profile_id: str = "long_release",
+        custom_fields: dict[str, object] | None = None,
     ) -> DocumentVersionState:
         return self._service.create_document_version(
             document_id,
@@ -71,6 +84,7 @@ class DocumentsWorkflowApi:
             doc_type=doc_type,
             control_class=control_class,
             workflow_profile_id=workflow_profile_id,
+            custom_fields=custom_fields,
         )
 
     def import_existing_pdf(
@@ -304,4 +318,26 @@ class DocumentsWorkflowApi:
             actor_user_id=actor_user_id,
             actor_role=actor_role,
         )
+
+
+class DocumentsReadApi:
+    """Read-Confirmation API for training integration (§6.1)."""
+
+    def __init__(self, service: DocumentsService) -> None:
+        self._service = service
+
+    def open_released_document_for_training(
+        self, user_id: str, document_id: str, version: int
+    ) -> DocumentReadSession:
+        return self._service.open_released_document_for_training(user_id, document_id, version)
+
+    def confirm_released_document_read(
+        self, user_id: str, document_id: str, version: int, *, source: str
+    ) -> DocumentReadReceipt:
+        return self._service.confirm_released_document_read(user_id, document_id, version, source=source)
+
+    def get_read_receipt(
+        self, user_id: str, document_id: str, version: int
+    ) -> DocumentReadReceipt | None:
+        return self._service.get_read_receipt(user_id, document_id, version)
 
