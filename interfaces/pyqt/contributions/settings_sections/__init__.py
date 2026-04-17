@@ -5,6 +5,7 @@ from .module_settings_section import ModuleSettingsWidget
 from .signature_settings_section import SignatureSettingsWidget
 from .license_section import LicenseManagementWidget
 from .planned_options_section import PlannedOptionsWidget
+from .training_settings_section import TrainingSettingsWidget
 
 __all__ = [
     "ProfileWidget",
@@ -13,5 +14,6 @@ __all__ = [
     "SignatureSettingsWidget",
     "LicenseManagementWidget",
     "PlannedOptionsWidget",
+    "TrainingSettingsWidget",
 ]
 

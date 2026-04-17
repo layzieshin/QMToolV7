@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from interfaces.pyqt.presenters.storage_paths import platform_logs_root
 from modules.documents.contracts import DocumentStatus
 from qm_platform.runtime.container import RuntimeContainer
 
@@ -36,7 +37,7 @@ def build_doc_history(registry_api, pool_api, documents_service, doc_id: str, ve
 
 def build_technical_rows(app_home: Path | str) -> list[tuple[str, str, str, str]]:
     app_home_path = Path(app_home)
-    log_dir = app_home_path / "storage/platform/logs"
+    log_dir = platform_logs_root(app_home_path)
     platform_log = log_dir / "platform.log"
     audit_log = log_dir / "audit.log"
     rows: list[tuple[str, str, str, str]] = []

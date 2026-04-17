@@ -30,8 +30,12 @@ def test_hotspots_use_presenter_layer() -> None:
     assert "DocumentsWorkflowPresenter" in _read("interfaces/pyqt/contributions/documents_workflow_view.py")
     assert "DocumentsWorkflowFilterPresenter" in _read("interfaces/pyqt/contributions/documents_workflow_view.py")
     assert "TrainingPresenter" in _read("interfaces/pyqt/contributions/training_placeholder.py") or "TrainingPresenter" in _read("interfaces/pyqt/presenters/training_presenter.py")
-    assert "SettingsProfilePresenter" in _read("interfaces/pyqt/contributions/settings_view.py")
-    assert "SettingsPolicyPresenter" in _read("interfaces/pyqt/contributions/settings_view.py")
+    assert "SettingsProfilePresenter" in _read(
+        "interfaces/pyqt/contributions/settings_sections/profile_section.py"
+    )
+    assert "SettingsPolicyPresenter" in _read(
+        "interfaces/pyqt/contributions/settings_sections/module_settings_section.py"
+    )
     assert "ContributionVisibilityPolicy" in _read("interfaces/pyqt/shell/main_window.py")
 
 

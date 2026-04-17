@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
+from interfaces.pyqt.presenters.storage_paths import artifacts_root
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from modules.documents.contracts import ArtifactType
 from qm_platform.runtime.container import RuntimeContainer
@@ -69,7 +70,7 @@ class DocumentsPoolWidget(QWidget):
         self._um = container.get_port("usermanagement_service")
         self._pool = container.get_port("documents_pool_api")
         self._model = _PoolTableModel()
-        self._artifacts_root = self._resolve_artifacts_root()
+        self._artifacts_root = artifacts_root(self._container, self._app_home)
 
         self._search = QLineEdit()
         self._search.setPlaceholderText("Suche nach Dokument-ID oder Titel")
@@ -181,15 +182,7 @@ class DocumentsPoolWidget(QWidget):
         self._error.setText("Kein lokal oeffenbares RELEASED_PDF-Artefakt verfuegbar.")
 
     def _resolve_artifacts_root(self) -> Path:
-        if not self._container.has_port("settings_service"):
-            return self._app_home / "storage" / "documents" / "artifacts"
-        settings_service = self._container.get_port("settings_service")
-        docs_settings = settings_service.get_module_settings("documents")
-        raw_root = docs_settings.get("artifacts_root", "storage/documents/artifacts")
-        root = Path(raw_root)
-        if root.is_absolute():
-            return root
-        return self._app_home / root
+        return artifacts_root(self._container, self._app_home)
 
 
 def _build(container: RuntimeContainer) -> QWidget:

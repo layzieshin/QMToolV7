@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import tempfile
 from dataclasses import replace
-from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -25,6 +24,7 @@ from PyQt6.QtWidgets import (
 )
 
 from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
+from interfaces.pyqt.presenters.formatting import format_local, now_utc_aware
 from modules.documents.contracts import ArtifactType
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 
@@ -335,7 +335,7 @@ class DocumentsSignatureOps:
 
     def resolved_runtime_layout(self, layout: LabelLayoutInput, user: object) -> LabelLayoutInput:
         name = self.display_name(user)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = format_local(now_utc_aware())
         seeded = replace(
             layout,
             name_text=name if layout.show_name else None,
@@ -380,6 +380,15 @@ class DocumentsSignatureOps:
     # ------------------------------------------------------------------
 
     def find_pdf_for_signature(self, state: object, transition: str | None = None) -> Path | None:
+        return self.find_pdf_for_signature_sync(state, transition=transition, allow_docx_fallback=True)
+
+    def find_pdf_for_signature_sync(
+        self,
+        state: object,
+        *,
+        transition: str | None = None,
+        allow_docx_fallback: bool = True,
+    ) -> Path | None:
         artifacts = self._pool.list_artifacts(state.document_id, state.version)
         transition_key = (transition or "").strip().upper()
         if transition_key in {"IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED"}:
@@ -400,6 +409,9 @@ class DocumentsSignatureOps:
         if transition_key in {"IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED", "EXTEND_VALIDITY"}:
             return None
 
+        if not allow_docx_fallback:
+            return None
+
         conversion_errors: list[str] = []
         for artifact in ordered_artifacts:
             if artifact.artifact_type != ArtifactType.SOURCE_DOCX:
@@ -415,6 +427,17 @@ class DocumentsSignatureOps:
                         return converted
         if conversion_errors:
             raise RuntimeError(conversion_errors[0])
+        return None
+
+    def find_docx_source_for_signature(self, state: object) -> Path | None:
+        artifacts = self._pool.list_artifacts(state.document_id, state.version)
+        ordered_artifacts = sorted(artifacts, key=lambda a: 0 if getattr(a, "is_current", False) else 1)
+        for artifact in ordered_artifacts:
+            if artifact.artifact_type != ArtifactType.SOURCE_DOCX:
+                continue
+            for docx_path in self.resolve_openable_artifact_paths(artifact):
+                if docx_path.exists() and docx_path.suffix.lower() == ".docx":
+                    return docx_path
         return None
 
     def convert_docx_to_temp_pdf(self, docx_path: Path) -> Path | None:

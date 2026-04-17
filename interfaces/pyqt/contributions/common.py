@@ -10,14 +10,18 @@ from modules.usermanagement.role_policies import is_effective_qmb
 def normalize_role(role: str | None) -> str:
     if role is None:
         return ""
-    raw = role.strip().upper()
-    if raw == "ADMIN":
-        return "ADMIN"
-    if raw == "QMB":
-        return "QMB"
-    if raw == "USER":
-        return "USER"
+    raw = str(role).strip().upper()
+    if raw in {"ADMIN", "QMB", "USER"}:
+        return raw
     return raw
+
+
+def safe_connect(signal: object, slot: object) -> None:
+    try:
+        signal.disconnect(slot)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    signal.connect(slot)  # type: ignore[attr-defined]
 
 
 def role_to_system_role(role: str) -> SystemRole:

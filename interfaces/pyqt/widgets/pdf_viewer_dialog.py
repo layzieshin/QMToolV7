@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 from .pdf_rendering import get_page_count, pixmap_to_qpixmap, render_page
 from .pdf_comment_create_dialog import PdfCommentCreateDialog
 from interfaces.pyqt.contributions.common import role_to_system_role
+from interfaces.pyqt.logging_adapter import get_logger
 
 
 class _SelectionLabel(QLabel):
@@ -132,6 +133,7 @@ class PdfViewerDialog(QDialog):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self._log = get_logger(__name__)
         self._request = request
         self._read_api = documents_read_api
         self._comments_api = documents_comments_api
@@ -288,6 +290,8 @@ class PdfViewerDialog(QDialog):
                 errors.append(str(exc))
         self._reload_comments()
         if errors:
+            self._log.warning("Some PDF comments failed to save: %s", errors[:3])
+            self._reload_comments()
             QMessageBox.warning(
                 self,
                 "Kommentar",

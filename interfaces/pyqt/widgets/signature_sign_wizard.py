@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import replace
-from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtGui import QPixmap
@@ -22,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from interfaces.pyqt.widgets.signature_actions import SignatureActions
+from interfaces.pyqt.presenters.formatting import format_local, now_utc_aware
 from interfaces.pyqt.widgets.signature_placement_dialog import SignaturePlacementDialog
 from interfaces.pyqt.widgets.signature_request_form import SignatureRequestForm
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
@@ -251,7 +251,7 @@ class SignatureSignWizard(QDialog):
     def _resolved_runtime_layout(self, layout: LabelLayoutInput) -> LabelLayoutInput:
         user = self._um.get_current_user()
         display_name = self._display_name(user) if user is not None else ""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = format_local(now_utc_aware())
         return replace(
             layout,
             name_text=display_name if layout.show_name else None,

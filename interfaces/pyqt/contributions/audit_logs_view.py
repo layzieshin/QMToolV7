@@ -21,10 +21,12 @@ from PyQt6.QtWidgets import (
 )
 
 from interfaces.pyqt.contributions.common import as_json_text, normalize_role
+from interfaces.pyqt.presenters.formatting import format_local
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.widgets.audit_log_helpers import build_admin_checks, build_doc_history, build_technical_rows
 from interfaces.pyqt.widgets.table_helpers import configure_readonly_table, fill_table
 from qm_platform.runtime.container import RuntimeContainer
+from modules.usermanagement.role_policies import is_effective_qmb
 
 
 class AuditLogsWidget(QWidget):
@@ -78,7 +80,9 @@ class AuditLogsWidget(QWidget):
         self._btn_backup = QPushButton("Backup erstellen")
         self._btn_backup.clicked.connect(self._create_backup)
         current_user = self._container.get_port("usermanagement_service").get_current_user()
-        is_admin = normalize_role(getattr(current_user, "role", None)) == "ADMIN"
+        is_admin = bool(current_user) and (
+            normalize_role(getattr(current_user, "role", None)) == "ADMIN" or is_effective_qmb(current_user)
+        )
         self._btn_backup.setVisible(bool(self._container.has_port("log_backup_service")) and is_admin)
 
         tabs = QTabWidget()
@@ -180,7 +184,7 @@ class AuditLogsWidget(QWidget):
             date_from, date_to = self._date_range_utc(self._functional_from, self._functional_to)
             self._functional_rows = [
                 (
-                    str(entry.get("timestamp_utc", "")),
+                format_local(entry.get("timestamp_utc", "")),
                     str(entry.get("action", "")),
                     str(entry.get("actor", "")),
                     str(entry.get("target", "")),
@@ -202,7 +206,7 @@ class AuditLogsWidget(QWidget):
         state = payload.get("state")
         self._functional_rows = [
             (
-                str(getattr(state, "last_event_at", "")),
+                format_local(getattr(state, "last_event_at", "")),
                 str(getattr(state, "last_event_id", "")),
                 str(getattr(state, "last_actor_user_id", "")),
                 f"{doc_id}:v{version}",
@@ -239,7 +243,7 @@ class AuditLogsWidget(QWidget):
             for entry in query_service.query_technical_logs(limit=400, date_from=date_from, date_to=date_to):
                 rows.append(
                     (
-                        str(entry.get("timestamp_utc", "")),
+                        format_local(entry.get("timestamp_utc", "")),
                         str(entry.get("level", "INFO")),
                         str(entry.get("module", "platform")),
                         str(entry.get("message", "")),
@@ -248,7 +252,7 @@ class AuditLogsWidget(QWidget):
             for entry in query_service.query_audit(limit=200, date_from=date_from, date_to=date_to):
                 rows.append(
                     (
-                        str(entry.get("timestamp_utc", "")),
+                        format_local(entry.get("timestamp_utc", "")),
                         "AUDIT",
                         "audit",
                         str(entry.get("action", "")),

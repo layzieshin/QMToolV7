@@ -1,16 +1,8 @@
 from __future__ import annotations
 
+from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from modules.usermanagement.role_policies import is_effective_qmb
-
-
-def normalize_role(role: str | None) -> str:
-    if role is None:
-        return ""
-    raw = str(role).strip().upper()
-    if raw in {"ADMIN", "QMB", "USER"}:
-        return raw
-    return raw
 
 
 class ContributionVisibilityPolicy:

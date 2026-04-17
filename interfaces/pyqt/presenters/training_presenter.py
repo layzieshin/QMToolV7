@@ -1,6 +1,7 @@
 """Training presenter – thin UI logic layer (no business logic)."""
 from __future__ import annotations
 
+from interfaces.pyqt.contributions.common import normalize_role
 from modules.training.contracts import TrainingInboxItem
 from modules.usermanagement.role_policies import is_effective_qmb
 
@@ -35,6 +36,11 @@ class TrainingPresenter:
         return quiz_attempted
 
     @staticmethod
-    def is_admin(user: object) -> bool:
-        role = str(getattr(user, "role", "") or "").strip().upper()
+    def is_privileged_for_training(user: object) -> bool:
+        role = normalize_role(getattr(user, "role", None))
         return role == "ADMIN" or is_effective_qmb(user)
+
+    @staticmethod
+    def is_admin(user: object) -> bool:
+        # Backward-compatible alias for callers/tests.
+        return TrainingPresenter.is_privileged_for_training(user)

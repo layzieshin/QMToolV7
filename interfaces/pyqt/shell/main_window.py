@@ -27,6 +27,7 @@ from interfaces.pyqt.runtime.host import RuntimeHost
 from interfaces.pyqt.shell.preferences import ShellPreferences
 from interfaces.pyqt.shell.session_coordinator import SessionCoordinator
 from interfaces.pyqt.shell.visibility_policy import ContributionVisibilityPolicy, normalize_role
+from interfaces.pyqt.logging_adapter import get_logger
 from interfaces.pyqt.widgets.register_dialog import RegisterDialog
 
 _CONTRIBUTION_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -71,6 +72,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, host: RuntimeHost) -> None:
         super().__init__()
+        self._log = get_logger(__name__)
         self._host = host
         ordered = all_contributions()
         self._all_contributions: dict[str, QtModuleContribution] = {c.contribution_id: c for c in ordered}
@@ -327,8 +329,8 @@ class MainWindow(QMainWindow):
     def _on_sign_out(self) -> None:
         try:
             self._um().logout()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            self._log.exception("Sign-out logout failed")
         self._refresh_shell_for_session()
         self._prompt_login(required=True)
 
@@ -337,8 +339,8 @@ class MainWindow(QMainWindow):
             self._stopping = True
             try:
                 self._um().logout()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001
+                self._log.exception("Logout on close failed")
             self._host.stop()
         super().closeEvent(event)
 
