@@ -15,6 +15,8 @@ from qm_platform.licensing.license_policy import LicensePolicy
 from qm_platform.licensing.license_service import LicenseService
 from qm_platform.licensing.license_verifier import LicenseVerifier
 from qm_platform.logging.audit_logger import AuditLogger
+from qm_platform.logging.backup_reminder import BackupReminderService
+from qm_platform.logging.log_backup_service import LogBackupService
 from qm_platform.logging.log_query_service import LogQueryService
 from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime import bootstrap as runtime_bootstrap
@@ -114,6 +116,19 @@ def build_container() -> RuntimeContainer:
             platform_log_file=resolve_home_path(app_home, "storage/platform/logs/platform.log"),
             audit_log_file=resolve_home_path(app_home, "storage/platform/logs/audit.log"),
         ),
+    )
+    backup_service = LogBackupService(
+        platform_log_file=resolve_home_path(app_home, "storage/platform/logs/platform.log"),
+        audit_log_file=resolve_home_path(app_home, "storage/platform/logs/audit.log"),
+        backup_dir=resolve_home_path(app_home, "storage/platform/backups/logs"),
+        state_file=resolve_home_path(app_home, "storage/platform/backups/logs/_state.json"),
+        audit_logger=audit,
+    )
+    threshold_days = int(settings.get_module_settings("documents").get("logs_backup_reminder_days", 30))
+    container.register_port("log_backup_service", backup_service)
+    container.register_port(
+        "backup_reminder_service",
+        BackupReminderService(backup_service, threshold_days=threshold_days),
     )
     container.register_port("event_bus", events)
     container.register_port("settings_service", settings)

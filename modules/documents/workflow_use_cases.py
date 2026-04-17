@@ -30,6 +30,8 @@ def _stamp_event(
     try:
         occurred_at_raw = getattr(event, "occurred_at_utc", None)
         occurred_at: datetime | None = datetime.fromisoformat(str(occurred_at_raw)) if occurred_at_raw else None
+        if occurred_at is not None and occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=timezone.utc)
     except Exception:
         occurred_at = _utcnow()
     event_id = getattr(event, "event_id", None)
@@ -408,12 +410,14 @@ class DocumentsWorkflowUseCases:
             raise InvalidTransitionError("archiving is only allowed from APPROVED")
         if actor_role not in (SystemRole.QMB, SystemRole.ADMIN):
             raise PermissionDeniedError("only QMB or ADMIN can archive approved documents")
+        archived_at = _utcnow()
         updated = replace(
             state,
             status=DocumentStatus.ARCHIVED,
             workflow_active=False,
-            archived_at=_utcnow(),
+            archived_at=archived_at,
             archived_by=actor_user_id,
+            valid_until=archived_at,
         )
         with self._service._write_transaction():
             self._service._store_state(updated)

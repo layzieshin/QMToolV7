@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import dataclass
 
 from modules.training.contracts import AssignmentSource, TrainingInboxItem
 from interfaces.pyqt.presenters.training_presenter import TrainingPresenter
@@ -17,13 +18,19 @@ def _item(*, read_confirmed=False, quiz_available=False, quiz_passed=False) -> T
 
 
 class TestTrainingGuiPermissions(unittest.TestCase):
+    @dataclass
+    class _User:
+        role: str
+        is_qmb: bool = False
+
     def test_admin_bar_visible_for_admin(self):
-        self.assertTrue(TrainingPresenter.is_admin("Admin"))
-        self.assertTrue(TrainingPresenter.is_admin("QMB"))
+        self.assertTrue(TrainingPresenter.is_admin(self._User("Admin")))
+        self.assertTrue(TrainingPresenter.is_admin(self._User("QMB")))
+        self.assertTrue(TrainingPresenter.is_admin(self._User("User", is_qmb=True)))
 
     def test_admin_bar_hidden_for_user(self):
-        self.assertFalse(TrainingPresenter.is_admin("User"))
-        self.assertFalse(TrainingPresenter.is_admin(""))
+        self.assertFalse(TrainingPresenter.is_admin(self._User("User")))
+        self.assertFalse(TrainingPresenter.is_admin(self._User("")))
 
     def test_read_enabled_when_not_confirmed(self):
         self.assertTrue(TrainingPresenter.is_read_enabled(_item(read_confirmed=False)))

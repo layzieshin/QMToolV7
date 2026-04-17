@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 from datetime import timedelta
+from pathlib import Path
+import tempfile
 
 from modules.documents.contracts import (
     DocumentStatus,
@@ -10,8 +12,11 @@ from modules.documents.contracts import (
     ValidityExtensionOutcome,
     WorkflowProfile,
 )
-from modules.documents.errors import InvalidTransitionError, PermissionDeniedError, ValidationError
+from modules.documents.errors import InvalidTransitionError, PermissionDeniedError, SignatureTransitionError, ValidationError
 from modules.documents.service import DocumentsService
+from modules.documents.sqlite_repository import SQLiteDocumentsRepository
+from modules.documents.storage import FileSystemDocumentsStorage
+from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 
 
 class _FakeSignatureApi:
@@ -20,6 +25,11 @@ class _FakeSignatureApi:
 
     def sign_with_fixed_position(self, request: object) -> object:
         self.calls.append(request)
+        return request
+
+
+class _NoOutputSignatureApi:
+    def sign_with_fixed_position(self, request: object) -> object:
         return request
 
 
@@ -108,6 +118,8 @@ class DocumentsServiceTest(unittest.TestCase):
             service.archive_approved(state, SystemRole.USER)
         state = service.archive_approved(state, SystemRole.QMB)
         self.assertEqual(state.status, DocumentStatus.ARCHIVED)
+        self.assertIsNotNone(state.archived_at)
+        self.assertEqual(state.valid_until, state.archived_at)
 
     def test_annual_extension_limited_to_three_per_version(self) -> None:
         service = DocumentsService(signature_api=_FakeSignatureApi())
@@ -381,6 +393,34 @@ class DocumentsServiceTest(unittest.TestCase):
                 actor_user_id="owner-1",
                 actor_role=SystemRole.USER,
             )
+
+    def test_signature_transition_requires_signed_output_pdf_when_storage_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            storage = FileSystemDocumentsStorage(root / "artifacts")
+            service = DocumentsService(repository=repo, storage_port=storage, signature_api=_NoOutputSignatureApi())
+            state = service.create_document_version("DOC-NO-SIGNED", 1)
+            state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
+            state = service.start_workflow(state, WorkflowProfile.long_release_path())
+
+            source_pdf = root / "source.pdf"
+            source_pdf.write_bytes(b"%PDF-1.4\nsource\n")
+            request = SignRequest(
+                input_pdf=source_pdf,
+                output_pdf=root / "missing-signed.pdf",
+                signature_png=None,
+                placement=SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=120.0),
+                layout=LabelLayoutInput(show_signature=False, show_name=True, show_date=True),
+                overwrite_output=True,
+                dry_run=False,
+                sign_mode="visual",
+                signer_user="e",
+                password="pw",
+                reason="missing-output",
+            )
+            with self.assertRaises(SignatureTransitionError):
+                service.complete_editing(state, sign_request=request)
 
 
 if __name__ == "__main__":

@@ -62,6 +62,7 @@ class QuizSession:
     version: int
     selected_question_ids: tuple[str, ...]
     created_at: datetime
+    presented_questions_json: str = "[]"
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,37 @@ class QuizResult:
 
 
 @dataclass(frozen=True)
+class QuizAnswerReview:
+    answer_id: str
+    text: str
+    is_chosen: bool
+    is_correct: bool
+
+
+@dataclass(frozen=True)
+class QuizQuestionReview:
+    question_id: str
+    text: str
+    answers: tuple[QuizAnswerReview, ...]
+    chosen_answer_id: str | None
+    correct_answer_id: str
+    is_correct: bool
+
+
+@dataclass(frozen=True)
+class QuizResultDetail:
+    session_id: str
+    user_id: str
+    document_id: str
+    version: int
+    score: int
+    total: int
+    passed: bool
+    completed_at: datetime
+    questions: tuple[QuizQuestionReview, ...]
+
+
+@dataclass(frozen=True)
 class QuizImportResult:
     import_id: str
     document_id: str
@@ -87,11 +119,23 @@ class QuizImportResult:
 
 
 @dataclass(frozen=True)
+class QuizImportPreview:
+    document_id: str
+    document_version: int
+    question_count: int
+    active_document_version: int | None
+    version_matches_active: bool
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PendingQuizMapping:
     import_id: str
     document_id: str
     document_version: int
     created_at: datetime
+    question_count: int = 0
+    document_title: str | None = None
 
 
 @dataclass(frozen=True)
@@ -188,6 +232,7 @@ class TrainingProgress:
     version: int
     read_confirmed_at: datetime | None = None
     quiz_passed_at: datetime | None = None
+    last_failed_at: datetime | None = None
     last_score: int | None = None
     quiz_attempts_count: int = 0
 
@@ -234,6 +279,8 @@ class TrainingCommentRecord:
     status: CommentStatus
     created_at: datetime
     updated_at: datetime
+    page_number: int | None = None
+    anchor_json: str | None = None
     resolved_by: str | None = None
     resolved_at: datetime | None = None
     resolution_note: str | None = None
@@ -253,6 +300,8 @@ class TrainingCommentListItem:
     comment_text: str
     status: CommentStatus
     created_at: datetime
+    page_number: int | None = None
+    anchor_json: str | None = None
 
 
 # ---------------------------------------------------------------------------

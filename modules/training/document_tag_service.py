@@ -18,3 +18,6 @@ class DocumentTagService:
     def list_all_document_tags(self) -> list[DocumentTagSet]:
         return self._repo.list_all_document_tags()
 
+    def list_tag_pool(self) -> list[str]:
+        return self._repo.list_tag_pool()
+

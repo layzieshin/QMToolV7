@@ -16,17 +16,47 @@ TRAINING_SETTINGS_CONTRIBUTION = SettingsContribution(
             "training_db_path": {"type": "string"},
             "quiz_blob_root": {"type": "string"},
             "quiz_master_key_path": {"type": "string"},
+            "questions_per_quiz": {"type": "integer", "minimum": 1},
+            "min_correct_answers": {"type": "integer", "minimum": 1},
+            "shuffle_answers": {"type": "boolean"},
+            "retry_cooldown_seconds": {"type": "integer", "minimum": 0},
+            "force_reread_on_fail": {"type": "boolean"},
         },
-        "required": ["training_db_path", "quiz_blob_root", "quiz_master_key_path"],
+        "required": [
+            "training_db_path",
+            "quiz_blob_root",
+            "quiz_master_key_path",
+            "questions_per_quiz",
+            "min_correct_answers",
+            "shuffle_answers",
+            "retry_cooldown_seconds",
+            "force_reread_on_fail",
+        ],
         "additionalProperties": False,
     },
     defaults={
         "training_db_path": "storage/training/training.db",
         "quiz_blob_root": "storage/training/quiz_blobs",
         "quiz_master_key_path": "storage/platform/training_quiz_master.key",
+        "questions_per_quiz": 3,
+        "min_correct_answers": 3,
+        "shuffle_answers": True,
+        "retry_cooldown_seconds": 0,
+        "force_reread_on_fail": False,
     },
     scope="module_global",
-    migrations=[],
+    migrations=[
+        lambda cfg: {
+            **cfg,
+            "questions_per_quiz": int(cfg.get("questions_per_quiz", 3) or 3),
+            "min_correct_answers": int(
+                cfg.get("min_correct_answers", cfg.get("questions_per_quiz", 3)) or 3
+            ),
+            "shuffle_answers": bool(cfg.get("shuffle_answers", True)),
+            "retry_cooldown_seconds": int(cfg.get("retry_cooldown_seconds", 0) or 0),
+            "force_reread_on_fail": bool(cfg.get("force_reread_on_fail", False)),
+        }
+    ],
 )
 
 

@@ -97,6 +97,22 @@ class FakeBus:
         return [e.name for e in self.events]
 
 
+class FakeSettingsService:
+    def __init__(self) -> None:
+        self._modules = {
+            "training": {
+                "questions_per_quiz": 3,
+                "min_correct_answers": 3,
+                "shuffle_answers": True,
+                "retry_cooldown_seconds": 0,
+                "force_reread_on_fail": False,
+            }
+        }
+
+    def get_module_settings(self, module_id: str):
+        return dict(self._modules.get(module_id, {}))
+
+
 def make_repos(root: Path):
     db = root / "training.db"
     return {
@@ -116,7 +132,13 @@ def make_full_stack(root: Path):
     um = FakeUserService()
     secure_store = EncryptedTrainingBlobStore(root / "quiz", root / "quiz.key")
     catalog = ReleasedDocumentCatalogReader(documents_pool_api=docs)
-    quiz_import = QuizImportService(quiz_repo=repos["quiz_repo"], secure_store=secure_store, event_bus=bus)
+    settings = FakeSettingsService()
+    quiz_import = QuizImportService(
+        quiz_repo=repos["quiz_repo"],
+        secure_store=secure_store,
+        catalog_reader=catalog,
+        event_bus=bus,
+    )
     quiz_binding = QuizBindingService(quiz_repo=repos["quiz_repo"], event_bus=bus)
     projector = TrainingSnapshotProjector(
         catalog_reader=catalog, snapshot_repo=repos["snapshot_repo"], tag_repo=repos["tag_repo"],
@@ -127,7 +149,7 @@ def make_full_stack(root: Path):
     )
     quiz_exec = QuizExecutionService(
         quiz_repo=repos["quiz_repo"], snapshot_repo=repos["snapshot_repo"],
-        quiz_import_service=quiz_import, event_bus=bus,
+        quiz_import_service=quiz_import, settings_service=settings, event_bus=bus,
     )
     comment_svc = TrainingCommentService(comment_repo=repos["comment_repo"], event_bus=bus)
     report_svc = TrainingReportService(report_repo=repos["report_repo"], event_bus=bus)
@@ -137,6 +159,7 @@ def make_full_stack(root: Path):
     user_tag_svc = UserTagService(tag_repo=repos["tag_repo"])
     return {
         **repos, "bus": bus, "catalog": catalog,
+        "settings": settings,
         "quiz_import": quiz_import, "quiz_binding": quiz_binding,
         "projector": projector, "inbox": inbox, "quiz_exec": quiz_exec,
         "comment_svc": comment_svc, "report_svc": report_svc,

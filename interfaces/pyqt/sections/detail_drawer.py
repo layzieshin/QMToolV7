@@ -48,7 +48,7 @@ def build_metadata_tab(
     custom_fields: QLineEdit,
     on_save_metadata: Callable[[], None],
     on_save_header: Callable[[], None],
-    on_add_change_request: Callable[[], None],
+    on_add_change_request: Callable[[], None] | None,
     metadata_buttons: list[QPushButton],
 ) -> QWidget:
     """Build the metadata editing tab."""
@@ -75,7 +75,10 @@ def build_metadata_tab(
     btn_header = QPushButton("Header speichern")
     btn_header.clicked.connect(on_save_header)
     btn_change = QPushButton("Change Request hinzufuegen")
-    btn_change.clicked.connect(on_add_change_request)
+    if on_add_change_request is not None:
+        btn_change.clicked.connect(on_add_change_request)
+    else:
+        btn_change.setVisible(False)
     metadata_buttons.extend([btn_meta, btn_header, btn_change])
     row.addWidget(btn_meta)
     row.addWidget(btn_header)

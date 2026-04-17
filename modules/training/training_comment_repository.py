@@ -30,10 +30,10 @@ class TrainingCommentRepository:
             conn.execute(
                 """INSERT INTO training_comments
                 (comment_id, document_id, version, document_title_snapshot, user_id, username_snapshot,
-                 comment_text, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 comment_text, page_number, anchor_json, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (c.comment_id, c.document_id, c.version, c.document_title_snapshot,
-                 c.user_id, c.username_snapshot, c.comment_text, c.status.value,
+                 c.user_id, c.username_snapshot, c.comment_text, c.page_number, c.anchor_json, c.status.value,
                  c.created_at.isoformat(), c.updated_at.isoformat()),
             )
             conn.commit()
@@ -74,6 +74,18 @@ class TrainingCommentRepository:
             ).fetchall()
         return [self._row_to_list_item(r) for r in rows]
 
+    def list_comments_for_user(self, user_id: str, document_id: str, version: int) -> list[TrainingCommentListItem]:
+        with connect(self._db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM training_comments
+                WHERE user_id=? AND document_id=? AND version=?
+                ORDER BY created_at DESC
+                """,
+                (user_id, document_id, version),
+            ).fetchall()
+        return [self._row_to_list_item(r) for r in rows]
+
     def _row_to_record(self, r: sqlite3.Row) -> TrainingCommentRecord:
         return TrainingCommentRecord(
             comment_id=str(r["comment_id"]),
@@ -83,6 +95,8 @@ class TrainingCommentRepository:
             user_id=str(r["user_id"]),
             username_snapshot=str(r["username_snapshot"]),
             comment_text=str(r["comment_text"]),
+            page_number=int(r["page_number"]) if r["page_number"] is not None else None,
+            anchor_json=str(r["anchor_json"]) if r["anchor_json"] else None,
             status=CommentStatus(str(r["status"])),
             created_at=self._parse_dt(str(r["created_at"])) or datetime.now(timezone.utc),
             updated_at=self._parse_dt(str(r["updated_at"])) or datetime.now(timezone.utc),
@@ -103,6 +117,8 @@ class TrainingCommentRepository:
             user_id=str(r["user_id"]),
             username_snapshot=str(r["username_snapshot"]),
             comment_text=str(r["comment_text"]),
+            page_number=int(r["page_number"]) if r["page_number"] is not None else None,
+            anchor_json=str(r["anchor_json"]) if r["anchor_json"] else None,
             status=CommentStatus(str(r["status"])),
             created_at=self._parse_dt(str(r["created_at"])) or datetime.now(timezone.utc),
         )
@@ -113,5 +129,10 @@ class TrainingCommentRepository:
         sql = self._schema_path.read_text(encoding="utf-8")
         with connect(self._db_path) as conn:
             conn.executescript(sql)
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(training_comments)").fetchall()}
+            if "page_number" not in cols:
+                conn.execute("ALTER TABLE training_comments ADD COLUMN page_number INTEGER")
+            if "anchor_json" not in cols:
+                conn.execute("ALTER TABLE training_comments ADD COLUMN anchor_json TEXT")
             conn.commit()
 

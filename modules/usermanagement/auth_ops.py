@@ -45,7 +45,7 @@ class AuthOps:
         if self._repository is not None:
             user = self._repository.get_user(username) or AuthenticatedUser(user_id=user_id, username=username, role=role)
         else:
-            user = AuthenticatedUser(user_id=user_id, username=username, role=role)
+            user = AuthenticatedUser(user_id=user_id, username=username, role=role, is_qmb=False)
         if not user.is_active:
             self._publish("domain.usermanagement.auth.failed.v1", {"username": username, "reason": "inactive_user"})
             return None

@@ -157,4 +157,6 @@ class ValidityExtensionDialog(QDialog):
     def _fmt(value: datetime | None) -> str:
         if value is None:
             return "-"
-        return value.strftime("%Y-%m-%d")
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone().strftime("%Y-%m-%d")

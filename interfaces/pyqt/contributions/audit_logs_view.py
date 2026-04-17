@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
+from PyQt6.QtCore import QDate
 from PyQt6.QtWidgets import (
     QFileDialog,
     QFormLayout,
@@ -10,13 +12,15 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QPlainTextEdit,
+    QMessageBox,
     QTableWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QDateEdit,
 )
 
-from interfaces.pyqt.contributions.common import as_json_text
+from interfaces.pyqt.contributions.common import as_json_text, normalize_role
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.widgets.audit_log_helpers import build_admin_checks, build_doc_history, build_technical_rows
 from interfaces.pyqt.widgets.table_helpers import configure_readonly_table, fill_table
@@ -49,6 +53,9 @@ class AuditLogsWidget(QWidget):
         self._functional_result_filter = QLineEdit()
         self._functional_result_filter.setPlaceholderText("Ergebnis enthält")
         self._functional_rows: list[tuple[str, str, str, str, str, str]] = []
+        self._functional_from = QDateEdit()
+        self._functional_to = QDateEdit()
+        self._setup_date_editors(self._functional_from, self._functional_to)
 
         self._tech_table = QTableWidget(0, 4)
         configure_readonly_table(self._tech_table, ["Zeit", "Level", "Modul", "Nachricht"])
@@ -59,8 +66,20 @@ class AuditLogsWidget(QWidget):
         self._tech_message_filter = QLineEdit()
         self._tech_message_filter.setPlaceholderText("Nachricht enthält")
         self._tech_rows: list[tuple[str, str, str, str]] = []
+        self._tech_from = QDateEdit()
+        self._tech_to = QDateEdit()
+        self._setup_date_editors(self._tech_from, self._tech_to)
         self._ops = QPlainTextEdit()
         self._ops.setReadOnly(True)
+        self._backup_banner = QLabel("")
+        self._backup_banner.setWordWrap(True)
+        self._backup_banner.setStyleSheet("padding: 6px; border: 1px solid #d4a017; background: #fff4cc;")
+        self._backup_banner.setVisible(False)
+        self._btn_backup = QPushButton("Backup erstellen")
+        self._btn_backup.clicked.connect(self._create_backup)
+        current_user = self._container.get_port("usermanagement_service").get_current_user()
+        is_admin = normalize_role(getattr(current_user, "role", None)) == "ADMIN"
+        self._btn_backup.setVisible(bool(self._container.has_port("log_backup_service")) and is_admin)
 
         tabs = QTabWidget()
         tabs.addTab(self._build_functional_tab(), "Fachliche Historie")
@@ -74,10 +93,15 @@ class AuditLogsWidget(QWidget):
         )
         note.setWordWrap(True)
         layout.addWidget(note)
+        backup_row = QHBoxLayout()
+        backup_row.addWidget(self._backup_banner, stretch=1)
+        backup_row.addWidget(self._btn_backup)
+        layout.addLayout(backup_row)
         layout.addWidget(tabs, stretch=1)
         self._reload_functional()
         self._reload_technical()
         self._run_admin_checks()
+        self._refresh_backup_banner()
 
     def _build_functional_tab(self) -> QWidget:
         tab = QWidget()
@@ -85,6 +109,8 @@ class AuditLogsWidget(QWidget):
         form = QFormLayout()
         form.addRow("Dokument-ID", self._doc_id)
         form.addRow("Version", self._version)
+        form.addRow("Von", self._functional_from)
+        form.addRow("Bis", self._functional_to)
         form.addRow("Aktion", self._functional_action_filter)
         form.addRow("Benutzer", self._functional_actor_filter)
         form.addRow("Ziel", self._functional_target_filter)
@@ -115,6 +141,8 @@ class AuditLogsWidget(QWidget):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         filter_form = QFormLayout()
+        filter_form.addRow("Von", self._tech_from)
+        filter_form.addRow("Bis", self._tech_to)
         filter_form.addRow("Level", self._tech_level_filter)
         filter_form.addRow("Modul", self._tech_module_filter)
         filter_form.addRow("Nachricht", self._tech_message_filter)
@@ -149,6 +177,7 @@ class AuditLogsWidget(QWidget):
     def _reload_functional(self) -> None:
         if self._container.has_port("log_query_service"):
             query_service = self._container.get_port("log_query_service")
+            date_from, date_to = self._date_range_utc(self._functional_from, self._functional_to)
             self._functional_rows = [
                 (
                     str(entry.get("timestamp_utc", "")),
@@ -158,7 +187,7 @@ class AuditLogsWidget(QWidget):
                     str(entry.get("result", "")),
                     str(entry.get("reason", "")),
                 )
-                for entry in query_service.query_audit(limit=600)
+                for entry in query_service.query_audit(limit=600, date_from=date_from, date_to=date_to)
             ]
         else:
             self._functional_rows = [("", "INFO", "", "audit", "log_query_service fehlt", "")]
@@ -205,8 +234,9 @@ class AuditLogsWidget(QWidget):
         rows: list[tuple[str, str, str, str]]
         if self._container.has_port("log_query_service"):
             query_service = self._container.get_port("log_query_service")
+            date_from, date_to = self._date_range_utc(self._tech_from, self._tech_to)
             rows = []
-            for entry in query_service.query_technical_logs(limit=400):
+            for entry in query_service.query_technical_logs(limit=400, date_from=date_from, date_to=date_to):
                 rows.append(
                     (
                         str(entry.get("timestamp_utc", "")),
@@ -215,7 +245,7 @@ class AuditLogsWidget(QWidget):
                         str(entry.get("message", "")),
                     )
                 )
-            for entry in query_service.query_audit(limit=200):
+            for entry in query_service.query_audit(limit=200, date_from=date_from, date_to=date_to):
                 rows.append(
                     (
                         str(entry.get("timestamp_utc", "")),
@@ -253,7 +283,8 @@ class AuditLogsWidget(QWidget):
         if not path:
             return
         service = self._container.get_port("log_query_service")
-        output = service.export_logs_csv(Path(path))
+        date_from, date_to = self._date_range_utc(self._tech_from, self._tech_to)
+        output = service.export_logs_csv(Path(path), date_from=date_from, date_to=date_to)
         self._ops.setPlainText(f"CSV exportiert: {output}")
 
     def _export_tech_pdf(self) -> None:
@@ -264,7 +295,8 @@ class AuditLogsWidget(QWidget):
         if not path:
             return
         service = self._container.get_port("log_query_service")
-        output = service.export_logs_pdf(Path(path))
+        date_from, date_to = self._date_range_utc(self._tech_from, self._tech_to)
+        output = service.export_logs_pdf(Path(path), date_from=date_from, date_to=date_to)
         self._ops.setPlainText(f"PDF exportiert: {output}")
 
     def _export_audit_csv(self) -> None:
@@ -275,7 +307,8 @@ class AuditLogsWidget(QWidget):
         if not path:
             return
         service = self._container.get_port("log_query_service")
-        output = service.export_audit_csv(Path(path))
+        date_from, date_to = self._date_range_utc(self._functional_from, self._functional_to)
+        output = service.export_audit_csv(Path(path), date_from=date_from, date_to=date_to)
         self._ops.setPlainText(f"Audit-CSV exportiert: {output}")
 
     def _export_audit_pdf(self) -> None:
@@ -286,12 +319,68 @@ class AuditLogsWidget(QWidget):
         if not path:
             return
         service = self._container.get_port("log_query_service")
-        output = service.export_audit_pdf(Path(path))
+        date_from, date_to = self._date_range_utc(self._functional_from, self._functional_to)
+        output = service.export_audit_pdf(Path(path), date_from=date_from, date_to=date_to)
         self._ops.setPlainText(f"Audit-PDF exportiert: {output}")
 
     def _run_admin_checks(self) -> None:
         checks = build_admin_checks(self._container, self._license, self._settings)
         self._ops.setPlainText(as_json_text(checks))
+
+    @staticmethod
+    def _setup_date_editors(from_editor: QDateEdit, to_editor: QDateEdit) -> None:
+        today = QDate.currentDate()
+        from_editor.setCalendarPopup(True)
+        to_editor.setCalendarPopup(True)
+        from_editor.setDisplayFormat("dd.MM.yyyy")
+        to_editor.setDisplayFormat("dd.MM.yyyy")
+        from_editor.setDate(today.addDays(-7))
+        to_editor.setDate(today)
+
+    @staticmethod
+    def _date_range_utc(from_editor: QDateEdit, to_editor: QDateEdit) -> tuple[datetime, datetime]:
+        from_date = from_editor.date().toPyDate()
+        to_date = to_editor.date().toPyDate()
+        if to_date < from_date:
+            from_date, to_date = to_date, from_date
+            from_editor.setDate(QDate(from_date.year, from_date.month, from_date.day))
+            to_editor.setDate(QDate(to_date.year, to_date.month, to_date.day))
+        start_local = datetime.combine(from_date, time.min).astimezone()
+        end_local = datetime.combine(to_date + timedelta(days=1), time.min).astimezone()
+        return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+    def _create_backup(self) -> None:
+        if not self._container.has_port("log_backup_service"):
+            self._ops.setPlainText("Backup nicht verfuegbar: log_backup_service fehlt.")
+            return
+        try:
+            service = self._container.get_port("log_backup_service")
+            result = service.create_backup()
+            self._ops.setPlainText(
+                f"Backup erstellt: {result.zip_path}\n"
+                f"Audit-Zeilen: {result.audit_lines}\n"
+                f"Technische Zeilen: {result.platform_lines}\n"
+                f"Cutoff UTC: {result.cutoff_utc.isoformat()}"
+            )
+            self._refresh_backup_banner()
+            QMessageBox.information(self, "Logs-Backup", f"Backup erstellt:\n{result.zip_path}")
+        except Exception as exc:  # noqa: BLE001
+            self._ops.setPlainText(f"Backup fehlgeschlagen: {exc}")
+            QMessageBox.warning(self, "Logs-Backup", str(exc))
+
+    def _refresh_backup_banner(self) -> None:
+        if not self._container.has_port("backup_reminder_service"):
+            self._backup_banner.setVisible(False)
+            return
+        status = self._container.get_port("backup_reminder_service").status()
+        if not status.is_overdue:
+            self._backup_banner.setVisible(False)
+            return
+        days = status.days_since_last_backup if status.days_since_last_backup is not None else "?"
+        self._backup_banner.setText(
+            f"Letztes Logs-Backup vor {days} Tagen. Bitte Backup erstellen."
+        )
+        self._backup_banner.setVisible(True)
 
 
 def _build(container: RuntimeContainer) -> QWidget:

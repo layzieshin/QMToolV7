@@ -23,6 +23,7 @@ from .contracts import (
     DocumentArtifact,
     DocumentHeader,
     DocumentReadReceipt,
+    PdfReadProgress,
     DocumentReadSession,
     DocumentStatus,
     DocumentTaskItem,
@@ -33,7 +34,13 @@ from .contracts import (
     ReleasedDocumentItem,
     ReviewActionItem,
     SystemRole,
+    TrackedPdfReadSession,
     WorkflowAssignments,
+    WorkflowCommentContext,
+    WorkflowCommentDetail,
+    WorkflowCommentListItem,
+    WorkflowCommentRecord,
+    WorkflowCommentStatus,
     WorkflowProfile,
     ChangeRequest,
     control_class_for,
@@ -188,7 +195,9 @@ class DocumentsService:
             return
         source_path = artifact_ops.resolve_release_pdf_source_path(state, self._repository, self._storage_port)
         if source_path is None or not source_path.exists():
-            return
+            raise ValidationError(
+                f"RELEASED_PDF generation failed for {state.document_id} v{state.version}: no source PDF artifact available"
+            )
         generated_name = naming.build_released_filename(state)
         with tempfile.TemporaryDirectory(prefix="qmtool-release-") as tmp_dir:
             staged_path = Path(tmp_dir) / generated_name
@@ -203,6 +212,20 @@ class DocumentsService:
                     "source": str(source_path),
                     "protected": "true",
                 },
+            )
+        self._require_current_released_pdf_artifact(state)
+
+    def _require_current_released_pdf_artifact(self, state: DocumentVersionState) -> None:
+        if self._repository is None:
+            return
+        artifacts = self._repository.list_artifacts(state.document_id, state.version)
+        has_current_released = any(
+            artifact.artifact_type == ArtifactType.RELEASED_PDF and bool(getattr(artifact, "is_current", False))
+            for artifact in artifacts
+        )
+        if not has_current_released:
+            raise ValidationError(
+                f"approved document requires current RELEASED_PDF artifact: {state.document_id} v{state.version}"
             )
 
     # --- Delegation to naming module (keep static methods for backward compat) ---
@@ -849,6 +872,7 @@ class DocumentsService:
             raise ValidationError("document version is not approved")
         if state.superseded_by_version is not None:
             raise ValidationError("document version is superseded")
+        self._require_current_released_pdf_artifact(state)
         return DocumentReadSession(
             session_id=uuid4().hex,
             user_id=user_id,
@@ -865,6 +889,7 @@ class DocumentsService:
             raise ValidationError("document version not found")
         if state.status != DocumentStatus.APPROVED:
             raise ValidationError("document version is not approved")
+        self._require_current_released_pdf_artifact(state)
         now = _utcnow()
         receipt = DocumentReadReceipt(
             receipt_id=uuid4().hex,
@@ -898,4 +923,132 @@ class DocumentsService:
         if self._repository is None:
             return None
         return self._repository.get_read_receipt(user_id, document_id, version)
+
+    # --- Workflow comments ---
+
+    def _comment_repo(self):
+        from .comment_sqlite_repository import SQLiteWorkflowCommentRepository
+
+        if self._repository is None or not hasattr(self._repository, "upsert_workflow_comment"):
+            raise ValidationError("workflow comment repository is not available")
+        return SQLiteWorkflowCommentRepository(self._repository)  # type: ignore[arg-type]
+
+    def list_workflow_comments(
+        self,
+        state: DocumentVersionState,
+        *,
+        context: WorkflowCommentContext,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> list[WorkflowCommentListItem]:
+        from .comment_service import WorkflowCommentService
+
+        _ = actor_user_id, actor_role
+        return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).list_comments(
+            state, context=context
+        )
+
+    def get_workflow_comment_detail(
+        self, comment_id: str, *, actor_user_id: str, actor_role: SystemRole
+    ) -> WorkflowCommentDetail:
+        from .comment_service import WorkflowCommentService
+
+        _ = actor_user_id, actor_role
+        return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).get_detail(comment_id)
+
+    def sync_docx_comments(
+        self, state: DocumentVersionState, *, actor_user_id: str, actor_role: SystemRole
+    ) -> list[WorkflowCommentListItem]:
+        from .comment_extractors.docx_comment_reader import DocxCommentReader
+        from .comment_sync_service import CommentSyncService
+
+        _ = actor_role
+        source_docx = self._resolve_source_docx_artifact_path(state)
+        if source_docx is None:
+            return []
+        return CommentSyncService(
+            comment_repository=self._comment_repo(),
+            docx_comment_reader=DocxCommentReader(),
+            event_bus=self._event_bus,
+        ).sync_docx_comments(state, docx_path=source_docx, actor_user_id=actor_user_id)
+
+    def create_pdf_workflow_comment(
+        self,
+        state: DocumentVersionState,
+        *,
+        context: WorkflowCommentContext,
+        actor_user_id: str,
+        actor_role: SystemRole,
+        page_number: int,
+        comment_text: str,
+        anchor_json: str | None = None,
+    ) -> WorkflowCommentRecord:
+        from .comment_service import WorkflowCommentService
+
+        return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).create_pdf_comment(
+            state,
+            context=context,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            page_number=page_number,
+            comment_text=comment_text,
+            anchor_json=anchor_json,
+        )
+
+    def set_workflow_comment_status(
+        self,
+        comment_id: str,
+        *,
+        new_status: WorkflowCommentStatus,
+        actor_user_id: str,
+        actor_role: SystemRole,
+        note: str | None = None,
+    ) -> WorkflowCommentRecord:
+        from .comment_service import WorkflowCommentService
+
+        _ = actor_role
+        return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).set_status(
+            comment_id, new_status=new_status, actor_user_id=actor_user_id, note=note
+        )
+
+    # --- Tracked read flow ---
+
+    def _tracking_service(self):
+        from .pdf_read_tracking_service import PdfReadTrackingService
+
+        if self._repository is None:
+            raise ValidationError("repository is required")
+        return PdfReadTrackingService(self._repository, event_bus=self._event_bus)
+
+    def start_tracked_pdf_read(
+        self,
+        user_id: str,
+        document_id: str,
+        version: int,
+        *,
+        artifact_id: str | None,
+        total_pages: int,
+        source: str,
+        min_seconds_per_page: int = 10,
+    ) -> TrackedPdfReadSession:
+        return self._tracking_service().start(
+            user_id=user_id,
+            document_id=document_id,
+            version=version,
+            artifact_id=artifact_id,
+            total_pages=total_pages,
+            source=source,
+            min_seconds_per_page=min_seconds_per_page,
+        )
+
+    def record_page_dwell(self, session_id: str, *, page_number: int, dwell_seconds: int) -> PdfReadProgress:
+        return self._tracking_service().record_page_dwell(
+            session_id, page_number=page_number, dwell_seconds=dwell_seconds
+        )
+
+    def get_pdf_read_progress(self, session_id: str) -> PdfReadProgress:
+        return self._tracking_service().get_progress(session_id)
+
+    def finalize_tracked_pdf_read(self, session_id: str, *, source: str) -> DocumentReadReceipt | None:
+        return self._tracking_service().finalize(session_id, source=source)
 

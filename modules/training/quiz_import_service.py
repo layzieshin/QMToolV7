@@ -8,8 +8,9 @@ from uuid import uuid4
 
 from qm_platform.events.event_envelope import EventEnvelope
 
-from .contracts import QuizAnswer, QuizImportResult, QuizQuestion
+from .contracts import QuizAnswer, QuizImportPreview, QuizImportResult, QuizQuestion
 from .errors import TrainingValidationError
+from .released_document_catalog_reader import ReleasedDocumentCatalogReader
 from .secure_store import EncryptedTrainingBlobStore
 from .training_quiz_repository import TrainingQuizRepository
 
@@ -24,17 +25,25 @@ class QuizImportService:
         *,
         quiz_repo: TrainingQuizRepository,
         secure_store: EncryptedTrainingBlobStore,
+        catalog_reader: ReleasedDocumentCatalogReader,
         event_bus: object | None = None,
     ) -> None:
         self._repo = quiz_repo
         self._store = secure_store
+        self._catalog = catalog_reader
         self._event_bus = event_bus
 
-    def import_quiz_json(self, raw_quiz_json: bytes) -> QuizImportResult:
+    def import_quiz_json(self, raw_quiz_json: bytes, *, force: bool = False) -> QuizImportResult:
         payload = self._validate_and_parse(raw_quiz_json)
         document_id: str = payload["document_id"]
         document_version: int = payload["document_version"]
         questions = payload["questions"]
+        preview = self._build_import_preview(document_id, document_version, len(questions))
+        if not preview.version_matches_active and not force:
+            raise TrainingValidationError(
+                "Quiz-Version passt nicht zur aktuell freigegebenen Dokumentversion. "
+                "Bitte mit Bestätigung erneut importieren."
+            )
 
         digest = hashlib.sha256(raw_quiz_json).hexdigest()
         storage_key = self._store.put_bytes(raw_quiz_json, ".quiz")
@@ -57,6 +66,14 @@ class QuizImportService:
             "question_count": len(questions),
         })
         return result
+
+    def inspect_quiz_json(self, raw_quiz_json: bytes) -> QuizImportPreview:
+        payload = self._validate_and_parse(raw_quiz_json)
+        return self._build_import_preview(
+            str(payload["document_id"]),
+            int(payload["document_version"]),
+            len(payload["questions"]),
+        )
 
     def load_questions(self, import_id: str) -> list[QuizQuestion]:
         info = self._repo.get_import_storage_key(import_id)
@@ -141,6 +158,39 @@ class QuizImportService:
                 )
             )
         return questions
+
+    def _build_import_preview(
+        self,
+        document_id: str,
+        document_version: int,
+        question_count: int,
+    ) -> QuizImportPreview:
+        active_version = self._resolve_active_version(document_id)
+        warnings: list[str] = []
+        matches = active_version is not None and active_version == document_version
+        if active_version is None:
+            warnings.append("Dokument ist aktuell nicht als freigegeben im Katalog vorhanden.")
+        elif active_version != document_version:
+            warnings.append(
+                f"Quiz-Version ({document_version}) weicht von aktiver Dokumentversion ({active_version}) ab."
+            )
+        return QuizImportPreview(
+            document_id=document_id,
+            document_version=document_version,
+            question_count=question_count,
+            active_document_version=active_version,
+            version_matches_active=matches,
+            warnings=tuple(warnings),
+        )
+
+    def _resolve_active_version(self, document_id: str) -> int | None:
+        active: int | None = None
+        for doc in self._catalog.list_released_documents():
+            if doc.document_id != document_id:
+                continue
+            if active is None or int(doc.version) > active:
+                active = int(doc.version)
+        return active
 
     def _publish(self, name: str, payload: dict) -> None:
         if self._event_bus is None:

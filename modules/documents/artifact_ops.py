@@ -173,11 +173,17 @@ def resolve_release_pdf_source_path(
     storage_port: DocumentsStoragePort | None,
 ) -> Path | None:
     artifacts = repository.list_artifacts(state.document_id, state.version)
-    priorities = [ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF]
+    priorities = [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF, ArtifactType.RELEASED_PDF]
+    ordered = sorted(artifacts, key=lambda item: (0 if item.is_current else 1, item.created_at), reverse=False)
     for artifact_type in priorities:
-        for artifact in artifacts:
-            if artifact.artifact_type != artifact_type:
-                continue
+        current_candidates = [a for a in ordered if a.artifact_type == artifact_type and a.is_current]
+        for artifact in current_candidates:
+            resolved = resolve_artifact_path(artifact, storage_port)
+            if resolved is not None and resolved.exists() and resolved.suffix.lower() == ".pdf":
+                return resolved
+    for artifact_type in priorities:
+        fallback_candidates = [a for a in ordered if a.artifact_type == artifact_type]
+        for artifact in reversed(fallback_candidates):
             resolved = resolve_artifact_path(artifact, storage_port)
             if resolved is not None and resolved.exists() and resolved.suffix.lower() == ".pdf":
                 return resolved

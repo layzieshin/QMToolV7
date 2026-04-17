@@ -40,3 +40,14 @@ def cmd_license_check(module: str) -> int:
     print(f"OK: module '{module}' is licensed")
     return 0
 
+
+def cmd_logs_backup(actor: str = "cli-admin") -> int:
+    container = build_container()
+    backup_service = container.get_port("log_backup_service")
+    result = backup_service.create_backup(actor=actor)
+    print(f"OK: backup created at {result.zip_path}")
+    print(f"Audit lines: {result.audit_lines}")
+    print(f"Platform lines: {result.platform_lines}")
+    print(f"Cutoff UTC: {result.cutoff_utc.isoformat()}")
+    return 0
+

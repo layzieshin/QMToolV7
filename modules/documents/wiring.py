@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .api import DocumentsPoolApi, DocumentsReadApi, DocumentsWorkflowApi
+from .api import DocumentsCommentsApi, DocumentsPoolApi, DocumentsReadApi, DocumentsWorkflowApi
 from .profile_store import WorkflowProfileStoreJSON
 from .service import DocumentsService
 from .sqlite_repository import SQLiteDocumentsRepository
@@ -52,5 +52,6 @@ def register_documents_ports(container) -> None:
     container.register_port("documents_service", service)
     container.register_port("documents_pool_api", DocumentsPoolApi(service))
     container.register_port("documents_read_api", DocumentsReadApi(service))
+    container.register_port("documents_comments_api", DocumentsCommentsApi(service))
     container.register_port("documents_workflow_api", DocumentsWorkflowApi(service))
 

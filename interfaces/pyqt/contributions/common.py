@@ -4,6 +4,7 @@ import json
 from dataclasses import asdict, is_dataclass
 
 from modules.documents.contracts import SystemRole
+from modules.usermanagement.role_policies import is_effective_qmb
 
 
 def normalize_role(role: str | None) -> str:
@@ -29,6 +30,15 @@ def role_to_system_role(role: str) -> SystemRole:
     if normalized not in mapping:
         raise RuntimeError(f"unsupported role '{role}'")
     return mapping[normalized]
+
+
+def user_to_system_role(user: object) -> SystemRole:
+    normalized = normalize_role(getattr(user, "role", None))
+    if normalized == "ADMIN":
+        return SystemRole.ADMIN
+    if is_effective_qmb(user):
+        return SystemRole.QMB
+    return SystemRole.USER
 
 
 def to_plain(value: object) -> object:

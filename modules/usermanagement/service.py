@@ -88,13 +88,40 @@ class UserManagementService:
         organization_unit: str | None,
         role: str | None,
         is_active: bool | None,
+        is_qmb: bool | None = None,
     ) -> AuthenticatedUser:
         return self._admin_ops.update_user_admin_fields(
-            username, department=department, scope=scope, organization_unit=organization_unit, role=role, is_active=is_active,
+            username,
+            department=department,
+            scope=scope,
+            organization_unit=organization_unit,
+            role=role,
+            is_active=is_active,
+            is_qmb=is_qmb,
         )
 
     def set_user_active(self, username: str, is_active: bool) -> AuthenticatedUser:
         return self._admin_ops.set_user_active(username, is_active)
+
+    def set_user_qmb(self, username: str, is_qmb: bool) -> AuthenticatedUser:
+        return self._admin_ops.set_user_qmb(username, is_qmb)
+
+    def self_register(
+        self,
+        username: str,
+        password: str,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+    ) -> AuthenticatedUser:
+        return self._admin_ops.self_register(
+            username,
+            password,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+        )
 
     def change_password(self, username: str, new_password: str) -> None:
         self._admin_ops.change_password(username, new_password)

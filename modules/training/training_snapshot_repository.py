@@ -85,11 +85,12 @@ class TrainingSnapshotRepository:
         with connect(self._db_path) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO training_progress
-                (user_id, document_id, version, read_confirmed_at, quiz_passed_at, last_score, quiz_attempts_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, document_id, version, read_confirmed_at, quiz_passed_at, last_failed_at, last_score, quiz_attempts_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (p.user_id, p.document_id, p.version,
                  p.read_confirmed_at.isoformat() if p.read_confirmed_at else None,
                  p.quiz_passed_at.isoformat() if p.quiz_passed_at else None,
+                 p.last_failed_at.isoformat() if p.last_failed_at else None,
                  p.last_score, p.quiz_attempts_count),
             )
             conn.commit()
@@ -108,6 +109,7 @@ class TrainingSnapshotRepository:
             version=int(row["version"]),
             read_confirmed_at=self._parse_dt(row["read_confirmed_at"]) if row["read_confirmed_at"] else None,
             quiz_passed_at=self._parse_dt(row["quiz_passed_at"]) if row["quiz_passed_at"] else None,
+            last_failed_at=self._parse_dt(row["last_failed_at"]) if row["last_failed_at"] else None,
             last_score=int(row["last_score"]) if row["last_score"] is not None else None,
             quiz_attempts_count=int(row["quiz_attempts_count"]),
         )
@@ -122,6 +124,7 @@ class TrainingSnapshotRepository:
                 version=int(r["version"]),
                 read_confirmed_at=self._parse_dt(r["read_confirmed_at"]) if r["read_confirmed_at"] else None,
                 quiz_passed_at=self._parse_dt(r["quiz_passed_at"]) if r["quiz_passed_at"] else None,
+                last_failed_at=self._parse_dt(r["last_failed_at"]) if r["last_failed_at"] else None,
                 last_score=int(r["last_score"]) if r["last_score"] is not None else None,
                 quiz_attempts_count=int(r["quiz_attempts_count"]),
             )
@@ -134,5 +137,11 @@ class TrainingSnapshotRepository:
         sql = self._schema_path.read_text(encoding="utf-8")
         with connect(self._db_path) as conn:
             conn.executescript(sql)
+            cols = {
+                str(r["name"])
+                for r in conn.execute("PRAGMA table_info(training_progress)").fetchall()
+            }
+            if "last_failed_at" not in cols:
+                conn.execute("ALTER TABLE training_progress ADD COLUMN last_failed_at TEXT")
             conn.commit()
 

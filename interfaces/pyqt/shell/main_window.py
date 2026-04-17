@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QSplitter,
     QStackedWidget,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -26,18 +27,22 @@ from interfaces.pyqt.runtime.host import RuntimeHost
 from interfaces.pyqt.shell.preferences import ShellPreferences
 from interfaces.pyqt.shell.session_coordinator import SessionCoordinator
 from interfaces.pyqt.shell.visibility_policy import ContributionVisibilityPolicy, normalize_role
+from interfaces.pyqt.widgets.register_dialog import RegisterDialog
 
 _CONTRIBUTION_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 class _LoginDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, usermanagement_service, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._um = usermanagement_service
         self.setWindowTitle("Anmelden")
         self._user = QLineEdit()
         self._pw = QLineEdit()
         self._pw.setEchoMode(QLineEdit.EchoMode.Password)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        register_btn = buttons.addButton("Neu registrieren...", QDialogButtonBox.ButtonRole.ActionRole)
+        register_btn.clicked.connect(self._open_register)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form = QFormLayout()
@@ -49,6 +54,10 @@ class _LoginDialog(QDialog):
 
     def credentials(self) -> tuple[str, str]:
         return self._user.text().strip(), self._pw.text()
+
+    def _open_register(self) -> None:
+        dlg = RegisterDialog(self._um, self)
+        dlg.exec()
 
 
 class MainWindow(QMainWindow):
@@ -69,6 +78,7 @@ class MainWindow(QMainWindow):
         self._lazy_widgets: dict[str, QWidget] = {}
         self._session_fingerprint: tuple[str, str] | None = None
         self._stopping = False
+        self._backup_reminder_shown_for_session = False
         self._preferences = ShellPreferences()
         self._debug_toggle_enabled = self._preferences.load_admin_debug_toggle()
         self._visibility_policy = ContributionVisibilityPolicy()
@@ -83,6 +93,8 @@ class MainWindow(QMainWindow):
         self._nav.currentItemChanged.connect(self._on_nav_changed)
 
         self._stack = QStackedWidget()
+        self._stack.setMinimumSize(0, 0)
+        self._stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._locked = QLabel("Anmeldung erforderlich. Menü Sitzung -> Anmelden öffnen...")
         self._locked.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._stack.addWidget(self._locked)
@@ -249,7 +261,7 @@ class MainWindow(QMainWindow):
 
     def _prompt_login(self, *, required: bool) -> None:
         while True:
-            dlg = _LoginDialog(self)
+            dlg = _LoginDialog(self._um(), self)
             result = dlg.exec()
             if result != QDialog.DialogCode.Accepted:
                 if required:
@@ -262,11 +274,22 @@ class MainWindow(QMainWindow):
             try:
                 user = self._session.login(username, password)
                 if user is None:
+                    known = next(
+                        (
+                            entry
+                            for entry in self._um().list_users()
+                            if str(getattr(entry, "username", "")).strip().lower() == username.strip().lower()
+                        ),
+                        None,
+                    )
+                    if known is not None and not bool(getattr(known, "is_active", True)):
+                        raise RuntimeError("Konto noch nicht freigeschaltet. Bitte warten Sie auf die Admin-Freigabe.")
                     raise RuntimeError("Ungültige Zugangsdaten")
             except Exception as exc:  # noqa: BLE001
                 QMessageBox.warning(self, "Anmeldung fehlgeschlagen", str(exc))
                 continue
             self._refresh_shell_for_session()
+            self._maybe_show_backup_reminder_modal()
             return
 
     def _widget_for(self, contribution_id: str) -> QWidget:
@@ -274,6 +297,10 @@ class MainWindow(QMainWindow):
             return self._lazy_widgets[contribution_id]
         c = self._all_contributions[contribution_id]
         w = c.factory(self._host.require_container())
+        # Prevent contribution widgets from forcing oversized minimum geometry
+        # onto the shell window on small/limited monitor work areas.
+        w.setMinimumSize(0, 0)
+        w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._lazy_widgets[contribution_id] = w
         self._stack.addWidget(w)
         return w
@@ -314,3 +341,34 @@ class MainWindow(QMainWindow):
                 pass
             self._host.stop()
         super().closeEvent(event)
+
+    def _maybe_show_backup_reminder_modal(self) -> None:
+        if self._backup_reminder_shown_for_session:
+            return
+        user = self._current_user()
+        if user is None or normalize_role(getattr(user, "role", None)) != "ADMIN":
+            return
+        container = self._host.require_container()
+        if not container.has_port("backup_reminder_service"):
+            return
+        status = container.get_port("backup_reminder_service").status()
+        if not status.is_overdue:
+            return
+        self._backup_reminder_shown_for_session = True
+        days_text = (
+            str(status.days_since_last_backup)
+            if status.days_since_last_backup is not None
+            else "noch kein"
+        )
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Logs-Backup Erinnerung")
+        box.setText(
+            f"Logs-Backup ueberfaellig (letztes Backup: {days_text} Tage).\n"
+            "Bitte jetzt ein Backup erstellen."
+        )
+        now_btn = box.addButton("Jetzt Backup erstellen", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Spaeter", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is now_btn:
+            self.navigate_to_contribution("platform.audit_logs")

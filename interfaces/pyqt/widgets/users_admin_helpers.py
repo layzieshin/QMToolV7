@@ -14,7 +14,10 @@ class UsersAdminPresenter:
         normalized_search = search.strip().lower()
         rows: list[object] = []
         for user in self._all_users:
-            if selected_role != "Alle" and str(getattr(user, "role", "")) != selected_role:
+            if selected_role == "Wartet auf Freischaltung":
+                if bool(getattr(user, "is_active", True)):
+                    continue
+            elif selected_role != "Alle" and str(getattr(user, "role", "")) != selected_role:
                 continue
             if normalized_search:
                 haystack = " ".join(

@@ -15,6 +15,7 @@ __all__ = [
     "AuthenticatedUser",
     "get_usermanagement_service",
     "bootstrap_admin",
+    "self_register",
 ]
 
 
@@ -33,5 +34,24 @@ def bootstrap_admin(container, username: str, password: str, role: str = "Admin"
     """
     svc = get_usermanagement_service(container)
     return svc.ensure_admin_credentials(username, password, role)
+
+
+def self_register(
+    container,
+    username: str,
+    password: str,
+    *,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+):
+    svc = get_usermanagement_service(container)
+    return svc.self_register(
+        username,
+        password,
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+    )
 
 

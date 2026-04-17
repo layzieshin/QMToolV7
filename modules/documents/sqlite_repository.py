@@ -16,6 +16,12 @@ from .contracts import (
     DocumentStatus,
     DocumentType,
     DocumentVersionState,
+    PdfReadProgress,
+    TrackedPdfReadSession,
+    WorkflowCommentContext,
+    WorkflowCommentRecord,
+    WorkflowCommentSourceKind,
+    WorkflowCommentStatus,
     WorkflowAssignments,
     WorkflowProfile,
 )
@@ -298,6 +304,7 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             conn.executescript(sql)
             self._ensure_document_headers_migration(conn)
             self._ensure_document_versions_migration(conn)
+            self._ensure_comments_and_read_tracking_migration(conn)
             self._commit_if_needed(conn)
 
     @contextmanager
@@ -390,6 +397,12 @@ class SQLiteDocumentsRepository(DocumentsRepository):
         for col_name, sql_type in alter_specs:
             if col_name not in cols:
                 conn.execute(f"ALTER TABLE document_versions ADD COLUMN {col_name} {sql_type}")
+
+    @staticmethod
+    def _ensure_comments_and_read_tracking_migration(conn: sqlite3.Connection) -> None:
+        cols = {row["name"] for row in conn.execute("PRAGMA table_info(document_workflow_comments)").fetchall()}
+        if cols and "ref_no" not in cols:
+            conn.execute("ALTER TABLE document_workflow_comments ADD COLUMN ref_no TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _connect(self):
@@ -614,5 +627,202 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             version=int(row["version"]),
             confirmed_at=self._parse_dt(str(row["confirmed_at"])) or datetime.now(timezone.utc),
             source=str(row["source"]),
+        )
+
+    # --- Workflow comments ---
+
+    def upsert_workflow_comment(self, record: WorkflowCommentRecord) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO document_workflow_comments (
+                    comment_id, ref_no, document_id, version, context, source_kind, source_comment_key, artifact_id,
+                    page_number, anchor_json, author_display, source_created_at, preview_text, full_text,
+                    status, status_note, status_changed_by, status_changed_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(comment_id) DO UPDATE SET
+                    ref_no = excluded.ref_no,
+                    preview_text = excluded.preview_text,
+                    full_text = excluded.full_text,
+                    page_number = excluded.page_number,
+                    anchor_json = excluded.anchor_json,
+                    status = excluded.status,
+                    status_note = excluded.status_note,
+                    status_changed_by = excluded.status_changed_by,
+                    status_changed_at = excluded.status_changed_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    record.comment_id,
+                    record.ref_no,
+                    record.document_id,
+                    record.version,
+                    record.context.value,
+                    record.source_kind.value,
+                    record.source_comment_key,
+                    record.artifact_id,
+                    record.page_number,
+                    record.anchor_json,
+                    record.author_display,
+                    record.source_created_at.isoformat() if record.source_created_at else None,
+                    record.preview_text,
+                    record.full_text,
+                    record.status.value,
+                    record.status_note,
+                    record.status_changed_by,
+                    record.status_changed_at.isoformat() if record.status_changed_at else None,
+                    record.created_at.isoformat(),
+                    record.updated_at.isoformat(),
+                ),
+            )
+            self._commit_if_needed(conn)
+
+    def get_workflow_comment(self, comment_id: str) -> WorkflowCommentRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM document_workflow_comments WHERE comment_id = ?",
+                (comment_id,),
+            ).fetchone()
+        return self._row_to_workflow_comment(row) if row else None
+
+    def list_workflow_comments(
+        self, document_id: str, version: int, context: WorkflowCommentContext
+    ) -> list[WorkflowCommentRecord]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM document_workflow_comments
+                WHERE document_id = ? AND version = ? AND context = ?
+                ORDER BY created_at DESC
+                """,
+                (document_id, version, context.value),
+            ).fetchall()
+        return [self._row_to_workflow_comment(row) for row in rows]
+
+    # --- Tracked PDF read ---
+
+    def create_pdf_read_session(self, session: TrackedPdfReadSession) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO document_pdf_read_sessions
+                (session_id, user_id, document_id, version, artifact_id, total_pages, min_seconds_per_page, source, opened_at, completed_at, completion_result)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session.session_id,
+                    session.user_id,
+                    session.document_id,
+                    session.version,
+                    session.artifact_id,
+                    session.total_pages,
+                    session.min_seconds_per_page,
+                    session.source,
+                    session.opened_at.isoformat(),
+                    session.completed_at.isoformat() if session.completed_at else None,
+                    None,
+                ),
+            )
+            self._commit_if_needed(conn)
+
+    def get_pdf_read_session(self, session_id: str) -> TrackedPdfReadSession | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM document_pdf_read_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return TrackedPdfReadSession(
+            session_id=str(row["session_id"]),
+            user_id=str(row["user_id"]),
+            document_id=str(row["document_id"]),
+            version=int(row["version"]),
+            artifact_id=str(row["artifact_id"]) if row["artifact_id"] else None,
+            total_pages=int(row["total_pages"]),
+            min_seconds_per_page=int(row["min_seconds_per_page"]),
+            source=str(row["source"]),
+            opened_at=self._parse_dt(str(row["opened_at"])) or datetime.now(timezone.utc),
+            completed_at=self._parse_dt(str(row["completed_at"])) if row["completed_at"] else None,
+        )
+
+    def update_pdf_read_page_progress(
+        self, session_id: str, page_number: int, accumulated_seconds: int, reached_threshold: bool
+    ) -> None:
+        now = self._utcnow_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO document_pdf_read_page_progress
+                (session_id, page_number, accumulated_seconds, reached_threshold, first_seen_at, last_seen_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id, page_number) DO UPDATE SET
+                    accumulated_seconds = excluded.accumulated_seconds,
+                    reached_threshold = excluded.reached_threshold,
+                    last_seen_at = excluded.last_seen_at
+                """,
+                (session_id, page_number, accumulated_seconds, 1 if reached_threshold else 0, now, now),
+            )
+            self._commit_if_needed(conn)
+
+    def get_pdf_read_progress(self, session_id: str) -> PdfReadProgress | None:
+        with self._connect() as conn:
+            session_row = conn.execute(
+                "SELECT total_pages, min_seconds_per_page FROM document_pdf_read_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session_row is None:
+                return None
+            rows = conn.execute(
+                "SELECT page_number, accumulated_seconds, reached_threshold FROM document_pdf_read_page_progress WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        total_pages = int(session_row["total_pages"])
+        completed = sorted(int(r["page_number"]) for r in rows if int(r["reached_threshold"]) == 1)
+        page_seconds = {int(r["page_number"]): int(r["accumulated_seconds"]) for r in rows}
+        missing = tuple(page for page in range(1, total_pages + 1) if page not in completed)
+        return PdfReadProgress(
+            session_id=session_id,
+            total_pages=total_pages,
+            completed_pages=tuple(completed),
+            missing_pages=missing,
+            page_seconds=page_seconds,
+            is_complete=len(missing) == 0 and total_pages > 0,
+        )
+
+    def complete_pdf_read_session(self, session_id: str, *, completed_at: str, completion_result: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE document_pdf_read_sessions
+                SET completed_at = ?, completion_result = ?
+                WHERE session_id = ?
+                """,
+                (completed_at, completion_result, session_id),
+            )
+            self._commit_if_needed(conn)
+
+    def _row_to_workflow_comment(self, row: sqlite3.Row) -> WorkflowCommentRecord:
+        return WorkflowCommentRecord(
+            comment_id=str(row["comment_id"]),
+            ref_no=str(row["ref_no"]),
+            document_id=str(row["document_id"]),
+            version=int(row["version"]),
+            context=WorkflowCommentContext(str(row["context"])),
+            source_kind=WorkflowCommentSourceKind(str(row["source_kind"])),
+            source_comment_key=str(row["source_comment_key"]),
+            artifact_id=str(row["artifact_id"]) if row["artifact_id"] else None,
+            page_number=int(row["page_number"]) if row["page_number"] is not None else None,
+            anchor_json=str(row["anchor_json"]) if row["anchor_json"] else None,
+            author_display=str(row["author_display"]) if row["author_display"] else None,
+            source_created_at=self._parse_dt(str(row["source_created_at"])) if row["source_created_at"] else None,
+            preview_text=str(row["preview_text"]),
+            full_text=str(row["full_text"]),
+            status=WorkflowCommentStatus(str(row["status"])),
+            status_note=str(row["status_note"]) if row["status_note"] else None,
+            status_changed_by=str(row["status_changed_by"]) if row["status_changed_by"] else None,
+            status_changed_at=self._parse_dt(str(row["status_changed_at"])) if row["status_changed_at"] else None,
+            created_at=self._parse_dt(str(row["created_at"])) or datetime.now(timezone.utc),
+            updated_at=self._parse_dt(str(row["updated_at"])) or datetime.now(timezone.utc),
         )
 

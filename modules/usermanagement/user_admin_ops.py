@@ -103,6 +103,7 @@ class UserAdminOps:
         organization_unit: str | None,
         role: str | None,
         is_active: bool | None,
+        is_qmb: bool | None = None,
     ) -> AuthenticatedUser:
         username = username.strip()
         if not username:
@@ -124,6 +125,7 @@ class UserAdminOps:
                 scope=scope,
                 organization_unit=organization_unit,
                 is_active=is_active if is_active is not None else True,
+                is_qmb=bool(is_qmb),
             )
         return self._repository.update_user_admin_fields(
             username,
@@ -132,6 +134,7 @@ class UserAdminOps:
             organization_unit=organization_unit,
             role=role,
             is_active=is_active,
+            is_qmb=is_qmb,
         )
 
     def set_user_active(self, username: str, is_active: bool) -> AuthenticatedUser:
@@ -142,7 +145,72 @@ class UserAdminOps:
             organization_unit=None,
             role=None,
             is_active=is_active,
+            is_qmb=None,
         )
+
+    def set_user_qmb(self, username: str, is_qmb: bool) -> AuthenticatedUser:
+        updated = self.update_user_admin_fields(
+            username,
+            department=None,
+            scope=None,
+            organization_unit=None,
+            role=None,
+            is_active=None,
+            is_qmb=is_qmb,
+        )
+        self._publish(
+            "domain.usermanagement.user.qmb_flag.changed.v1",
+            {"username": username, "is_qmb": bool(is_qmb)},
+            actor_user_id=updated.user_id,
+        )
+        return updated
+
+    def self_register(
+        self,
+        username: str,
+        password: str,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+    ) -> AuthenticatedUser:
+        username = username.strip()
+        password = password.strip()
+        if not username:
+            raise ValueError("username is required")
+        if not password:
+            raise ValueError("password is required")
+        if self._repository is not None:
+            user = self._repository.create_user(
+                username,
+                password,
+                "User",
+                is_active=False,
+                is_qmb=False,
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+            )
+        else:
+            if username in self._fallback_users:
+                raise ValueError("user already exists")
+            self._fallback_users[username] = (password, "User")
+            user = AuthenticatedUser(
+                user_id=username,
+                username=username,
+                role="User",
+                first_name=(first_name or "").strip() or username,
+                last_name=(last_name or "").strip() or None,
+                email=(email or "").strip() or None,
+                is_active=False,
+                is_qmb=False,
+            )
+        self._publish(
+            "domain.usermanagement.user.registered.v1",
+            {"username": user.username},
+            actor_user_id=user.user_id,
+        )
+        return user
 
     def change_password(self, username: str, new_password: str) -> None:
         username = username.strip()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import csv
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -17,15 +18,16 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QProgressDialog,
     QPushButton,
     QTableView,
+    QTableWidget,
+    QTableWidgetItem,
     QPlainTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from interfaces.pyqt.contributions.common import parse_csv_set, role_to_system_role
+from interfaces.pyqt.contributions.common import parse_csv_set, role_to_system_role, user_to_system_role
 from interfaces.pyqt.models.workflow_table_model import WorkflowTableModel
 from interfaces.pyqt.presenters.documents_detail_presenter import DocumentsDetailPresenter
 from interfaces.pyqt.presenters.documents_signature_ops import DocumentsSignatureOps
@@ -43,6 +45,8 @@ from interfaces.pyqt.widgets.workflow_profile_wizard import WorkflowProfileWizar
 from interfaces.pyqt.widgets.reject_reason_dialog import RejectReasonDialog
 from interfaces.pyqt.widgets.table_helpers import fill_table
 from interfaces.pyqt.widgets.validity_extension_dialog import ValidityExtensionDialog
+from interfaces.pyqt.widgets.comment_detail_dialog import CommentDetailDialog
+from interfaces.pyqt.widgets.pdf_viewer_dialog import PdfViewerDialog, PdfViewerRequest
 from interfaces.pyqt.widgets.workflow_start_wizard import WorkflowStartWizard
 from interfaces.pyqt.workers import TableReloadResult, TableReloadWorker
 
@@ -53,10 +57,21 @@ from modules.documents.contracts import (
     DocumentType,
     SystemRole,
     ValidityExtensionOutcome,
+    WorkflowCommentStatus,
+    control_class_for,
 )
 from interfaces.pyqt.presenters.documents_workflow_presenter import DocumentsWorkflowPresenter
 from interfaces.pyqt.presenters.documents_workflow_filter_presenter import DocumentsWorkflowFilterPresenter
 from qm_platform.runtime.container import RuntimeContainer
+
+
+@dataclass(frozen=True)
+class _WorkflowTableRow:
+    state: object
+    active_version: int | None
+
+    def __getattr__(self, item: str) -> object:
+        return getattr(self.state, item)
 
 
 # --- _WorkflowTableModel extracted to interfaces/pyqt/models/workflow_table_model.py
@@ -72,6 +87,8 @@ class DocumentsWorkflowWidget(QWidget):
         self._docs_service = container.get_port("documents_service")
         self._pool = container.get_port("documents_pool_api")
         self._wf = container.get_port("documents_workflow_api")
+        self._comments_api = container.get_port("documents_comments_api") if container.has_port("documents_comments_api") else None
+        self._registry = container.get_port("registry_api") if container.has_port("registry_api") else None
         self._signature_api = container.get_port("signature_api") if container.has_port("signature_api") else None
         self._audit_logger = container.get_port("audit_logger") if container.has_port("audit_logger") else None
         self._artifacts_root = self._resolve_artifacts_root()
@@ -149,15 +166,29 @@ class DocumentsWorkflowWidget(QWidget):
 
         self._tab_overview = new_readonly_table(["Feld", "Wert"])
         self._tab_roles = new_readonly_table(["Aspekt", "Wert"])
-        self._tab_comments = QPlainTextEdit()
-        self._tab_comments.setReadOnly(True)
-        self._tab_comments.setPlainText("Keine Change Requests vorhanden.")
-        self._export_change_requests_btn = QPushButton("Change Requests exportieren")
-        self._export_change_requests_btn.clicked.connect(self._export_change_requests)
+        self._tab_comments = QTableWidget(0, 6)
+        self._tab_comments.setHorizontalHeaderLabels(["Ref", "Kommentarstatus", "Seite", "Autor", "Datum", "Vorschau"])
+        self._tab_comments.itemDoubleClicked.connect(self._open_comment_detail)
+        self._tab_comments.itemSelectionChanged.connect(self._update_comment_action_state)
+        self._comments_context_label = QLabel("Kontext: -")
+        self._add_comment_btn = QPushButton("Kommentar hinzufuegen")
+        self._add_comment_btn.clicked.connect(self._open_comment_viewer)
+        self._resolve_comment_btn = QPushButton("Kommentar resolven")
+        self._resolve_comment_btn.setEnabled(False)
+        self._resolve_comment_btn.clicked.connect(self._resolve_selected_comment)
+        self._activate_comment_btn = QPushButton("Auf aktiv setzen")
+        self._activate_comment_btn.setEnabled(False)
+        self._activate_comment_btn.clicked.connect(self._activate_selected_comment)
         self._comments_tab = QWidget()
         comments_layout = QVBoxLayout(self._comments_tab)
+        comments_layout.addWidget(self._comments_context_label)
         comments_layout.addWidget(self._tab_comments, stretch=1)
-        comments_layout.addWidget(self._export_change_requests_btn)
+        comments_actions = QHBoxLayout()
+        comments_actions.addWidget(self._add_comment_btn)
+        comments_actions.addWidget(self._resolve_comment_btn)
+        comments_actions.addWidget(self._activate_comment_btn)
+        comments_actions.addStretch(1)
+        comments_layout.addLayout(comments_actions)
         self._tab_history = new_readonly_table(["Zeit", "Aktion", "Benutzer", "Ergebnis", "Begruendung"])
         self._history_notice = QLabel("Verlauf ohne neue Änderungen.")
         self._out = QPlainTextEdit()
@@ -201,6 +232,7 @@ class DocumentsWorkflowWidget(QWidget):
             on_review_reject=self._review_reject,
             on_approval_accept=self._approval_accept,
             on_approval_reject=self._approval_reject,
+            on_archive=self._archive_approved,
         )
         center = QWidget()
         center_layout = QVBoxLayout(center)
@@ -225,7 +257,7 @@ class DocumentsWorkflowWidget(QWidget):
             department=self._department, site=self._site,
             regulatory_scope=self._regulatory_scope, valid_until=self._valid_until,
             next_review=self._next_review, custom_fields=self._custom_fields,
-            on_save_metadata=self._update_metadata, on_save_header=self._update_header, on_add_change_request=self._add_change_request,
+            on_save_metadata=self._update_metadata, on_save_header=self._update_header, on_add_change_request=None,
             metadata_buttons=self._metadata_buttons,
         )
         roles_tab = build_roles_tab(
@@ -311,7 +343,7 @@ class DocumentsWorkflowWidget(QWidget):
 
     def _is_qmb(self) -> bool:
         user = self._um.get_current_user()
-        return bool(user and role_to_system_role(user.role) == SystemRole.QMB)
+        return bool(user and user_to_system_role(user) == SystemRole.QMB)
 
     def _apply_editor_permissions(self) -> None:
         can_edit = self._is_qmb()
@@ -355,7 +387,7 @@ class DocumentsWorkflowWidget(QWidget):
         user = self._um.get_current_user()
         if user is None:
             return False
-        role = role_to_system_role(user.role)
+        role = user_to_system_role(user)
         if role in (SystemRole.ADMIN, SystemRole.QMB):
             return True
         if self._current_state is None:
@@ -369,6 +401,41 @@ class DocumentsWorkflowWidget(QWidget):
         raw = str(cfg.get("profiles_file", "modules/documents/workflow_profiles.json")).strip()
         path = Path(raw)
         return path if path.is_absolute() else self._app_home / path
+
+    def _doc_type_profile_rules(self) -> dict[str, dict[str, object]]:
+        if not self._container.has_port("settings_service"):
+            return {}
+        docs_settings = self._container.get_port("settings_service").get_module_settings("documents")
+        raw_rules = docs_settings.get("doc_type_profile_rules", {})
+        if not isinstance(raw_rules, dict):
+            return {}
+        result: dict[str, dict[str, object]] = {}
+        for key, value in raw_rules.items():
+            if not isinstance(value, dict):
+                continue
+            profile_id = str(value.get("profile_id", "")).strip()
+            override_possible = bool(value.get("override_possible", False))
+            if not profile_id:
+                continue
+            result[str(key)] = {
+                "profile_id": profile_id,
+                "override_possible": override_possible,
+            }
+        return result
+
+    def _profile_rule_for_doc_type(self, doc_type: DocumentType) -> dict[str, object]:
+        rules = self._doc_type_profile_rules()
+        rule = rules.get(doc_type.value, {})
+        profile_id = str(rule.get("profile_id", "long_release") or "long_release")
+        override_possible = bool(rule.get("override_possible", False))
+        available = self._available_profiles_for_control_class(control_class_for(doc_type))
+        if profile_id not in available:
+            available = [profile_id, *available]
+        return {
+            "profile_id": profile_id,
+            "override_possible": override_possible,
+            "available_profiles": sorted(set(available)),
+        }
 
     def _open_workflow_profile_manager(self) -> None:
         try:
@@ -425,12 +492,12 @@ class DocumentsWorkflowWidget(QWidget):
         user = self._um.get_current_user()
         if user is None:
             raise RuntimeError("Anmeldung erforderlich")
-        return user, role_to_system_role(user.role)
+        return user, user_to_system_role(user)
 
     def _state_from_selection(self):
         if self._current_state is None:
             raise RuntimeError("Bitte zuerst ein Dokument in der Tabelle auswaehlen")
-        return self._current_state
+        return getattr(self._current_state, "state", self._current_state)
 
     def _reload_table(self) -> None:
         if self._reload_thread is not None:
@@ -439,11 +506,9 @@ class DocumentsWorkflowWidget(QWidget):
                 self._reload_progress.cancel()
             return
         self._reload_cancelled = False
-        self._reload_progress = QProgressDialog("Tabelle wird aktualisiert ...", "Abbrechen", 0, 0, self)
-        self._reload_progress.setWindowTitle("Dokumentenlenkung")
-        self._reload_progress.setMinimumDuration(150)
-        self._reload_progress.canceled.connect(self._cancel_reload)
-        self._reload_progress.show()
+        # Use inline notice instead of QProgressDialog to avoid noisy native WM_DESTROY
+        # window lifecycle messages on some Windows setups.
+        self._reload_progress = None
         self._inline_notice.setText("Tabellenaktualisierung laeuft ...")
 
         self._reload_thread = QThread(self)
@@ -466,6 +531,21 @@ class DocumentsWorkflowWidget(QWidget):
         statuses = list(DocumentStatus) if status_filter == "ALL" else [status_filter]
         for status in statuses:
             rows.extend(self._pool.list_by_status(status))
+        registry_versions: dict[str, int | None] = {}
+        if self._registry is not None:
+            for row in rows:
+                document_id = str(getattr(row, "document_id", "")).strip()
+                if not document_id or document_id in registry_versions:
+                    continue
+                entry = self._registry.get_entry(document_id)
+                registry_versions[document_id] = entry.active_version if entry is not None else None
+        rows = [
+            _WorkflowTableRow(
+                state=row,
+                active_version=registry_versions.get(str(getattr(row, "document_id", "")).strip()),
+            )
+            for row in rows
+        ]
         user = self._um.get_current_user()
         scope = str(self._scope_filter.currentData())
         rows = self._filter_presenter.filter_rows(
@@ -531,16 +611,22 @@ class DocumentsWorkflowWidget(QWidget):
             self._update_action_visibility()
             return
         self._current_state = self._model._rows[selected[0].row()]
-        self._doc_id.setText(self._current_state.document_id)
-        self._version.setText(str(self._current_state.version))
+        state = self._state_from_selection()
+        self._doc_id.setText(state.document_id)
+        self._version.setText(str(state.version))
         self._refresh_details()
         self._update_action_visibility()
 
     def _update_action_visibility(self) -> None:
         user = self._um.get_current_user()
         user_id = str(user.user_id) if user is not None else None
-        user_role = role_to_system_role(user.role) if user is not None else None
-        visible_for = self._presenter.visible_actions_for_context(self._current_state, user_id=user_id, user_role=user_role)
+        user_role = user_to_system_role(user) if user is not None else None
+        visible_for = self._presenter.visible_actions_for_context(
+            self._current_state,
+            user_id=user_id,
+            user_role=user_role,
+            can_create_new_documents=self._can_current_user_create_documents(),
+        )
         update_action_visibility(
             self._workflow_actions["buttons"],
             self._top_actions["buttons"],
@@ -548,6 +634,24 @@ class DocumentsWorkflowWidget(QWidget):
             self._is_profile_manager_allowed(),
         )
         self._apply_editor_permissions()
+
+    def _can_current_user_create_documents(self) -> bool:
+        user = self._um.get_current_user()
+        if user is None:
+            return False
+        try:
+            role = user_to_system_role(user)
+        except Exception:
+            return False
+        if role == SystemRole.QMB:
+            return True
+        if not self._container.has_port("settings_service"):
+            return False
+        docs_settings = self._container.get_port("settings_service").get_module_settings("documents")
+        mapping = docs_settings.get("can_create_new_documents", {})
+        if not isinstance(mapping, dict):
+            return False
+        return bool(mapping.get(str(user.user_id), False))
 
     def _open_details_from_table(self) -> None:
         if self._current_state is None:
@@ -605,40 +709,169 @@ class DocumentsWorkflowWidget(QWidget):
             self._department.setText(header.department or "")
             self._site.setText(header.site or "")
             self._regulatory_scope.setText(header.regulatory_scope or "")
-        self._refresh_change_requests(state)
+        self._refresh_workflow_comments(state)
         self._extension_valid_from.setText(self._format_dt(state.valid_from))
         self._extension_valid_until.setText(self._format_dt(state.valid_until))
         self._extension_next_review.setText(self._format_dt(state.next_review_at))
         self._extension_count.setText(f"{state.extension_count}/3")
         if state.valid_until is not None:
-            now = datetime.now(state.valid_until.tzinfo) if state.valid_until.tzinfo else datetime.now()
-            remaining_days = max((state.valid_until - now).days, 0)
-            self._extension_remaining_days.setText(str(remaining_days))
+            local_valid_until = DocumentsDetailPresenter._to_local(state.valid_until)
+            if local_valid_until is None:
+                self._extension_remaining_days.setText("-")
+            else:
+                now = datetime.now(local_valid_until.tzinfo)
+                remaining_days = max((local_valid_until - now).days, 0)
+                self._extension_remaining_days.setText(str(remaining_days))
         else:
             self._extension_remaining_days.setText("-")
 
-    def _refresh_change_requests(self, state) -> None:
-        rows = self._wf.list_change_requests(state)
-        if not rows:
-            self._tab_comments.setPlainText("Keine Change Requests vorhanden.")
+    def _resolve_comment_context(self, state) -> object | None:
+        if state.status in {DocumentStatus.PLANNED, DocumentStatus.IN_PROGRESS}:
+            from modules.documents.contracts import WorkflowCommentContext
+
+            return WorkflowCommentContext.DOCX_EDIT
+        if state.status == DocumentStatus.IN_REVIEW:
+            from modules.documents.contracts import WorkflowCommentContext
+
+            return WorkflowCommentContext.PDF_REVIEW
+        if state.status == DocumentStatus.IN_APPROVAL:
+            from modules.documents.contracts import WorkflowCommentContext
+
+            return WorkflowCommentContext.PDF_APPROVAL
+        return None
+
+    def _refresh_workflow_comments(self, state) -> None:
+        self._tab_comments.setRowCount(0)
+        context = self._resolve_comment_context(state)
+        self._comments_context_label.setText(f"Kontext: {getattr(context, 'value', '-')}")
+        self._add_comment_btn.setEnabled(context is not None and getattr(context, "value", "").startswith("PDF_"))
+        if context is None or self._comments_api is None:
             return
-        lines: list[str] = []
-        for idx, row in enumerate(rows, start=1):
-            change_id = str(row.get("change_id", "")).strip() or f"CR-{idx}"
-            reason = str(row.get("reason", "")).strip()
-            refs = row.get("impact_refs", [])
-            if not isinstance(refs, list):
-                refs = []
-            created_by = str(row.get("created_by", "")).strip()
-            created_at = str(row.get("created_at", "")).strip()
-            lines.append(f"{idx}. {change_id}")
-            lines.append(f"   Grund: {reason}")
-            if refs:
-                lines.append(f"   Impact-Refs: {', '.join(str(v) for v in refs)}")
-            if created_by or created_at:
-                lines.append(f"   Erfasst von: {created_by or '-'} am {created_at or '-'}")
-            lines.append("")
-        self._tab_comments.setPlainText("\n".join(lines).strip())
+        user, role = self._current_user_role()
+        if getattr(context, "value", "") == "DOCX_EDIT":
+            self._comments_api.sync_docx_comments(
+                state,
+                actor_user_id=user.user_id,
+                actor_role=role,
+            )
+        rows = self._comments_api.list_workflow_comments(
+            state,
+            context=context,
+            actor_user_id=user.user_id,
+            actor_role=role,
+        )
+        self._tab_comments.setRowCount(len(rows))
+        for i, row in enumerate(rows):
+            self._tab_comments.setItem(i, 0, QTableWidgetItem(row.ref_no))
+            self._tab_comments.setItem(i, 1, QTableWidgetItem(row.status.value))
+            self._tab_comments.setItem(i, 2, QTableWidgetItem(str(row.page_number or "")))
+            self._tab_comments.setItem(i, 3, QTableWidgetItem(row.author_display or ""))
+            self._tab_comments.setItem(i, 4, QTableWidgetItem(self._format_dt(row.created_at)))
+            self._tab_comments.setItem(i, 5, QTableWidgetItem(row.preview_text))
+            self._tab_comments.item(i, 0).setData(0x0100, row.comment_id)
+            self._tab_comments.item(i, 1).setData(0x0101, row.status.value)
+        self._update_comment_action_state()
+
+    def _open_comment_detail(self, item) -> None:
+        comment_id = item.data(0x0100) if item is not None else None
+        if not comment_id or self._comments_api is None:
+            return
+        user, role = self._current_user_role()
+        detail = self._comments_api.get_workflow_comment_detail(comment_id, actor_user_id=user.user_id, actor_role=role)
+        dlg = CommentDetailDialog(title=detail.ref_no, content=detail.full_text, parent=self)
+        dlg.exec()
+
+    def _selected_comment_id(self) -> str | None:
+        row_idx = self._tab_comments.currentRow()
+        if row_idx < 0:
+            return None
+        item = self._tab_comments.item(row_idx, 0)
+        if item is None:
+            return None
+        value = item.data(0x0100)
+        return str(value) if value else None
+
+    def _update_comment_action_state(self) -> None:
+        row_idx = self._tab_comments.currentRow()
+        if row_idx < 0:
+            self._resolve_comment_btn.setEnabled(False)
+            self._activate_comment_btn.setEnabled(False)
+            return
+        status_item = self._tab_comments.item(row_idx, 1)
+        current_status = str(status_item.data(0x0101) if status_item is not None else "")
+        self._resolve_comment_btn.setEnabled(current_status != WorkflowCommentStatus.RESOLVED.value)
+        self._activate_comment_btn.setEnabled(current_status != WorkflowCommentStatus.ACTIVE.value)
+
+    def _resolve_selected_comment(self) -> None:
+        comment_id = self._selected_comment_id()
+        if not comment_id or self._comments_api is None:
+            return
+        try:
+            user, role = self._current_user_role()
+            self._comments_api.set_workflow_comment_status(
+                comment_id,
+                new_status=WorkflowCommentStatus.RESOLVED,
+                actor_user_id=user.user_id,
+                actor_role=role,
+                note="resolved in workflow details",
+            )
+            state = self._state_from_selection()
+            self._refresh_workflow_comments(state)
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _activate_selected_comment(self) -> None:
+        comment_id = self._selected_comment_id()
+        if not comment_id or self._comments_api is None:
+            return
+        try:
+            user, role = self._current_user_role()
+            self._comments_api.set_workflow_comment_status(
+                comment_id,
+                new_status=WorkflowCommentStatus.ACTIVE,
+                actor_user_id=user.user_id,
+                actor_role=role,
+                note="re-activated in workflow details",
+            )
+            state = self._state_from_selection()
+            self._refresh_workflow_comments(state)
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _open_comment_viewer(self) -> None:
+        state = self._state_from_selection()
+        context = self._resolve_comment_context(state)
+        path = self._sig_ops.resolve_openable_path_from_state(state)
+        if path is None:
+            return
+        user, _role = self._current_user_role()
+        _role = user_to_system_role(user)
+        mode = "WORKFLOW_REVIEW"
+        if getattr(context, "value", "") == "PDF_APPROVAL":
+            mode = "WORKFLOW_APPROVAL"
+        dlg = PdfViewerDialog(
+            request=PdfViewerRequest(
+                document_id=state.document_id,
+                version=state.version,
+                artifact_path=path,
+                artifact_id=None,
+                actor_user_id=user.user_id,
+                actor_role=_role.value,
+                mode=mode,
+                enable_comments=True,
+                enable_read_tracking=False,
+                enable_comment_creation=True,
+                workflow_state=state,
+            ),
+            documents_comments_api=self._comments_api,
+            parent=self,
+        )
+        dlg.exec()
+        # Viewer may have created comments; refresh detail tab immediately.
+        try:
+            self._refresh_workflow_comments(state)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _add_change_request(self) -> None:
         try:
@@ -735,10 +968,27 @@ class DocumentsWorkflowWidget(QWidget):
 
     def _new_import(self) -> None:
         try:
+            if not self._can_current_user_create_documents():
+                raise RuntimeError(
+                    "Du darfst keine neuen Dokumente anlegen. "
+                    "Bitte Admin-Freigabe in Einstellungen > Dokumentenlenkung > CanCreateNewDocuments setzen."
+                )
             users = self._um.list_users()
             user = self._um.get_current_user()
             default_owner = user.user_id if user is not None else ""
-            dlg = DocumentCreateWizard([u.user_id for u in users], default_owner, self)
+            current_role = user_to_system_role(user) if user is not None else None
+            can_override_profiles = current_role in {SystemRole.QMB, SystemRole.ADMIN}
+            profile_rules = {
+                dt.value: self._profile_rule_for_doc_type(dt)
+                for dt in DocumentType
+            }
+            dlg = DocumentCreateWizard(
+                [u.user_id for u in users],
+                default_owner,
+                profile_rules=profile_rules,
+                can_override_profiles=can_override_profiles,
+                parent=self,
+            )
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 return
             data = dlg.payload()
@@ -746,6 +996,12 @@ class DocumentsWorkflowWidget(QWidget):
                 raise RuntimeError("Dokumentenkennung ist erforderlich")
             version = 1
             document_id = data.document_id.strip()
+            type_rule = self._profile_rule_for_doc_type(data.doc_type)
+            effective_profile_id = str(type_rule.get("profile_id", "long_release"))
+            if can_override_profiles and bool(type_rule.get("override_possible", False)):
+                selected = data.workflow_profile_id.strip()
+                if selected:
+                    effective_profile_id = selected
             created = self._wf.create_document_version(
                 document_id,
                 version,
@@ -753,8 +1009,8 @@ class DocumentsWorkflowWidget(QWidget):
                 title=data.title,
                 description=data.description or None,
                 doc_type=data.doc_type,
-                control_class=ControlClass.CONTROLLED,
-                workflow_profile_id=data.workflow_profile_id,
+                control_class=control_class_for(data.doc_type),
+                workflow_profile_id=effective_profile_id,
             )
             self._append("WIZARD_DRAFT", created)
             if not dlg.create_draft_only():
@@ -1010,6 +1266,26 @@ class DocumentsWorkflowWidget(QWidget):
             user, role = self._current_user_role()
             payload = self._wf.reject_approval(self._state_from_selection(), user.user_id, dlg.reason(), actor_role=role)
             self._append("FREIGABE_ABGELEHNT", payload)
+            self._reload_table()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _archive_approved(self) -> None:
+        try:
+            confirm = QMessageBox.question(
+                self,
+                "Archivieren",
+                "Dokumentversion wirklich archivieren?",
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+            user, role = self._current_user_role()
+            payload = self._wf.archive_approved(
+                self._state_from_selection(),
+                actor_role=role,
+                actor_user_id=user.user_id,
+            )
+            self._append("DOKUMENT_ARCHIVIERT", payload)
             self._reload_table()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)

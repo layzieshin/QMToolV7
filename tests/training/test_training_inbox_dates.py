@@ -59,6 +59,31 @@ class TestTrainingInboxDates(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].released_at, release_dt)
 
+    def test_inbox_hides_snapshot_if_version_not_released_anymore(self):
+        snap = TrainingAssignmentSnapshot(
+            snapshot_id="s1",
+            user_id="user",
+            document_id="DOC-1",
+            version=1,
+            source=AssignmentSource.SCOPE,
+            exempted=False,
+        )
+        # Catalog contains only v2, so v1 must not appear.
+        doc = TrainingDocumentRef(
+            document_id="DOC-1",
+            version=2,
+            title="Doc v2",
+            owner_user_id="admin",
+            released_at=datetime(2026, 4, 10, 8, 30, tzinfo=timezone.utc),
+        )
+        svc = TrainingInboxQueryService(
+            snapshot_repo=_SnapshotRepo([snap]),
+            quiz_repo=_QuizRepo(),
+            catalog_reader=_Catalog([doc]),
+        )
+        items = svc.list_training_inbox_for_user("user")
+        self.assertEqual(items, [])
+
 
 if __name__ == "__main__":
     unittest.main()

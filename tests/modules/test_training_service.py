@@ -130,6 +130,19 @@ class _FakeBus:
         pass
 
 
+class _FakeSettingsService:
+    def get_module_settings(self, module_id: str) -> dict[str, object]:
+        if module_id != "training":
+            return {}
+        return {
+            "questions_per_quiz": 3,
+            "min_correct_answers": 3,
+            "shuffle_answers": True,
+            "retry_cooldown_seconds": 0,
+            "force_reread_on_fail": False,
+        }
+
+
 def _make_services(root: Path):
     schema = Path("modules/training/schema.sql")
     db = root / "training.db"
@@ -150,7 +163,13 @@ def _make_services(root: Path):
     ])
     um = _FakeUserService()
     catalog = ReleasedDocumentCatalogReader(documents_pool_api=docs)
-    quiz_import = QuizImportService(quiz_repo=quiz_repo, secure_store=secure_store, event_bus=bus)
+    settings = _FakeSettingsService()
+    quiz_import = QuizImportService(
+        quiz_repo=quiz_repo,
+        secure_store=secure_store,
+        catalog_reader=catalog,
+        event_bus=bus,
+    )
     quiz_binding = QuizBindingService(quiz_repo=quiz_repo, event_bus=bus)
     projector = TrainingSnapshotProjector(
         catalog_reader=catalog, snapshot_repo=snapshot_repo, tag_repo=tag_repo,
@@ -159,7 +178,7 @@ def _make_services(root: Path):
     inbox = TrainingInboxQueryService(snapshot_repo=snapshot_repo, quiz_repo=quiz_repo, catalog_reader=catalog)
     quiz_exec = QuizExecutionService(
         quiz_repo=quiz_repo, snapshot_repo=snapshot_repo,
-        quiz_import_service=quiz_import, event_bus=bus,
+        quiz_import_service=quiz_import, settings_service=settings, event_bus=bus,
     )
     comment_svc = TrainingCommentService(comment_repo=comment_repo, event_bus=bus)
     report_svc = TrainingReportService(report_repo=report_repo, event_bus=bus)

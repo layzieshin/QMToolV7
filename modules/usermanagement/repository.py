@@ -21,7 +21,18 @@ class UserRepository(ABC):
         pass
 
     @abstractmethod
-    def create_user(self, username: str, password: str, role: str) -> AuthenticatedUser:
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        is_active: bool = True,
+        is_qmb: bool = False,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+    ) -> AuthenticatedUser:
         pass
 
     @abstractmethod
@@ -50,6 +61,7 @@ class UserRepository(ABC):
         organization_unit: str | None,
         role: str | None,
         is_active: bool | None,
+        is_qmb: bool | None,
     ) -> AuthenticatedUser:
         pass
 

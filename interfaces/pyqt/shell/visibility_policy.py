@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from interfaces.pyqt.registry.contribution import QtModuleContribution
+from modules.usermanagement.role_policies import is_effective_qmb
 
 
 def normalize_role(role: str | None) -> str:
@@ -23,4 +24,6 @@ class ContributionVisibilityPolicy:
             return False
         normalized_user_role = normalize_role(getattr(user, "role", None))
         allowed = {normalize_role(v) for v in contribution.allowed_roles}
+        if "QMB" in allowed and is_effective_qmb(user):
+            return True
         return normalized_user_role in allowed

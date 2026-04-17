@@ -55,7 +55,12 @@ def register_training_ports(container) -> None:
     catalog_reader = ReleasedDocumentCatalogReader(documents_pool_api=documents_pool_api)
     doc_tag_service = DocumentTagService(tag_repo=tag_repo)
     user_tag_service = UserTagService(tag_repo=tag_repo)
-    quiz_import_service = QuizImportService(quiz_repo=quiz_repo, secure_store=secure_store, event_bus=event_bus)
+    quiz_import_service = QuizImportService(
+        quiz_repo=quiz_repo,
+        secure_store=secure_store,
+        catalog_reader=catalog_reader,
+        event_bus=event_bus,
+    )
     quiz_binding_service = QuizBindingService(quiz_repo=quiz_repo, event_bus=event_bus)
     manual_service = ManualAssignmentService(override_repo=override_repo, event_bus=event_bus)
     exemption_service = ExemptionService(override_repo=override_repo, event_bus=event_bus)
@@ -76,6 +81,7 @@ def register_training_ports(container) -> None:
         quiz_repo=quiz_repo,
         snapshot_repo=snapshot_repo,
         quiz_import_service=quiz_import_service,
+        settings_service=settings_service,
         event_bus=event_bus,
     )
     comment_service = TrainingCommentService(comment_repo=comment_repo, event_bus=event_bus)

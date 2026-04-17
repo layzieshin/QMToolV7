@@ -124,6 +124,8 @@ class TrainingQuizRepository:
                 document_id=str(r["document_id"]),
                 document_version=int(r["document_version"]),
                 created_at=self._parse_dt(str(r["created_at"])) or datetime.now(timezone.utc),
+                question_count=int(r["question_count"] or 0),
+                document_title=None,
             )
             for r in rows
         ]
@@ -157,10 +159,11 @@ class TrainingQuizRepository:
         with connect(self._db_path) as conn:
             conn.execute(
                 """INSERT INTO training_quiz_attempts
-                (session_id, user_id, document_id, version, selected_question_ids_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)""",
+                (session_id, user_id, document_id, version, selected_question_ids_json, presented_questions_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (session.session_id, session.user_id, session.document_id, session.version,
                  json.dumps(list(session.selected_question_ids), ensure_ascii=True),
+                 session.presented_questions_json,
                  session.created_at.isoformat()),
             )
             conn.commit()
@@ -178,10 +181,11 @@ class TrainingQuizRepository:
             document_id=str(row["document_id"]),
             version=int(row["version"]),
             selected_question_ids=tuple(json.loads(str(row["selected_question_ids_json"]))),
+            presented_questions_json=str(row["presented_questions_json"] or "[]"),
             created_at=self._parse_dt(str(row["created_at"])) or datetime.now(timezone.utc),
         )
 
-    def complete_quiz_session(self, result: QuizResult, answers: list[int]) -> None:
+    def complete_quiz_session(self, result: QuizResult, answers: list[str | int | None]) -> None:
         with connect(self._db_path) as conn:
             conn.execute(
                 """UPDATE training_quiz_attempts
@@ -191,6 +195,17 @@ class TrainingQuizRepository:
                  1 if result.passed else 0, result.completed_at.isoformat(), result.session_id),
             )
             conn.commit()
+
+    def get_last_completed_attempt(self, user_id: str, document_id: str, version: int) -> dict[str, object] | None:
+        with connect(self._db_path) as conn:
+            row = conn.execute(
+                """SELECT * FROM training_quiz_attempts
+                WHERE user_id=? AND document_id=? AND version=? AND completed_at IS NOT NULL
+                ORDER BY completed_at DESC
+                LIMIT 1""",
+                (user_id, document_id, version),
+            ).fetchone()
+        return dict(row) if row is not None else None
 
     def count_attempts_for_user_doc(self, user_id: str, document_id: str, version: int) -> int:
         with connect(self._db_path) as conn:
@@ -214,5 +229,13 @@ class TrainingQuizRepository:
         sql = self._schema_path.read_text(encoding="utf-8")
         with connect(self._db_path) as conn:
             conn.executescript(sql)
+            cols = {
+                str(r["name"])
+                for r in conn.execute("PRAGMA table_info(training_quiz_attempts)").fetchall()
+            }
+            if "presented_questions_json" not in cols:
+                conn.execute(
+                    "ALTER TABLE training_quiz_attempts ADD COLUMN presented_questions_json TEXT NOT NULL DEFAULT '[]'"
+                )
             conn.commit()
 

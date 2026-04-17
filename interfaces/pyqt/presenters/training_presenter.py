@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from modules.training.contracts import TrainingInboxItem
+from modules.usermanagement.role_policies import is_effective_qmb
 
 
 class TrainingPresenter:
@@ -34,5 +35,6 @@ class TrainingPresenter:
         return quiz_attempted
 
     @staticmethod
-    def is_admin(role: str) -> bool:
-        return role.strip().upper() in ("ADMIN", "QMB")
+    def is_admin(user: object) -> bool:
+        role = str(getattr(user, "role", "") or "").strip().upper()
+        return role == "ADMIN" or is_effective_qmb(user)

@@ -54,7 +54,7 @@ class DocumentsWorkflowFilterPresenterTest(unittest.TestCase):
             owner_contains="u1",
             title_contains="w",
             workflow_active="true",
-            active_version="true",
+            active_version="all",
         )
         typed_result = [r for r in result if isinstance(r, _Row)]
         self.assertEqual([(r.document_id, r.version) for r in typed_result], [("DOC-3", 2)])
@@ -64,9 +64,41 @@ class DocumentsWorkflowPresenterVisibilityTest(unittest.TestCase):
     def setUp(self) -> None:
         self.presenter = DocumentsWorkflowPresenter()
 
-    def test_only_qmb_sees_new_without_selection(self) -> None:
-        visible = self.presenter.visible_actions_for_context(None, user_id="u-qmb", user_role=SystemRole.QMB)
+    def test_qmb_sees_new_without_selection_when_flag_true(self) -> None:
+        visible = self.presenter.visible_actions_for_context(
+            None,
+            user_id="u-qmb",
+            user_role=SystemRole.QMB,
+            can_create_new_documents=True,
+        )
         self.assertEqual(visible, {"new"})
+
+    def test_admin_without_flag_does_not_see_new(self) -> None:
+        visible = self.presenter.visible_actions_for_context(
+            None,
+            user_id="u-admin",
+            user_role=SystemRole.ADMIN,
+            can_create_new_documents=False,
+        )
+        self.assertNotIn("new", visible)
+
+    def test_admin_with_flag_sees_new(self) -> None:
+        visible = self.presenter.visible_actions_for_context(
+            None,
+            user_id="u-admin",
+            user_role=SystemRole.ADMIN,
+            can_create_new_documents=True,
+        )
+        self.assertIn("new", visible)
+
+    def test_user_with_flag_sees_new(self) -> None:
+        visible = self.presenter.visible_actions_for_context(
+            None,
+            user_id="u-user",
+            user_role=SystemRole.USER,
+            can_create_new_documents=True,
+        )
+        self.assertIn("new", visible)
 
     def test_owner_can_start_when_workflow_not_active(self) -> None:
         state = _State(
@@ -86,7 +118,12 @@ class DocumentsWorkflowPresenterVisibilityTest(unittest.TestCase):
             workflow_active=True,
             assignments=_Assignments(editors={"ed-1"}, reviewers=set(), approvers=set()),
         )
-        visible = self.presenter.visible_actions_for_context(state, user_id="u-qmb", user_role=SystemRole.QMB)
+        visible = self.presenter.visible_actions_for_context(
+            state,
+            user_id="u-qmb",
+            user_role=SystemRole.QMB,
+            can_create_new_documents=True,
+        )
         self.assertIn("new", visible)
         self.assertIn("abort", visible)
 

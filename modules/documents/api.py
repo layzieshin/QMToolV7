@@ -18,6 +18,13 @@ from .contracts import (
     RejectionReason,
     SystemRole,
     ValidityExtensionOutcome,
+    WorkflowCommentContext,
+    WorkflowCommentDetail,
+    WorkflowCommentListItem,
+    WorkflowCommentRecord,
+    WorkflowCommentStatus,
+    PdfReadProgress,
+    TrackedPdfReadSession,
     WorkflowProfile,
 )
 from .errors import DocumentWorkflowError
@@ -380,4 +387,101 @@ class DocumentsReadApi:
         self, user_id: str, document_id: str, version: int
     ) -> DocumentReadReceipt | None:
         return self._service.get_read_receipt(user_id, document_id, version)
+
+    def start_tracked_pdf_read(
+        self,
+        user_id: str,
+        document_id: str,
+        version: int,
+        *,
+        artifact_id: str | None,
+        total_pages: int,
+        source: str,
+        min_seconds_per_page: int = 10,
+    ) -> TrackedPdfReadSession:
+        return self._service.start_tracked_pdf_read(
+            user_id,
+            document_id,
+            version,
+            artifact_id=artifact_id,
+            total_pages=total_pages,
+            source=source,
+            min_seconds_per_page=min_seconds_per_page,
+        )
+
+    def record_page_dwell(self, session_id: str, *, page_number: int, dwell_seconds: int) -> PdfReadProgress:
+        return self._service.record_page_dwell(session_id, page_number=page_number, dwell_seconds=dwell_seconds)
+
+    def get_pdf_read_progress(self, session_id: str) -> PdfReadProgress:
+        return self._service.get_pdf_read_progress(session_id)
+
+    def finalize_tracked_pdf_read(self, session_id: str, *, source: str) -> DocumentReadReceipt | None:
+        return self._service.finalize_tracked_pdf_read(session_id, source=source)
+
+
+class DocumentsCommentsApi:
+    def __init__(self, service: DocumentsService) -> None:
+        self._service = service
+
+    def list_workflow_comments(
+        self,
+        state: DocumentVersionState,
+        *,
+        context: WorkflowCommentContext,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> list[WorkflowCommentListItem]:
+        return self._service.list_workflow_comments(
+            state, context=context, actor_user_id=actor_user_id, actor_role=actor_role
+        )
+
+    def get_workflow_comment_detail(
+        self, comment_id: str, *, actor_user_id: str, actor_role: SystemRole
+    ) -> WorkflowCommentDetail:
+        return self._service.get_workflow_comment_detail(
+            comment_id, actor_user_id=actor_user_id, actor_role=actor_role
+        )
+
+    def sync_docx_comments(
+        self, state: DocumentVersionState, *, actor_user_id: str, actor_role: SystemRole
+    ) -> list[WorkflowCommentListItem]:
+        return self._service.sync_docx_comments(state, actor_user_id=actor_user_id, actor_role=actor_role)
+
+    def create_pdf_workflow_comment(
+        self,
+        state: DocumentVersionState,
+        *,
+        context: WorkflowCommentContext,
+        actor_user_id: str,
+        actor_role: SystemRole,
+        page_number: int,
+        comment_text: str,
+        anchor_json: str | None = None,
+    ) -> WorkflowCommentRecord:
+        return self._service.create_pdf_workflow_comment(
+            state,
+            context=context,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            page_number=page_number,
+            comment_text=comment_text,
+            anchor_json=anchor_json,
+        )
+
+    def set_workflow_comment_status(
+        self,
+        comment_id: str,
+        *,
+        new_status: WorkflowCommentStatus,
+        actor_user_id: str,
+        actor_role: SystemRole,
+        note: str | None = None,
+    ) -> WorkflowCommentRecord:
+        return self._service.set_workflow_comment_status(
+            comment_id,
+            new_status=new_status,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            note=note,
+        )
 

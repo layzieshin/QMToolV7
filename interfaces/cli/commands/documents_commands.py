@@ -12,6 +12,7 @@ from modules.documents.contracts import (
     RejectionReason, SystemRole, ValidityExtensionOutcome
 )
 from modules.signature.api import SignatureError
+from modules.usermanagement.role_policies import is_effective_qmb
 from modules.signature.contracts import SignRequest, SignaturePlacementInput, LabelLayoutInput
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 
@@ -23,7 +24,10 @@ def _resolve_current_user_and_role(usermanagement) -> tuple[object | None, Syste
     if current_user is None:
         return None, None
     role_map = {"Admin": SystemRole.ADMIN, "QMB": SystemRole.QMB, "User": SystemRole.USER}
-    return current_user, role_map.get(current_user.role)
+    current_role = role_map.get(current_user.role)
+    if current_role == SystemRole.USER and is_effective_qmb(current_user):
+        current_role = SystemRole.QMB
+    return current_user, current_role
 
 
 def _print_documents_state(prefix: str, state) -> None:

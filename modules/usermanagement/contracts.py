@@ -16,4 +16,5 @@ class AuthenticatedUser:
     scope: str | None = None
     organization_unit: str | None = None
     is_active: bool = True
+    is_qmb: bool = False
 

@@ -22,6 +22,7 @@ from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.widgets.access_guards import require_admin_or_qmb
 from interfaces.pyqt.widgets.users_admin_helpers import UsersAdminPresenter
 from qm_platform.runtime.container import RuntimeContainer
+from modules.usermanagement.role_policies import normalize_base_role
 
 
 class UsersAdminWidget(QWidget):
@@ -33,7 +34,7 @@ class UsersAdminWidget(QWidget):
         self._search = QLineEdit()
         self._search.setPlaceholderText("Suche nach Loginname, User-ID, Vorname oder Nachname")
         self._role_filter = QComboBox()
-        self._role_filter.addItems(["Alle", "Admin", "QMB", "User"])
+        self._role_filter.addItems(["Alle", "Admin", "QMB", "User", "Wartet auf Freischaltung"])
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(["Loginname", "User-ID", "Vorname", "Nachname", "Rolle"])
         self._table.horizontalHeader().setStretchLastSection(True)
@@ -57,6 +58,8 @@ class UsersAdminWidget(QWidget):
         self._detail_new_role.addItems(["(unverändert)", "Admin", "QMB", "User"])
         self._detail_is_active = QCheckBox("Benutzer aktiv")
         self._detail_is_active.setChecked(True)
+        self._detail_is_qmb = QCheckBox("QMB-Zusatzrechte")
+        self._detail_is_qmb.setChecked(False)
         self._change_password = QLineEdit()
         self._change_password.setEchoMode(QLineEdit.EchoMode.Password)
         self._change_password_confirm = QLineEdit()
@@ -111,6 +114,7 @@ class UsersAdminWidget(QWidget):
         detail_form.addRow("Scope", self._detail_scope)
         detail_form.addRow("Organisationseinheit", self._detail_org_unit)
         detail_form.addRow("", self._detail_is_active)
+        detail_form.addRow("", self._detail_is_qmb)
         detail_form.addRow("Neues Passwort", self._change_password)
         detail_form.addRow("Neues Passwort (Bestätigung)", self._change_password_confirm)
         right_layout.addLayout(detail_form)
@@ -175,6 +179,9 @@ class UsersAdminWidget(QWidget):
         self._detail_scope.setText(str(getattr(user, "scope", "") or ""))
         self._detail_org_unit.setText(str(getattr(user, "organization_unit", "") or ""))
         self._detail_is_active.setChecked(bool(getattr(user, "is_active", True)))
+        self._detail_is_qmb.setChecked(bool(getattr(user, "is_qmb", False)))
+        current = self._um.get_current_user()
+        self._detail_is_qmb.setEnabled(normalize_base_role(getattr(current, "role", None)) == "ADMIN")
 
     def _create_user(self) -> None:
         try:
@@ -239,6 +246,7 @@ class UsersAdminWidget(QWidget):
                 organization_unit=self._detail_org_unit.text().strip() or None,
                 role=selected_role,
                 is_active=self._detail_is_active.isChecked(),
+                is_qmb=self._detail_is_qmb.isChecked(),
             )
             self._append("BENUTZER_ADMINFELDER_GESPEICHERT", updated)
             self._reload()

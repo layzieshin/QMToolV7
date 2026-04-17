@@ -48,6 +48,6 @@ class DocumentsWorkflowFilterPresenter:
             filtered = [r for r in filtered if bool(r.workflow_active) is want]
         if active_version in ("true", "false"):
             want = active_version == "true"
-            filtered = [r for r in filtered if (r.status != DocumentStatus.ARCHIVED) is want]
+            filtered = [r for r in filtered if ((getattr(r, "active_version", None) is not None) is want)]
         filtered.sort(key=lambda r: (r.document_id, r.version), reverse=True)
         return filtered

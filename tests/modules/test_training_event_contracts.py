@@ -65,6 +65,19 @@ class _Bus:
         pass
 
 
+class _Settings:
+    def get_module_settings(self, module_id: str) -> dict[str, object]:
+        if module_id != "training":
+            return {}
+        return {
+            "questions_per_quiz": 3,
+            "min_correct_answers": 3,
+            "shuffle_answers": True,
+            "retry_cooldown_seconds": 0,
+            "force_reread_on_fail": False,
+        }
+
+
 SAMPLE_QUIZ = json.dumps({
     "document_id": "DOC-2", "document_version": 1,
     "questions": [
@@ -118,16 +131,22 @@ class TrainingEventContractsTest(unittest.TestCase):
             quiz_repo = TrainingQuizRepository(db, schema)
             secure_store = EncryptedTrainingBlobStore(root / "quiz", root / "quiz.key")
             catalog = ReleasedDocumentCatalogReader(documents_pool_api=docs)
+            settings = _Settings()
             manual_svc = ManualAssignmentService(override_repo=override_repo, event_bus=bus)
             projector = TrainingSnapshotProjector(
                 catalog_reader=catalog, snapshot_repo=snapshot_repo, tag_repo=tag_repo,
                 override_repo=override_repo, usermanagement_service=_FakeUsers(), event_bus=bus,
             )
-            quiz_import = QuizImportService(quiz_repo=quiz_repo, secure_store=secure_store, event_bus=bus)
+            quiz_import = QuizImportService(
+                quiz_repo=quiz_repo,
+                secure_store=secure_store,
+                catalog_reader=catalog,
+                event_bus=bus,
+            )
             quiz_binding = QuizBindingService(quiz_repo=quiz_repo, event_bus=bus)
             quiz_exec = QuizExecutionService(
                 quiz_repo=quiz_repo, snapshot_repo=snapshot_repo,
-                quiz_import_service=quiz_import, event_bus=bus,
+                quiz_import_service=quiz_import, settings_service=settings, event_bus=bus,
             )
             # Setup: assign + snapshot + read progress
             manual_svc.grant_manual_assignment("user", "DOC-2", "test", "admin")

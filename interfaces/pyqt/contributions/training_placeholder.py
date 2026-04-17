@@ -10,25 +10,34 @@ import os
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
+    QRadioButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.presenters.training_presenter import TrainingPresenter
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
 from interfaces.pyqt.widgets.access_guards import require_admin_or_qmb
+from interfaces.pyqt.widgets.tag_editor_widget import TagEditorWidget
+from interfaces.pyqt.widgets.pdf_viewer_dialog import PdfViewerDialog, PdfViewerRequest
+from interfaces.pyqt.widgets.quiz_binding_dialog import QuizBindingDialog
+from interfaces.pyqt.contributions.common import user_to_system_role
 from modules.documents.contracts import ArtifactType
 from qm_platform.runtime.container import RuntimeContainer
 
@@ -110,9 +119,11 @@ class TrainingWorkspace(QWidget):
         self._btn_read.clicked.connect(self._on_read)
         self._btn_quiz_start = QPushButton("Quiz starten")
         self._btn_quiz_start.clicked.connect(self._on_start_quiz)
+        self._btn_quiz_review = QPushButton("Letzte Auswertung")
+        self._btn_quiz_review.clicked.connect(self._on_show_last_quiz_review)
         self._btn_comment = QPushButton("Quiz kommentieren")
         self._btn_comment.clicked.connect(self._on_add_comment)
-        for btn in (self._btn_refresh, self._btn_read, self._btn_quiz_start, self._btn_comment):
+        for btn in (self._btn_refresh, self._btn_read, self._btn_quiz_start, self._btn_quiz_review, self._btn_comment):
             lower_bar.addWidget(btn)
         lower_bar.addStretch(1)
         layout.addLayout(lower_bar)
@@ -151,8 +162,7 @@ class TrainingWorkspace(QWidget):
 
     def _apply_role_visibility(self) -> None:
         user = self._current_user_or_none()
-        role = normalize_role(getattr(user, "role", None))
-        is_admin = self._presenter.is_admin(role)
+        is_admin = self._presenter.is_admin(user)
         self._admin_bar.setVisible(is_admin)
 
     # ---- Selection / action state (§13.2) ----
@@ -169,6 +179,7 @@ class TrainingWorkspace(QWidget):
         item = self._selected_item
         self._btn_read.setEnabled(self._presenter.is_read_enabled(item))
         self._btn_quiz_start.setEnabled(self._presenter.is_quiz_start_enabled(item))
+        self._btn_quiz_review.setEnabled(item is not None)
         # Comment enabled only if quiz was attempted at least once
         quiz_attempted = False
         if item is not None:
@@ -226,23 +237,29 @@ class TrainingWorkspace(QWidget):
             opened_path = self._open_released_pdf(item.document_id, item.version)
             if opened_path is None:
                 raise RuntimeError("Kein lokal oeffenbares PDF-Artefakt verfuegbar.")
-            confirm = QMessageBox.question(
-                self,
-                "Lesebestaetigung",
-                (
-                    f"Dokument wurde geoeffnet:\n{opened_path}\n\n"
-                    "Hast du das Dokument vollstaendig bis zur letzten Seite gelesen?"
+            dlg = PdfViewerDialog(
+                request=PdfViewerRequest(
+                    document_id=item.document_id,
+                    version=item.version,
+                    artifact_path=Path(opened_path),
+                    artifact_id=None,
+                    actor_user_id=current_user.user_id,
+                    actor_role=user_to_system_role(current_user).value,
+                    mode="TRAINING_READ",
+                    enable_comments=True,
+                    enable_read_tracking=True,
+                    enable_comment_creation=True,
+                    min_seconds_per_page=10,
                 ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                documents_read_api=self._read_api,
+                parent=self,
             )
-            if confirm != QMessageBox.StandardButton.Yes:
-                self._log("Lesebestätigung abgebrochen.")
+            dlg.exec()
+            receipt = self._read_api.get_read_receipt(current_user.user_id, item.document_id, item.version)
+            if receipt is None:
+                QMessageBox.warning(self, "Training", "Das Dokument wurde noch nicht ausreichend gelesen.")
                 return
-            self._read_api.confirm_released_document_read(
-                current_user.user_id, item.document_id, item.version, source="training_gui",
-            )
-            self._log(f"Lesebestätigung für {item.document_id} v{item.version} erstellt.")
+            self._log(f"Lesebestaetigung fuer {item.document_id} v{item.version} erstellt.")
             self._load_inbox()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
@@ -260,6 +277,19 @@ class TrainingWorkspace(QWidget):
             dlg = _QuizDialog(session, questions, self._api, parent=self)
             dlg.exec()
             self._load_inbox()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _on_show_last_quiz_review(self) -> None:
+        item = self._selected_item
+        if item is None:
+            return
+        try:
+            review = self._api.get_last_quiz_review(self._current_user().user_id, item.document_id, item.version)
+            if review is None:
+                QMessageBox.information(self, "Quiz-Auswertung", "Keine abgeschlossene Auswertung vorhanden.")
+                return
+            _QuizResultDialog(review, self).exec()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -292,7 +322,20 @@ class TrainingWorkspace(QWidget):
                 return
             from pathlib import Path
             raw = Path(path).read_bytes()
-            result = self._admin.import_quiz_json(raw)
+            preview = self._admin.inspect_quiz_json(raw)
+            force = False
+            if not preview.version_matches_active:
+                warning_text = "\n".join(preview.warnings) or "Version des Quiz passt nicht zur aktiven Dokumentversion."
+                reply = QMessageBox.question(
+                    self,
+                    "Version abweichend",
+                    f"{warning_text}\n\nSoll das Quiz trotzdem als gueltig importiert werden?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+                force = True
+            result = self._admin.import_quiz_json(raw, force=force)
             self._log(f"Quiz importiert: {result.import_id} ({result.question_count} Fragen)")
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
@@ -304,12 +347,13 @@ class TrainingWorkspace(QWidget):
             if not pending:
                 QMessageBox.information(self, "Quiz zuordnen", "Keine offenen Quiz-Importe vorhanden.")
                 return
-            items_text = [f"{p.import_id[:8]}… → {p.document_id} v{p.document_version}" for p in pending]
-            choice, ok = QInputDialog.getItem(self, "Quiz zuordnen", "Offener Import:", items_text, editable=False)
-            if not ok:
+            dialog = QuizBindingDialog(pending, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
-            idx = items_text.index(choice)
-            p = pending[idx]
+            selected = dialog.selected()
+            if selected is None:
+                return
+            p = selected
             # Check replacement conflict
             conflict = self._admin.check_quiz_replacement_conflict(p.document_id, p.document_version, p.import_id)
             if conflict.has_conflict:
@@ -379,16 +423,14 @@ class TrainingWorkspace(QWidget):
                 if not ok or not doc_id.strip():
                     return
             current = self._admin.list_document_tags(doc_id)
-            csv_default = ", ".join(sorted(current.tags))
-            csv_tags, ok = QInputDialog.getText(
-                self,
-                "Dokument-Tags",
-                "Tags (CSV, positiv/additiv):",
-                text=csv_default,
+            suggestions = self._admin.list_tag_pool()
+            tags = self._open_tag_editor_dialog(
+                title=f"Dokument-Tags: {doc_id}",
+                selected_tags=sorted(current.tags),
+                suggestions=suggestions,
             )
-            if not ok:
+            if tags is None:
                 return
-            tags = [t.strip() for t in csv_tags.split(",") if t.strip()]
             updated = self._admin.set_document_tags(doc_id, tags)
             self._log(f"Dokument-Tags gespeichert: {doc_id} -> {', '.join(sorted(updated.tags)) or '-'}")
         except Exception as exc:  # noqa: BLE001
@@ -414,16 +456,14 @@ class TrainingWorkspace(QWidget):
             idx = labels.index(selected)
             user_id = users[idx].user_id
             current = self._admin.list_user_tags(user_id)
-            csv_default = ", ".join(sorted(current.tags))
-            csv_tags, ok = QInputDialog.getText(
-                self,
-                "Nutzer-Tags",
-                "Tags (CSV, positiv/additiv):",
-                text=csv_default,
+            suggestions = self._admin.list_tag_pool()
+            tags = self._open_tag_editor_dialog(
+                title=f"Nutzer-Tags: {user_id}",
+                selected_tags=sorted(current.tags),
+                suggestions=suggestions,
             )
-            if not ok:
+            if tags is None:
                 return
-            tags = [t.strip() for t in csv_tags.split(",") if t.strip()]
             updated = self._admin.set_user_tags(user_id, tags)
             self._log(f"Nutzer-Tags gespeichert: {user_id} -> {', '.join(sorted(updated.tags)) or '-'}")
         except Exception as exc:  # noqa: BLE001
@@ -472,10 +512,31 @@ class TrainingWorkspace(QWidget):
         self._out.setVisible(visible)
         self._btn_toggle_log.setText("Protokoll ausblenden" if visible else "Protokoll anzeigen")
 
+    def _open_tag_editor_dialog(
+        self,
+        *,
+        title: str,
+        selected_tags: list[str],
+        suggestions: list[str],
+    ) -> list[str] | None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setMinimumWidth(520)
+        editor = TagEditorWidget(selected_tags=selected_tags, suggestions=suggestions, parent=dialog)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(editor)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return editor.selected_tags()
+
     def _open_released_pdf(self, document_id: str, version: int) -> str | None:
         artifacts = self._pool.list_artifacts(document_id, version)
         for artifact in artifacts:
-            if artifact.artifact_type not in (ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF):
+            if artifact.artifact_type != ArtifactType.RELEASED_PDF:
                 continue
             for path in resolve_openable_artifact_paths(
                 artifact=artifact,
@@ -509,50 +570,163 @@ class _QuizDialog(QDialog):
     def __init__(self, session, questions, api, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Quiz – {session.document_id} v{session.version}")
-        self.setMinimumSize(500, 400)
+        self.setMinimumSize(700, 520)
         self._session = session
         self._questions = questions
         self._api = api
-        self._answer_widgets: list[list[QPushButton]] = []
+        self._index = 0
+        self._selected_answers: list[str | None] = [None] * len(questions)
 
         layout = QVBoxLayout(self)
-        self._selected_answers: list[int | None] = [None] * len(questions)
+        self._progress_label = QLabel("")
+        self._progress = QProgressBar()
+        self._progress.setRange(0, max(1, len(questions)))
+        self._question_label = QLabel("")
+        self._question_label.setWordWrap(True)
+        self._answers_box = QGroupBox("Antworten")
+        self._answers_layout = QVBoxLayout(self._answers_box)
+        self._button_group = QButtonGroup(self)
+        self._button_group.setExclusive(True)
+        self._answer_buttons: list[QRadioButton] = []
 
-        for qi, q in enumerate(questions):
-            layout.addWidget(QLabel(f"<b>Frage {qi+1}:</b> {q.text}"))
-            row = QHBoxLayout()
-            btns: list[QPushButton] = []
-            for ai, a in enumerate(q.answers):
-                btn = QPushButton(a.text)
-                btn.setCheckable(True)
-                btn.clicked.connect(lambda checked, _qi=qi, _ai=ai: self._select_answer(_qi, _ai))
-                row.addWidget(btn)
-                btns.append(btn)
-            self._answer_widgets.append(btns)
-            layout.addLayout(row)
+        layout.addWidget(self._progress_label)
+        layout.addWidget(self._progress)
+        layout.addWidget(self._question_label)
+        layout.addWidget(self._answers_box, stretch=1)
 
+        nav = QHBoxLayout()
+        self._btn_prev = QPushButton("Zurueck")
+        self._btn_prev.clicked.connect(self._prev)
+        self._btn_next = QPushButton("Weiter")
+        self._btn_next.clicked.connect(self._next)
         self._btn_submit = QPushButton("Quiz abgeben")
         self._btn_submit.clicked.connect(self._submit)
-        layout.addWidget(self._btn_submit)
+        nav.addWidget(self._btn_prev)
+        nav.addWidget(self._btn_next)
+        nav.addStretch(1)
+        nav.addWidget(self._btn_submit)
+        layout.addLayout(nav)
 
-    def _select_answer(self, qi: int, ai: int) -> None:
-        self._selected_answers[qi] = ai
-        for i, btn in enumerate(self._answer_widgets[qi]):
-            btn.setChecked(i == ai)
+        self.setStyleSheet(
+            "QRadioButton { padding: 6px; border-radius: 4px; }"
+            "QRadioButton:checked { background-color: #c8c8c8; }"
+        )
+        self._render_current()
+
+    def _clear_answer_controls(self) -> None:
+        while self._answers_layout.count():
+            item = self._answers_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._answer_buttons = []
+
+    def _render_current(self) -> None:
+        total = len(self._questions)
+        question = self._questions[self._index]
+        self._progress_label.setText(f"Frage {self._index + 1} von {total}")
+        self._progress.setValue(self._index + 1)
+        self._question_label.setText(question.text)
+        self._clear_answer_controls()
+        self._button_group = QButtonGroup(self)
+        self._button_group.setExclusive(True)
+        for answer in question.answers:
+            btn = QRadioButton(answer.text)
+            btn.setProperty("answer_id", answer.answer_id)
+            btn.toggled.connect(self._on_answer_toggled)
+            self._answers_layout.addWidget(btn)
+            self._button_group.addButton(btn)
+            self._answer_buttons.append(btn)
+        selected_answer = self._selected_answers[self._index]
+        if selected_answer is not None:
+            for btn in self._answer_buttons:
+                if str(btn.property("answer_id")) == selected_answer:
+                    btn.setChecked(True)
+                    break
+        self._btn_prev.setEnabled(self._index > 0)
+        self._btn_next.setEnabled(self._index < total - 1)
+
+    def _on_answer_toggled(self, checked: bool) -> None:
+        if not checked:
+            return
+        btn = self.sender()
+        if btn is None:
+            return
+        self._selected_answers[self._index] = str(btn.property("answer_id"))
+
+    def _prev(self) -> None:
+        if self._index <= 0:
+            return
+        self._index -= 1
+        self._render_current()
+
+    def _next(self) -> None:
+        if self._index >= len(self._questions) - 1:
+            return
+        self._index += 1
+        self._render_current()
 
     def _submit(self) -> None:
         if any(a is None for a in self._selected_answers):
-            QMessageBox.warning(self, "Quiz", "Bitte alle Fragen beantworten.")
-            return
+            reply = QMessageBox.question(
+                self,
+                "Quiz abgeben",
+                "Es sind noch nicht alle Fragen beantwortet. Trotzdem abgeben?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
         try:
             result = self._api.submit_quiz_answers(self._session.session_id, self._selected_answers)
-            if result.passed:
-                QMessageBox.information(self, "Quiz bestanden", f"Ergebnis: {result.score}/{result.total} – bestanden!")
-            else:
-                QMessageBox.warning(self, "Quiz nicht bestanden", f"Ergebnis: {result.score}/{result.total} – nicht bestanden.")
+            _QuizResultDialog(result, self).exec()
             self.accept()
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Quiz", str(exc))
+
+
+class _QuizResultDialog(QDialog):
+    def __init__(self, result, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Quiz-Auswertung")
+        self.setMinimumSize(760, 520)
+        layout = QVBoxLayout(self)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        for idx, question in enumerate(result.questions):
+            box = QGroupBox(f"Frage {idx + 1}")
+            box_layout = QVBoxLayout(box)
+            question_label = QLabel(f"<b>{question.text}</b>")
+            question_label.setWordWrap(True)
+            box_layout.addWidget(question_label)
+            for answer in question.answers:
+                line = QLabel(answer.text)
+                line.setWordWrap(True)
+                if answer.is_chosen and not answer.is_correct:
+                    line.setStyleSheet("background-color: #ffd6d6; padding: 4px; border-radius: 3px;")
+                    line.setText(f"Deine Antwort: {answer.text}")
+                elif answer.is_correct and answer.is_chosen:
+                    line.setStyleSheet("background-color: #d6ffd6; padding: 4px; border-radius: 3px;")
+                    line.setText(f"[OK] Deine Antwort: {answer.text}")
+                elif answer.is_correct:
+                    line.setStyleSheet("background-color: #d6ffd6; padding: 4px; border-radius: 3px;")
+                    line.setText(f"[OK] Richtige Antwort: {answer.text}")
+                box_layout.addWidget(line)
+            status = QLabel("Richtig" if question.is_correct else "Falsch")
+            box_layout.addWidget(status)
+            content_layout.addWidget(box)
+        content_layout.addStretch(1)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, stretch=1)
+
+        summary = QLabel(f"<b>Ergebnis: {result.score} von {result.total} richtig.</b>")
+        layout.addWidget(summary)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
 
 
 # ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import argparse
 import os
 
 from interfaces.cli.commands.documents_commands import cmd_documents
-from interfaces.cli.commands.platform_commands import cmd_health, cmd_license_check
+from interfaces.cli.commands.platform_commands import cmd_health, cmd_license_check, cmd_logs_backup
 from interfaces.cli.commands.runtime_commands import cmd_init, cmd_doctor
 from interfaces.cli.commands.session_commands import cmd_login, cmd_logout
 from interfaces.cli.commands.settings_commands import cmd_settings
@@ -46,6 +46,8 @@ def main() -> int:
         return cmd_doctor(strict=strict_mode)
     if args.command == "license-check":
         return cmd_license_check(args.module)
+    if args.command == "logs-backup":
+        return cmd_logs_backup()
     if args.command == "login":
         return cmd_login(args.username, args.password)
     if args.command == "logout":

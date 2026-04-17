@@ -4,9 +4,19 @@ Extracted from documents_workflow_view.py (Phase 3A).
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 
 class DocumentsDetailPresenter:
     """Pure logic: no Qt imports, no side-effects."""
+
+    @staticmethod
+    def _to_local(dt: object) -> datetime | None:
+        if not isinstance(dt, datetime):
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone()
 
     @staticmethod
     def format_dt(dt: object) -> str:
@@ -14,7 +24,10 @@ class DocumentsDetailPresenter:
         if dt is None:
             return "-"
         try:
-            return dt.strftime("%d.%m.%Y %H:%M")  # type: ignore[union-attr]
+            local_dt = DocumentsDetailPresenter._to_local(dt)
+            if local_dt is not None:
+                return local_dt.strftime("%d.%m.%Y %H:%M")
+            return str(dt)
         except Exception:
             return str(dt)
 
@@ -72,10 +85,16 @@ class DocumentsDetailPresenter:
     @staticmethod
     def history_rows(state: object) -> list[tuple[str, str, str, str, str]]:
         """Build history rows from state timestamps. Returns primary rows or fallback."""
+        def iso_seconds(value: object) -> str:
+            local_dt = DocumentsDetailPresenter._to_local(value)
+            if local_dt is None:
+                return str(value or "-")
+            return local_dt.strftime("%Y-%m-%d %H:%M:%S")
+
         rows: list[tuple[str, str, str, str, str]] = []
         if state.created_at:
             rows.append((
-                str(state.created_at.strftime("%Y-%m-%d %H:%M:%S")),
+                iso_seconds(state.created_at),
                 "Version angelegt",
                 str(state.created_by or state.owner_user_id or "-"),
                 "PLANNED",
@@ -83,7 +102,7 @@ class DocumentsDetailPresenter:
             ))
         if state.released_at:
             rows.append((
-                str(state.released_at.strftime("%Y-%m-%d %H:%M:%S") if state.released_at else "-"),
+                iso_seconds(state.released_at),
                 "Freigegeben",
                 str(state.last_actor_user_id or "-"),
                 "APPROVED",
@@ -91,7 +110,7 @@ class DocumentsDetailPresenter:
             ))
         if state.approval_completed_at:
             rows.append((
-                str(state.approval_completed_at.strftime("%Y-%m-%d %H:%M:%S")),
+                iso_seconds(state.approval_completed_at),
                 "Freigabe abgeschlossen",
                 str(state.approval_completed_by or "-"),
                 "IN_APPROVAL->APPROVED",
@@ -99,7 +118,7 @@ class DocumentsDetailPresenter:
             ))
         if state.review_completed_at:
             rows.append((
-                str(state.review_completed_at.strftime("%Y-%m-%d %H:%M:%S")),
+                iso_seconds(state.review_completed_at),
                 "Pruefung abgeschlossen",
                 str(state.review_completed_by or "-"),
                 "IN_REVIEW->IN_APPROVAL",
@@ -107,7 +126,7 @@ class DocumentsDetailPresenter:
             ))
         if state.last_event_at and state.last_event_id:
             rows.append((
-                str(state.last_event_at.strftime("%Y-%m-%d %H:%M:%S")),
+                iso_seconds(state.last_event_at),
                 "Letzte Aenderung",
                 str(state.last_actor_user_id or "-"),
                 str(state.last_event_id or "-"),
@@ -115,7 +134,7 @@ class DocumentsDetailPresenter:
             ))
         if state.archived_at:
             rows.append((
-                str(state.archived_at.strftime("%Y-%m-%d %H:%M:%S")),
+                iso_seconds(state.archived_at),
                 "Archiviert",
                 str(state.archived_by or "-"),
                 "APPROVED->ARCHIVED",

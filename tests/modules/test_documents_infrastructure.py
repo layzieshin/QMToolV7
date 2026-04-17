@@ -21,6 +21,20 @@ class _FakeSignatureApi:
         return request
 
 
+class _ChainSignatureApi:
+    def sign_with_fixed_position(self, request: object) -> object:
+        input_pdf = getattr(request, "input_pdf", None)
+        output_pdf = getattr(request, "output_pdf", None)
+        signer = str(getattr(request, "signer_user", "unknown"))
+        if isinstance(output_pdf, Path):
+            output_pdf.parent.mkdir(parents=True, exist_ok=True)
+            base = b"%PDF-1.4\n"
+            if isinstance(input_pdf, Path) and input_pdf.exists():
+                base = input_pdf.read_bytes()
+            output_pdf.write_bytes(base + f"\n%signed-by:{signer}\n".encode("utf-8"))
+        return request
+
+
 class _FakeAuditLogger:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, str, str, str]] = []
@@ -127,7 +141,22 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         )
         state = service.assign_workflow_roles(state, editors={"ed"}, reviewers={"rv"}, approvers={"ap"})
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
-        service.complete_editing(state, sign_request={"step": "edit_complete"})
+        source_pdf = service.ensure_source_pdf_for_signing(state)
+        assert source_pdf is not None
+        sign_request = SignRequest(
+            input_pdf=Path(source_pdf),
+            output_pdf=root / "wf-signed.pdf",
+            signature_png=None,
+            placement=SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=120.0),
+            layout=LabelLayoutInput(show_signature=False, show_name=True, show_date=True),
+            overwrite_output=True,
+            dry_run=False,
+            sign_mode="visual",
+            signer_user="ed",
+            password="secret",
+            reason="test-complete",
+        )
+        service.complete_editing(state, sign_request=sign_request)
 
         artifacts = service.list_artifacts("DOC-WF", 1)
         source_pdfs = [a for a in artifacts if a.artifact_type == ArtifactType.SOURCE_PDF]
@@ -218,6 +247,85 @@ class DocumentsInfrastructureTest(unittest.TestCase):
                 self.assertEqual(snapshot.get("roles"), ["QMB", "USER"])
                 self.assertEqual(snapshot.get("sites"), ["HQ"])
                 self.assertEqual(snapshot.get("departments"), ["QA"])
+
+    def test_signature_chain_uses_latest_current_signed_pdf_for_next_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            storage = FileSystemDocumentsStorage(root / "artifacts")
+            def _fake_docx_to_pdf(_source: Path, target: Path) -> None:
+                target.write_bytes(b"%PDF-1.4\n%source\n")
+
+            service = DocumentsService(
+                repository=repo,
+                storage_port=storage,
+                signature_api=_ChainSignatureApi(),
+                docx_to_pdf_converter=_fake_docx_to_pdf,
+            )
+
+            source_docx = root / "chain.docx"
+            source_docx.write_bytes(b"docx-chain")
+            state = service.import_existing_docx("DOC-CHAIN", 1, source_docx, actor_user_id="admin", actor_role=SystemRole.ADMIN)
+            state = service.assign_workflow_roles(state, editors={"ed"}, reviewers={"rv"}, approvers={"ap"})
+            state = service.start_workflow(state, WorkflowProfile.long_release_path())
+            source_pdf = service.ensure_source_pdf_for_signing(state)
+            assert source_pdf is not None
+
+            edit_request = SignRequest(
+                input_pdf=Path(source_pdf),
+                output_pdf=root / "signed-edit.pdf",
+                signature_png=None,
+                placement=SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=120.0),
+                layout=LabelLayoutInput(show_signature=False, show_name=True, show_date=True),
+                overwrite_output=True,
+                dry_run=False,
+                sign_mode="visual",
+                signer_user="ed",
+                password="pw",
+                reason="edit",
+            )
+            state = service.complete_editing(state, sign_request=edit_request)
+
+            review_request = SignRequest(
+                input_pdf=Path(source_pdf),
+                output_pdf=root / "signed-review.pdf",
+                signature_png=None,
+                placement=SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=120.0),
+                layout=LabelLayoutInput(show_signature=False, show_name=True, show_date=True),
+                overwrite_output=True,
+                dry_run=False,
+                sign_mode="visual",
+                signer_user="rv",
+                password="pw",
+                reason="review",
+            )
+            state = service.accept_review(state, "rv", sign_request=review_request)
+            review_output = review_request.output_pdf.read_bytes()
+            self.assertIn(b"%signed-by:ed", review_output)
+            self.assertIn(b"%signed-by:rv", review_output)
+
+            approve_request = SignRequest(
+                input_pdf=Path(source_pdf),
+                output_pdf=root / "signed-approve.pdf",
+                signature_png=None,
+                placement=SignaturePlacementInput(page_index=0, x=100.0, y=100.0, target_width=120.0),
+                layout=LabelLayoutInput(show_signature=False, show_name=True, show_date=True),
+                overwrite_output=True,
+                dry_run=False,
+                sign_mode="visual",
+                signer_user="ap",
+                password="pw",
+                reason="approve",
+            )
+            state = service.accept_approval(state, "ap", sign_request=approve_request)
+            approval_output = approve_request.output_pdf.read_bytes()
+            self.assertIn(b"%signed-by:ed", approval_output)
+            self.assertIn(b"%signed-by:rv", approval_output)
+            self.assertIn(b"%signed-by:ap", approval_output)
+
+            signed_artifacts = [a for a in service.list_artifacts("DOC-CHAIN", 1) if a.artifact_type == ArtifactType.SIGNED_PDF]
+            self.assertGreaterEqual(len(signed_artifacts), 3)
+            self.assertEqual(sum(1 for a in signed_artifacts if a.is_current), 1)
 
     def test_sqlite_roundtrip_persists_validity_extension_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

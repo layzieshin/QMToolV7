@@ -46,9 +46,19 @@ class DocumentCreatePayload:
 class DocumentCreateWizard(QDialog):
     """Wizard-like dialog for new/import document creation."""
 
-    def __init__(self, owner_ids: list[str], current_owner: str, parent=None) -> None:
+    def __init__(
+        self,
+        owner_ids: list[str],
+        current_owner: str,
+        *,
+        profile_rules: dict[str, dict[str, object]] | None = None,
+        can_override_profiles: bool = False,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Neues Dokument / Import")
+        self._profile_rules = profile_rules or {}
+        self._can_override_profiles = can_override_profiles
         self._mode = QComboBox()
         self._mode.addItem("Aus Vorlage erstellen", "template")
         self._mode.addItem("Bestehendes Word-Dokument importieren", "docx")
@@ -64,7 +74,8 @@ class DocumentCreateWizard(QDialog):
         self._doc_type = QComboBox()
         for dt in DocumentType:
             self._doc_type.addItem(dt.value, dt)
-        self._workflow_profile = QLineEdit("long_release")
+        self._workflow_profile = QComboBox()
+        self._workflow_profile.addItem("long_release")
         self._draft_only = QCheckBox("Nur Entwurf anlegen")
 
         pick = QDialogButtonBox(QDialogButtonBox.StandardButton.Open)
@@ -86,6 +97,32 @@ class DocumentCreateWizard(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(buttons)
+        self._doc_type.currentIndexChanged.connect(self._apply_profile_rule_for_doc_type)
+        self._apply_profile_rule_for_doc_type()
+
+    def _apply_profile_rule_for_doc_type(self) -> None:
+        doc_type = self._doc_type.currentData()
+        if not isinstance(doc_type, DocumentType):
+            return
+        rule = self._profile_rules.get(doc_type.value, {})
+        profile_id = str(rule.get("profile_id", "long_release") or "long_release")
+        override_possible = bool(rule.get("override_possible", False))
+        profile_ids_raw = rule.get("available_profiles", [profile_id])
+        profile_ids = [str(v).strip() for v in profile_ids_raw if str(v).strip()]
+        if profile_id not in profile_ids:
+            profile_ids.insert(0, profile_id)
+        self._workflow_profile.blockSignals(True)
+        self._workflow_profile.clear()
+        for pid in profile_ids:
+            self._workflow_profile.addItem(pid)
+        idx = self._workflow_profile.findText(profile_id)
+        self._workflow_profile.setCurrentIndex(idx if idx >= 0 else 0)
+        can_override = self._can_override_profiles and override_possible
+        self._workflow_profile.setEnabled(can_override)
+        self._workflow_profile.setToolTip(
+            "Manuelle Profilauswahl erlaubt" if can_override else f"Fix zugewiesen: {profile_id}"
+        )
+        self._workflow_profile.blockSignals(False)
 
     def _pick_file(self) -> None:
         mode = self._mode.currentData()
@@ -110,7 +147,7 @@ class DocumentCreateWizard(QDialog):
             description=self._description.text().strip(),
             owner_user_id=self._owner.currentText().strip(),
             doc_type=self._doc_type.currentData(),
-            workflow_profile_id=self._workflow_profile.text().strip() or "long_release",
+            workflow_profile_id=self._workflow_profile.currentText().strip() or "long_release",
         )
 
     def create_draft_only(self) -> bool:

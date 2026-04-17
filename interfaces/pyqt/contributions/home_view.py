@@ -8,6 +8,7 @@ from interfaces.pyqt.presenters.home_presenter import HomeDashboardPresenter
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.widgets.entity_cards import EntityCard
 from qm_platform.runtime.container import RuntimeContainer
+from modules.usermanagement.role_policies import is_effective_qmb
 
 
 class HomeDashboardWidget(QWidget):
@@ -43,6 +44,8 @@ class HomeDashboardWidget(QWidget):
             ("reviews", "Offene Pruefungen und Freigaben"),
             ("training", "Offene Schulungen"),
             ("recent", "Zuletzt relevante Dokumente"),
+            ("admin_backup", "Logs-Backup Erinnerung"),
+            ("admin_pending_registrations", "Offene Registrierungen"),
         ]
         for idx, (key, label) in enumerate(labels):
             card = EntityCard(label, on_open=lambda k=key: self._open_target_for_card(k))
@@ -81,11 +84,14 @@ class HomeDashboardWidget(QWidget):
             self._set("reviews", 0, [])
             self._set("training", 0, [])
             self._set("recent", 0, [])
+            self._set("admin_backup", 0, [])
+            self._set("admin_pending_registrations", 0, [])
             return
         role = normalize_role(user.role)
-        tasks = self._pool.list_tasks_for_user(user.user_id, role)
-        review_items = self._pool.list_review_actions_for_user(user.user_id, role)
-        recent_docs = self._pool.list_recent_documents_for_user(user.user_id, role)
+        effective_role = "QMB" if is_effective_qmb(user) else role
+        tasks = self._pool.list_tasks_for_user(user.user_id, effective_role)
+        review_items = self._pool.list_review_actions_for_user(user.user_id, effective_role)
+        recent_docs = self._pool.list_recent_documents_for_user(user.user_id, effective_role)
         training_required = self._training.list_training_inbox_for_user(user.user_id, open_only=True)
         self._set(
             "tasks",
@@ -107,6 +113,25 @@ class HomeDashboardWidget(QWidget):
             len(recent_docs),
             self._presenter.recent_rows(recent_docs),
         )
+        if role == "ADMIN" and self._container.has_port("backup_reminder_service"):
+            status = self._container.get_port("backup_reminder_service").status()
+            items = self._presenter.backup_rows(status.days_since_last_backup, overdue=status.is_overdue)
+            self._set("admin_backup", 1 if status.is_overdue else 0, items)
+            self._cards["admin_backup"].setVisible(True)
+        else:
+            self._set("admin_backup", 0, [])
+            self._cards["admin_backup"].setVisible(False)
+        if role == "ADMIN":
+            pending = [entry for entry in self._um.list_users() if not bool(getattr(entry, "is_active", True))]
+            self._set(
+                "admin_pending_registrations",
+                len(pending),
+                self._presenter.pending_registration_rows(pending),
+            )
+            self._cards["admin_pending_registrations"].setVisible(True)
+        else:
+            self._set("admin_pending_registrations", 0, [])
+            self._cards["admin_pending_registrations"].setVisible(False)
 
 
 def _build(container: RuntimeContainer) -> QWidget:

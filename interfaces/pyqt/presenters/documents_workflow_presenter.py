@@ -11,7 +11,7 @@ class DocumentsWorkflowPresenter:
         if status in (DocumentStatus.IN_REVIEW, DocumentStatus.IN_APPROVAL):
             return [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF]
         if status in (DocumentStatus.APPROVED, DocumentStatus.ARCHIVED):
-            return [ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF]
+            return [ArtifactType.RELEASED_PDF]
         return []
 
     @staticmethod
@@ -50,9 +50,10 @@ class DocumentsWorkflowPresenter:
         *,
         user_id: str | None,
         user_role: SystemRole | None,
+        can_create_new_documents: bool = False,
     ) -> set[str]:
         visible: set[str] = set()
-        if user_role == SystemRole.QMB:
+        if can_create_new_documents:
             visible.add("new")
         if state is None or not user_id:
             return visible
@@ -60,6 +61,7 @@ class DocumentsWorkflowPresenter:
         owner_id = str(getattr(state, "owner_user_id", "") or "")
         is_owner = owner_id == user_id
         is_qmb = user_role == SystemRole.QMB
+        is_admin = user_role == SystemRole.ADMIN
         status = getattr(state, "status", None)
         workflow_active = bool(getattr(state, "workflow_active", False))
         assignments = getattr(state, "assignments", None)
@@ -79,5 +81,7 @@ class DocumentsWorkflowPresenter:
             visible.update({"review_accept", "review_reject"})
         if "approval_accept" in status_actions and assignments is not None and user_id in set(assignments.approvers):
             visible.update({"approval_accept", "approval_reject"})
+        if "archive" in status_actions and (is_qmb or is_admin):
+            visible.add("archive")
         return visible
 

@@ -16,11 +16,11 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
 )
 
-from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from modules.documents.contracts import ArtifactType
 from qm_platform.runtime.container import RuntimeContainer
+from modules.usermanagement.role_policies import is_effective_qmb
 
 
 class _PoolTableModel(QAbstractTableModel):
@@ -140,7 +140,7 @@ class DocumentsPoolWidget(QWidget):
             return
         row = self._model._rows[selected[0].row()]
         user = self._um.get_current_user()
-        role = normalize_role(user.role) if user else ""
+        effective_qmb = is_effective_qmb(user) if user else False
         header = self._pool.get_header(row.document_id)
         lines = [
             f"Dokumentenkennung: {row.document_id}",
@@ -153,7 +153,7 @@ class DocumentsPoolWidget(QWidget):
             f"Department: {header.department if header else '-'}",
             f"Standort: {header.site if header else '-'}",
             f"Regulatory Scope: {header.regulatory_scope if header else '-'}",
-            f"QMB Druckberechtigung: {'ja' if role == 'QMB' else 'nein'}",
+            f"QMB Druckberechtigung: {'ja' if effective_qmb else 'nein'}",
         ]
         self._details.setPlainText("\n".join(lines))
 
@@ -165,7 +165,7 @@ class DocumentsPoolWidget(QWidget):
         row = self._model._rows[selected[0].row()]
         artifacts = self._pool.list_artifacts(row.document_id, row.version)
         for artifact in artifacts:
-            if artifact.artifact_type not in (ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF):
+            if artifact.artifact_type != ArtifactType.RELEASED_PDF:
                 continue
             for path in resolve_openable_artifact_paths(
                 artifact=artifact,
@@ -178,7 +178,7 @@ class DocumentsPoolWidget(QWidget):
                     os.startfile(str(path))  # type: ignore[attr-defined]
                     self._error.setText(f"Geöffnet: {path}")
                     return
-        self._error.setText("Kein lokal oeffenbares PDF-Artefakt verfügbar.")
+        self._error.setText("Kein lokal oeffenbares RELEASED_PDF-Artefakt verfuegbar.")
 
     def _resolve_artifacts_root(self) -> Path:
         if not self._container.has_port("settings_service"):

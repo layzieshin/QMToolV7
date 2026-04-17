@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS training_user_tags (
     PRIMARY KEY (user_id, tag)
 );
 
+CREATE TABLE IF NOT EXISTS training_tag_pool (
+    tag TEXT PRIMARY KEY,
+    first_seen_at TEXT NOT NULL
+);
+
 -- Overrides
 CREATE TABLE IF NOT EXISTS training_manual_assignments (
     assignment_id TEXT PRIMARY KEY,
@@ -57,6 +62,7 @@ CREATE TABLE IF NOT EXISTS training_progress (
     version INTEGER NOT NULL,
     read_confirmed_at TEXT,
     quiz_passed_at TEXT,
+    last_failed_at TEXT,
     last_score INTEGER,
     quiz_attempts_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, document_id, version)
@@ -99,6 +105,7 @@ CREATE TABLE IF NOT EXISTS training_quiz_attempts (
     document_id TEXT NOT NULL,
     version INTEGER NOT NULL,
     selected_question_ids_json TEXT NOT NULL,
+    presented_questions_json TEXT NOT NULL DEFAULT '[]',
     answers_json TEXT,
     score INTEGER,
     total INTEGER,
@@ -116,6 +123,8 @@ CREATE TABLE IF NOT EXISTS training_comments (
     user_id TEXT NOT NULL,
     username_snapshot TEXT NOT NULL DEFAULT '',
     comment_text TEXT NOT NULL,
+    page_number INTEGER,
+    anchor_json TEXT,
     status TEXT NOT NULL DEFAULT 'ACTIVE',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

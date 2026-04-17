@@ -6,6 +6,7 @@ import json
 from modules.documents.contracts import SystemRole
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.settings.settings_service import SettingsService
+from modules.usermanagement.role_policies import is_effective_qmb
 
 from interfaces.cli.bootstrap import build_container
 
@@ -22,6 +23,8 @@ def cmd_settings(args: argparse.Namespace) -> int:
         return 6
     role_map = {"Admin": SystemRole.ADMIN, "QMB": SystemRole.QMB, "User": SystemRole.USER}
     current_role = role_map.get(current_user.role)
+    if current_role == SystemRole.USER and is_effective_qmb(current_user):
+        current_role = SystemRole.QMB
     if current_role is None:
         print("BLOCKED: login required for settings commands")
         return 6

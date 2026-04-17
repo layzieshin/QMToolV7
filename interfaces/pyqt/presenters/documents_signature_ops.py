@@ -481,4 +481,14 @@ class DocumentsSignatureOps:
             artifacts_root=self._artifacts_root,
         )
 
+    def resolve_openable_path_from_state(self, state: object) -> Path | None:
+        artifacts = self._pool.list_artifacts(state.document_id, state.version)
+        for artifact in artifacts:
+            if artifact.artifact_type not in {ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF}:
+                continue
+            paths = self.resolve_openable_artifact_paths(artifact)
+            if paths:
+                return paths[0]
+        return None
+
 

@@ -74,6 +74,24 @@ class ValidityExtensionOutcome(str, Enum):
     NEW_VERSION_REQUIRED = "new_version_required"
 
 
+class WorkflowCommentContext(str, Enum):
+    DOCX_EDIT = "DOCX_EDIT"
+    PDF_REVIEW = "PDF_REVIEW"
+    PDF_APPROVAL = "PDF_APPROVAL"
+
+
+class WorkflowCommentSourceKind(str, Enum):
+    DOCX_EXTRACTED = "DOCX_EXTRACTED"
+    PDF_APP = "PDF_APP"
+    PDF_IMPORTED = "PDF_IMPORTED"
+
+
+class WorkflowCommentStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    RESOLVED = "RESOLVED"
+    INACTIVE = "INACTIVE"
+
+
 @dataclass(frozen=True)
 class RejectionReason:
     template_id: str | None = None
@@ -265,6 +283,85 @@ class DocumentReadReceipt:
     version: int
     confirmed_at: datetime
     source: str
+
+
+@dataclass(frozen=True)
+class TrackedPdfReadSession:
+    session_id: str
+    user_id: str
+    document_id: str
+    version: int
+    artifact_id: str | None
+    total_pages: int
+    min_seconds_per_page: int
+    source: str
+    opened_at: datetime
+    completed_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class PdfReadProgress:
+    session_id: str
+    total_pages: int
+    completed_pages: tuple[int, ...]
+    missing_pages: tuple[int, ...]
+    page_seconds: dict[int, int]
+    is_complete: bool
+
+
+@dataclass(frozen=True)
+class WorkflowCommentRecord:
+    comment_id: str
+    ref_no: str
+    document_id: str
+    version: int
+    context: WorkflowCommentContext
+    source_kind: WorkflowCommentSourceKind
+    source_comment_key: str
+    artifact_id: str | None
+    page_number: int | None
+    anchor_json: str | None
+    author_display: str | None
+    source_created_at: datetime | None
+    preview_text: str
+    full_text: str
+    status: WorkflowCommentStatus
+    status_note: str | None
+    status_changed_by: str | None
+    status_changed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class WorkflowCommentListItem:
+    comment_id: str
+    ref_no: str
+    document_id: str
+    version: int
+    context: WorkflowCommentContext
+    page_number: int | None
+    anchor_json: str | None
+    author_display: str | None
+    created_at: datetime | None
+    preview_text: str
+    status: WorkflowCommentStatus
+
+
+@dataclass(frozen=True)
+class WorkflowCommentDetail:
+    comment_id: str
+    ref_no: str
+    document_id: str
+    version: int
+    context: WorkflowCommentContext
+    page_number: int | None
+    author_display: str | None
+    created_at: datetime | None
+    full_text: str
+    status: WorkflowCommentStatus
+    status_note: str | None
+    source_kind: WorkflowCommentSourceKind
 
 
 @dataclass(frozen=True)

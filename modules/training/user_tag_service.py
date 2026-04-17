@@ -18,3 +18,6 @@ class UserTagService:
     def list_all_user_tags(self) -> list[UserTagSet]:
         return self._repo.list_all_user_tags()
 
+    def list_tag_pool(self) -> list[str]:
+        return self._repo.list_tag_pool()
+

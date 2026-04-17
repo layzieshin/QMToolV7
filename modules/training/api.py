@@ -10,10 +10,11 @@ from .contracts import (
     PendingQuizMapping,
     QuizBinding,
     QuizBindingReplacementResult,
+    QuizImportPreview,
     QuizImportResult,
     QuizQuestion,
     QuizReplacementCheckResult,
-    QuizResult,
+    QuizResultDetail,
     QuizSession,
     TrainingAssignmentSnapshot,
     TrainingAuditLogItem,
@@ -60,8 +61,11 @@ class TrainingApi:
     def start_quiz(self, user_id: str, document_id: str, version: int) -> tuple[QuizSession, list[QuizQuestion]]:
         return self._quiz.start_quiz(user_id, document_id, version)
 
-    def submit_quiz_answers(self, session_id: str, answers: list[int]) -> QuizResult:
+    def submit_quiz_answers(self, session_id: str, answers: list[str | int | None]) -> QuizResultDetail:
         return self._quiz.submit_quiz_answers(session_id, answers)
+
+    def get_last_quiz_review(self, user_id: str, document_id: str, version: int) -> QuizResultDetail | None:
+        return self._quiz.get_last_quiz_review(user_id, document_id, version)
 
     def add_comment(
         self, user_id: str, document_id: str, version: int, comment_text: str,
@@ -75,6 +79,32 @@ class TrainingApi:
 
     def list_comments_for_document(self, document_id: str, version: int) -> list[TrainingCommentListItem]:
         return self._comments.list_comments_for_document(document_id, version)
+
+    def add_pdf_comment(
+        self,
+        user_id: str,
+        document_id: str,
+        version: int,
+        *,
+        page_number: int,
+        comment_text: str,
+        anchor_json: str | None = None,
+        document_title_snapshot: str = "",
+        username_snapshot: str = "",
+    ) -> TrainingCommentRecord:
+        return self._comments.add_pdf_comment(
+            user_id,
+            document_id,
+            version,
+            page_number=page_number,
+            comment_text=comment_text,
+            anchor_json=anchor_json,
+            document_title_snapshot=document_title_snapshot,
+            username_snapshot=username_snapshot,
+        )
+
+    def list_pdf_comments_for_user(self, user_id: str, document_id: str, version: int) -> list[TrainingCommentListItem]:
+        return self._comments.list_pdf_comments_for_user(user_id, document_id, version)
 
 
 class TrainingAdminApi:
@@ -110,11 +140,29 @@ class TrainingAdminApi:
         return self._catalog.list_released_documents()
 
     # --- Quiz import ---
-    def import_quiz_json(self, raw_quiz_json: bytes) -> QuizImportResult:
-        return self._quiz_import.import_quiz_json(raw_quiz_json)
+    def inspect_quiz_json(self, raw_quiz_json: bytes) -> QuizImportPreview:
+        return self._quiz_import.inspect_quiz_json(raw_quiz_json)
+
+    def import_quiz_json(self, raw_quiz_json: bytes, *, force: bool = False) -> QuizImportResult:
+        return self._quiz_import.import_quiz_json(raw_quiz_json, force=force)
 
     def list_pending_quiz_mappings(self) -> list[PendingQuizMapping]:
-        return self._quiz_binding.list_pending_quiz_mappings()
+        pending = self._quiz_binding.list_pending_quiz_mappings()
+        by_key = {
+            (doc.document_id, doc.version): doc.title
+            for doc in self._catalog.list_released_documents()
+        }
+        return [
+            PendingQuizMapping(
+                import_id=row.import_id,
+                document_id=row.document_id,
+                document_version=row.document_version,
+                created_at=row.created_at,
+                question_count=row.question_count,
+                document_title=by_key.get((row.document_id, row.document_version)),
+            )
+            for row in pending
+        ]
 
     def bind_quiz_to_document(self, import_id: str, document_id: str, version: int) -> QuizBinding:
         return self._quiz_binding.bind_quiz_to_document(import_id, document_id, version)
@@ -135,11 +183,20 @@ class TrainingAdminApi:
     def set_document_tags(self, document_id: str, tags: list[str]) -> DocumentTagSet:
         return self._doc_tags.set_document_tags(document_id, tags)
 
+    def list_all_document_tags(self) -> list[DocumentTagSet]:
+        return self._doc_tags.list_all_document_tags()
+
+    def list_tag_pool(self) -> list[str]:
+        return self._doc_tags.list_tag_pool()
+
     def list_user_tags(self, user_id: str) -> UserTagSet:
         return self._user_tags.list_user_tags(user_id)
 
     def set_user_tags(self, user_id: str, tags: list[str]) -> UserTagSet:
         return self._user_tags.set_user_tags(user_id, tags)
+
+    def list_all_user_tags(self) -> list[UserTagSet]:
+        return self._user_tags.list_all_user_tags()
 
     # --- Manual assignment ---
     def grant_manual_assignment(self, user_id: str, document_id: str, reason: str, granted_by: str) -> ManualAssignment:

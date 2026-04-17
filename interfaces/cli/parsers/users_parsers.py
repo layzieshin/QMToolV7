@@ -13,4 +13,10 @@ def register_users_parsers(sub: argparse._SubParsersAction) -> None:
     user_change_password = users_sub.add_parser("change-password", help="Change user password")
     user_change_password.add_argument("--username", required=True)
     user_change_password.add_argument("--password", required=True)
+    user_set_active = users_sub.add_parser("set-active", help="Set user active flag")
+    user_set_active.add_argument("--username", required=True)
+    user_set_active.add_argument("--active", choices=["true", "false"], required=True)
+    user_set_qmb = users_sub.add_parser("set-qmb", help="Set user qmb flag")
+    user_set_qmb.add_argument("--username", required=True)
+    user_set_qmb.add_argument("--enabled", choices=["true", "false"], required=True)
 

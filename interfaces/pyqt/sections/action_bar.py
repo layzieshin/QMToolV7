@@ -20,6 +20,7 @@ def build_workflow_action_bar(
     on_review_reject: Callable[[], None],
     on_approval_accept: Callable[[], None],
     on_approval_reject: Callable[[], None],
+    on_archive: Callable[[], None],
 ) -> dict[str, object]:
     """Build the workflow action button row. Returns {"layout": QHBoxLayout, "buttons": dict}."""
     row = QHBoxLayout()
@@ -34,6 +35,7 @@ def build_workflow_action_bar(
         ("review_reject", "Pruefung ablehnen", on_review_reject),
         ("approval_accept", "Freigabe annehmen", on_approval_accept),
         ("approval_reject", "Freigabe ablehnen", on_approval_reject),
+        ("archive", "Archivieren", on_archive),
     ]:
         btn = QPushButton(label)
         btn.clicked.connect(handler)

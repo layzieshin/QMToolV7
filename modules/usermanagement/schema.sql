@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     scope TEXT,
     organization_unit TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
+    is_qmb INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

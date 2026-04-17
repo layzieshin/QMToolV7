@@ -15,10 +15,11 @@ from qm_platform.runtime.container import RuntimeContainer
 
 
 class _FakeUser:
-    def __init__(self, user_id: str, username: str, role: str) -> None:
+    def __init__(self, user_id: str, username: str, role: str, *, is_qmb: bool = False) -> None:
         self.user_id = user_id
         self.username = username
         self.role = role
+        self.is_qmb = is_qmb
 
 
 class _FakeUserManagement:
@@ -136,7 +137,7 @@ class TrainingLoginGateTest(unittest.TestCase):
 
     def test_home_dashboard_constructs_without_login(self) -> None:
         widget = HomeDashboardWidget(_make_container(user=None))
-        self.assertEqual(len(widget._cards), 4)
+        self.assertEqual(len(widget._cards), 6)
 
 
 if __name__ == "__main__":

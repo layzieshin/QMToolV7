@@ -43,7 +43,8 @@ class SQLiteUserRepository(UserRepository):
                     department,
                     scope,
                     organization_unit,
-                    is_active
+                    is_active,
+                    is_qmb
                 FROM users
                 ORDER BY username ASC
                 """
@@ -61,6 +62,7 @@ class SQLiteUserRepository(UserRepository):
                 scope=row["scope"],
                 organization_unit=row["organization_unit"],
                 is_active=bool(int(row["is_active"])),
+                is_qmb=bool(int(row["is_qmb"])),
             )
             for row in rows
         ]
@@ -80,7 +82,8 @@ class SQLiteUserRepository(UserRepository):
                     department,
                     scope,
                     organization_unit,
-                    is_active
+                    is_active,
+                    is_qmb
                 FROM users
                 WHERE username = ?
                 """,
@@ -100,22 +103,64 @@ class SQLiteUserRepository(UserRepository):
             scope=row["scope"],
             organization_unit=row["organization_unit"],
             is_active=bool(int(row["is_active"])),
+            is_qmb=bool(int(row["is_qmb"])),
         )
 
-    def create_user(self, username: str, password: str, role: str) -> AuthenticatedUser:
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        is_active: bool = True,
+        is_qmb: bool = False,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+    ) -> AuthenticatedUser:
         now = datetime.now(timezone.utc).isoformat()
-        user = AuthenticatedUser(user_id=username, username=username, role=role)
+        resolved_first = (first_name or "").strip() or username
+        resolved_last = (last_name or "").strip() or None
+        name_parts = [part for part in (resolved_first, resolved_last) if part is not None]
+        resolved_display = ", ".join(name_parts) if name_parts else username
+        user = AuthenticatedUser(
+            user_id=username,
+            username=username,
+            role=role,
+            first_name=resolved_first,
+            last_name=resolved_last,
+            display_name=resolved_display,
+            email=(email or "").strip() or None,
+            is_active=bool(is_active),
+            is_qmb=bool(is_qmb),
+        )
         password_hash = hash_password(password)
         with self._connect() as conn:
             try:
                 conn.execute(
                     """
                     INSERT INTO users (
-                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, created_at, updated_at
+                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, is_qmb, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (user.user_id, username, password_hash, role, username, None, username, None, None, None, None, 1, now, now),
+                    (
+                        user.user_id,
+                        username,
+                        password_hash,
+                        role,
+                        user.first_name,
+                        user.last_name,
+                        user.display_name,
+                        user.email,
+                        None,
+                        None,
+                        None,
+                        int(user.is_active),
+                        int(user.is_qmb),
+                        now,
+                        now,
+                    ),
                 )
                 conn.commit()
             except sqlite3.IntegrityError as exc:
@@ -178,6 +223,7 @@ class SQLiteUserRepository(UserRepository):
         organization_unit: str | None,
         role: str | None,
         is_active: bool | None,
+        is_qmb: bool | None,
     ) -> AuthenticatedUser:
         current = self.get_user(username)
         if current is None:
@@ -186,7 +232,7 @@ class SQLiteUserRepository(UserRepository):
             cur = conn.execute(
                 """
                 UPDATE users
-                SET department = ?, scope = ?, organization_unit = ?, role = ?, is_active = ?, updated_at = ?
+                SET department = ?, scope = ?, organization_unit = ?, role = ?, is_active = ?, is_qmb = ?, updated_at = ?
                 WHERE username = ?
                 """,
                 (
@@ -195,6 +241,7 @@ class SQLiteUserRepository(UserRepository):
                     organization_unit if organization_unit is not None else current.organization_unit,
                     role if role is not None else current.role,
                     int(bool(is_active if is_active is not None else current.is_active)),
+                    int(bool(is_qmb if is_qmb is not None else current.is_qmb)),
                     datetime.now(timezone.utc).isoformat(),
                     username,
                 ),
@@ -218,11 +265,11 @@ class SQLiteUserRepository(UserRepository):
                 conn.execute(
                     """
                     INSERT INTO users (
-                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, created_at, updated_at
+                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, is_qmb, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (username, username, password_hash, role, username, None, username, None, None, None, None, 1, now, now),
+                    (username, username, password_hash, role, username, None, username, None, None, None, None, 1, 0, now, now),
                 )
             conn.commit()
 
@@ -239,6 +286,7 @@ class SQLiteUserRepository(UserRepository):
                 "ALTER TABLE users ADD COLUMN scope TEXT",
                 "ALTER TABLE users ADD COLUMN organization_unit TEXT",
                 "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
+                "ALTER TABLE users ADD COLUMN is_qmb INTEGER NOT NULL DEFAULT 0",
             ):
                 try:
                     conn.execute(statement)
@@ -263,6 +311,7 @@ class SQLiteUserRepository(UserRepository):
                     ),
                 )
             conn.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL")
+            conn.execute("UPDATE users SET is_qmb = 0 WHERE is_qmb IS NULL")
             conn.commit()
 
     @staticmethod

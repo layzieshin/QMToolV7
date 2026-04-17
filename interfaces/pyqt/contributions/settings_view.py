@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QRadioButton,
     QScrollArea,
+    QSpinBox,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -41,8 +42,10 @@ from interfaces.pyqt.widgets.signature_canvas_dialog import SignatureCanvasDialo
 from interfaces.pyqt.widgets.signature_placement_dialog import SignaturePlacementDialog, compute_label_local_position
 from interfaces.pyqt.widgets.workflow_profile_wizard import WorkflowProfileWizardDialog
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
+from modules.documents.contracts import DocumentType
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from qm_platform.runtime.container import RuntimeContainer
+from modules.usermanagement.role_policies import is_effective_qmb
 
 
 class _ProfileWidget(QWidget):
@@ -315,10 +318,41 @@ class _ModuleSettingsWidget(QWidget):
         self._out.setReadOnly(True)
         self._hint = QLabel("Bearbeitbares JSON fuer Modul-Einstellungen. Speichern nur fuer QMB/Admin.")
         self._hint.setWordWrap(True)
+        self._create_perm_box = QWidget()
+        create_perm_layout = QVBoxLayout(self._create_perm_box)
+        create_perm_layout.setContentsMargins(0, 0, 0, 0)
+        create_perm_layout.addWidget(QLabel("Dokumentenlenkung: CanCreateNewDocuments (pro Nutzer)"))
+        self._create_perm_table = QTableWidget(0, 3)
+        self._create_perm_table.setHorizontalHeaderLabels(["User-ID", "Rolle", "CanCreateNewDocuments"])
+        self._create_perm_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._create_perm_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._create_perm_table.horizontalHeader().setStretchLastSection(True)
+        self._create_perm_table.itemClicked.connect(self._on_toggle_item_clicked)
+        create_perm_layout.addWidget(self._create_perm_table)
+        self._btn_apply_perm = QPushButton("Toggle-Auswahl ins JSON übernehmen")
+        self._btn_apply_perm.clicked.connect(self._apply_create_permissions_to_editor)
+        create_perm_layout.addWidget(self._btn_apply_perm)
+        self._create_perm_box.setVisible(False)
+        self._doc_type_rule_box = QWidget()
+        doc_rule_layout = QVBoxLayout(self._doc_type_rule_box)
+        doc_rule_layout.setContentsMargins(0, 0, 0, 0)
+        doc_rule_layout.addWidget(QLabel("Dokumenttyp -> Workflowprofil Regeln"))
+        self._doc_type_rule_table = QTableWidget(0, 3)
+        self._doc_type_rule_table.setHorizontalHeaderLabels(["Dokumenttyp", "Default Workflowprofil", "Override possible"])
+        self._doc_type_rule_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._doc_type_rule_table.horizontalHeader().setStretchLastSection(True)
+        self._doc_type_rule_table.itemClicked.connect(self._on_toggle_item_clicked)
+        doc_rule_layout.addWidget(self._doc_type_rule_table)
+        self._btn_apply_doc_rules = QPushButton("Typ-Regeln ins JSON übernehmen")
+        self._btn_apply_doc_rules.clicked.connect(self._apply_doc_type_rules_to_editor)
+        doc_rule_layout.addWidget(self._btn_apply_doc_rules)
+        self._doc_type_rule_box.setVisible(False)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._hint)
         layout.addWidget(self._module)
+        layout.addWidget(self._create_perm_box)
+        layout.addWidget(self._doc_type_rule_box)
 
         tools = QHBoxLayout()
         btn_reload = QPushButton("Neu laden")
@@ -357,6 +391,8 @@ class _ModuleSettingsWidget(QWidget):
             return
         data = self._svc.get_module_settings(module_id)
         self._editor.setPlainText(json.dumps(data, indent=2, ensure_ascii=True))
+        self._render_create_permissions(module_id, data)
+        self._render_doc_type_profile_rules(module_id, data)
         self._append("GELADEN", {"module_id": module_id, "settings": data})
 
     def _save_selected(self) -> None:
@@ -365,6 +401,8 @@ class _ModuleSettingsWidget(QWidget):
             return
         try:
             self._require_privileged()
+            self._apply_create_permissions_to_editor()
+            self._apply_doc_type_rules_to_editor()
             payload = json.loads(self._editor.toPlainText().strip() or "{}")
             if not isinstance(payload, dict):
                 raise RuntimeError("Einstellungs-Payload muss ein JSON-Objekt sein")
@@ -379,6 +417,235 @@ class _ModuleSettingsWidget(QWidget):
             self._append("GOVERNANCE_ACK", {"status": self._policy.summarize_governance_ack(acknowledged=self._ack.isChecked())})
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Einstellungen", str(exc))
+
+    def _render_create_permissions(self, module_id: str, settings: dict[str, object]) -> None:
+        is_documents = module_id == "documents"
+        self._create_perm_box.setVisible(is_documents)
+        if not is_documents:
+            return
+        try:
+            users = self._container.get_port("usermanagement_service").list_users()
+        except Exception:
+            users = []
+        mapping_raw = settings.get("can_create_new_documents", {})
+        mapping = mapping_raw if isinstance(mapping_raw, dict) else {}
+        self._create_perm_table.setRowCount(len(users))
+        for row_idx, user in enumerate(users):
+            user_id = str(getattr(user, "user_id", ""))
+            role = str(getattr(user, "role", ""))
+            allowed = bool(mapping.get(user_id, False))
+            self._create_perm_table.setItem(row_idx, 0, QTableWidgetItem(user_id))
+            self._create_perm_table.setItem(row_idx, 1, QTableWidgetItem(role))
+            self._create_perm_table.setItem(row_idx, 2, self._make_toggle_cell(allowed))
+        self._create_perm_table.resizeColumnsToContents()
+
+    def _workflow_profile_ids(self) -> list[str]:
+        try:
+            docs_cfg = self._svc.get_module_settings("documents")
+            raw = str(docs_cfg.get("profiles_file", "modules/documents/workflow_profiles.json")).strip()
+            app_home = self._container.get_port("app_home")
+            path = Path(raw)
+            if not path.is_absolute():
+                path = Path(app_home) / path
+            if not path.exists():
+                return ["long_release"]
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            ids = [str(item.get("profile_id", "")).strip() for item in payload.get("profiles", [])]
+            ids = [v for v in ids if v]
+            return sorted(set(ids)) or ["long_release"]
+        except Exception:
+            return ["long_release"]
+
+    def _render_doc_type_profile_rules(self, module_id: str, settings: dict[str, object]) -> None:
+        is_documents = module_id == "documents"
+        self._doc_type_rule_box.setVisible(is_documents)
+        if not is_documents:
+            return
+        mapping_raw = settings.get("doc_type_profile_rules", {})
+        mapping = mapping_raw if isinstance(mapping_raw, dict) else {}
+        profile_ids = self._workflow_profile_ids()
+        types = list(DocumentType)
+        self._doc_type_rule_table.setRowCount(len(types))
+        for row_idx, dt in enumerate(types):
+            rule = mapping.get(dt.value, {})
+            profile_id = str((rule.get("profile_id") if isinstance(rule, dict) else "") or "long_release")
+            override = bool(rule.get("override_possible", False)) if isinstance(rule, dict) else False
+            self._doc_type_rule_table.setItem(row_idx, 0, QTableWidgetItem(dt.value))
+            combo = QComboBox()
+            combo.addItems(profile_ids)
+            if combo.findText(profile_id) < 0:
+                combo.addItem(profile_id)
+            combo.setCurrentIndex(combo.findText(profile_id))
+            self._doc_type_rule_table.setCellWidget(row_idx, 1, combo)
+            self._doc_type_rule_table.setItem(row_idx, 2, self._make_toggle_cell(override))
+        self._doc_type_rule_table.resizeColumnsToContents()
+
+    def _apply_create_permissions_to_editor(self) -> None:
+        if self._module.currentText().strip() != "documents" or not self._create_perm_box.isVisible():
+            return
+        payload = json.loads(self._editor.toPlainText().strip() or "{}")
+        if not isinstance(payload, dict):
+            raise RuntimeError("Einstellungs-Payload muss ein JSON-Objekt sein")
+        mapping: dict[str, bool] = {}
+        for row_idx in range(self._create_perm_table.rowCount()):
+            user_item = self._create_perm_table.item(row_idx, 0)
+            check_item = self._create_perm_table.item(row_idx, 2)
+            if user_item is None or check_item is None:
+                continue
+            user_id = user_item.text().strip()
+            if not user_id:
+                continue
+            mapping[user_id] = self._toggle_cell_value(check_item)
+        payload["can_create_new_documents"] = mapping
+        self._editor.setPlainText(json.dumps(payload, indent=2, ensure_ascii=True))
+
+    def _apply_doc_type_rules_to_editor(self) -> None:
+        if self._module.currentText().strip() != "documents" or not self._doc_type_rule_box.isVisible():
+            return
+        payload = json.loads(self._editor.toPlainText().strip() or "{}")
+        if not isinstance(payload, dict):
+            raise RuntimeError("Einstellungs-Payload muss ein JSON-Objekt sein")
+        rules: dict[str, dict[str, object]] = {}
+        for row_idx in range(self._doc_type_rule_table.rowCount()):
+            dt_item = self._doc_type_rule_table.item(row_idx, 0)
+            ov_item = self._doc_type_rule_table.item(row_idx, 2)
+            combo = self._doc_type_rule_table.cellWidget(row_idx, 1)
+            if dt_item is None or ov_item is None or not isinstance(combo, QComboBox):
+                continue
+            rules[dt_item.text().strip()] = {
+                "profile_id": combo.currentText().strip() or "long_release",
+                "override_possible": self._toggle_cell_value(ov_item),
+            }
+        payload["doc_type_profile_rules"] = rules
+        self._editor.setPlainText(json.dumps(payload, indent=2, ensure_ascii=True))
+
+    def _make_toggle_cell(self, active: bool) -> QTableWidgetItem:
+        item = QTableWidgetItem()
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item.setData(Qt.ItemDataRole.UserRole, bool(active))
+        if active:
+            item.setText("✓")
+            item.setForeground(QColor("#1B8E3E"))
+        else:
+            item.setText("⊘")
+            item.setForeground(QColor("#C62828"))
+        return item
+
+    @staticmethod
+    def _toggle_cell_value(item: QTableWidgetItem) -> bool:
+        return bool(item.data(Qt.ItemDataRole.UserRole))
+
+    def _flip_toggle_cell(self, item: QTableWidgetItem) -> None:
+        active = not self._toggle_cell_value(item)
+        item.setData(Qt.ItemDataRole.UserRole, active)
+        if active:
+            item.setText("✓")
+            item.setForeground(QColor("#1B8E3E"))
+        else:
+            item.setText("⊘")
+            item.setForeground(QColor("#C62828"))
+
+    def _on_toggle_item_clicked(self, item: QTableWidgetItem) -> None:
+        if item.column() != 2:
+            return
+        table = item.tableWidget()
+        if table not in {self._create_perm_table, self._doc_type_rule_table}:
+            return
+        self._flip_toggle_cell(item)
+
+
+class _TrainingSettingsWidget(QWidget):
+    def __init__(self, container: RuntimeContainer) -> None:
+        super().__init__()
+        self._container = container
+        self._settings = container.get_port("settings_service")
+        self._um = container.get_port("usermanagement_service")
+
+        self._questions = QSpinBox()
+        self._questions.setRange(1, 100)
+        self._min_correct = QSpinBox()
+        self._min_correct.setRange(1, 100)
+        self._cooldown = QSpinBox()
+        self._cooldown.setRange(0, 86400)
+        self._shuffle = QPushButton()
+        self._shuffle.setCheckable(True)
+        self._reread = QPushButton()
+        self._reread.setCheckable(True)
+        self._out = QPlainTextEdit()
+        self._out.setReadOnly(True)
+        self._out.setMaximumHeight(100)
+
+        form = QFormLayout()
+        form.addRow("Fragen pro Quiz", self._questions)
+        form.addRow("Mindestens richtige Antworten", self._min_correct)
+        form.addRow("Cooldown nach Fehlversuch (Sekunden)", self._cooldown)
+        form.addRow("Antworten mischen", self._shuffle)
+        form.addRow("Nach Fehlversuch erneutes Lesen erzwingen", self._reread)
+
+        row = QHBoxLayout()
+        btn_save = QPushButton("Speichern")
+        btn_save.clicked.connect(self._save)
+        btn_reload = QPushButton("Zuruecksetzen")
+        btn_reload.clicked.connect(self._reload)
+        row.addWidget(btn_save)
+        row.addWidget(btn_reload)
+        row.addStretch(1)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addLayout(row)
+        layout.addWidget(self._out)
+
+        self._questions.valueChanged.connect(self._sync_min_bounds)
+        self._shuffle.toggled.connect(lambda checked: self._apply_toggle_style(self._shuffle, checked))
+        self._reread.toggled.connect(lambda checked: self._apply_toggle_style(self._reread, checked))
+        self._reload()
+
+    def _require_privileged(self) -> None:
+        require_admin_or_qmb(self._um)
+
+    def _sync_min_bounds(self) -> None:
+        self._min_correct.setMaximum(self._questions.value())
+        if self._min_correct.value() > self._questions.value():
+            self._min_correct.setValue(self._questions.value())
+
+    @staticmethod
+    def _apply_toggle_style(button: QPushButton, active: bool) -> None:
+        if active:
+            button.setText("✓ aktiv")
+            button.setStyleSheet("color: #1B8E3E;")
+        else:
+            button.setText("⊘ inaktiv")
+            button.setStyleSheet("color: #C62828;")
+
+    def _reload(self) -> None:
+        cfg = self._settings.get_module_settings("training")
+        questions = int(cfg.get("questions_per_quiz", 3) or 3)
+        min_correct = int(cfg.get("min_correct_answers", questions) or questions)
+        self._questions.setValue(max(1, questions))
+        self._sync_min_bounds()
+        self._min_correct.setValue(max(1, min(min_correct, self._questions.value())))
+        self._cooldown.setValue(max(0, int(cfg.get("retry_cooldown_seconds", 0) or 0)))
+        self._shuffle.setChecked(bool(cfg.get("shuffle_answers", True)))
+        self._reread.setChecked(bool(cfg.get("force_reread_on_fail", False)))
+        self._apply_toggle_style(self._shuffle, self._shuffle.isChecked())
+        self._apply_toggle_style(self._reread, self._reread.isChecked())
+        self._out.setPlainText("Schulungseinstellungen geladen.")
+
+    def _save(self) -> None:
+        try:
+            self._require_privileged()
+            payload = self._settings.get_module_settings("training")
+            payload["questions_per_quiz"] = int(self._questions.value())
+            payload["min_correct_answers"] = int(min(self._min_correct.value(), self._questions.value()))
+            payload["retry_cooldown_seconds"] = int(self._cooldown.value())
+            payload["shuffle_answers"] = bool(self._shuffle.isChecked())
+            payload["force_reread_on_fail"] = bool(self._reread.isChecked())
+            self._settings.set_module_settings("training", payload, acknowledge_governance_change=False)
+            self._out.setPlainText("Schulungseinstellungen gespeichert.")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Schulungseinstellungen", str(exc))
 
 
 class _SignatureSettingsWidget(QWidget):
@@ -638,6 +905,9 @@ class _SignatureSettingsWidget(QWidget):
                 placement=self._current_profile_placement,
                 layout=self._runtime_preview_layout(self._current_profile_layout),
                 signature_pixmap=self._preview_sig_pixmap,
+                template_save_callback=self._save_template_from_editor,
+                template_list_provider=self._list_templates_for_editor,
+                template_load_callback=self._load_template_for_editor,
                 parent=self,
             )
             dialog.showFullScreen()
@@ -681,6 +951,9 @@ class _SignatureSettingsWidget(QWidget):
                 placement=selected.placement,
                 layout=self._runtime_preview_layout(selected.layout),
                 signature_pixmap=self._preview_sig_pixmap,
+                template_save_callback=self._save_template_from_editor,
+                template_list_provider=self._list_templates_for_editor,
+                template_load_callback=self._load_template_for_editor,
                 parent=self,
             )
             dialog.showFullScreen()
@@ -885,6 +1158,45 @@ class _SignatureSettingsWidget(QWidget):
             name_text=self._current_user_display_name() if layout.show_name else layout.name_text,
             date_text=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if layout.show_date else layout.date_text,
         )
+
+    def _save_template_from_editor(
+        self,
+        name: str,
+        placement: SignaturePlacementInput,
+        layout: LabelLayoutInput,
+    ) -> object:
+        user = self._um.get_current_user()
+        if user is None:
+            raise RuntimeError("Anmeldung erforderlich")
+        template_name = name.strip()
+        if not template_name:
+            raise RuntimeError("Vorlagenname fehlt")
+        return self._signature.create_user_signature_template(
+            owner_user_id=user.user_id,
+            name=template_name,
+            placement=placement,
+            layout=layout,
+            signature_asset_id=self._signature.get_active_signature_asset_id(user.user_id),
+            scope="user",
+        )
+
+    def _list_templates_for_editor(self) -> list[tuple[str, str]]:
+        user = self._um.get_current_user()
+        if user is None:
+            return []
+        rows: list[tuple[str, str]] = []
+        for template in self._signature.list_user_signature_templates(user.user_id):
+            rows.append((str(template.template_id), str(template.name)))
+        return rows
+
+    def _load_template_for_editor(self, template_id: str) -> tuple[SignaturePlacementInput, LabelLayoutInput]:
+        user = self._um.get_current_user()
+        if user is None:
+            raise RuntimeError("Anmeldung erforderlich")
+        for template in self._signature.list_user_signature_templates(user.user_id):
+            if str(template.template_id) == str(template_id):
+                return template.placement, self._runtime_preview_layout(template.layout)
+        raise RuntimeError(f"Signaturprofil '{template_id}' wurde nicht gefunden")
 
     def _open_canvas(self) -> None:
         dialog = SignatureCanvasDialog(self)
@@ -1152,12 +1464,14 @@ class SettingsAdminWidget(QWidget):
     def _populate_sections(self) -> None:
         user = self._um.get_current_user()
         role = normalize_role(user.role) if user is not None else ""
+        has_qmb = is_effective_qmb(user) if user is not None else False
 
         self._add_section("Profil / Mein Benutzer", _ProfileWidget(self._container))
         self._add_section("Signatur", _SignatureSettingsWidget(self._container))
-        if role in ("ADMIN", "QMB"):
+        if role == "ADMIN" or has_qmb:
             self._add_section("Benutzerverwaltung", UsersAdminWidget(self._container))
             self._add_section("Lizenzverwaltung", _LicenseManagementWidget(self._container))
+            self._add_section("Schulung", _TrainingSettingsWidget(self._container))
         if role == "ADMIN":
             self._add_section("Workflow-Profile", _WorkflowProfilesWidget(self._container))
             self._add_section("Modul-Einstellungen", _ModuleSettingsWidget(self._container))

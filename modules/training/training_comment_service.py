@@ -40,6 +40,29 @@ class TrainingCommentService:
         document_title_snapshot: str = "",
         username_snapshot: str = "",
     ) -> TrainingCommentRecord:
+        return self.add_pdf_comment(
+            user_id,
+            document_id,
+            version,
+            page_number=None,
+            comment_text=comment_text,
+            anchor_json=None,
+            document_title_snapshot=document_title_snapshot,
+            username_snapshot=username_snapshot,
+        )
+
+    def add_pdf_comment(
+        self,
+        user_id: str,
+        document_id: str,
+        version: int,
+        *,
+        page_number: int | None,
+        comment_text: str,
+        anchor_json: str | None = None,
+        document_title_snapshot: str = "",
+        username_snapshot: str = "",
+    ) -> TrainingCommentRecord:
         text = comment_text.strip()
         if not text:
             raise TrainingValidationError("comment_text is required")
@@ -52,6 +75,8 @@ class TrainingCommentService:
             user_id=user_id,
             username_snapshot=username_snapshot,
             comment_text=text,
+            page_number=page_number,
+            anchor_json=anchor_json,
             status=CommentStatus.ACTIVE,
             created_at=now,
             updated_at=now,
@@ -62,6 +87,7 @@ class TrainingCommentService:
             "document_id": document_id,
             "version": version,
             "user_id": user_id,
+            "page_number": page_number,
         }, actor=user_id)
         return record
 
@@ -70,6 +96,9 @@ class TrainingCommentService:
 
     def list_comments_for_document(self, document_id: str, version: int) -> list[TrainingCommentListItem]:
         return self._repo.list_comments_for_document(document_id, version)
+
+    def list_pdf_comments_for_user(self, user_id: str, document_id: str, version: int) -> list[TrainingCommentListItem]:
+        return self._repo.list_comments_for_user(user_id, document_id, version)
 
     def resolve_comment(
         self, comment_id: str, resolved_by: str, resolution_note: str | None = None

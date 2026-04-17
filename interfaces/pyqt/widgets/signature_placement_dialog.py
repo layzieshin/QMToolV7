@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
 
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
 from modules.signature.layout_math import compute_target_height, resolve_label_pdf_anchor
+from .pdf_rendering import get_page_count, pixmap_to_qpixmap, render_page
 
 
 def compute_label_local_position(
@@ -386,27 +387,27 @@ class SignaturePlacementDialog(QDialog):
         form.addRow(self._opt_show_name)
         form.addRow("Position", self._opt_name_pos)
         form.addRow("Schriftgröße", self._opt_name_font_size)
-        name_rel = QHBoxLayout()
-        name_rel.addWidget(QLabel("X:"))
-        name_rel.addWidget(self._opt_name_rel_x)
-        name_rel.addWidget(self._opt_name_rel_x_slider)
-        name_rel.addWidget(QLabel("Y:"))
-        name_rel.addWidget(self._opt_name_rel_y)
-        name_rel.addWidget(self._opt_name_rel_y_slider)
-        form.addRow("Rel. Pos.", name_rel)
+        name_values = QHBoxLayout()
+        name_values.addWidget(QLabel("X:"))
+        name_values.addWidget(self._opt_name_rel_x)
+        name_values.addWidget(QLabel("Y:"))
+        name_values.addWidget(self._opt_name_rel_y)
+        form.addRow("Rel. Pos.", name_values)
+        form.addRow("Slider X", self._opt_name_rel_x_slider)
+        form.addRow("Slider Y", self._opt_name_rel_y_slider)
 
         form.addRow(QLabel("── Datum ──"))
         form.addRow(self._opt_show_date)
         form.addRow("Position", self._opt_date_pos)
         form.addRow("Schriftgröße", self._opt_date_font_size)
-        date_rel = QHBoxLayout()
-        date_rel.addWidget(QLabel("X:"))
-        date_rel.addWidget(self._opt_date_rel_x)
-        date_rel.addWidget(self._opt_date_rel_x_slider)
-        date_rel.addWidget(QLabel("Y:"))
-        date_rel.addWidget(self._opt_date_rel_y)
-        date_rel.addWidget(self._opt_date_rel_y_slider)
-        form.addRow("Rel. Pos.", date_rel)
+        date_values = QHBoxLayout()
+        date_values.addWidget(QLabel("X:"))
+        date_values.addWidget(self._opt_date_rel_x)
+        date_values.addWidget(QLabel("Y:"))
+        date_values.addWidget(self._opt_date_rel_y)
+        form.addRow("Rel. Pos.", date_values)
+        form.addRow("Slider X", self._opt_date_rel_x_slider)
+        form.addRow("Slider Y", self._opt_date_rel_y_slider)
 
         form.addRow(QLabel("── Allgemein ──"))
         color_row = QHBoxLayout()
@@ -575,9 +576,7 @@ class SignaturePlacementDialog(QDialog):
 
     def _read_page_count(self, input_pdf: Path) -> int:
         try:
-            fitz = importlib.import_module("fitz")
-            with fitz.open(str(input_pdf)) as doc:
-                return max(1, int(doc.page_count))
+            return max(1, int(get_page_count(input_pdf)))
         except Exception:
             try:
                 reader_mod = importlib.import_module("pypdf")
@@ -666,9 +665,8 @@ class SignaturePlacementDialog(QDialog):
                 if page_index < 0 or page_index >= doc.page_count:
                     raise RuntimeError(f"Ungültiger Seitenindex {page_index}")
                 page = doc.load_page(page_index)
-                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-                image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888).copy()
-                pdf_pixmap = QPixmap.fromImage(image)
+                pix = render_page(self._input_pdf, page_index, zoom=1.5)
+                pdf_pixmap = pixmap_to_qpixmap(pix)
                 self._scene.addPixmap(pdf_pixmap)
                 self._scene.addRect(
                     QRectF(0, 0, pix.width, pix.height),

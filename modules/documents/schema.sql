@@ -92,3 +92,56 @@ CREATE TABLE IF NOT EXISTS document_read_receipts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_document_read_receipts_unique
     ON document_read_receipts (user_id, document_id, version);
 
+CREATE TABLE IF NOT EXISTS document_workflow_comments (
+    comment_id TEXT PRIMARY KEY,
+    ref_no TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    context TEXT NOT NULL,
+    source_kind TEXT NOT NULL,
+    source_comment_key TEXT NOT NULL,
+    artifact_id TEXT,
+    page_number INTEGER,
+    anchor_json TEXT,
+    author_display TEXT,
+    source_created_at TEXT,
+    preview_text TEXT NOT NULL,
+    full_text TEXT NOT NULL,
+    status TEXT NOT NULL,
+    status_note TEXT,
+    status_changed_by TEXT,
+    status_changed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_document_workflow_comments_natural
+ON document_workflow_comments (document_id, version, context, source_comment_key);
+
+CREATE INDEX IF NOT EXISTS idx_document_workflow_comments_lookup
+ON document_workflow_comments (document_id, version, context, status);
+
+CREATE TABLE IF NOT EXISTS document_pdf_read_sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    artifact_id TEXT,
+    total_pages INTEGER NOT NULL,
+    min_seconds_per_page INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    completed_at TEXT,
+    completion_result TEXT
+);
+
+CREATE TABLE IF NOT EXISTS document_pdf_read_page_progress (
+    session_id TEXT NOT NULL,
+    page_number INTEGER NOT NULL,
+    accumulated_seconds INTEGER NOT NULL,
+    reached_threshold INTEGER NOT NULL,
+    first_seen_at TEXT,
+    last_seen_at TEXT,
+    PRIMARY KEY (session_id, page_number)
+);
+
