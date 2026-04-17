@@ -24,11 +24,19 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
 from modules.documents.contracts import ArtifactType
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 
 
 class DocumentsSignatureOps:
+    _REASON_BY_TRANSITION: dict[str, str] = {
+        "IN_PROGRESS->IN_REVIEW": "EDITING_COMPLETED",
+        "IN_REVIEW->IN_APPROVAL": "REVIEW_ACCEPTED",
+        "IN_APPROVAL->APPROVED": "FINAL_APPROVAL",
+        "EXTEND_VALIDITY": "VALIDITY_EXTENSION",
+    }
+
     """
     Stateless-ish helper that owns all signature / PDF / artifact path logic
     on behalf of the workflow widget.
@@ -158,6 +166,7 @@ class DocumentsSignatureOps:
         safe_title = self.safe_document_title_token(getattr(state, "title", None))
         output_name = f"{state.document_id}_{safe_title}_signed.pdf"
         output_path = Path(tempfile.gettempdir()) / output_name
+        reason = self._REASON_BY_TRANSITION.get(transition.strip().upper(), "WORKFLOW_TRANSITION")
         return SignRequest(
             input_pdf=input_path,
             output_pdf=output_path,
@@ -169,7 +178,7 @@ class DocumentsSignatureOps:
             sign_mode="visual",
             signer_user=str(user.user_id),
             password=password.text().strip() or None,
-            reason="documents_workflow_transition",
+            reason=reason,
         )
 
     def build_extension_sign_request(
@@ -243,7 +252,7 @@ class DocumentsSignatureOps:
             sign_mode="visual",
             signer_user=str(user.user_id),
             password=password.text().strip() or None,
-            reason="documents_extension_validity",
+            reason=self._REASON_BY_TRANSITION["EXTEND_VALIDITY"],
         )
 
     def require_signature_call(self, sign_request: SignRequest) -> None:
@@ -466,34 +475,10 @@ class DocumentsSignatureOps:
         return False
 
     def resolve_openable_artifact_paths(self, artifact: object) -> list[Path]:
-        candidates: list[Path] = []
-        for key in ("absolute_path", "file_path", "path"):
-            value = artifact.metadata.get(key)
-            if not value:
-                continue
-            raw = Path(value)
-            candidate = raw if raw.is_absolute() else self._app_home / raw
-            if self._is_allowed_artifact_path(candidate):
-                candidates.append(candidate)
-        storage_path = self._artifacts_root / artifact.storage_key
-        if self._is_allowed_artifact_path(storage_path):
-            candidates.append(storage_path)
-        unique: list[Path] = []
-        seen: set[str] = set()
-        for candidate in candidates:
-            token = str(candidate)
-            if token in seen:
-                continue
-            seen.add(token)
-            unique.append(candidate)
-        return unique
+        return resolve_openable_artifact_paths(
+            artifact=artifact,
+            app_home=self._app_home,
+            artifacts_root=self._artifacts_root,
+        )
 
-    def _is_allowed_artifact_path(self, candidate: Path) -> bool:
-        try:
-            resolved = candidate.resolve(strict=False)
-            app_home = self._app_home.resolve(strict=False)
-            artifacts_root = self._artifacts_root.resolve(strict=False)
-            return resolved.is_relative_to(app_home) or resolved.is_relative_to(artifacts_root)
-        except Exception:
-            return False
 

@@ -158,10 +158,10 @@ Assign mandatory document reading, collect read confirmations, run quizzes, and 
   - `python -m interfaces.cli.main training admin-category-assign-user --category-id SOP_CORE --user-id user`
 - Admin/QMB: sync assignments from approved docs:
   - `python -m interfaces.cli.main training admin-sync`
-- User: list required assignments:
+- User: list open training inbox items:
   - `python -m interfaces.cli.main training list-required`
-- User: confirm read-progress:
-  - `python -m interfaces.cli.main training confirm-read --document-id DOC-100 --version 1 --last-page-seen 5 --total-pages 5 --scrolled-to-end`
+- User: confirm released-document read receipt:
+  - `python -m interfaces.cli.main training confirm-read --document-id DOC-100 --version 1`
 - Admin/QMB: import quiz JSON for document version:
   - `python -m interfaces.cli.main training admin-quiz-import --document-id DOC-100 --version 1 --input quiz_doc100_v1.json`
 - User: run quiz:
@@ -174,8 +174,8 @@ Assign mandatory document reading, collect read confirmations, run quizzes, and 
 
 - `BLOCKED: no active assignment for this document version`:
   - Assignment sync was not run or user/category mapping is missing.
-- `BLOCKED: read confirmation requires full progress to last page`:
-  - Confirm-read requires `--scrolled-to-end` and last page reached.
+- `BLOCKED: document version is not approved`:
+  - Read confirmations are only accepted for released (`APPROVED`) versions.
 - `BLOCKED: quiz set not found for document version`:
   - Admin quiz import for this document/version is missing.
 - Superseded version behavior:

@@ -68,6 +68,12 @@ class ArtifactSourceType(str, Enum):
     GENERATED = "GENERATED"
 
 
+class ValidityExtensionOutcome(str, Enum):
+    UNCHANGED = "unchanged"
+    EDITORIAL = "editorial"
+    NEW_VERSION_REQUIRED = "new_version_required"
+
+
 @dataclass(frozen=True)
 class RejectionReason:
     template_id: str | None = None
@@ -129,6 +135,9 @@ class DocumentHeader:
     department: str | None = None
     site: str | None = None
     regulatory_scope: str | None = None
+    distribution_roles: tuple[str, ...] = ()
+    distribution_sites: tuple[str, ...] = ()
+    distribution_departments: tuple[str, ...] = ()
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
 
@@ -169,6 +178,10 @@ class DocumentVersionState:
     archived_by: str | None = None
     superseded_by_version: int | None = None
     extension_count: int = 0
+    last_extended_at: datetime | None = None
+    last_extended_by: str | None = None
+    last_extension_reason: str | None = None
+    last_extension_review_outcome: str | None = None
     custom_fields: dict[str, Any] = field(default_factory=dict)
     last_event_id: str | None = None
     last_event_at: datetime | None = None
@@ -252,4 +265,13 @@ class DocumentReadReceipt:
     version: int
     confirmed_at: datetime
     source: str
+
+
+@dataclass(frozen=True)
+class ChangeRequest:
+    change_id: str
+    reason: str
+    impact_refs: tuple[str, ...] = ()
+    created_by: str | None = None
+    created_at: datetime = field(default_factory=utcnow)
 

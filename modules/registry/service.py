@@ -51,7 +51,8 @@ class RegistryService:
             document_id=document_id,
             active_version=active_version,
             release_note=release_note if release_note is not None else (current.release_note if current else None),
-            release_evidence_mode=mode if current is None else current.release_evidence_mode,
+            # Keep registry projection aligned with the latest workflow profile semantics.
+            release_evidence_mode=mode,
             register_state=register_state,
             is_findable=is_findable,
             valid_from=valid_from if valid_from is not None else (current.valid_from if current else None),

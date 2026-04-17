@@ -29,12 +29,6 @@ def resolve_label_pdf_anchor(
 
     rel_x/rel_y use signature-local PDF units with origin at signature lower-left.
     """
-    if rel_x is not None or rel_y is not None:
-        return (
-            placement_x + float(rel_x or 0.0),
-            placement_y + float(rel_y or 0.0),
-        )
-
     x = placement_x + x_offset
     if position == "above":
         y = placement_y + signature_height + offset_above
@@ -42,5 +36,9 @@ def resolve_label_pdf_anchor(
         y = placement_y - offset_below
     else:
         y = placement_y
+    if rel_x is not None:
+        x += float(rel_x)
+    if rel_y is not None:
+        y += float(rel_y)
     return x, y
 

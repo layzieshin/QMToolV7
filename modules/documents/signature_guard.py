@@ -14,7 +14,7 @@ from .contracts import (
     ArtifactType,
     DocumentVersionState,
 )
-from .errors import ValidationError
+from .errors import SignatureTransitionError, ValidationError
 from .repository import DocumentsRepository
 from .storage import DocumentsStoragePort
 
@@ -37,9 +37,9 @@ def enforce_signature_transition(
     if transition not in profile.signature_required_transitions:
         return
     if signature_api is None:
-        raise ValidationError(f"signature_api missing for required transition '{transition}'")
+        raise SignatureTransitionError(f"signature_api missing for required transition '{transition}'")
     if sign_request is None:
-        raise ValidationError(f"signature request required for transition '{transition}'")
+        raise SignatureTransitionError(f"signature request required for transition '{transition}'")
 
     canonical_input = _resolve_signature_input_pdf(
         state, transition, repository=repository, resolve_artifact_path_fn=resolve_artifact_path_fn,
@@ -49,11 +49,11 @@ def enforce_signature_transition(
 
     sign = getattr(signature_api, "sign_with_fixed_position", None)
     if not callable(sign):
-        raise ValidationError("signature_api does not provide sign_with_fixed_position")
+        raise SignatureTransitionError("signature_api does not provide sign_with_fixed_position")
     try:
         sign(sign_request)
     except SignatureError as exc:
-        raise ValidationError(f"signature step failed: {exc}") from exc
+        raise SignatureTransitionError(f"signature step failed: {exc}") from exc
 
     output_pdf = getattr(sign_request, "output_pdf", None)
     if (

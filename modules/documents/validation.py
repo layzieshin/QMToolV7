@@ -178,3 +178,14 @@ def next_status_from_profile(profile: WorkflowProfile | None, current: DocumentS
         raise InvalidTransitionError("current status is already terminal in profile")
     return profile.phases[idx + 1]
 
+
+def validate_change_request_input(change_id: str, reason: str, impact_refs: list[str] | tuple[str, ...]) -> tuple[str, str, tuple[str, ...]]:
+    normalized_change_id = change_id.strip()
+    if not normalized_change_id:
+        raise ValidationError("change_id is required")
+    normalized_reason = reason.strip()
+    if not normalized_reason:
+        raise ValidationError("reason is required")
+    normalized_refs = tuple(sorted({value.strip() for value in impact_refs if str(value).strip()}))
+    return normalized_change_id, normalized_reason, normalized_refs
+

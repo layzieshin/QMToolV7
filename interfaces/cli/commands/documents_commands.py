@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from datetime import datetime
 from pathlib import Path
@@ -8,7 +9,7 @@ from pathlib import Path
 from modules.documents.api import DocumentWorkflowError
 from modules.documents.contracts import (
     ControlClass, DocumentStatus, DocumentType,
-    RejectionReason, SystemRole
+    RejectionReason, SystemRole, ValidityExtensionOutcome
 )
 from modules.signature.api import SignatureError
 from modules.signature.contracts import SignRequest, SignaturePlacementInput, LabelLayoutInput
@@ -194,7 +195,14 @@ def cmd_documents(args: argparse.Namespace) -> int:
             return 0
         if args.documents_command == "annual-extend":
             state = _load_documents_state(service, args.document_id, args.version)
-            state, must_recreate = workflow_api.extend_annual_validity(state, signature_present=args.signature_present)
+            state, must_recreate = workflow_api.extend_annual_validity(
+                state,
+                actor_user_id=current_user.user_id,
+                signature_present=args.signature_present,
+                duration_days=args.duration_days,
+                reason=args.reason,
+                review_outcome=ValidityExtensionOutcome(args.outcome),
+            )
             _print_documents_state("OK", state)
             print(f"RECREATE_REQUIRED: {str(must_recreate).lower()}")
             return 0
@@ -246,6 +254,70 @@ def cmd_documents(args: argparse.Namespace) -> int:
                 return 6
             updated = workflow_api.update_version_metadata(state, title=args.title, description=args.description, valid_until=_parse_optional_datetime(args.valid_until), next_review_at=_parse_optional_datetime(args.next_review_at), custom_fields=custom_fields, actor_user_id=current_user.user_id, actor_role=current_role)
             _print_documents_state("OK", updated)
+            return 0
+        if args.documents_command == "change-request-add":
+            state = _load_documents_state(service, args.document_id, args.version)
+            updated = workflow_api.add_change_request(
+                state,
+                change_id=args.change_id,
+                reason=args.reason,
+                impact_refs=[value.strip() for value in args.impact_refs.split(",") if value.strip()],
+                actor_user_id=current_user.user_id,
+                actor_role=current_role,
+            )
+            print(
+                json.dumps(
+                    {
+                        "document_id": updated.document_id,
+                        "version": updated.version,
+                        "change_requests": workflow_api.list_change_requests(updated),
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            return 0
+        if args.documents_command == "change-request-list":
+            state = _load_documents_state(service, args.document_id, args.version)
+            print(json.dumps(workflow_api.list_change_requests(state), ensure_ascii=True))
+            return 0
+        if args.documents_command == "change-request-export":
+            state = _load_documents_state(service, args.document_id, args.version)
+            rows = workflow_api.list_change_requests(state)
+            output_path = Path(args.output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            if args.format == "json":
+                output_path.write_text(json.dumps(rows, indent=2, ensure_ascii=True), encoding="utf-8")
+            else:
+                with output_path.open("w", encoding="utf-8", newline="") as fh:
+                    writer = csv.DictWriter(
+                        fh,
+                        fieldnames=["change_id", "reason", "impact_refs", "created_by", "created_at"],
+                    )
+                    writer.writeheader()
+                    for row in rows:
+                        refs = row.get("impact_refs", [])
+                        refs_csv = ",".join(str(value) for value in refs) if isinstance(refs, list) else ""
+                        writer.writerow(
+                            {
+                                "change_id": str(row.get("change_id", "")),
+                                "reason": str(row.get("reason", "")),
+                                "impact_refs": refs_csv,
+                                "created_by": str(row.get("created_by", "")),
+                                "created_at": str(row.get("created_at", "")),
+                            }
+                        )
+            print(
+                json.dumps(
+                    {
+                        "document_id": state.document_id,
+                        "version": state.version,
+                        "format": args.format,
+                        "output": str(output_path),
+                        "count": len(rows),
+                    },
+                    ensure_ascii=True,
+                )
+            )
             return 0
     except (DocumentWorkflowError, SignatureError, ValueError) as exc:
         print(f"BLOCKED: {exc}")

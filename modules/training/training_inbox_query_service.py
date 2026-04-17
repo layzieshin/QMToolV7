@@ -39,7 +39,7 @@ class TrainingInboxQueryService:
                     document_id=snap.document_id,
                     version=snap.version,
                     title=doc_ref.title if doc_ref else snap.document_id,
-                    status=snap.source.value if not snap.exempted else "EXEMPTED",
+                    status="EXEMPTED" if snap.exempted else "APPROVED",
                     owner_user_id=doc_ref.owner_user_id if doc_ref else None,
                     released_at=doc_ref.released_at if doc_ref else None,
                     read_confirmed=read_confirmed,

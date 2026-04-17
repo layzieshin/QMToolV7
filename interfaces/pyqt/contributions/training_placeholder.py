@@ -6,6 +6,9 @@ Lower bar: Kontextbezogene Aktionen (Quiz starten, Lesen, Quiz kommentieren)
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -24,7 +27,9 @@ from PyQt6.QtWidgets import (
 from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.presenters.training_presenter import TrainingPresenter
 from interfaces.pyqt.registry.contribution import QtModuleContribution
+from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
 from interfaces.pyqt.widgets.access_guards import require_admin_or_qmb
+from modules.documents.contracts import ArtifactType
 from qm_platform.runtime.container import RuntimeContainer
 
 
@@ -40,6 +45,9 @@ class TrainingWorkspace(QWidget):
         self._admin = container.get_port("training_admin_api")
         self._um = container.get_port("usermanagement_service")
         self._read_api = container.get_port("documents_read_api")
+        self._pool = container.get_port("documents_pool_api")
+        self._app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
+        self._artifacts_root = self._resolve_artifacts_root()
         self._presenter = TrainingPresenter()
         self._inbox_items: list = []
         self._selected_item = None
@@ -62,20 +70,30 @@ class TrainingWorkspace(QWidget):
         self._btn_comments_admin.clicked.connect(self._on_comments_admin)
         self._btn_doc_tags = QPushButton("Dokument-Tags")
         self._btn_doc_tags.clicked.connect(self._on_set_document_tags)
+        self._btn_user_tags = QPushButton("Nutzer-Tags")
+        self._btn_user_tags.clicked.connect(self._on_set_user_tags)
         self._btn_rebuild = QPushButton("Snapshots neu aufbauen")
         self._btn_rebuild.clicked.connect(self._on_rebuild_snapshots)
         self._btn_export = QPushButton("Matrix exportieren")
         self._btn_export.clicked.connect(self._on_export_matrix)
-        for btn in (self._btn_import_quiz, self._btn_bind_quiz, self._btn_stats,
-                    self._btn_comments_admin, self._btn_doc_tags, self._btn_rebuild, self._btn_export):
+        for btn in (
+            self._btn_import_quiz,
+            self._btn_bind_quiz,
+            self._btn_stats,
+            self._btn_comments_admin,
+            self._btn_doc_tags,
+            self._btn_user_tags,
+            self._btn_rebuild,
+            self._btn_export,
+        ):
             admin_row.addWidget(btn)
         admin_row.addStretch(1)
         layout.addWidget(self._admin_bar)
 
         # --- MIDDLE: Inbox table ---
-        self._table = QTableWidget(0, 6)
+        self._table = QTableWidget(0, 7)
         self._table.setHorizontalHeaderLabels([
-            "Dokumentenkennung", "Titel", "Status", "Owner", "Freigabe am", "Lesestatus",
+            "Dokumentenkennung", "Titel", "Status", "Owner", "Freigabe am", "Lesestatus", "Quizstatus",
         ])
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -103,6 +121,10 @@ class TrainingWorkspace(QWidget):
         self._out = QPlainTextEdit()
         self._out.setReadOnly(True)
         self._out.setMaximumHeight(120)
+        self._out.setVisible(False)
+        self._btn_toggle_log = QPushButton("Protokoll anzeigen")
+        self._btn_toggle_log.clicked.connect(self._toggle_log_visibility)
+        layout.addWidget(self._btn_toggle_log)
         layout.addWidget(self._out, stretch=1)
 
         # --- Init ---
@@ -186,6 +208,8 @@ class TrainingWorkspace(QWidget):
             self._table.setItem(i, 4, QTableWidgetItem(str(item.released_at or "")))
             read_text = "✓ gelesen" if item.read_confirmed else "offen"
             self._table.setItem(i, 5, QTableWidgetItem(read_text))
+            quiz_text = "✓ bestanden" if item.quiz_passed else ("verfuegbar" if item.quiz_available else "-")
+            self._table.setItem(i, 6, QTableWidgetItem(quiz_text))
         self._table.resizeColumnsToContents()
         self._selected_item = None
         self._update_action_state()
@@ -197,11 +221,26 @@ class TrainingWorkspace(QWidget):
         if item is None:
             return
         try:
-            self._read_api.open_released_document_for_training(
-                self._current_user().user_id, item.document_id, item.version,
+            current_user = self._current_user()
+            self._read_api.open_released_document_for_training(current_user.user_id, item.document_id, item.version)
+            opened_path = self._open_released_pdf(item.document_id, item.version)
+            if opened_path is None:
+                raise RuntimeError("Kein lokal oeffenbares PDF-Artefakt verfuegbar.")
+            confirm = QMessageBox.question(
+                self,
+                "Lesebestaetigung",
+                (
+                    f"Dokument wurde geoeffnet:\n{opened_path}\n\n"
+                    "Hast du das Dokument vollstaendig bis zur letzten Seite gelesen?"
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
+            if confirm != QMessageBox.StandardButton.Yes:
+                self._log("Lesebestätigung abgebrochen.")
+                return
             self._read_api.confirm_released_document_read(
-                self._current_user().user_id, item.document_id, item.version, source="training_gui",
+                current_user.user_id, item.document_id, item.version, source="training_gui",
             )
             self._log(f"Lesebestätigung für {item.document_id} v{item.version} erstellt.")
             self._load_inbox()
@@ -355,6 +394,41 @@ class TrainingWorkspace(QWidget):
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
+    def _on_set_user_tags(self) -> None:
+        try:
+            self._require_admin_or_qmb()
+            users = self._um.list_users()
+            labels = [f"{u.username} ({u.user_id})" for u in users]
+            if not labels:
+                QMessageBox.information(self, "Nutzer-Tags", "Keine Benutzer vorhanden.")
+                return
+            selected, ok = QInputDialog.getItem(
+                self,
+                "Nutzer auswählen",
+                "Benutzer:",
+                labels,
+                editable=False,
+            )
+            if not ok:
+                return
+            idx = labels.index(selected)
+            user_id = users[idx].user_id
+            current = self._admin.list_user_tags(user_id)
+            csv_default = ", ".join(sorted(current.tags))
+            csv_tags, ok = QInputDialog.getText(
+                self,
+                "Nutzer-Tags",
+                "Tags (CSV, positiv/additiv):",
+                text=csv_default,
+            )
+            if not ok:
+                return
+            tags = [t.strip() for t in csv_tags.split(",") if t.strip()]
+            updated = self._admin.set_user_tags(user_id, tags)
+            self._log(f"Nutzer-Tags gespeichert: {user_id} -> {', '.join(sorted(updated.tags)) or '-'}")
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
     def _on_rebuild_snapshots(self) -> None:
         try:
             self._require_admin_or_qmb()
@@ -376,10 +450,55 @@ class TrainingWorkspace(QWidget):
 
     def _log(self, msg: str) -> None:
         self._out.appendPlainText(msg)
+        window = self.window()
+        if hasattr(window, "statusBar"):
+            try:
+                window.statusBar().showMessage(msg, 10000)
+            except Exception:
+                pass
 
     def _show_error(self, exc: Exception) -> None:
         QMessageBox.warning(self, "Training", str(exc))
         self._out.appendPlainText(f"FEHLER: {exc}")
+        window = self.window()
+        if hasattr(window, "statusBar"):
+            try:
+                window.statusBar().showMessage(f"FEHLER: {exc}", 10000)
+            except Exception:
+                pass
+
+    def _toggle_log_visibility(self) -> None:
+        visible = not self._out.isVisible()
+        self._out.setVisible(visible)
+        self._btn_toggle_log.setText("Protokoll ausblenden" if visible else "Protokoll anzeigen")
+
+    def _open_released_pdf(self, document_id: str, version: int) -> str | None:
+        artifacts = self._pool.list_artifacts(document_id, version)
+        for artifact in artifacts:
+            if artifact.artifact_type not in (ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF):
+                continue
+            for path in resolve_openable_artifact_paths(
+                artifact=artifact,
+                app_home=self._app_home,
+                artifacts_root=self._artifacts_root,
+            ):
+                if not path.exists():
+                    continue
+                if hasattr(os, "startfile"):
+                    os.startfile(str(path))  # type: ignore[attr-defined]
+                    return str(path)
+        return None
+
+    def _resolve_artifacts_root(self) -> Path:
+        if not self._container.has_port("settings_service"):
+            return self._app_home / "storage" / "documents" / "artifacts"
+        settings_service = self._container.get_port("settings_service")
+        docs_settings = settings_service.get_module_settings("documents")
+        raw_root = docs_settings.get("artifacts_root", "storage/documents/artifacts")
+        root = Path(raw_root)
+        if root.is_absolute():
+            return root
+        return self._app_home / root
 
 
 # ---------------------------------------------------------------------------

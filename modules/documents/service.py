@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,7 @@ from .contracts import (
     SystemRole,
     WorkflowAssignments,
     WorkflowProfile,
+    ChangeRequest,
     control_class_for,
 )
 from .errors import InvalidTransitionError, PermissionDeniedError, ValidationError
@@ -385,6 +387,9 @@ class DocumentsService:
         department: str | None = None,
         site: str | None = None,
         regulatory_scope: str | None = None,
+        distribution_roles: list[str] | None = None,
+        distribution_sites: list[str] | None = None,
+        distribution_departments: list[str] | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
     ) -> DocumentHeader:
@@ -412,11 +417,40 @@ class DocumentsService:
             department=department if department is not None else existing.department,
             site=site if site is not None else existing.site,
             regulatory_scope=regulatory_scope if regulatory_scope is not None else existing.regulatory_scope,
+            distribution_roles=(
+                tuple(sorted({value.strip() for value in distribution_roles if str(value).strip()}))
+                if distribution_roles is not None
+                else existing.distribution_roles
+            ),
+            distribution_sites=(
+                tuple(sorted({value.strip() for value in distribution_sites if str(value).strip()}))
+                if distribution_sites is not None
+                else existing.distribution_sites
+            ),
+            distribution_departments=(
+                tuple(sorted({value.strip() for value in distribution_departments if str(value).strip()}))
+                if distribution_departments is not None
+                else existing.distribution_departments
+            ),
             created_at=existing.created_at,
             updated_at=_utcnow(),
         )
         self._repository.upsert_header(updated)
         return updated
+
+    def _build_distribution_snapshot(self, state: DocumentVersionState) -> dict[str, object]:
+        header = self.get_document_header(state.document_id)
+        if header is None:
+            return {}
+        return {
+            "frozen_at": _utcnow().isoformat(),
+            "roles": list(header.distribution_roles),
+            "sites": list(header.distribution_sites),
+            "departments": list(header.distribution_departments),
+            "header_department": header.department,
+            "header_site": header.site,
+            "header_regulatory_scope": header.regulatory_scope,
+        }
 
     def update_version_metadata(
         self,
@@ -438,6 +472,10 @@ class DocumentsService:
             DocumentStatus.ARCHIVED,
         ):
             raise ValidationError("validity dates can only be updated for APPROVED or ARCHIVED versions")
+        if state.status == DocumentStatus.APPROVED and (valid_until is not None or next_review_at is not None):
+            raise ValidationError(
+                "valid_until/next_review_at duerfen im Status APPROVED nur ueber extend_annual_validity geaendert werden"
+            )
         merged_custom = dict(state.custom_fields)
         if custom_fields is not None:
             self._assert_custom_fields_safe(custom_fields)
@@ -459,6 +497,65 @@ class DocumentsService:
         self._store_state(updated)
         self._sync_registry(updated, event)
         return updated
+
+    def add_change_request(
+        self,
+        state: DocumentVersionState,
+        *,
+        change_id: str,
+        reason: str,
+        impact_refs: list[str] | tuple[str, ...],
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> DocumentVersionState:
+        self._ensure_owner_or_privileged(state, actor_user_id, actor_role)
+        normalized_change_id, normalized_reason, normalized_refs = _val.validate_change_request_input(
+            change_id,
+            reason,
+            list(impact_refs),
+        )
+        existing_items = state.custom_fields.get("change_requests", [])
+        if not isinstance(existing_items, list):
+            raise ValidationError("custom field 'change_requests' must be a list")
+        existing_change_ids = {
+            str(item.get("change_id", "")).strip()
+            for item in existing_items
+            if isinstance(item, dict)
+        }
+        if normalized_change_id in existing_change_ids:
+            raise ValidationError(f"change request already exists: {normalized_change_id}")
+        request = ChangeRequest(
+            change_id=normalized_change_id,
+            reason=normalized_reason,
+            impact_refs=normalized_refs,
+            created_by=actor_user_id,
+        )
+        request_payload = {
+            "change_id": request.change_id,
+            "reason": request.reason,
+            "impact_refs": list(request.impact_refs),
+            "created_by": request.created_by,
+            "created_at": request.created_at.isoformat(),
+        }
+        merged_custom = dict(state.custom_fields)
+        merged_custom["change_requests"] = [*existing_items, request_payload]
+        updated = replace(state, custom_fields=merged_custom)
+        with self._write_transaction():
+            self._store_state(updated)
+            event = self._publish(
+                "domain.documents.change_request.added.v1",
+                updated,
+                {"change_id": request.change_id, "impact_refs": list(request.impact_refs)},
+                actor_user_id=actor_user_id,
+            )
+            self._sync_registry(updated, event)
+        return updated
+
+    def list_change_requests(self, state: DocumentVersionState) -> list[dict[str, object]]:
+        raw_items = state.custom_fields.get("change_requests", [])
+        if not isinstance(raw_items, list):
+            return []
+        return [item for item in raw_items if isinstance(item, dict)]
 
     def list_artifacts(self, document_id: str, version: int) -> list[DocumentArtifact]:
         if self._repository is None:
@@ -606,8 +703,24 @@ class DocumentsService:
     def archive_approved(self, state, actor_role, actor_user_id=None):
         return self._workflow_use_cases.archive_approved(state, actor_role, actor_user_id=actor_user_id)
 
-    def extend_annual_validity(self, state, *, signature_present):
-        return self._workflow_use_cases.extend_annual_validity(state, signature_present=signature_present)
+    def extend_annual_validity(
+        self,
+        state,
+        *,
+        actor_user_id: str,
+        signature_present: bool,
+        duration_days: int,
+        reason: str,
+        review_outcome,
+    ):
+        return self._workflow_use_cases.extend_annual_validity(
+            state,
+            actor_user_id=actor_user_id,
+            signature_present=signature_present,
+            duration_days=duration_days,
+            reason=reason,
+            review_outcome=review_outcome,
+        )
 
     def create_new_version_after_archive(self, state, next_version):
         return self._workflow_use_cases.create_new_version_after_archive(state, next_version)
@@ -624,6 +737,20 @@ class DocumentsService:
         self._states[(state.document_id, state.version)] = state
         if self._repository is not None:
             self._repository.upsert(state)
+
+    @contextmanager
+    def _write_transaction(self):
+        if self._repository is None:
+            with nullcontext():
+                yield
+            return
+        begin = getattr(self._repository, "write_transaction", None)
+        if callable(begin):
+            with begin():
+                yield
+            return
+        with nullcontext():
+            yield
 
     def _store_header(self, header: DocumentHeader) -> None:
         if self._repository is not None:
@@ -715,7 +842,9 @@ class DocumentsService:
     def open_released_document_for_training(
         self, user_id: str, document_id: str, version: int
     ) -> DocumentReadSession:
-        state = self._get_state(document_id, version)
+        state = self.get_document_version(document_id, version)
+        if state is None:
+            raise ValidationError("document version not found")
         if state.status != DocumentStatus.APPROVED:
             raise ValidationError("document version is not approved")
         if state.superseded_by_version is not None:
@@ -731,7 +860,9 @@ class DocumentsService:
     def confirm_released_document_read(
         self, user_id: str, document_id: str, version: int, *, source: str
     ) -> DocumentReadReceipt:
-        state = self._get_state(document_id, version)
+        state = self.get_document_version(document_id, version)
+        if state is None:
+            raise ValidationError("document version not found")
         if state.status != DocumentStatus.APPROVED:
             raise ValidationError("document version is not approved")
         now = _utcnow()

@@ -94,12 +94,12 @@ Ablösung von: `docs/SRP_REFACTOR_ROADMAP.md` und `docs/TRACK_B_SRP_PREP.md` (be
 - [ ] Presenter je Bereich
 
 ### Phase 4B/4C — `signature` und `usermanagement` schneiden
-- [ ] Signature: `execute_ops.py`, `template_ops.py`, `asset_ops.py`, `policy.py`, `audit.py`, `pdf_rendering.py`
-- [ ] Usermanagement: `auth_ops.py`, `user_admin_ops.py`, `session_store.py`
+- [x] Signature-Schnitt umgesetzt (Dateinamen angepasst): `signature_execute_ops.py`, `signature_template_use_cases.py`, `signature_policy_ops.py`, `output_path_policy.py`, `asset_store.py`, `sqlite_repository.py`
+- [x] Usermanagement-Schnitt umgesetzt: `auth_ops.py`, `user_admin_ops.py`, `session_store.py`
 
 ### Phase 5 — Composition Roots
-- [ ] `module.py` → nur Contract + Entry-Adapter
-- [ ] `wiring.py` je Modul für Port-Registrierung
+- [x] `module.py` in Kernmodulen auf Contract + Entry-Adapter reduziert
+- [x] `wiring.py` je Modul für Port-Registrierung etabliert
 
 ### Phase 6 — Legacy GUI einfrieren ✅
 - [x] `interfaces/gui/*` nur noch Smoke-Pfad, LEGACY FROZEN Header

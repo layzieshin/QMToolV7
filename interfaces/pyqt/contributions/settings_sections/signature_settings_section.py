@@ -286,6 +286,9 @@ class SignatureSettingsWidget(QWidget):
                 placement=self._current_profile_placement,
                 layout=self._runtime_preview_layout(self._current_profile_layout),
                 signature_pixmap=self._preview_sig_pixmap,
+                template_save_callback=self._save_template_from_editor,
+                template_list_provider=self._list_templates_for_editor,
+                template_load_callback=self._load_template_for_editor,
                 parent=self,
             )
             dialog.showFullScreen()
@@ -329,6 +332,9 @@ class SignatureSettingsWidget(QWidget):
                 placement=selected.placement,
                 layout=self._runtime_preview_layout(selected.layout),
                 signature_pixmap=self._preview_sig_pixmap,
+                template_save_callback=self._save_template_from_editor,
+                template_list_provider=self._list_templates_for_editor,
+                template_load_callback=self._load_template_for_editor,
                 parent=self,
             )
             dialog.showFullScreen()
@@ -506,6 +512,45 @@ class SignatureSettingsWidget(QWidget):
             name_text=self._current_user_display_name() if layout.show_name else layout.name_text,
             date_text=datetime.now().strftime("%Y-%m-%d %H:%M:%S") if layout.show_date else layout.date_text,
         )
+
+    def _save_template_from_editor(
+        self,
+        name: str,
+        placement: SignaturePlacementInput,
+        layout: LabelLayoutInput,
+    ) -> object:
+        user = self._um.get_current_user()
+        if user is None:
+            raise RuntimeError("Anmeldung erforderlich")
+        template_name = name.strip()
+        if not template_name:
+            raise RuntimeError("Vorlagenname fehlt")
+        return self._signature.create_user_signature_template(
+            owner_user_id=user.user_id,
+            name=template_name,
+            placement=placement,
+            layout=layout,
+            signature_asset_id=self._signature.get_active_signature_asset_id(user.user_id),
+            scope="user",
+        )
+
+    def _list_templates_for_editor(self) -> list[tuple[str, str]]:
+        user = self._um.get_current_user()
+        if user is None:
+            return []
+        rows: list[tuple[str, str]] = []
+        for template in self._signature.list_user_signature_templates(user.user_id):
+            rows.append((str(template.template_id), str(template.name)))
+        return rows
+
+    def _load_template_for_editor(self, template_id: str) -> tuple[SignaturePlacementInput, LabelLayoutInput]:
+        user = self._um.get_current_user()
+        if user is None:
+            raise RuntimeError("Anmeldung erforderlich")
+        for template in self._signature.list_user_signature_templates(user.user_id):
+            if str(template.template_id) == str(template_id):
+                return template.placement, self._runtime_preview_layout(template.layout)
+        raise RuntimeError(f"Signaturprofil '{template_id}' wurde nicht gefunden")
 
     def _open_canvas(self) -> None:
         dialog = SignatureCanvasDialog(self)

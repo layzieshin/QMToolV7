@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from modules.documents.contracts import ArtifactType, DocumentStatus, SystemRole, WorkflowProfile
+from modules.documents.contracts import ArtifactType, DocumentStatus, SystemRole, ValidityExtensionOutcome, WorkflowProfile
 from modules.documents.profile_store import WorkflowProfileStoreJSON
 from modules.documents.service import DocumentsService
 from modules.documents.sqlite_repository import SQLiteDocumentsRepository
@@ -184,6 +184,66 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         signed_pdfs = [a for a in artifacts if a.artifact_type == ArtifactType.SIGNED_PDF]
         self.assertGreaterEqual(len(signed_pdfs), 1)
         self.assertEqual(sum(1 for a in signed_pdfs if a.is_current), 1)
+
+    def test_approval_freezes_distribution_snapshot_into_custom_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = root / "documents.db"
+            schema_path = Path("modules/documents/schema.sql")
+            repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+            service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
+
+            state = service.create_document_version("DOC-DIST", 1, owner_user_id="owner-1")
+            service.update_document_header(
+                "DOC-DIST",
+                distribution_roles=["QMB", "USER"],
+                distribution_sites=["HQ"],
+                distribution_departments=["QA"],
+                actor_user_id="admin",
+                actor_role=SystemRole.ADMIN,
+            )
+            state = service.assign_workflow_roles(
+                state,
+                editors={"editor-1"},
+                reviewers={"rev-1"},
+                approvers={"app-1"},
+            )
+            state = service.start_workflow(state, WorkflowProfile.long_release_path())
+            state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+            state = service.accept_review(state, "rev-1", sign_request={"step": "review_accept"})
+            state = service.accept_approval(state, "app-1", sign_request={"step": "approve"})
+            snapshot = state.custom_fields.get("distribution_snapshot")
+            self.assertIsInstance(snapshot, dict)
+            if isinstance(snapshot, dict):
+                self.assertEqual(snapshot.get("roles"), ["QMB", "USER"])
+                self.assertEqual(snapshot.get("sites"), ["HQ"])
+                self.assertEqual(snapshot.get("departments"), ["QA"])
+
+    def test_sqlite_roundtrip_persists_validity_extension_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
+            state = service.create_document_version("DOC-EXT-SQL", 1, owner_user_id="owner-1")
+            state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
+            state = service.start_workflow(state, WorkflowProfile.long_release_path())
+            state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+            state = service.accept_review(state, "r", sign_request={"step": "review_accept"})
+            state = service.accept_approval(state, "a", sign_request={"step": "approve"})
+            extended, _ = service.extend_annual_validity(
+                state,
+                actor_user_id="qmb-1",
+                signature_present=True,
+                duration_days=120,
+                reason="Audit ohne Befund",
+                review_outcome=ValidityExtensionOutcome.UNCHANGED,
+            )
+            loaded = repo.get("DOC-EXT-SQL", 1)
+            assert loaded is not None
+            self.assertEqual(loaded.last_extended_by, "qmb-1")
+            self.assertEqual(loaded.last_extension_reason, "Audit ohne Befund")
+            self.assertEqual(loaded.last_extension_review_outcome, ValidityExtensionOutcome.UNCHANGED.value)
+            self.assertEqual(loaded.extension_count, extended.extension_count)
 
 
 if __name__ == "__main__":

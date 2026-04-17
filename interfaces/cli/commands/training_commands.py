@@ -18,6 +18,7 @@ def cmd_training(args: argparse.Namespace) -> int:
     usermanagement = container.get_port("usermanagement_service")
     training_api = container.get_port("training_api")
     training_admin_api = container.get_port("training_admin_api")
+    documents_read_api = container.get_port("documents_read_api")
     current_user = usermanagement.get_current_user()
     if current_user is None:
         print("BLOCKED: login required for training commands")
@@ -30,16 +31,19 @@ def cmd_training(args: argparse.Namespace) -> int:
 
     try:
         if args.training_command == "list-required":
-            rows = training_api.list_required_for_user(current_user.user_id)
+            rows = training_api.list_training_inbox_for_user(current_user.user_id, open_only=True)
             print(
                 json.dumps(
                     [
                         {
-                            "assignment_id": r.assignment_id,
                             "document_id": r.document_id,
                             "version": r.version,
-                            "status": r.status.value,
-                            "active": r.active,
+                            "title": r.title,
+                            "status": r.status,
+                            "source": r.source.value,
+                            "read_confirmed": r.read_confirmed,
+                            "quiz_available": r.quiz_available,
+                            "quiz_passed": r.quiz_passed,
                             "last_score": r.last_score,
                         }
                         for r in rows
@@ -49,21 +53,22 @@ def cmd_training(args: argparse.Namespace) -> int:
             )
             return 0
         if args.training_command == "confirm-read":
-            row = training_api.confirm_read(
+            # Legacy command alias. Read confirmation is owned by documents_read_api.
+            row = documents_read_api.confirm_released_document_read(
                 user_id=current_user.user_id,
                 document_id=args.document_id,
                 version=args.version,
-                last_page_seen=args.last_page_seen,
-                total_pages=args.total_pages,
-                scrolled_to_end=args.scrolled_to_end,
+                source="cli-training-confirm-read",
             )
             print(
                 json.dumps(
                     {
-                        "assignment_id": row.assignment_id,
+                        "receipt_id": row.receipt_id,
+                        "user_id": row.user_id,
                         "document_id": row.document_id,
                         "version": row.version,
-                        "status": row.status.value,
+                        "confirmed_at": row.confirmed_at.isoformat(),
+                        "source": row.source,
                     },
                     ensure_ascii=True,
                 )
@@ -112,10 +117,19 @@ def cmd_training(args: argparse.Namespace) -> int:
             print("BLOCKED: only QMB or ADMIN may execute training admin commands")
             return 6
         if args.training_command == "admin-list-approved":
-            rows = training_admin_api.list_approved_documents()
+            rows = training_admin_api.list_assignable_documents()
             print(
                 json.dumps(
-                    [{"document_id": r.document_id, "version": r.version, "owner_user_id": r.owner_user_id} for r in rows],
+                    [
+                        {
+                            "document_id": r.document_id,
+                            "version": r.version,
+                            "title": r.title,
+                            "owner_user_id": r.owner_user_id,
+                            "released_at": r.released_at.isoformat() if r.released_at else None,
+                        }
+                        for r in rows
+                    ],
                     ensure_ascii=True,
                 )
             )
@@ -133,32 +147,36 @@ def cmd_training(args: argparse.Namespace) -> int:
             print("OK")
             return 0
         if args.training_command == "admin-sync":
-            count = training_admin_api.sync_required_assignments()
-            print(json.dumps({"updated": count}, ensure_ascii=True))
+            count = training_admin_api.rebuild_assignment_snapshots()
+            print(json.dumps({"rebuilt_snapshots": count}, ensure_ascii=True))
             return 0
         if args.training_command == "admin-quiz-import":
-            digest = training_admin_api.import_quiz_questions(
+            result = training_admin_api.import_quiz_json(Path(args.input).read_bytes())
+            binding = training_admin_api.bind_quiz_to_document(
+                result.import_id,
                 args.document_id,
                 args.version,
-                Path(args.input).read_bytes(),
             )
-            print(json.dumps({"sha256": digest}, ensure_ascii=True))
-            return 0
-        if args.training_command == "admin-matrix":
-            rows = training_admin_api.list_matrix()
             print(
                 json.dumps(
-                    [
-                        {
-                            "user_id": r.user_id,
-                            "document_id": r.document_id,
-                            "version": r.version,
-                            "category_id": r.category_id,
-                            "status": r.status.value,
-                            "active": r.active,
-                        }
-                        for r in rows
-                    ],
+                    {
+                        "import_id": result.import_id,
+                        "questions": result.question_count,
+                        "sha256": result.source_hash_sha256,
+                        "binding_id": binding.binding_id,
+                    },
+                    ensure_ascii=True,
+                )
+            )
+            return 0
+        if args.training_command == "admin-matrix":
+            result = training_admin_api.export_training_matrix()
+            print(
+                json.dumps(
+                    {
+                        "rows": result.row_count,
+                        "csv_bytes": len(result.csv_bytes),
+                    },
                     ensure_ascii=True,
                 )
             )

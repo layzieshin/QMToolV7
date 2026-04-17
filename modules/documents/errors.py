@@ -16,3 +16,7 @@ class PermissionDeniedError(DocumentWorkflowError):
 class ValidationError(DocumentWorkflowError):
     pass
 
+
+class SignatureTransitionError(ValidationError):
+    pass
+

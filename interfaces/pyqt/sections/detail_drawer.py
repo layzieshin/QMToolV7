@@ -7,7 +7,6 @@ from __future__ import annotations
 from typing import Callable
 
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QFormLayout,
     QHBoxLayout,
@@ -49,6 +48,7 @@ def build_metadata_tab(
     custom_fields: QLineEdit,
     on_save_metadata: Callable[[], None],
     on_save_header: Callable[[], None],
+    on_add_change_request: Callable[[], None],
     metadata_buttons: list[QPushButton],
 ) -> QWidget:
     """Build the metadata editing tab."""
@@ -74,9 +74,12 @@ def build_metadata_tab(
     btn_meta.clicked.connect(on_save_metadata)
     btn_header = QPushButton("Header speichern")
     btn_header.clicked.connect(on_save_header)
-    metadata_buttons.extend([btn_meta, btn_header])
+    btn_change = QPushButton("Change Request hinzufuegen")
+    btn_change.clicked.connect(on_add_change_request)
+    metadata_buttons.extend([btn_meta, btn_header, btn_change])
     row.addWidget(btn_meta)
     row.addWidget(btn_header)
+    row.addWidget(btn_change)
     row.addStretch(1)
     layout.addLayout(row)
     return tab
@@ -113,6 +116,11 @@ def build_roles_tab(
 def build_extension_tab(
     *,
     next_version: QLineEdit,
+    valid_from_label: QLabel,
+    valid_until_label: QLabel,
+    next_review_label: QLabel,
+    extension_count_label: QLabel,
+    extension_remaining_label: QLabel,
     on_extend: Callable[[], None],
     on_new_version: Callable[[], None],
 ) -> QWidget:
@@ -120,6 +128,11 @@ def build_extension_tab(
     tab = QWidget()
     layout = QVBoxLayout(tab)
     form = QFormLayout()
+    form.addRow("Gueltig ab", valid_from_label)
+    form.addRow("Gueltig bis", valid_until_label)
+    form.addRow("Naechste Pruefung", next_review_label)
+    form.addRow("Verlaengerungen", extension_count_label)
+    form.addRow("Restlaufzeit (Tage)", extension_remaining_label)
     form.addRow("Naechste Version", next_version)
     layout.addLayout(form)
     row = QHBoxLayout()
@@ -134,7 +147,7 @@ def build_extension_tab(
     layout.addLayout(row)
     layout.addWidget(QLabel(
         "Verlaengerung und Folgeschritte fuer archivierte Versionen. "
-        "Gueltigkeitsverlängerung erfordert Signatur und erhöht das Review-Datum um 1 Jahr."
+        "Gueltigkeitsverlaengerung erfordert Signatur, Begruendung und dokumentierte Review-Entscheidung."
     ))
     return tab
 
@@ -147,7 +160,7 @@ class DetailDrawerBuilder:
         *,
         tab_overview: QTableWidget,
         tab_roles: QTableWidget,
-        tab_comments: QPlainTextEdit,
+        tab_comments: QWidget,
         tab_history: QTableWidget,
         history_notice: QLabel,
         metadata_tab: QWidget,

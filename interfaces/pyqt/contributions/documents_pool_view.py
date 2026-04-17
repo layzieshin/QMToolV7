@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from interfaces.pyqt.contributions.common import normalize_role
+from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from modules.documents.contracts import ArtifactType
 from qm_platform.runtime.container import RuntimeContainer
@@ -64,9 +65,11 @@ class DocumentsPoolWidget(QWidget):
     def __init__(self, container: RuntimeContainer) -> None:
         super().__init__()
         self._container = container
+        self._app_home = Path.cwd()
         self._um = container.get_port("usermanagement_service")
         self._pool = container.get_port("documents_pool_api")
         self._model = _PoolTableModel()
+        self._artifacts_root = self._resolve_artifacts_root()
 
         self._search = QLineEdit()
         self._search.setPlaceholderText("Suche nach Dokument-ID oder Titel")
@@ -164,16 +167,29 @@ class DocumentsPoolWidget(QWidget):
         for artifact in artifacts:
             if artifact.artifact_type not in (ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF):
                 continue
-            for key in ("path", "absolute_path", "file_path"):
-                path_value = artifact.metadata.get(key)
-                if not path_value:
+            for path in resolve_openable_artifact_paths(
+                artifact=artifact,
+                app_home=self._app_home,
+                artifacts_root=self._artifacts_root,
+            ):
+                if not path.exists():
                     continue
-                path = Path(path_value)
                 if hasattr(os, "startfile"):
                     os.startfile(str(path))  # type: ignore[attr-defined]
                     self._error.setText(f"Geöffnet: {path}")
                     return
         self._error.setText("Kein lokal oeffenbares PDF-Artefakt verfügbar.")
+
+    def _resolve_artifacts_root(self) -> Path:
+        if not self._container.has_port("settings_service"):
+            return self._app_home / "storage" / "documents" / "artifacts"
+        settings_service = self._container.get_port("settings_service")
+        docs_settings = settings_service.get_module_settings("documents")
+        raw_root = docs_settings.get("artifacts_root", "storage/documents/artifacts")
+        root = Path(raw_root)
+        if root.is_absolute():
+            return root
+        return self._app_home / root
 
 
 def _build(container: RuntimeContainer) -> QWidget:

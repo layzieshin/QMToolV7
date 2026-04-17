@@ -26,6 +26,7 @@ class SQLiteDocumentsRepository(DocumentsRepository):
     def __init__(self, db_path: Path, schema_path: Path) -> None:
         self._db_path = db_path
         self._schema_path = schema_path
+        self._transaction_conn: sqlite3.Connection | None = None
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
@@ -55,13 +56,14 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     edit_signature_done, valid_from, valid_until, next_review_at,
                     review_completed_at, review_completed_by, approval_completed_at, approval_completed_by,
                     released_at, archived_at, archived_by, superseded_by_version,
-                    extension_count, custom_fields_json, last_event_id, last_event_at, last_actor_user_id,
+                    extension_count, last_extended_at, last_extended_by, last_extension_reason, last_extension_review_outcome,
+                    custom_fields_json, last_event_id, last_event_at, last_actor_user_id,
                     created_at, created_by, updated_at
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 ON CONFLICT(document_id, version) DO UPDATE SET
                     title = excluded.title,
@@ -91,6 +93,10 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     archived_by = excluded.archived_by,
                     superseded_by_version = excluded.superseded_by_version,
                     extension_count = excluded.extension_count,
+                    last_extended_at = excluded.last_extended_at,
+                    last_extended_by = excluded.last_extended_by,
+                    last_extension_reason = excluded.last_extension_reason,
+                    last_extension_review_outcome = excluded.last_extension_review_outcome,
                     custom_fields_json = excluded.custom_fields_json,
                     last_event_id = excluded.last_event_id,
                     last_event_at = excluded.last_event_at,
@@ -129,6 +135,10 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     state.archived_by,
                     state.superseded_by_version,
                     state.extension_count,
+                    state.last_extended_at.isoformat() if state.last_extended_at else None,
+                    state.last_extended_by,
+                    state.last_extension_reason,
+                    state.last_extension_review_outcome,
                     json.dumps(state.custom_fields, ensure_ascii=True),
                     state.last_event_id,
                     state.last_event_at.isoformat() if state.last_event_at else None,
@@ -138,7 +148,7 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     self._utcnow_iso(),
                 ),
             )
-            conn.commit()
+            self._commit_if_needed(conn)
 
     def upsert_header(self, header: DocumentHeader) -> None:
         with self._connect() as conn:
@@ -146,8 +156,10 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                 """
                 INSERT INTO document_headers (
                     document_id, doc_type, control_class, workflow_profile_id, register_binding,
-                    department, site, regulatory_scope, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    department, site, regulatory_scope,
+                    distribution_roles_json, distribution_sites_json, distribution_departments_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(document_id) DO UPDATE SET
                     doc_type = excluded.doc_type,
                     control_class = excluded.control_class,
@@ -156,6 +168,9 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     department = excluded.department,
                     site = excluded.site,
                     regulatory_scope = excluded.regulatory_scope,
+                    distribution_roles_json = excluded.distribution_roles_json,
+                    distribution_sites_json = excluded.distribution_sites_json,
+                    distribution_departments_json = excluded.distribution_departments_json,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -167,11 +182,14 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     header.department,
                     header.site,
                     header.regulatory_scope,
+                    json.dumps(sorted(header.distribution_roles), ensure_ascii=True),
+                    json.dumps(sorted(header.distribution_sites), ensure_ascii=True),
+                    json.dumps(sorted(header.distribution_departments), ensure_ascii=True),
                     header.created_at.isoformat(),
                     self._utcnow_iso(),
                 ),
             )
-            conn.commit()
+            self._commit_if_needed(conn)
 
     def get_header(self, document_id: str) -> DocumentHeader | None:
         with self._connect() as conn:
@@ -234,7 +252,7 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     artifact.created_at.isoformat(),
                 ),
             )
-            conn.commit()
+            self._commit_if_needed(conn)
 
     def list_artifacts(self, document_id: str, version: int) -> list[DocumentArtifact]:
         with self._connect() as conn:
@@ -272,7 +290,7 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                 """,
                 (artifact_id,),
             )
-            conn.commit()
+            self._commit_if_needed(conn)
 
     def _ensure_schema(self) -> None:
         sql = self._schema_path.read_text(encoding="utf-8")
@@ -280,7 +298,26 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             conn.executescript(sql)
             self._ensure_document_headers_migration(conn)
             self._ensure_document_versions_migration(conn)
+            self._commit_if_needed(conn)
+
+    @contextmanager
+    def write_transaction(self):
+        if self._transaction_conn is not None:
+            yield
+            return
+        conn = sqlite3.connect(self._db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            self._transaction_conn = conn
+            yield
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._transaction_conn = None
+            conn.close()
 
     @staticmethod
     def _ensure_document_headers_migration(conn: sqlite3.Connection) -> None:
@@ -299,6 +336,9 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     department TEXT,
                     site TEXT,
                     regulatory_scope TEXT,
+                    distribution_roles_json TEXT NOT NULL DEFAULT '[]',
+                    distribution_sites_json TEXT NOT NULL DEFAULT '[]',
+                    distribution_departments_json TEXT NOT NULL DEFAULT '[]',
                     created_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00',
                     updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00'
                 )
@@ -308,6 +348,12 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             cols = {row["name"] for row in conn.execute("PRAGMA table_info(document_headers)").fetchall()}
             if "control_class" not in cols:
                 conn.execute("ALTER TABLE document_headers ADD COLUMN control_class TEXT NOT NULL DEFAULT 'CONTROLLED'")
+            if "distribution_roles_json" not in cols:
+                conn.execute("ALTER TABLE document_headers ADD COLUMN distribution_roles_json TEXT NOT NULL DEFAULT '[]'")
+            if "distribution_sites_json" not in cols:
+                conn.execute("ALTER TABLE document_headers ADD COLUMN distribution_sites_json TEXT NOT NULL DEFAULT '[]'")
+            if "distribution_departments_json" not in cols:
+                conn.execute("ALTER TABLE document_headers ADD COLUMN distribution_departments_json TEXT NOT NULL DEFAULT '[]'")
 
     @staticmethod
     def _ensure_document_versions_migration(conn: sqlite3.Connection) -> None:
@@ -330,6 +376,10 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             ("archived_at", "TEXT"),
             ("archived_by", "TEXT"),
             ("superseded_by_version", "INTEGER"),
+            ("last_extended_at", "TEXT"),
+            ("last_extended_by", "TEXT"),
+            ("last_extension_reason", "TEXT"),
+            ("last_extension_review_outcome", "TEXT"),
             ("custom_fields_json", "TEXT NOT NULL DEFAULT '{}'"),
             ("last_event_id", "TEXT"),
             ("last_event_at", "TEXT"),
@@ -343,12 +393,19 @@ class SQLiteDocumentsRepository(DocumentsRepository):
 
     @contextmanager
     def _connect(self):
+        if self._transaction_conn is not None:
+            yield self._transaction_conn
+            return
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
         finally:
             conn.close()
+
+    def _commit_if_needed(self, conn: sqlite3.Connection) -> None:
+        if self._transaction_conn is None or conn is not self._transaction_conn:
+            conn.commit()
 
     @staticmethod
     def _profile_to_json(profile: WorkflowProfile | None) -> str | None:
@@ -401,6 +458,27 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             department=str(row["department"]) if row["department"] else None,
             site=str(row["site"]) if row["site"] else None,
             regulatory_scope=str(row["regulatory_scope"]) if row["regulatory_scope"] else None,
+            distribution_roles=tuple(
+                sorted(
+                    json.loads(str(row["distribution_roles_json"]))
+                    if "distribution_roles_json" in row.keys() and row["distribution_roles_json"]
+                    else []
+                )
+            ),
+            distribution_sites=tuple(
+                sorted(
+                    json.loads(str(row["distribution_sites_json"]))
+                    if "distribution_sites_json" in row.keys() and row["distribution_sites_json"]
+                    else []
+                )
+            ),
+            distribution_departments=tuple(
+                sorted(
+                    json.loads(str(row["distribution_departments_json"]))
+                    if "distribution_departments_json" in row.keys() and row["distribution_departments_json"]
+                    else []
+                )
+            ),
             created_at=SQLiteDocumentsRepository._parse_dt(str(row["created_at"])) or datetime.now(timezone.utc),
             updated_at=SQLiteDocumentsRepository._parse_dt(str(row["updated_at"])) or datetime.now(timezone.utc),
         )
@@ -438,6 +516,18 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             archived_by=str(row["archived_by"]) if "archived_by" in row.keys() and row["archived_by"] else None,
             superseded_by_version=int(row["superseded_by_version"]) if "superseded_by_version" in row.keys() and row["superseded_by_version"] is not None else None,
             extension_count=int(row["extension_count"]),
+            last_extended_at=self._parse_dt(row["last_extended_at"]) if "last_extended_at" in row.keys() else None,
+            last_extended_by=str(row["last_extended_by"]) if "last_extended_by" in row.keys() and row["last_extended_by"] else None,
+            last_extension_reason=(
+                str(row["last_extension_reason"])
+                if "last_extension_reason" in row.keys() and row["last_extension_reason"]
+                else None
+            ),
+            last_extension_review_outcome=(
+                str(row["last_extension_review_outcome"])
+                if "last_extension_review_outcome" in row.keys() and row["last_extension_review_outcome"]
+                else None
+            ),
             custom_fields=json.loads(str(row["custom_fields_json"])) if "custom_fields_json" in row.keys() and row["custom_fields_json"] else {},
             last_event_id=str(row["last_event_id"]) if "last_event_id" in row.keys() and row["last_event_id"] else None,
             last_event_at=self._parse_dt(row["last_event_at"]) if "last_event_at" in row.keys() else None,
@@ -507,7 +597,7 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     receipt.source,
                 ),
             )
-            conn.commit()
+            self._commit_if_needed(conn)
 
     def get_read_receipt(self, user_id: str, document_id: str, version: int) -> DocumentReadReceipt | None:
         with self._connect() as conn:

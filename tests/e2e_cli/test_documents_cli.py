@@ -683,6 +683,168 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertEqual(blocked.returncode, 6)
         self.assertIn("validity dates can only be updated", blocked.stdout.lower())
 
+    def test_change_request_export_writes_json_and_csv(self) -> None:
+        self._login("admin", "admin")
+        doc_id = "DOC-E2E-CR-EXPORT"
+        created = run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
+        self.assertEqual(created.returncode, 0, msg=created.stderr + created.stdout)
+        add = run_cli(
+            "documents",
+            "change-request-add",
+            "--document-id",
+            doc_id,
+            "--version",
+            "1",
+            "--change-id",
+            "CR-EXPORT-001",
+            "--reason",
+            "Auditabweichung beheben",
+            "--impact-refs",
+            "VA-100,AA-200",
+        )
+        self.assertEqual(add.returncode, 0, msg=add.stderr + add.stdout)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            json_path = root / "cr.json"
+            csv_path = root / "cr.csv"
+            export_json = run_cli(
+                "documents",
+                "change-request-export",
+                "--document-id",
+                doc_id,
+                "--version",
+                "1",
+                "--output",
+                str(json_path),
+                "--format",
+                "json",
+            )
+            self.assertEqual(export_json.returncode, 0, msg=export_json.stderr + export_json.stdout)
+            self.assertTrue(json_path.exists())
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(payload), 1)
+            self.assertEqual(payload[0].get("change_id"), "CR-EXPORT-001")
+
+            export_csv = run_cli(
+                "documents",
+                "change-request-export",
+                "--document-id",
+                doc_id,
+                "--version",
+                "1",
+                "--output",
+                str(csv_path),
+                "--format",
+                "csv",
+            )
+            self.assertEqual(export_csv.returncode, 0, msg=export_csv.stderr + export_csv.stdout)
+            self.assertTrue(csv_path.exists())
+            csv_text = csv_path.read_text(encoding="utf-8")
+            self.assertIn("CR-EXPORT-001", csv_text)
+            self.assertIn("AA-200,VA-100", csv_text)
+
+    def test_annual_extend_accepts_reason_duration_and_outcome(self) -> None:
+        self._login("admin", "admin")
+        doc_id = "DOC-E2E-ANNUAL-EXT"
+        run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
+        run_cli(
+            "documents",
+            "assign-roles",
+            "--document-id",
+            doc_id,
+            "--version",
+            "1",
+            "--editors",
+            "editor-1",
+            "--reviewers",
+            "user",
+            "--approvers",
+            "qmb",
+        )
+        run_cli("documents", "workflow-start", "--document-id", doc_id, "--version", "1", "--profile-id", "long_release")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_pdf = root / "input.pdf"
+            signature_png = root / "sig.png"
+            output_pdf = root / "output.pdf"
+            self._write_test_pdf(input_pdf)
+            self._write_test_png(signature_png)
+            edit_result = run_cli(
+                "documents",
+                "editing-complete",
+                "--document-id",
+                doc_id,
+                "--version",
+                "1",
+                "--sign-input",
+                str(input_pdf),
+                "--sign-output",
+                str(output_pdf),
+                "--sign-signature-png",
+                str(signature_png),
+                "--sign-page",
+                "0",
+                "--sign-x",
+                "100",
+                "--sign-y",
+                "100",
+                "--sign-width",
+                "120",
+                "--signer-password",
+                "admin",
+                "--sign-dry-run",
+            )
+            self.assertEqual(edit_result.returncode, 0, msg=edit_result.stderr + edit_result.stdout)
+            self._login("user", "user")
+            review_result = self._review_accept_signed(doc_id, "user")
+            self.assertEqual(review_result.returncode, 0, msg=review_result.stderr + review_result.stdout)
+            self._login("qmb", "qmb")
+            approval_result = run_cli(
+                "documents",
+                "approval-accept",
+                "--document-id",
+                doc_id,
+                "--version",
+                "1",
+                "--sign-input",
+                str(input_pdf),
+                "--sign-output",
+                str(output_pdf),
+                "--sign-signature-png",
+                str(signature_png),
+                "--sign-page",
+                "0",
+                "--sign-x",
+                "100",
+                "--sign-y",
+                "100",
+                "--sign-width",
+                "120",
+                "--signer-password",
+                "qmb",
+                "--sign-dry-run",
+            )
+            self.assertEqual(approval_result.returncode, 0, msg=approval_result.stderr + approval_result.stdout)
+
+        extended = run_cli(
+            "documents",
+            "annual-extend",
+            "--document-id",
+            doc_id,
+            "--version",
+            "1",
+            "--signature-present",
+            "--duration-days",
+            "120",
+            "--reason",
+            "Regelreview ohne inhaltliche Aenderung",
+            "--outcome",
+            "unchanged",
+        )
+        self.assertEqual(extended.returncode, 0, msg=extended.stderr + extended.stdout)
+        self.assertIn("RECREATE_REQUIRED: false", extended.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

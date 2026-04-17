@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from datetime import timedelta
 
 from modules.documents.contracts import (
     DocumentStatus,
     RejectionReason,
     SystemRole,
+    ValidityExtensionOutcome,
     WorkflowProfile,
 )
-from modules.documents.errors import PermissionDeniedError, ValidationError
+from modules.documents.errors import InvalidTransitionError, PermissionDeniedError, ValidationError
 from modules.documents.service import DocumentsService
 
 
@@ -121,15 +123,43 @@ class DocumentsServiceTest(unittest.TestCase):
         state = service.accept_review(state, "rev-1", sign_request={"step": "review_accept"})
         state = service.accept_approval(state, "app-1", sign_request={"step": "approve"})
 
-        state, must_recreate = service.extend_annual_validity(state, signature_present=True)
+        state, must_recreate = service.extend_annual_validity(
+            state,
+            actor_user_id="qmb-1",
+            signature_present=True,
+            duration_days=365,
+            reason="Jahresreview ohne inhaltliche Aenderung",
+            review_outcome=ValidityExtensionOutcome.UNCHANGED,
+        )
         self.assertFalse(must_recreate)
-        state, must_recreate = service.extend_annual_validity(state, signature_present=True)
+        state, must_recreate = service.extend_annual_validity(
+            state,
+            actor_user_id="qmb-1",
+            signature_present=True,
+            duration_days=365,
+            reason="Jahresreview ohne inhaltliche Aenderung",
+            review_outcome=ValidityExtensionOutcome.UNCHANGED,
+        )
         self.assertFalse(must_recreate)
-        state, must_recreate = service.extend_annual_validity(state, signature_present=True)
+        state, must_recreate = service.extend_annual_validity(
+            state,
+            actor_user_id="qmb-1",
+            signature_present=True,
+            duration_days=365,
+            reason="Jahresreview ohne inhaltliche Aenderung",
+            review_outcome=ValidityExtensionOutcome.UNCHANGED,
+        )
         self.assertFalse(must_recreate)
         self.assertEqual(state.extension_count, 3)
 
-        state_after_limit, must_recreate = service.extend_annual_validity(state, signature_present=True)
+        state_after_limit, must_recreate = service.extend_annual_validity(
+            state,
+            actor_user_id="qmb-1",
+            signature_present=True,
+            duration_days=365,
+            reason="Jahresreview ohne inhaltliche Aenderung",
+            review_outcome=ValidityExtensionOutcome.UNCHANGED,
+        )
         self.assertTrue(must_recreate)
         self.assertEqual(state_after_limit.extension_count, 3)
 
@@ -250,6 +280,107 @@ class DocumentsServiceTest(unittest.TestCase):
         )
         self.assertEqual(updated.assignments.reviewers, frozenset({"reviewer-2"}))
         self.assertEqual(updated.assignments.approvers, frozenset({"approver-2"}))
+
+    def test_add_change_request_persists_structured_entry(self) -> None:
+        service = DocumentsService(signature_api=_FakeSignatureApi())
+        state = service.create_document_version("DOC-CR", 1, owner_user_id="owner-1")
+        state = service.add_change_request(
+            state,
+            change_id="CR-001",
+            reason="Kapitel 4 an neue SOP angleichen",
+            impact_refs=["VA-100", "AA-210"],
+            actor_user_id="owner-1",
+            actor_role=SystemRole.USER,
+        )
+        requests = service.list_change_requests(state)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["change_id"], "CR-001")
+        self.assertEqual(requests[0]["impact_refs"], ["AA-210", "VA-100"])
+
+    def test_training_read_flow_uses_version_lookup_without_attribute_error(self) -> None:
+        service = DocumentsService(signature_api=_FakeSignatureApi())
+        state = service.create_document_version("DOC-READ", 1)
+        state = service.assign_workflow_roles(
+            state,
+            editors={"editor-1"},
+            reviewers={"rev-1"},
+            approvers={"app-1"},
+        )
+        state = service.start_workflow(state, WorkflowProfile.long_release_path())
+        state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+        state = service.accept_review(state, "rev-1", sign_request={"step": "review_accept"})
+        state = service.accept_approval(state, "app-1", sign_request={"step": "approve"})
+
+        session = service.open_released_document_for_training("user-1", "DOC-READ", 1)
+        receipt = service.confirm_released_document_read("user-1", "DOC-READ", 1, source="test")
+
+        self.assertEqual(session.document_id, "DOC-READ")
+        self.assertEqual(receipt.document_id, "DOC-READ")
+
+    def test_annual_extension_keeps_release_date_and_tracks_actor(self) -> None:
+        service = DocumentsService(signature_api=_FakeSignatureApi())
+        state = service.create_document_version("DOC-EXT-ACTOR", 1, owner_user_id="owner-1")
+        state = service.assign_workflow_roles(
+            state,
+            editors={"editor-1"},
+            reviewers={"rev-1"},
+            approvers={"app-1"},
+        )
+        state = service.start_workflow(state, WorkflowProfile.long_release_path())
+        state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+        state = service.accept_review(state, "rev-1", sign_request={"step": "review_accept"})
+        state = service.accept_approval(state, "app-1", sign_request={"step": "approve"})
+        released_at_before = state.released_at
+        base_valid_until = state.valid_until
+
+        state, must_recreate = service.extend_annual_validity(
+            state,
+            actor_user_id="qmb-1",
+            signature_present=True,
+            duration_days=90,
+            reason="Regelmaessiges Review dokumentiert",
+            review_outcome=ValidityExtensionOutcome.EDITORIAL,
+        )
+        self.assertFalse(must_recreate)
+        self.assertEqual(state.released_at, released_at_before)
+        expected_base = base_valid_until or released_at_before
+        assert expected_base is not None
+        self.assertEqual(state.valid_until, expected_base + timedelta(days=90))
+        self.assertEqual(state.last_extended_by, "qmb-1")
+
+    def test_extension_blocks_new_version_required_outcome(self) -> None:
+        service = DocumentsService(signature_api=_FakeSignatureApi())
+        state = service.create_document_version("DOC-EXT-BLOCK", 1, owner_user_id="owner-1")
+        state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
+        state = service.start_workflow(state, WorkflowProfile.long_release_path())
+        state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+        state = service.accept_review(state, "r", sign_request={"step": "review_accept"})
+        state = service.accept_approval(state, "a", sign_request={"step": "approve"})
+        with self.assertRaisesRegex(InvalidTransitionError, "new version is required"):
+            service.extend_annual_validity(
+                state,
+                actor_user_id="qmb-1",
+                signature_present=True,
+                duration_days=30,
+                reason="Inhalt geaendert",
+                review_outcome=ValidityExtensionOutcome.NEW_VERSION_REQUIRED,
+            )
+
+    def test_metadata_update_blocks_approved_validity_date_changes(self) -> None:
+        service = DocumentsService(signature_api=_FakeSignatureApi())
+        state = service.create_document_version("DOC-APP-META", 1, owner_user_id="owner-1")
+        state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
+        state = service.start_workflow(state, WorkflowProfile.long_release_path())
+        state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+        state = service.accept_review(state, "r", sign_request={"step": "review_accept"})
+        state = service.accept_approval(state, "a", sign_request={"step": "approve"})
+        with self.assertRaises(ValidationError):
+            service.update_version_metadata(
+                state,
+                valid_until=state.valid_until,
+                actor_user_id="owner-1",
+                actor_role=SystemRole.USER,
+            )
 
 
 if __name__ == "__main__":

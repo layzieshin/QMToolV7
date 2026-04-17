@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse
 
-from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType
+from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType, ValidityExtensionOutcome
 from interfaces.cli.parsers.signature_parsers import add_sign_layout_args
 
 
@@ -97,6 +97,13 @@ def register_documents_parsers(sub: argparse._SubParsersAction) -> None:
     doc_extend.add_argument("--document-id", required=True)
     doc_extend.add_argument("--version", type=int, required=True)
     doc_extend.add_argument("--signature-present", action="store_true")
+    doc_extend.add_argument("--duration-days", type=int, default=365)
+    doc_extend.add_argument("--reason", required=True)
+    doc_extend.add_argument(
+        "--outcome",
+        choices=[value.value for value in ValidityExtensionOutcome],
+        default=ValidityExtensionOutcome.UNCHANGED.value,
+    )
 
     doc_pool_list = documents_sub.add_parser("pool-list-by-status", help="List documents by status")
     doc_pool_list.add_argument(
@@ -140,4 +147,24 @@ def register_documents_parsers(sub: argparse._SubParsersAction) -> None:
     doc_meta_set.add_argument("--valid-until")
     doc_meta_set.add_argument("--next-review-at")
     doc_meta_set.add_argument("--custom-fields-json")
+
+    doc_change_add = documents_sub.add_parser("change-request-add", help="Add structured change request to document version")
+    doc_change_add.add_argument("--document-id", required=True)
+    doc_change_add.add_argument("--version", type=int, required=True)
+    doc_change_add.add_argument("--change-id", required=True)
+    doc_change_add.add_argument("--reason", required=True)
+    doc_change_add.add_argument("--impact-refs", default="", help="Comma-separated related document ids")
+
+    doc_change_list = documents_sub.add_parser("change-request-list", help="List structured change requests for document version")
+    doc_change_list.add_argument("--document-id", required=True)
+    doc_change_list.add_argument("--version", type=int, required=True)
+
+    doc_change_export = documents_sub.add_parser(
+        "change-request-export",
+        help="Export structured change requests for a document version",
+    )
+    doc_change_export.add_argument("--document-id", required=True)
+    doc_change_export.add_argument("--version", type=int, required=True)
+    doc_change_export.add_argument("--output", required=True, help="Output file path")
+    doc_change_export.add_argument("--format", choices=["json", "csv"], default="json")
 

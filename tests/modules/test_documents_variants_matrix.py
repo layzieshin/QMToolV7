@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType, RejectionReason, SystemRole, WorkflowProfile
+from modules.documents.contracts import (
+    ControlClass,
+    DocumentStatus,
+    DocumentType,
+    RejectionReason,
+    SystemRole,
+    ValidityExtensionOutcome,
+    WorkflowProfile,
+)
 from modules.documents.errors import PermissionDeniedError, ValidationError
 from modules.documents.service import DocumentsService
 
@@ -75,11 +83,25 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
 
         for expected_count in (1, 2, 3):
             with self.subTest(extension_count=expected_count):
-                state, recreate = service.extend_annual_validity(state, signature_present=True)
+                state, recreate = service.extend_annual_validity(
+                    state,
+                    actor_user_id="qmb-1",
+                    signature_present=True,
+                    duration_days=365,
+                    reason="Jahresreview",
+                    review_outcome=ValidityExtensionOutcome.UNCHANGED,
+                )
                 self.assertFalse(recreate)
                 self.assertEqual(state.extension_count, expected_count)
 
-        same_state, recreate = service.extend_annual_validity(state, signature_present=True)
+        same_state, recreate = service.extend_annual_validity(
+            state,
+            actor_user_id="qmb-1",
+            signature_present=True,
+            duration_days=365,
+            reason="Jahresreview",
+            review_outcome=ValidityExtensionOutcome.UNCHANGED,
+        )
         self.assertTrue(recreate)
         self.assertEqual(same_state.extension_count, 3)
 

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from modules.documents.contracts import RejectionReason, SystemRole, WorkflowProfile
+from modules.documents.contracts import RejectionReason, SystemRole, ValidityExtensionOutcome, WorkflowProfile
 from modules.documents.service import DocumentsService
 from modules.documents.sqlite_repository import SQLiteDocumentsRepository
 from modules.registry.projection_api import RegistryProjectionApi
@@ -142,7 +142,14 @@ class DocumentsEventContractsTest(unittest.TestCase):
         )
         state = service.accept_review(state, "reviewer-1", sign_request={"step": "review_accept"})
         state = service.accept_approval(state, "approver-1", sign_request={"step": "approve"})
-        state, _ = service.extend_annual_validity(state, signature_present=True)
+        state, _ = service.extend_annual_validity(
+            state,
+            actor_user_id="qmb-1",
+            signature_present=True,
+            duration_days=365,
+            reason="Jahresreview ohne inhaltliche Aenderung",
+            review_outcome=ValidityExtensionOutcome.UNCHANGED,
+        )
         service.archive_approved(state, SystemRole.QMB)
 
         by_name = {name: [e for e in events if e.name == name] for name in names}
@@ -163,6 +170,8 @@ class DocumentsEventContractsTest(unittest.TestCase):
         self.assertIn("actor_user_id", by_name["domain.documents.approval.rejected.v1"][0].payload)
         self.assertIn("actor_role", by_name["domain.documents.archived.v1"][0].payload)
         self.assertIn("extension_count", by_name["domain.documents.validity.extended.v1"][0].payload)
+        self.assertIn("duration_days", by_name["domain.documents.validity.extended.v1"][0].payload)
+        self.assertIn("reason", by_name["domain.documents.validity.extended.v1"][0].payload)
 
     def test_registry_reaction_after_approval_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

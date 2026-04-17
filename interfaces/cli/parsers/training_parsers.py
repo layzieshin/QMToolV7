@@ -5,9 +5,12 @@ import argparse
 def register_training_parsers(sub: argparse._SubParsersAction) -> None:
     training_parser = sub.add_parser("training", help="Training and document reading operations")
     training_sub = training_parser.add_subparsers(dest="training_command", required=True)
-    training_sub.add_parser("list-required", help="List required training assignments for current user")
+    training_sub.add_parser("list-required", help="List open training inbox items for current user")
 
-    tr_confirm = training_sub.add_parser("confirm-read", help="Confirm document was read to last page")
+    tr_confirm = training_sub.add_parser(
+        "confirm-read",
+        help="Legacy alias: confirm read receipt via documents_read_api",
+    )
     tr_confirm.add_argument("--document-id", required=True)
     tr_confirm.add_argument("--version", type=int, required=True)
     tr_confirm.add_argument("--last-page-seen", type=int, required=True)

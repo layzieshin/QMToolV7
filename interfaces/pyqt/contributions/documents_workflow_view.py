@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import json
+import csv
 from datetime import datetime
 from pathlib import Path
 
+from PyQt6.QtCore import QThread
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QTableView,
     QPlainTextEdit,
@@ -36,7 +42,9 @@ from interfaces.pyqt.widgets.document_create_wizard import DocumentCreateWizard
 from interfaces.pyqt.widgets.workflow_profile_wizard import WorkflowProfileWizardDialog
 from interfaces.pyqt.widgets.reject_reason_dialog import RejectReasonDialog
 from interfaces.pyqt.widgets.table_helpers import fill_table
+from interfaces.pyqt.widgets.validity_extension_dialog import ValidityExtensionDialog
 from interfaces.pyqt.widgets.workflow_start_wizard import WorkflowStartWizard
+from interfaces.pyqt.workers import TableReloadResult, TableReloadWorker
 
 from modules.documents.contracts import (
     ArtifactType,
@@ -44,6 +52,7 @@ from modules.documents.contracts import (
     DocumentStatus,
     DocumentType,
     SystemRole,
+    ValidityExtensionOutcome,
 )
 from interfaces.pyqt.presenters.documents_workflow_presenter import DocumentsWorkflowPresenter
 from interfaces.pyqt.presenters.documents_workflow_filter_presenter import DocumentsWorkflowFilterPresenter
@@ -84,6 +93,12 @@ class DocumentsWorkflowWidget(QWidget):
             "active_version": "all",
         }
         self._seen_event_ids: dict[str, str | None] = {}
+        self._reload_thread: QThread | None = None
+        self._reload_worker: TableReloadWorker | None = None
+        self._reload_progress: QProgressDialog | None = None
+        self._reload_cancelled = False
+        self._last_change_export_dir: Path = self._app_home
+        self._last_change_export_format: str = "json"
 
         self._status_filter = QComboBox()
         self._status_filter.addItem("Alle", "ALL")
@@ -102,6 +117,8 @@ class DocumentsWorkflowWidget(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(1, self._table.horizontalHeader().ResizeMode.Stretch)
         self._table.selectionModel().selectionChanged.connect(self._on_table_selected)
         self._table.doubleClicked.connect(lambda _idx: self._run_default_table_action())
+        QShortcut(QKeySequence("Ctrl+R"), self, activated=self._reload_table)
+        QShortcut(QKeySequence("Ctrl+O"), self, activated=self._run_default_table_action)
 
         self._doc_id = QLineEdit()
         self._version = QLineEdit("1")
@@ -124,18 +141,30 @@ class DocumentsWorkflowWidget(QWidget):
         self._reviewers = QLineEdit()
         self._approvers = QLineEdit()
         self._next_version = QLineEdit("2")
-        self._extend_signature = QCheckBox("Signatur fuer Jahresverlaengerung liegt vor")
-        self._extend_signature.setChecked(False)
+        self._extension_valid_from = QLabel("-")
+        self._extension_valid_until = QLabel("-")
+        self._extension_next_review = QLabel("-")
+        self._extension_count = QLabel("0/3")
+        self._extension_remaining_days = QLabel("-")
 
         self._tab_overview = new_readonly_table(["Feld", "Wert"])
         self._tab_roles = new_readonly_table(["Aspekt", "Wert"])
         self._tab_comments = QPlainTextEdit()
         self._tab_comments.setReadOnly(True)
-        self._tab_comments.setPlainText("Kommentare werden vorbereitet. Datenanbindung folgt ueber vorhandene Ports.")
+        self._tab_comments.setPlainText("Keine Change Requests vorhanden.")
+        self._export_change_requests_btn = QPushButton("Change Requests exportieren")
+        self._export_change_requests_btn.clicked.connect(self._export_change_requests)
+        self._comments_tab = QWidget()
+        comments_layout = QVBoxLayout(self._comments_tab)
+        comments_layout.addWidget(self._tab_comments, stretch=1)
+        comments_layout.addWidget(self._export_change_requests_btn)
         self._tab_history = new_readonly_table(["Zeit", "Aktion", "Benutzer", "Ergebnis", "Begruendung"])
         self._history_notice = QLabel("Verlauf ohne neue Änderungen.")
         self._out = QPlainTextEdit()
         self._out.setReadOnly(True)
+        self._out.setVisible(False)
+        self._toggle_output_btn = QPushButton("Protokoll anzeigen")
+        self._toggle_output_btn.clicked.connect(self._toggle_output_visibility)
         self._inline_notice = QLabel("")
         self._inline_notice.setWordWrap(True)
 
@@ -185,7 +214,7 @@ class DocumentsWorkflowWidget(QWidget):
         center_layout.addLayout(filters)
         center_layout.addWidget(self._inline_notice)
         center_layout.addWidget(self._table, stretch=1)
-        center_layout.addWidget(QLabel("Ergebnis / Fehler"))
+        center_layout.addWidget(self._toggle_output_btn)
         center_layout.addWidget(self._out, stretch=1)
         center_layout.addLayout(self._workflow_actions["layout"])
 
@@ -196,7 +225,7 @@ class DocumentsWorkflowWidget(QWidget):
             department=self._department, site=self._site,
             regulatory_scope=self._regulatory_scope, valid_until=self._valid_until,
             next_review=self._next_review, custom_fields=self._custom_fields,
-            on_save_metadata=self._update_metadata, on_save_header=self._update_header,
+            on_save_metadata=self._update_metadata, on_save_header=self._update_header, on_add_change_request=self._add_change_request,
             metadata_buttons=self._metadata_buttons,
         )
         roles_tab = build_roles_tab(
@@ -206,12 +235,17 @@ class DocumentsWorkflowWidget(QWidget):
         )
         extension_tab = build_extension_tab(
             next_version=self._next_version,
+            valid_from_label=self._extension_valid_from,
+            valid_until_label=self._extension_valid_until,
+            next_review_label=self._extension_next_review,
+            extension_count_label=self._extension_count,
+            extension_remaining_label=self._extension_remaining_days,
             on_extend=self._extend_validity,
             on_new_version=self._new_version_after_archive,
         )
         self._details, self._detail_tabs, self._history_tab_index = DetailDrawerBuilder.build(
             tab_overview=self._tab_overview, tab_roles=self._tab_roles,
-            tab_comments=self._tab_comments, tab_history=self._tab_history,
+            tab_comments=self._comments_tab, tab_history=self._tab_history,
             history_notice=self._history_notice,
             metadata_tab=metadata_tab, roles_tab=roles_tab, extension_tab=extension_tab,
         )
@@ -258,9 +292,16 @@ class DocumentsWorkflowWidget(QWidget):
     def _fill_history_table(self, rows: list[tuple[str, str, str, str, str]]) -> None:
         fill_table(self._tab_history, rows)
 
-    def _append(self, title: str, payload: object) -> None:
-        self._out.appendPlainText(f"{title}: {payload}\n")
+    def _append(self, title: str, payload: object, *, to_output: bool = True) -> None:
+        if to_output:
+            self._out.appendPlainText(f"{title}: {payload}\n")
         self._inline_notice.setText(f"Info: {title}")
+        window = self.window()
+        if hasattr(window, "statusBar"):
+            try:
+                window.statusBar().showMessage(f"{title}", 10000)
+            except Exception:
+                pass
 
     def _audit(self, *, action: str, actor: str, target: str, result: str, reason: str = "") -> None:
         self._sig_ops.audit(action=action, actor=actor, target=target, result=result, reason=reason)
@@ -289,9 +330,22 @@ class DocumentsWorkflowWidget(QWidget):
 
     def _show_error(self, exc: Exception, *, critical: bool = False) -> None:
         if critical:
+            QMessageBox.critical(self, "Dokumentenlenkung", str(exc))
+        else:
             QMessageBox.warning(self, "Dokumentenlenkung", str(exc))
-        self._inline_notice.setText(f"Warnung: {exc}")
-        self._append("ERROR", {"message": str(exc)})
+        self._inline_notice.setText(f"Fehler: {exc}")
+        self._append("ERROR", {"message": str(exc)}, to_output=False)
+        window = self.window()
+        if hasattr(window, "statusBar"):
+            try:
+                window.statusBar().showMessage(f"FEHLER: {exc}", 10000)
+            except Exception:
+                pass
+
+    def _toggle_output_visibility(self) -> None:
+        visible = not self._out.isVisible()
+        self._out.setVisible(visible)
+        self._toggle_output_btn.setText("Protokoll ausblenden" if visible else "Protokoll anzeigen")
 
     def _apply_table_density(self) -> None:
         self._table.verticalHeader().setDefaultSectionSize(24)
@@ -379,31 +433,94 @@ class DocumentsWorkflowWidget(QWidget):
         return self._current_state
 
     def _reload_table(self) -> None:
-        try:
-            rows: list[object] = []
-            status_filter = self._status_filter.currentData()
-            statuses = list(DocumentStatus) if status_filter == "ALL" else [status_filter]
-            for status in statuses:
-                rows.extend(self._pool.list_by_status(status))
-            user = self._um.get_current_user()
-            scope = self._scope_filter.currentData()
-            rows = self._filter_presenter.filter_rows(
-                rows,
-                scope=str(scope),
-                user_id=str(user.user_id) if user is not None else None,
-                owner_contains=str(self._advanced_filters["owner_contains"]),
-                title_contains=str(self._advanced_filters["title_contains"]),
-                workflow_active=str(self._advanced_filters["workflow_active"]),
-                active_version=str(self._advanced_filters["active_version"]),
-            )
-            self._model.load(rows)
-            self._append(
-                "TABELLE_AKTUALISIERT",
-                {"rows": len(rows), "scope": scope, "status_filter": str(status_filter), "advanced": self._advanced_filters},
-            )
-            self._update_action_visibility()
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc)
+        if self._reload_thread is not None:
+            self._reload_cancelled = True
+            if self._reload_progress is not None:
+                self._reload_progress.cancel()
+            return
+        self._reload_cancelled = False
+        self._reload_progress = QProgressDialog("Tabelle wird aktualisiert ...", "Abbrechen", 0, 0, self)
+        self._reload_progress.setWindowTitle("Dokumentenlenkung")
+        self._reload_progress.setMinimumDuration(150)
+        self._reload_progress.canceled.connect(self._cancel_reload)
+        self._reload_progress.show()
+        self._inline_notice.setText("Tabellenaktualisierung laeuft ...")
+
+        self._reload_thread = QThread(self)
+        self._reload_worker = TableReloadWorker(self._build_reload_result)
+        self._reload_worker.moveToThread(self._reload_thread)
+        self._reload_thread.started.connect(self._reload_worker.run)
+        self._reload_worker.finished.connect(self._on_reload_finished)
+        self._reload_worker.failed.connect(self._on_reload_failed)
+        self._reload_worker.finished.connect(self._cleanup_reload_worker)
+        self._reload_worker.failed.connect(self._cleanup_reload_worker)
+        self._reload_thread.start()
+
+    def _cancel_reload(self) -> None:
+        self._reload_cancelled = True
+        self._inline_notice.setText("Tabellenaktualisierung abgebrochen.")
+
+    def _build_reload_result(self) -> TableReloadResult:
+        rows: list[object] = []
+        status_filter = self._status_filter.currentData()
+        statuses = list(DocumentStatus) if status_filter == "ALL" else [status_filter]
+        for status in statuses:
+            rows.extend(self._pool.list_by_status(status))
+        user = self._um.get_current_user()
+        scope = str(self._scope_filter.currentData())
+        rows = self._filter_presenter.filter_rows(
+            rows,
+            scope=scope,
+            user_id=str(user.user_id) if user is not None else None,
+            owner_contains=str(self._advanced_filters["owner_contains"]),
+            title_contains=str(self._advanced_filters["title_contains"]),
+            workflow_active=str(self._advanced_filters["workflow_active"]),
+            active_version=str(self._advanced_filters["active_version"]),
+        )
+        return TableReloadResult(
+            rows=rows,
+            scope=scope,
+            status_filter=str(status_filter),
+            advanced_filters=dict(self._advanced_filters),
+        )
+
+    def _on_reload_finished(self, result: object) -> None:
+        if self._reload_cancelled:
+            return
+        if not isinstance(result, TableReloadResult):
+            self._show_error(RuntimeError("ungueltiges Reload-Ergebnis"))
+            return
+        self._model.load(result.rows)
+        self._append(
+            "TABELLE_AKTUALISIERT",
+            {
+                "rows": len(result.rows),
+                "scope": result.scope,
+                "status_filter": result.status_filter,
+                "advanced": result.advanced_filters,
+            },
+            to_output=False,
+        )
+        self._update_action_visibility()
+
+    def _on_reload_failed(self, error_message: str) -> None:
+        if self._reload_cancelled:
+            return
+        self._show_error(RuntimeError(error_message))
+
+    def _cleanup_reload_worker(self, *_args) -> None:
+        if self._reload_progress is not None:
+            self._reload_progress.close()
+            self._reload_progress.deleteLater()
+            self._reload_progress = None
+        if self._reload_thread is not None:
+            self._reload_thread.quit()
+            self._reload_thread.wait(1500)
+            self._reload_thread.deleteLater()
+            self._reload_thread = None
+        if self._reload_worker is not None:
+            self._reload_worker.deleteLater()
+            self._reload_worker = None
 
     def _on_table_selected(self) -> None:
         selected = self._table.selectionModel().selectedRows()
@@ -488,6 +605,133 @@ class DocumentsWorkflowWidget(QWidget):
             self._department.setText(header.department or "")
             self._site.setText(header.site or "")
             self._regulatory_scope.setText(header.regulatory_scope or "")
+        self._refresh_change_requests(state)
+        self._extension_valid_from.setText(self._format_dt(state.valid_from))
+        self._extension_valid_until.setText(self._format_dt(state.valid_until))
+        self._extension_next_review.setText(self._format_dt(state.next_review_at))
+        self._extension_count.setText(f"{state.extension_count}/3")
+        if state.valid_until is not None:
+            now = datetime.now(state.valid_until.tzinfo) if state.valid_until.tzinfo else datetime.now()
+            remaining_days = max((state.valid_until - now).days, 0)
+            self._extension_remaining_days.setText(str(remaining_days))
+        else:
+            self._extension_remaining_days.setText("-")
+
+    def _refresh_change_requests(self, state) -> None:
+        rows = self._wf.list_change_requests(state)
+        if not rows:
+            self._tab_comments.setPlainText("Keine Change Requests vorhanden.")
+            return
+        lines: list[str] = []
+        for idx, row in enumerate(rows, start=1):
+            change_id = str(row.get("change_id", "")).strip() or f"CR-{idx}"
+            reason = str(row.get("reason", "")).strip()
+            refs = row.get("impact_refs", [])
+            if not isinstance(refs, list):
+                refs = []
+            created_by = str(row.get("created_by", "")).strip()
+            created_at = str(row.get("created_at", "")).strip()
+            lines.append(f"{idx}. {change_id}")
+            lines.append(f"   Grund: {reason}")
+            if refs:
+                lines.append(f"   Impact-Refs: {', '.join(str(v) for v in refs)}")
+            if created_by or created_at:
+                lines.append(f"   Erfasst von: {created_by or '-'} am {created_at or '-'}")
+            lines.append("")
+        self._tab_comments.setPlainText("\n".join(lines).strip())
+
+    def _add_change_request(self) -> None:
+        try:
+            state = self._state_from_selection()
+            user, role = self._current_user_role()
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Change Request hinzufügen")
+            change_id = QLineEdit()
+            reason = QLineEdit()
+            impact_refs = QLineEdit()
+            form = QFormLayout()
+            form.addRow("Change-ID", change_id)
+            form.addRow("Grund", reason)
+            form.addRow("Impact-Refs (CSV)", impact_refs)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout = QVBoxLayout(dialog)
+            layout.addLayout(form)
+            layout.addWidget(buttons)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            payload = self._wf.add_change_request(
+                state,
+                change_id=change_id.text().strip(),
+                reason=reason.text().strip(),
+                impact_refs=[value.strip() for value in impact_refs.text().split(",") if value.strip()],
+                actor_user_id=user.user_id,
+                actor_role=role,
+            )
+            self._append("CHANGE_REQUEST_GESPEICHERT", {"document_id": payload.document_id, "version": payload.version})
+            self._current_state = payload
+            self._refresh_details()
+            self._reload_table()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+
+    def _export_change_requests(self) -> None:
+        try:
+            state = self._state_from_selection()
+            rows = self._wf.list_change_requests(state)
+            if not rows:
+                self._inline_notice.setText("Keine Change Requests zum Export vorhanden.")
+                return
+            default_suffix = ".csv" if self._last_change_export_format == "csv" else ".json"
+            default_name = f"{state.document_id}_v{state.version}_change_requests{default_suffix}"
+            default_target = self._last_change_export_dir / default_name
+            selected_filter_default = (
+                "CSV (*.csv)" if self._last_change_export_format == "csv" else "JSON (*.json)"
+            )
+            target, selected_filter = QFileDialog.getSaveFileName(
+                self,
+                "Change Requests exportieren",
+                str(default_target),
+                "JSON (*.json);;CSV (*.csv)",
+                selected_filter_default,
+            )
+            if not target:
+                return
+            output = Path(target)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            export_csv = selected_filter.lower().startswith("csv") or output.suffix.lower() == ".csv"
+            if export_csv:
+                if output.suffix.lower() != ".csv":
+                    output = output.with_suffix(".csv")
+                with output.open("w", encoding="utf-8", newline="") as fh:
+                    writer = csv.DictWriter(
+                        fh,
+                        fieldnames=["change_id", "reason", "impact_refs", "created_by", "created_at"],
+                    )
+                    writer.writeheader()
+                    for row in rows:
+                        refs = row.get("impact_refs", [])
+                        writer.writerow(
+                            {
+                                "change_id": str(row.get("change_id", "")),
+                                "reason": str(row.get("reason", "")),
+                                "impact_refs": ",".join(str(v) for v in refs) if isinstance(refs, list) else "",
+                                "created_by": str(row.get("created_by", "")),
+                                "created_at": str(row.get("created_at", "")),
+                            }
+                        )
+                fmt = "csv"
+            else:
+                if output.suffix.lower() != ".json":
+                    output = output.with_suffix(".json")
+                output.write_text(json.dumps(rows, indent=2, ensure_ascii=True), encoding="utf-8")
+                fmt = "json"
+            self._last_change_export_dir = output.parent
+            self._last_change_export_format = fmt
+            self._append("CHANGE_REQUEST_EXPORT", {"format": fmt, "path": str(output), "count": len(rows)})
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
 
     def _new_import(self) -> None:
         try:
@@ -836,6 +1080,20 @@ class DocumentsWorkflowWidget(QWidget):
                 raise RuntimeError("Verlaengerung ist nur im Status APPROVED moeglich")
             if state.extension_count >= 3:
                 raise RuntimeError("Maximale Anzahl von Verlaengerungen (3) erreicht")
+            dialog = ValidityExtensionDialog(
+                valid_from=state.valid_from,
+                valid_until=state.valid_until,
+                next_review_at=state.next_review_at,
+                extension_count=state.extension_count,
+                parent=self,
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                self._inline_notice.setText("Verlaengerungsvorgang abgebrochen.")
+                return
+            request = dialog.payload()
+            if request.review_outcome == ValidityExtensionOutcome.NEW_VERSION_REQUIRED:
+                self._inline_notice.setText("Neue Version erforderlich - Verlaengerung nicht ausgefuehrt.")
+                return
 
             sign_request = self._sig_ops.build_extension_sign_request(state, self)
             if sign_request is None:
@@ -843,15 +1101,23 @@ class DocumentsWorkflowWidget(QWidget):
                 return
 
             self._sig_ops.require_signature_call(sign_request)
+            signing_user_id = str(sign_request.signer_user or user.user_id)
 
             payload, is_maxed = self._wf.extend_annual_validity(
                 state,
+                actor_user_id=signing_user_id,
                 signature_present=True,
+                duration_days=request.duration_days,
+                reason=request.reason,
+                review_outcome=request.review_outcome,
             )
             self._append("JAHRESVERLAENGERUNG", {
                 "new_extension_count": payload.extension_count,
                 "is_maxed": is_maxed,
-                "next_review_at": str(payload.next_review_at)
+                "review_outcome": request.review_outcome.value,
+                "reason": request.reason,
+                "next_review_at": str(payload.next_review_at),
+                "valid_until": str(payload.valid_until),
             })
             self._reload_table()
         except Exception as exc:  # noqa: BLE001

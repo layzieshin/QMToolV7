@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from .contracts import DocumentStatus, DocumentVersionState, RejectionReason, SystemRole, WorkflowAssignments, WorkflowProfile
+from .contracts import (
+    DocumentStatus,
+    DocumentVersionState,
+    RejectionReason,
+    SystemRole,
+    ValidityExtensionOutcome,
+    WorkflowAssignments,
+    WorkflowProfile,
+)
 from .errors import InvalidTransitionError, PermissionDeniedError, ValidationError
 
 
@@ -65,20 +73,21 @@ class DocumentsWorkflowUseCases:
                 approvers=frozenset(approvers),
             ),
         )
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.assignments.updated.v1",
-            updated,
-            {
-                "editors_count": len(updated.assignments.editors),
-                "reviewers_count": len(updated.assignments.reviewers),
-                "approvers_count": len(updated.assignments.approvers),
-            },
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.assignments.updated.v1",
+                updated,
+                {
+                    "editors_count": len(updated.assignments.editors),
+                    "reviewers_count": len(updated.assignments.reviewers),
+                    "approvers_count": len(updated.assignments.approvers),
+                },
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.roles.assigned",
             actor=str(actor_user_id or updated.owner_user_id or "system"),
@@ -115,16 +124,17 @@ class DocumentsWorkflowUseCases:
             reviewed_by=frozenset(),
             approved_by=frozenset(),
         )
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.workflow.started.v1",
-            updated,
-            {"profile_id": profile.profile_id},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.workflow.started.v1",
+                updated,
+                {"profile_id": profile.profile_id},
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.started",
             actor=str(actor_user_id or updated.owner_user_id or "system"),
@@ -165,18 +175,19 @@ class DocumentsWorkflowUseCases:
                 next_review_at=now + timedelta(days=365),
                 workflow_active=False,
             )
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.editing.completed.v1",
-            updated,
-            {"to_status": next_status.value},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        if updated.status == DocumentStatus.APPROVED:
-            self._service._ensure_release_pdf_artifact(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.editing.completed.v1",
+                updated,
+                {"to_status": next_status.value},
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            if updated.status == DocumentStatus.APPROVED:
+                self._service._ensure_release_pdf_artifact(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.editing.completed",
             actor=str(actor_user_id or updated.owner_user_id or "system"),
@@ -208,16 +219,17 @@ class DocumentsWorkflowUseCases:
             review_completed_at=_utcnow(),
             review_completed_by=actor_user_id,
         )
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.review.accepted.v1",
-            updated,
-            {"actor_user_id": actor_user_id},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.review.accepted.v1",
+                updated,
+                {"actor_user_id": actor_user_id},
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.review.accepted",
             actor=str(actor_user_id),
@@ -240,16 +252,17 @@ class DocumentsWorkflowUseCases:
             raise PermissionDeniedError("actor is not assigned as reviewer")
         self._service._assert_rejection_reason(reason)
         updated = replace(state, status=DocumentStatus.IN_PROGRESS)
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.review.rejected.v1",
-            updated,
-            {"actor_user_id": actor_user_id},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.review.rejected.v1",
+                updated,
+                {"actor_user_id": actor_user_id},
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.review.rejected",
             actor=str(actor_user_id),
@@ -276,31 +289,41 @@ class DocumentsWorkflowUseCases:
             raise PermissionDeniedError("four-eyes principle prevents reviewer from approving the same version")
         self._service._enforce_signature_transition(state, "IN_APPROVAL->APPROVED", sign_request)
         now = _utcnow()
-        superseded = self._service._supersede_other_approved_versions(state, actor_user_id)
-        released_at = state.released_at or now
-        updated = replace(
-            state,
-            status=DocumentStatus.APPROVED,
-            approved_by=frozenset(set(state.approved_by) | {actor_user_id}),
-            approval_completed_at=now,
-            approval_completed_by=actor_user_id,
-            released_at=released_at,
-            valid_from=state.valid_from or now,
-            valid_until=state.valid_until if state.valid_until else (released_at + timedelta(days=365)),
-            next_review_at=state.next_review_at or (now + timedelta(days=365)),
-            workflow_active=False,
-        )
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.approval.accepted.v1",
-            updated,
-            {"actor_user_id": actor_user_id, "superseded_versions": superseded},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._ensure_release_pdf_artifact(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            superseded = self._service._supersede_other_approved_versions(state, actor_user_id)
+            released_at = state.released_at or now
+            distribution_snapshot = self._service._build_distribution_snapshot(state)
+            merged_custom_fields = dict(state.custom_fields)
+            if distribution_snapshot:
+                merged_custom_fields["distribution_snapshot"] = distribution_snapshot
+            updated = replace(
+                state,
+                status=DocumentStatus.APPROVED,
+                approved_by=frozenset(set(state.approved_by) | {actor_user_id}),
+                approval_completed_at=now,
+                approval_completed_by=actor_user_id,
+                released_at=released_at,
+                valid_from=state.valid_from or now,
+                valid_until=state.valid_until if state.valid_until else (released_at + timedelta(days=365)),
+                next_review_at=state.next_review_at or (now + timedelta(days=365)),
+                workflow_active=False,
+                custom_fields=merged_custom_fields,
+            )
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.approval.accepted.v1",
+                updated,
+                {
+                    "actor_user_id": actor_user_id,
+                    "superseded_versions": superseded,
+                    "distribution_snapshot": distribution_snapshot,
+                },
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._ensure_release_pdf_artifact(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.approval.accepted",
             actor=str(actor_user_id),
@@ -323,16 +346,17 @@ class DocumentsWorkflowUseCases:
             raise PermissionDeniedError("actor is not assigned as approver")
         self._service._assert_rejection_reason(reason)
         updated = replace(state, status=DocumentStatus.IN_PROGRESS)
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.approval.rejected.v1",
-            updated,
-            {"actor_user_id": actor_user_id},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.approval.rejected.v1",
+                updated,
+                {"actor_user_id": actor_user_id},
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.approval.rejected",
             actor=str(actor_user_id),
@@ -354,16 +378,17 @@ class DocumentsWorkflowUseCases:
         if state.status not in (DocumentStatus.IN_PROGRESS, DocumentStatus.IN_REVIEW, DocumentStatus.IN_APPROVAL):
             raise InvalidTransitionError("workflow abort is only allowed during active workflow phases")
         updated = replace(state, status=DocumentStatus.PLANNED, workflow_active=False)
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.workflow.aborted.v1",
-            updated,
-            {},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.workflow.aborted.v1",
+                updated,
+                {},
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.aborted",
             actor=str(actor_user_id or updated.owner_user_id or "system"),
@@ -390,16 +415,17 @@ class DocumentsWorkflowUseCases:
             archived_at=_utcnow(),
             archived_by=actor_user_id,
         )
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.archived.v1",
-            updated,
-            {"actor_role": actor_role.value},
-            actor_user_id=actor_user_id,
-        )
-        updated = _stamp_event(updated, event, actor_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.archived.v1",
+                updated,
+                {"actor_role": actor_role.value},
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.archived",
             actor=str(actor_user_id or "system"),
@@ -413,38 +439,69 @@ class DocumentsWorkflowUseCases:
         self,
         state: DocumentVersionState,
         *,
+        actor_user_id: str,
         signature_present: bool,
+        duration_days: int,
+        reason: str,
+        review_outcome: ValidityExtensionOutcome,
     ) -> tuple[DocumentVersionState, bool]:
         if state.status != DocumentStatus.APPROVED:
             raise InvalidTransitionError("annual validity check is only allowed in APPROVED")
+        if not actor_user_id.strip():
+            raise ValidationError("annual validity extension requires actor_user_id")
         if not signature_present:
             raise ValidationError("annual validity extension requires a signature")
+        if duration_days <= 0:
+            raise ValidationError("annual validity extension requires a positive duration_days")
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise ValidationError("annual validity extension requires a reason")
+        if review_outcome == ValidityExtensionOutcome.NEW_VERSION_REQUIRED:
+            raise InvalidTransitionError("new version is required; annual extension is not allowed")
         if state.extension_count >= 3:
             return state, True
         now = _utcnow()
+        base = state.valid_until or now
+        if base < now:
+            base = now
+        new_valid_until = base + timedelta(days=duration_days)
         updated = replace(
             state,
             extension_count=state.extension_count + 1,
-            released_at=now,
-            valid_until=now + timedelta(days=365),
-            next_review_at=now + timedelta(days=365),
+            valid_until=new_valid_until,
+            next_review_at=new_valid_until,
+            last_extended_at=now,
+            last_extended_by=actor_user_id,
+            last_extension_reason=normalized_reason,
+            last_extension_review_outcome=review_outcome.value,
         )
-        self._service._store_state(updated)
-        event = self._service._publish(
-            "domain.documents.validity.extended.v1",
-            updated,
-            {"extension_count": updated.extension_count},
-            actor_user_id=state.owner_user_id,
-        )
-        updated = _stamp_event(updated, event, state.owner_user_id)
-        self._service._store_state(updated)
-        self._service._sync_registry(updated, event)
+        with self._service._write_transaction():
+            self._service._store_state(updated)
+            event = self._service._publish(
+                "domain.documents.validity.extended.v1",
+                updated,
+                {
+                    "extension_count": updated.extension_count,
+                    "old_valid_until": state.valid_until.isoformat() if state.valid_until else None,
+                    "new_valid_until": updated.valid_until.isoformat() if updated.valid_until else None,
+                    "old_next_review_at": state.next_review_at.isoformat() if state.next_review_at else None,
+                    "new_next_review_at": updated.next_review_at.isoformat() if updated.next_review_at else None,
+                    "duration_days": duration_days,
+                    "reason": normalized_reason,
+                    "review_outcome": review_outcome.value,
+                    "actor_user_id": actor_user_id,
+                },
+                actor_user_id=actor_user_id,
+            )
+            updated = _stamp_event(updated, event, actor_user_id)
+            self._service._store_state(updated)
+            self._service._sync_registry(updated, event)
         self._service._emit_audit(
             action="documents.workflow.validity.extended",
-            actor=str(state.owner_user_id or "system"),
+            actor=str(actor_user_id or "system"),
             target=f"{updated.document_id}:{updated.version}",
             result="ok",
-            reason=f"extension_count:{updated.extension_count}",
+            reason=f"extension_count:{updated.extension_count}; outcome:{review_outcome.value}",
         )
         return updated, False
 
@@ -461,6 +518,7 @@ class DocumentsWorkflowUseCases:
             workflow_profile_id=state.workflow_profile_id,
             created_at=_utcnow(),
         )
-        self._service._store_state(created)
-        self._service._sync_registry(created, None)
+        with self._service._write_transaction():
+            self._service._store_state(created)
+            self._service._sync_registry(created, None)
         return created

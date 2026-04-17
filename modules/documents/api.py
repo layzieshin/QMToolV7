@@ -17,6 +17,7 @@ from .contracts import (
     DocumentVersionState,
     RejectionReason,
     SystemRole,
+    ValidityExtensionOutcome,
     WorkflowProfile,
 )
 from .errors import DocumentWorkflowError
@@ -28,7 +29,7 @@ __all__ = [
     "ControlClass", "DocumentArtifact", "DocumentHeader", "DocumentTaskItem",
     "RecentDocumentItem", "ReleasedDocumentItem", "ReviewActionItem",
     "DocumentStatus", "DocumentType", "DocumentVersionState",
-    "RejectionReason", "SystemRole", "WorkflowProfile",
+    "RejectionReason", "SystemRole", "ValidityExtensionOutcome", "WorkflowProfile",
 ]
 
 
@@ -264,9 +265,20 @@ class DocumentsWorkflowApi:
         self,
         state: DocumentVersionState,
         *,
+        actor_user_id: str,
         signature_present: bool,
+        duration_days: int,
+        reason: str,
+        review_outcome: ValidityExtensionOutcome,
     ) -> tuple[DocumentVersionState, bool]:
-        return self._service.extend_annual_validity(state, signature_present=signature_present)
+        return self._service.extend_annual_validity(
+            state,
+            actor_user_id=actor_user_id,
+            signature_present=signature_present,
+            duration_days=duration_days,
+            reason=reason,
+            review_outcome=review_outcome,
+        )
 
     def create_new_version_after_archive(self, state: DocumentVersionState, next_version: int) -> DocumentVersionState:
         return self._service.create_new_version_after_archive(state, next_version)
@@ -294,6 +306,28 @@ class DocumentsWorkflowApi:
             actor_role=actor_role,
         )
 
+    def add_change_request(
+        self,
+        state: DocumentVersionState,
+        *,
+        change_id: str,
+        reason: str,
+        impact_refs: list[str] | tuple[str, ...],
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> DocumentVersionState:
+        return self._service.add_change_request(
+            state,
+            change_id=change_id,
+            reason=reason,
+            impact_refs=impact_refs,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
+
+    def list_change_requests(self, state: DocumentVersionState) -> list[dict[str, object]]:
+        return self._service.list_change_requests(state)
+
     def update_document_header(
         self,
         document_id: str,
@@ -304,6 +338,9 @@ class DocumentsWorkflowApi:
         department: str | None = None,
         site: str | None = None,
         regulatory_scope: str | None = None,
+        distribution_roles: list[str] | None = None,
+        distribution_sites: list[str] | None = None,
+        distribution_departments: list[str] | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
     ) -> DocumentHeader:
@@ -315,6 +352,9 @@ class DocumentsWorkflowApi:
             department=department,
             site=site,
             regulatory_scope=regulatory_scope,
+            distribution_roles=distribution_roles,
+            distribution_sites=distribution_sites,
+            distribution_departments=distribution_departments,
             actor_user_id=actor_user_id,
             actor_role=actor_role,
         )

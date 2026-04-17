@@ -335,9 +335,15 @@ class SignaturePlacementDialog(QDialog):
         self._opt_name_rel_x = QLineEdit()
         self._opt_name_rel_x.setPlaceholderText("auto")
         self._opt_name_rel_x.setFixedWidth(60)
+        self._opt_name_rel_x_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opt_name_rel_x_slider.setRange(-300, 300)
+        self._opt_name_rel_x_slider.setFixedWidth(120)
         self._opt_name_rel_y = QLineEdit()
         self._opt_name_rel_y.setPlaceholderText("auto")
         self._opt_name_rel_y.setFixedWidth(60)
+        self._opt_name_rel_y_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opt_name_rel_y_slider.setRange(-300, 300)
+        self._opt_name_rel_y_slider.setFixedWidth(120)
 
         self._opt_show_date = QCheckBox("Datum anzeigen")
         self._opt_date_pos = QComboBox()
@@ -347,9 +353,15 @@ class SignaturePlacementDialog(QDialog):
         self._opt_date_rel_x = QLineEdit()
         self._opt_date_rel_x.setPlaceholderText("auto")
         self._opt_date_rel_x.setFixedWidth(60)
+        self._opt_date_rel_x_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opt_date_rel_x_slider.setRange(-300, 300)
+        self._opt_date_rel_x_slider.setFixedWidth(120)
         self._opt_date_rel_y = QLineEdit()
         self._opt_date_rel_y.setPlaceholderText("auto")
         self._opt_date_rel_y.setFixedWidth(60)
+        self._opt_date_rel_y_slider = QSlider(Qt.Orientation.Horizontal)
+        self._opt_date_rel_y_slider.setRange(-300, 300)
+        self._opt_date_rel_y_slider.setFixedWidth(120)
 
         self._opt_color_hex = QLineEdit("#000000")
         self._opt_color_hex.setFixedWidth(90)
@@ -377,8 +389,10 @@ class SignaturePlacementDialog(QDialog):
         name_rel = QHBoxLayout()
         name_rel.addWidget(QLabel("X:"))
         name_rel.addWidget(self._opt_name_rel_x)
+        name_rel.addWidget(self._opt_name_rel_x_slider)
         name_rel.addWidget(QLabel("Y:"))
         name_rel.addWidget(self._opt_name_rel_y)
+        name_rel.addWidget(self._opt_name_rel_y_slider)
         form.addRow("Rel. Pos.", name_rel)
 
         form.addRow(QLabel("── Datum ──"))
@@ -388,8 +402,10 @@ class SignaturePlacementDialog(QDialog):
         date_rel = QHBoxLayout()
         date_rel.addWidget(QLabel("X:"))
         date_rel.addWidget(self._opt_date_rel_x)
+        date_rel.addWidget(self._opt_date_rel_x_slider)
         date_rel.addWidget(QLabel("Y:"))
         date_rel.addWidget(self._opt_date_rel_y)
+        date_rel.addWidget(self._opt_date_rel_y_slider)
         form.addRow("Rel. Pos.", date_rel)
 
         form.addRow(QLabel("── Allgemein ──"))
@@ -419,6 +435,10 @@ class SignaturePlacementDialog(QDialog):
             self._opt_color_hex,
         ):
             widget.textChanged.connect(lambda _v: self._render_page_with_overlay())
+        self._bind_rel_slider(self._opt_name_rel_x, self._opt_name_rel_x_slider)
+        self._bind_rel_slider(self._opt_name_rel_y, self._opt_name_rel_y_slider)
+        self._bind_rel_slider(self._opt_date_rel_x, self._opt_date_rel_x_slider)
+        self._bind_rel_slider(self._opt_date_rel_y, self._opt_date_rel_y_slider)
 
         return panel
 
@@ -436,6 +456,38 @@ class SignaturePlacementDialog(QDialog):
         self._opt_name_rel_y.setText("" if layout.name_rel_y is None else str(layout.name_rel_y))
         self._opt_date_rel_x.setText("" if layout.date_rel_x is None else str(layout.date_rel_x))
         self._opt_date_rel_y.setText("" if layout.date_rel_y is None else str(layout.date_rel_y))
+        self._sync_slider_from_edit(self._opt_name_rel_x, self._opt_name_rel_x_slider)
+        self._sync_slider_from_edit(self._opt_name_rel_y, self._opt_name_rel_y_slider)
+        self._sync_slider_from_edit(self._opt_date_rel_x, self._opt_date_rel_x_slider)
+        self._sync_slider_from_edit(self._opt_date_rel_y, self._opt_date_rel_y_slider)
+
+    def _bind_rel_slider(self, edit: QLineEdit, slider: QSlider) -> None:
+        slider.valueChanged.connect(lambda value: self._on_rel_slider_changed(edit, value))
+        edit.textChanged.connect(lambda _v: self._sync_slider_from_edit(edit, slider))
+
+    def _on_rel_slider_changed(self, edit: QLineEdit, value: int) -> None:
+        edit.blockSignals(True)
+        try:
+            edit.setText(str(value))
+        finally:
+            edit.blockSignals(False)
+        self._render_page_with_overlay()
+
+    def _sync_slider_from_edit(self, edit: QLineEdit, slider: QSlider) -> None:
+        raw = edit.text().strip()
+        target = 0 if raw == "" else self._safe_slider_int(raw)
+        slider.blockSignals(True)
+        try:
+            slider.setValue(target)
+        finally:
+            slider.blockSignals(False)
+
+    @staticmethod
+    def _safe_slider_int(raw: str) -> int:
+        try:
+            return max(-300, min(300, int(float(raw))))
+        except Exception:
+            return 0
 
     def _pick_color(self) -> None:
         color = QColorDialog.getColor(QColor(self._opt_color_hex.text()), self)
