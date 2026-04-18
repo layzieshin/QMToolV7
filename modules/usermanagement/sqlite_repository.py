@@ -11,6 +11,13 @@ from .password_crypto import hash_password
 from .repository import UserRepository
 
 
+def _row_must_change(row: sqlite3.Row) -> bool:
+    try:
+        return bool(int(row["must_change_password"]))
+    except (KeyError, IndexError, TypeError, ValueError):
+        return False
+
+
 class SQLiteUserRepository(UserRepository):
     def __init__(self, db_path: Path, schema_path: Path) -> None:
         self._db_path = db_path
@@ -44,7 +51,8 @@ class SQLiteUserRepository(UserRepository):
                     scope,
                     organization_unit,
                     is_active,
-                    is_qmb
+                    is_qmb,
+                    must_change_password
                 FROM users
                 ORDER BY username ASC
                 """
@@ -63,6 +71,7 @@ class SQLiteUserRepository(UserRepository):
                 organization_unit=row["organization_unit"],
                 is_active=bool(int(row["is_active"])),
                 is_qmb=bool(int(row["is_qmb"])),
+                must_change_password=_row_must_change(row),
             )
             for row in rows
         ]
@@ -83,7 +92,8 @@ class SQLiteUserRepository(UserRepository):
                     scope,
                     organization_unit,
                     is_active,
-                    is_qmb
+                    is_qmb,
+                    must_change_password
                 FROM users
                 WHERE username = ?
                 """,
@@ -104,6 +114,7 @@ class SQLiteUserRepository(UserRepository):
             organization_unit=row["organization_unit"],
             is_active=bool(int(row["is_active"])),
             is_qmb=bool(int(row["is_qmb"])),
+            must_change_password=_row_must_change(row),
         )
 
     def create_user(
@@ -114,6 +125,7 @@ class SQLiteUserRepository(UserRepository):
         *,
         is_active: bool = True,
         is_qmb: bool = False,
+        must_change_password: bool = False,
         first_name: str | None = None,
         last_name: str | None = None,
         email: str | None = None,
@@ -133,6 +145,7 @@ class SQLiteUserRepository(UserRepository):
             email=(email or "").strip() or None,
             is_active=bool(is_active),
             is_qmb=bool(is_qmb),
+            must_change_password=bool(must_change_password),
         )
         password_hash = hash_password(password)
         with self._connect() as conn:
@@ -140,9 +153,9 @@ class SQLiteUserRepository(UserRepository):
                 conn.execute(
                     """
                     INSERT INTO users (
-                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, is_qmb, created_at, updated_at
+                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, is_qmb, must_change_password, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user.user_id,
@@ -158,6 +171,7 @@ class SQLiteUserRepository(UserRepository):
                         None,
                         int(user.is_active),
                         int(user.is_qmb),
+                        int(user.must_change_password),
                         now,
                         now,
                     ),
@@ -173,7 +187,7 @@ class SQLiteUserRepository(UserRepository):
             cur = conn.execute(
                 """
                 UPDATE users
-                SET password = ?, updated_at = ?
+                SET password = ?, updated_at = ?, must_change_password = 0
                 WHERE username = ?
                 """,
                 (password_hash, datetime.now(timezone.utc).isoformat(), username),
@@ -265,12 +279,57 @@ class SQLiteUserRepository(UserRepository):
                 conn.execute(
                     """
                     INSERT INTO users (
-                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, is_qmb, created_at, updated_at
+                        user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, is_qmb, must_change_password, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (username, username, password_hash, role, username, None, username, None, None, None, None, 1, 0, now, now),
+                    (username, username, password_hash, role, username, None, username, None, None, None, None, 1, 0, 0, now, now),
                 )
+            conn.commit()
+
+    def ensure_initial_admin(
+        self,
+        username: str,
+        password: str,
+        *,
+        role: str = "Admin",
+        must_change_password: bool = True,
+    ) -> None:
+        username = username.strip()
+        if not username:
+            raise ValueError("username is required")
+        with self._connect() as conn:
+            existing = conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone()
+            if existing:
+                return
+            now = datetime.now(timezone.utc).isoformat()
+            password_hash = hash_password(password)
+            conn.execute(
+                """
+                INSERT INTO users (
+                    user_id, username, password, role, first_name, last_name, display_name, email, department, scope, organization_unit, is_active, is_qmb, must_change_password, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    username,
+                    username,
+                    password_hash,
+                    role,
+                    username,
+                    None,
+                    username,
+                    None,
+                    None,
+                    None,
+                    None,
+                    1,
+                    0,
+                    int(bool(must_change_password)),
+                    now,
+                    now,
+                ),
+            )
             conn.commit()
 
     def _ensure_schema(self) -> None:
@@ -287,6 +346,7 @@ class SQLiteUserRepository(UserRepository):
                 "ALTER TABLE users ADD COLUMN organization_unit TEXT",
                 "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
                 "ALTER TABLE users ADD COLUMN is_qmb INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0",
             ):
                 try:
                     conn.execute(statement)
@@ -312,6 +372,7 @@ class SQLiteUserRepository(UserRepository):
                 )
             conn.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL")
             conn.execute("UPDATE users SET is_qmb = 0 WHERE is_qmb IS NULL")
+            conn.execute("UPDATE users SET must_change_password = 0 WHERE must_change_password IS NULL")
             conn.commit()
 
     @staticmethod

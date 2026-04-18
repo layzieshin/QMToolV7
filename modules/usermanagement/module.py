@@ -25,8 +25,8 @@ USERMANAGEMENT_SETTINGS_CONTRIBUTION = SettingsContribution(
     },
     defaults={
         "users_db_path": "storage/platform/users.db",
-        "seed_mode": "legacy_defaults",
-        "dev_mode": True,
+        "seed_mode": "admin_only",
+        "dev_mode": False,
     },
     scope="module_global",
     migrations=[],
@@ -44,19 +44,17 @@ def register_usermanagement_ports(container) -> None:
         db_path=users_db_path,
         schema_path=Path(__file__).with_name("schema.sql"),
     )
-    seed_mode = str(user_settings.get("seed_mode", "legacy_defaults"))
-    dev_mode = bool(user_settings.get("dev_mode", True))
+    seed_mode = str(user_settings.get("seed_mode", "admin_only"))
+    dev_mode = bool(user_settings.get("dev_mode", False))
     runtime_profile = os.environ.get("QMTOOL_RUNTIME_PROFILE", "").strip().lower()
-    if runtime_profile in ("prod", "production") and seed_mode != "hardened":
-        raise RuntimeError("production profile requires usermanagement.seed_mode='hardened'")
-    if dev_mode and seed_mode == "legacy_defaults":
-        repository.ensure_seed_users(
-            [
-                ("admin", "admin", "Admin"),
-                ("qmb", "qmb", "QMB"),
-                ("user", "user", "User"),
-            ]
-        )
+    if runtime_profile in ("prod", "production") and seed_mode not in ("hardened", "admin_only"):
+        raise RuntimeError("production profile requires usermanagement.seed_mode='hardened' or 'admin_only'")
+    if seed_mode == "hardened":
+        pass
+    elif seed_mode == "admin_only":
+        repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
+    elif seed_mode == "legacy_defaults" and dev_mode:
+        repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
     container.register_port(
         "usermanagement_service",
         UserManagementService(

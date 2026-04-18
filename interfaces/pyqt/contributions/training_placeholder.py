@@ -211,7 +211,7 @@ class TrainingWorkspace(QWidget):
             self._inbox_items = self._presenter.filter_rows(raw, open_only=False)
             self._render_table()
             self._out.clear()
-            self._log(self._presenter.status_line(rows=len(self._inbox_items), open_only=False))
+            self._append_status_log(self._presenter.status_line(rows=len(self._inbox_items), open_only=False))
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -265,7 +265,7 @@ class TrainingWorkspace(QWidget):
             if receipt is None:
                 QMessageBox.warning(self, "Training", "Das Dokument wurde noch nicht ausreichend gelesen.")
                 return
-            self._log(f"Lesebestaetigung fuer {item.document_id} v{item.version} erstellt.")
+            self._append_status_log(f"Lesebestaetigung fuer {item.document_id} v{item.version} erstellt.")
             self._load_inbox()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
@@ -314,7 +314,7 @@ class TrainingWorkspace(QWidget):
                 document_title_snapshot=item.title,
                 username_snapshot=self._current_user().username,
             )
-            self._log(f"Kommentar für {item.document_id} gespeichert.")
+            self._append_status_log(f"Kommentar für {item.document_id} gespeichert.")
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -342,7 +342,7 @@ class TrainingWorkspace(QWidget):
                     return
                 force = True
             result = self._admin.import_quiz_json(raw, force=force)
-            self._log(f"Quiz importiert: {result.import_id} ({result.question_count} Fragen)")
+            self._append_status_log(f"Quiz importiert: {result.import_id} ({result.question_count} Fragen)")
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -373,10 +373,10 @@ class TrainingWorkspace(QWidget):
                     result = self._admin.replace_quiz_binding(
                         p.document_id, p.document_version, p.import_id, self._current_user().user_id,
                     )
-                    self._log(f"Quiz ersetzt: {result.old_binding_id} → {result.new_binding_id}")
+                    self._append_status_log(f"Quiz ersetzt: {result.old_binding_id} → {result.new_binding_id}")
                 return
             binding = self._admin.bind_quiz_to_document(p.import_id, p.document_id, p.document_version)
-            self._log(f"Quiz gebunden: {binding.binding_id}")
+            self._append_status_log(f"Quiz gebunden: {binding.binding_id}")
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -438,7 +438,7 @@ class TrainingWorkspace(QWidget):
             if tags is None:
                 return
             updated = self._admin.set_document_tags(doc_id, tags)
-            self._log(f"Dokument-Tags gespeichert: {doc_id} -> {', '.join(sorted(updated.tags)) or '-'}")
+            self._append_status_log(f"Dokument-Tags gespeichert: {doc_id} -> {', '.join(sorted(updated.tags)) or '-'}")
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -471,7 +471,7 @@ class TrainingWorkspace(QWidget):
             if tags is None:
                 return
             updated = self._admin.set_user_tags(user_id, tags)
-            self._log(f"Nutzer-Tags gespeichert: {user_id} -> {', '.join(sorted(updated.tags)) or '-'}")
+            self._append_status_log(f"Nutzer-Tags gespeichert: {user_id} -> {', '.join(sorted(updated.tags)) or '-'}")
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
 
@@ -479,7 +479,7 @@ class TrainingWorkspace(QWidget):
         try:
             self._require_admin_or_qmb()
             count = self._admin.rebuild_assignment_snapshots()
-            self._log(f"Snapshots neu aufgebaut: {count} Einträge")
+            self._append_status_log(f"Snapshots neu aufgebaut: {count} Einträge")
             self._load_inbox()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
@@ -516,11 +516,11 @@ class TrainingWorkspace(QWidget):
                     w.writeheader()
                     for row in result.rows:
                         w.writerow({k: row.get(k, "") for k in fieldnames})
-                self._log(
+                self._append_status_log(
                     f"Matrix exportiert: {result.row_count} Zeilen, Export-ID: {result.export_id} -> {out}"
                 )
             else:
-                self._log(
+                self._append_status_log(
                     f"Matrix erzeugt ({result.row_count} Zeilen, Export-ID: {result.export_id}), "
                     "keine Datei gewaehlt — Daten nur im Speicher / Audit."
                 )
@@ -529,7 +529,8 @@ class TrainingWorkspace(QWidget):
 
     # ---- Helpers ----
 
-    def _log(self, msg: str) -> None:
+    def _append_status_log(self, msg: str) -> None:
+        """Append to the training protocol widget and mirror to the main window status bar."""
         self._out.appendPlainText(msg)
         window = self.window()
         if hasattr(window, "statusBar"):

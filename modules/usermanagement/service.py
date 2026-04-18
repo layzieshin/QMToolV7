@@ -22,8 +22,6 @@ class UserManagementService:
     _users: dict[str, tuple[str, str]] = field(
         default_factory=lambda: {
             "admin": ("admin", "Admin"),
-            "qmb": ("qmb", "QMB"),
-            "user": ("user", "User"),
         }
     )
 

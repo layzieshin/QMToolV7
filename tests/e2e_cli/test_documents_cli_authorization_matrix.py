@@ -1,24 +1,23 @@
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 import tempfile
 import unittest
 import uuid
-import importlib.util
 from pathlib import Path
 
 from PIL import Image
 
-
-def run_cli(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", "interfaces.cli.main", *args],
-        text=True,
-        capture_output=True,
-        cwd=cwd,
-        check=False,
-    )
+_spec = importlib.util.spec_from_file_location(
+    "e2e_documents_shared_home",
+    Path(__file__).resolve().parent / "e2e_documents_shared_home.py",
+)
+_shared = importlib.util.module_from_spec(_spec)
+assert _spec.loader is not None
+_spec.loader.exec_module(_shared)
+run_cli = _shared.run_cli
 
 
 class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):

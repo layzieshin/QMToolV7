@@ -28,6 +28,7 @@ from interfaces.pyqt.shell.preferences import ShellPreferences
 from interfaces.pyqt.shell.session_coordinator import SessionCoordinator
 from interfaces.pyqt.shell.visibility_policy import ContributionVisibilityPolicy, normalize_role
 from interfaces.pyqt.logging_adapter import get_logger
+from interfaces.pyqt.widgets.force_password_change_dialog import ForcePasswordChangeDialog
 from interfaces.pyqt.widgets.register_dialog import RegisterDialog
 
 _CONTRIBUTION_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -86,7 +87,7 @@ class MainWindow(QMainWindow):
         self._visibility_policy = ContributionVisibilityPolicy()
         self._session = SessionCoordinator(self._um())
 
-        self.setWindowTitle("QmTool")
+        self.setWindowTitle("QM-Tool")
         self.resize(1240, 760)
 
         self._nav = QListWidget()
@@ -290,6 +291,18 @@ class MainWindow(QMainWindow):
             except Exception as exc:  # noqa: BLE001
                 QMessageBox.warning(self, "Anmeldung fehlgeschlagen", str(exc))
                 continue
+            if bool(getattr(user, "must_change_password", False)):
+                dlg = ForcePasswordChangeDialog(self._um(), user, self)
+                if dlg.exec() != QDialog.DialogCode.Accepted:
+                    try:
+                        self._um().logout()
+                    except Exception:  # noqa: BLE001
+                        self._log.exception("Logout after cancelled password change failed")
+                    self._refresh_shell_for_session()
+                    continue
+                user = self._current_user()
+                if user is None:
+                    continue
             self._refresh_shell_for_session()
             self._maybe_show_backup_reminder_modal()
             return

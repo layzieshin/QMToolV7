@@ -254,8 +254,24 @@ class StartupAndGuardsCliTest(unittest.TestCase):
 
     def test_doctor_blocks_production_profile_with_legacy_seed_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            settings_path = home / "storage" / "platform" / "settings.json"
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            settings_path.write_text(
+                json.dumps(
+                    {
+                        "usermanagement": {
+                            "users_db_path": "storage/platform/users.db",
+                            "seed_mode": "legacy_defaults",
+                            "dev_mode": True,
+                        }
+                    },
+                    ensure_ascii=True,
+                ),
+                encoding="utf-8",
+            )
             env = dict(os.environ)
-            env["QMTOOL_HOME"] = tmp
+            env["QMTOOL_HOME"] = str(home)
             env["QMTOOL_RUNTIME_PROFILE"] = "production"
             doctor = subprocess.run(
                 [sys.executable, "-m", "interfaces.cli.main", "doctor"],
@@ -265,7 +281,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
                 env=env,
             )
             self.assertNotEqual(doctor.returncode, 0, msg=doctor.stderr + doctor.stdout)
-            self.assertIn("seed_mode='hardened'", (doctor.stdout + doctor.stderr))
+            self.assertIn("production profile requires", (doctor.stdout + doctor.stderr))
 
     def test_doctor_strict_reports_ok_after_hardened_init(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

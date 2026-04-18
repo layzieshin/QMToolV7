@@ -54,7 +54,7 @@ def evaluate_golive_gate(*, documents_db_path: Path | None, registry_db_path: Pa
         "central_governance_service_enforced": _governance_guard_enforced(),
         "production_seed_guard_present": _has_text(
             Path("modules/usermanagement/module.py"),
-            "production profile requires usermanagement.seed_mode='hardened'",
+            "production profile requires usermanagement.seed_mode",
         ),
     }
 

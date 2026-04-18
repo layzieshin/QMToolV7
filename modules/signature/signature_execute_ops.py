@@ -54,6 +54,8 @@ class SignatureExecuteOps:
             if request.dry_run:
                 self._emit_audit("signature.dry_run", request, output_pdf)
                 self._publish_event("domain.signature.sign.dry_run.v1", request, {"output_pdf": str(output_pdf)})
+                output_pdf.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(request.input_pdf, output_pdf)
                 return SignResult(output_pdf=output_pdf, signed=False, sha256="", dry_run=True, mode=request.sign_mode)
 
             if request.sign_mode == "crypto" and self.crypto_signer is None:

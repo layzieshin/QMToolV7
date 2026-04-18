@@ -29,6 +29,7 @@ class UserRepository(ABC):
         *,
         is_active: bool = True,
         is_qmb: bool = False,
+        must_change_password: bool = False,
         first_name: str | None = None,
         last_name: str | None = None,
         email: str | None = None,
@@ -70,3 +71,14 @@ class UserRepository(ABC):
         """
         Users in format: (username, password, role)
         """
+
+    @abstractmethod
+    def ensure_initial_admin(
+        self,
+        username: str,
+        password: str,
+        *,
+        role: str = "Admin",
+        must_change_password: bool = True,
+    ) -> None:
+        """Create the initial admin account if missing (single-tenant bootstrap)."""

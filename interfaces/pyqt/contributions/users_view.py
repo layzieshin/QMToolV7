@@ -181,7 +181,13 @@ class UsersAdminWidget(QWidget):
         self._detail_is_active.setChecked(bool(getattr(user, "is_active", True)))
         self._detail_is_qmb.setChecked(bool(getattr(user, "is_qmb", False)))
         current = self._um.get_current_user()
-        self._detail_is_qmb.setEnabled(normalize_base_role(getattr(current, "role", None)) == "ADMIN")
+        is_admin = normalize_base_role(getattr(current, "role", None)) == "ADMIN"
+        self._detail_is_qmb.setEnabled(is_admin)
+        self._detail_is_qmb.setToolTip(
+            ""
+            if is_admin
+            else "Nur ein Administrator kann QMB-Zusatzrechte setzen (Checkbox ist deaktiviert)."
+        )
 
     def _create_user(self) -> None:
         try:

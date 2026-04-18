@@ -19,6 +19,8 @@ env/
 # Build / packaging
 build/
 dist/
+packaging/dist_output/
+packaging/_pyi_build/
 *.spec
 *.zip
 

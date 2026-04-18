@@ -12,7 +12,12 @@ from qm_platform.events.event_bus import EventBus
 from qm_platform.licensing.keyring import PublicKeyring
 from qm_platform.licensing.license_guard import LicenseGuard
 from qm_platform.licensing.license_policy import LicensePolicy
-from qm_platform.licensing.license_service import LicenseService
+from qm_platform.licensing.license_service import (
+    LicenseExpiredError,
+    LicenseInvalidError,
+    LicenseMissingError,
+    LicenseService,
+)
 from qm_platform.licensing.license_verifier import LicenseVerifier
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.backup_reminder import BackupReminderService
@@ -101,11 +106,30 @@ def build_container() -> RuntimeContainer:
         dev_public_key = resolve_home_path(app_home, "storage/platform/license/dev_ed25519_public.pem")
         if dev_public_key.exists():
             keyring.add_key("dev-key", dev_public_key.read_text(encoding="utf-8"))
+        prod_public_key = resolve_home_path(app_home, "storage/platform/license/prod_ed25519_public.pem")
+        if prod_public_key.exists():
+            keyring.add_key("prod-key", prod_public_key.read_text(encoding="utf-8"))
     license_service = LicenseService(
         license_file=license_file,
         verifier=LicenseVerifier(keyring),
         policy=LicensePolicy(),
     )
+    if license_mode not in ("dev", "auto"):
+        try:
+            license_service.validate()
+        except LicenseMissingError as exc:
+            logger.error("platform", f"license missing: {exc}")
+            raise RuntimeError(
+                f"Produktionslizenz fehlt: erwartete Datei {license_file}. "
+                "Legen Sie eine signierte license/license.json ab oder setzen Sie QMTOOL_LICENSE_MODE=dev für die Entwicklung."
+            ) from exc
+        except (LicenseInvalidError, LicenseExpiredError) as exc:
+            logger.error("platform", f"license invalid: {exc}")
+            raise RuntimeError(
+                f"Produktionslizenz ungültig: {exc}. "
+                "Prüfen Sie license/license.json und den passenden öffentlichen Schlüssel unter "
+                "storage/platform/license/prod_ed25519_public.pem."
+            ) from exc
     license_guard = LicenseGuard(license_service)
 
     container.register_port("logger", logger)

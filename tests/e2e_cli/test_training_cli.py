@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -21,12 +22,40 @@ def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
 
 
 class TrainingCliTest(unittest.TestCase):
+    @staticmethod
+    def _write_minimal_pdf(path: Path) -> None:
+        if importlib.util.find_spec("pypdf") is not None:
+            from pypdf import PdfWriter
+
+            writer = PdfWriter()
+            writer.add_blank_page(width=595, height=842)
+            with path.open("wb") as fh:
+                writer.write(fh)
+            return
+        path.write_bytes(
+            b"%PDF-1.4\n"
+            b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+            b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >> endobj\n"
+            b"xref\n0 4\n0000000000 65535 f \n0000000010 00000 n \n0000000062 00000 n \n0000000117 00000 n \n"
+            b"trailer << /Root 1 0 R /Size 4 >>\nstartxref\n188\n%%EOF\n"
+        )
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self._env = dict(os.environ)
         self._env["QMTOOL_HOME"] = str(Path(self._tmp.name) / "home")
         init = run_cli("init", "--non-interactive", "--admin-password", "admin", env=self._env)
         assert init.returncode == 0, init.stderr + init.stdout
+        assert run_cli("login", "--username", "admin", "--password", "admin", env=self._env).returncode == 0
+        assert (
+            run_cli("users", "create", "--username", "user", "--password", "user", "--role", "User", env=self._env).returncode
+            == 0
+        )
+        assert (
+            run_cli("users", "create", "--username", "qmb", "--password", "qmb", "--role", "QMB", env=self._env).returncode
+            == 0
+        )
         run_cli("logout", env=self._env)
 
     def tearDown(self) -> None:
@@ -60,6 +89,21 @@ class TrainingCliTest(unittest.TestCase):
             "documents", "workflow-start", "--document-id", doc_id, "--version", "1", "--profile-id", "external_control", env=self._env
         )
         self.assertEqual(started.returncode, 0, msg=started.stderr + started.stdout)
+        with tempfile.TemporaryDirectory() as pdf_tmp:
+            pdf_path = Path(pdf_tmp) / "source.pdf"
+            self._write_minimal_pdf(pdf_path)
+            imp = run_cli(
+                "documents",
+                "import-pdf",
+                "--document-id",
+                doc_id,
+                "--version",
+                "1",
+                "--input",
+                str(pdf_path),
+                env=self._env,
+            )
+            self.assertEqual(imp.returncode, 0, msg=imp.stderr + imp.stdout)
         approved = run_cli("documents", "editing-complete", "--document-id", doc_id, "--version", "1", env=self._env)
         self.assertEqual(approved.returncode, 0, msg=approved.stderr + approved.stdout)
 

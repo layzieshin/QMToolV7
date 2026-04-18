@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 
 from interfaces.pyqt.runtime.host import RuntimeHost
@@ -7,6 +8,7 @@ from interfaces.pyqt.shell.main_window import MainWindow
 
 
 def main() -> int:
+    os.environ.setdefault("QMTOOL_LICENSE_MODE", "production")
     try:
         from PyQt6.QtWidgets import QApplication, QMessageBox, QProgressDialog
     except ImportError as exc:  # pragma: no cover - runtime guard
@@ -18,12 +20,12 @@ def main() -> int:
         raise SystemExit(2) from exc
 
     app = QApplication(sys.argv)
-    app.setApplicationName("QmTool")
-    app.setOrganizationName("QmTool")
+    app.setApplicationName("QM-Tool")
+    app.setOrganizationName("QM-Tool")
 
     host = RuntimeHost()
     progress = QProgressDialog("Initialisiere Runtime...", None, 0, 0)
-    progress.setWindowTitle("QmTool startet")
+    progress.setWindowTitle("QM-Tool startet")
     progress.setMinimumDuration(0)
     progress.setCancelButton(None)
     progress.show()
