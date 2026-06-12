@@ -45,7 +45,7 @@ def main() -> int:
         strict_mode = bool(args.strict or os.environ.get("QMTOOL_DOCTOR_STRICT", "0") == "1")
         return cmd_doctor(strict=strict_mode)
     if args.command == "license-check":
-        return cmd_license_check(args.module)
+        return cmd_license_check(args.module, verbose=bool(args.verbose))
     if args.command == "logs-backup":
         return cmd_logs_backup()
     if args.command == "login":

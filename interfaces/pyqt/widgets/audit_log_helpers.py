@@ -60,7 +60,7 @@ def build_admin_checks(container: RuntimeContainer, license_service, settings_se
     cfg_reg = settings_service.get_module_settings("registry")
     return {
         "app_home": str(app_home),
-        "license": license_service.validate(),
+        "license": license_service.safe_validate(),
         "required_ports": {
             "logger": container.has_port("logger"),
             "audit_logger": container.has_port("audit_logger"),

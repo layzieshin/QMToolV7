@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from getpass import getpass
 
+from qm_platform.licensing.license_status import build_license_diagnostics
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.runtime.paths import path_writable, resolve_home_path, runtime_home
 from qm_platform.settings.settings_service import SettingsService
@@ -122,7 +123,7 @@ def cmd_init(args) -> int:
 def cmd_doctor(*, strict: bool = False) -> int:
     container = build_container()
     lifecycle = runtime_bootstrap.register_core_modules(container)
-    lifecycle.start()
+    lifecycle.start(strict=False)
     app_home = container.get_port("app_home")
     settings_service: SettingsService = container.get_port("settings_service")
     usermanagement = container.get_port("usermanagement_service")
@@ -142,6 +143,14 @@ def cmd_doctor(*, strict: bool = False) -> int:
         checks[f"path:{key}:exists_or_parent"] = bool(path.exists() or path.parent.exists())
         checks[f"path:{key}:writable"] = path_writable(path)
     checks["license:readable"] = paths["license_file"].exists()
+    license_service = container.get_port("license_service")
+    checks.update(
+        build_license_diagnostics(
+            license_service,
+            licensed_modules=runtime_bootstrap.core_licensed_modules(),
+            known_tags=set(runtime_bootstrap.core_license_tags()),
+        )
+    )
     checks["settings:modules_registered"] = all(
         module_id in settings_service.registry.list_module_ids()
         for module_id in ("usermanagement", "documents", "registry", "signature", "training")

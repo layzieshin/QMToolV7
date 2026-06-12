@@ -48,7 +48,7 @@ def evaluate_golive_gate(*, documents_db_path: Path | None, registry_db_path: Pa
     ci_workflow_path = Path(".github/workflows/ci-gates.yml")
     checks: dict[str, bool] = {
         "ci_workflow_present": ci_workflow_path.exists(),
-        "license_generator_present": Path("scripts/license_generate.py").exists(),
+        "internal_license_issuer_present": Path("tools/internal_license_issuer/create_license.py").exists(),
         "recovery_drill_script_present": Path("scripts/registry_recovery_drill.py").exists(),
         "profile_coverage_guard_present": Path("tests/modules/test_documents_profile_coverage_guard.py").exists(),
         "central_governance_service_enforced": _governance_guard_enforced(),

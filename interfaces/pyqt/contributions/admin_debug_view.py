@@ -34,7 +34,7 @@ class AdminDebugWidget(QWidget):
         payload = {
             "app_home": str(app_home),
             "ports": sorted(list(getattr(self._container, "_ports", {}).keys())),
-            "license_validation": license_service.validate(),
+            "license_validation": license_service.safe_validate(),
             "has_ports": {
                 "event_bus": self._container.has_port("event_bus"),
                 "audit_logger": self._container.has_port("audit_logger"),

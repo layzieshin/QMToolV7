@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from qm_platform.licensing.licensed_proxy import LicensedPortProxy
+
 from .api import TrainingAdminApi, TrainingApi
 from .document_tag_service import DocumentTagService
 from .exemption_service import ExemptionService
@@ -106,48 +108,19 @@ def register_training_ports(container) -> None:
         report_service=report_service,
     )
 
+    container.register_port(
+        "training_runtime_deps",
+        {
+            "snapshot_repo": snapshot_repo,
+            "documents_read_api": documents_read_api,
+            "event_bus": event_bus,
+        },
+    )
+
+    if container.has_port("license_guard"):
+        guard = container.get_port("license_guard")
+        training_api = LicensedPortProxy(training_api, guard, "training")
+        training_admin_api = LicensedPortProxy(training_admin_api, guard, "training")
+
     container.register_port("training_api", training_api)
     container.register_port("training_admin_api", training_admin_api)
-
-    # --- Event subscription: read confirmation from documents module ---
-    def _on_read_confirmed(envelope) -> None:
-        payload = envelope.payload
-        user_id = payload.get("user_id")
-        document_id = payload.get("document_id")
-        version = payload.get("version")
-        if not user_id or not document_id or version is None:
-            return
-        try:
-            receipt = documents_read_api.get_read_receipt(user_id, document_id, int(version))
-        except Exception:
-            return
-        if receipt is None:
-            return
-        if str(getattr(receipt, "user_id", "")) != str(user_id):
-            return
-        if str(getattr(receipt, "document_id", "")) != str(document_id):
-            return
-        if int(getattr(receipt, "version", -1)) != int(version):
-            return
-        from .contracts import TrainingProgress
-
-        progress = snapshot_repo.get_progress(user_id, document_id, int(version))
-        if progress is not None and progress.read_confirmed_at is not None:
-            return  # already confirmed
-        from datetime import datetime, timezone
-
-        now = datetime.now(timezone.utc)
-        new_progress = TrainingProgress(
-            user_id=user_id,
-            document_id=document_id,
-            version=int(version),
-            read_confirmed_at=now,
-            quiz_passed_at=progress.quiz_passed_at if progress else None,
-            last_score=progress.last_score if progress else None,
-            quiz_attempts_count=progress.quiz_attempts_count if progress else 0,
-        )
-        snapshot_repo.upsert_progress(new_progress)
-
-    subscribe = getattr(event_bus, "subscribe", None)
-    if callable(subscribe):
-        subscribe("domain.documents.read.confirmed.v1", _on_read_confirmed)

@@ -10,10 +10,22 @@ python packaging/build_onedir.py
 
 Produces:
 
-- `packaging/dist_output/QM-Tool/` — `QM-Tool.exe`, `_internal/`, `license/license.json`, and `storage/platform/license/` (prod signing keys generated at build time).
+- `packaging/dist_output/QM-Tool/` — `QM-Tool.exe`, `_internal/`, bundled `prod_ed25519_public.pem` only (no private keys, no license issuer).
 - `packaging/dist_output/QM-Tool.zip` — unpack anywhere and run `QM-Tool.exe`.
 
-Runtime data (`storage/`, `users.db`, logs, session) is created **next to the executable** unless `QMTOOL_HOME` is set.
+After PyInstaller, `packaging/verify_customer_bundle.py` runs automatically. The build **fails** if private keys or `tools/internal_license_issuer/` appear in the bundle.
+
+Runtime data (`storage/`, users DB, logs, session, `license/license.json`) is created **next to the executable** unless `QMTOOL_HOME` is set. Customers import a license via the app settings UI.
+
+## Customer license
+
+Licenses are issued offline with the internal tool (not shipped):
+
+```bash
+python tools/internal_license_issuer/create_license.py create-license ...
+```
+
+See `docs/LICENSE_SPEC.md` and `tools/internal_license_issuer/README.md`.
 
 ## First login
 
@@ -21,4 +33,4 @@ The default seeded account is `admin` / `admin` (when `usermanagement.seed_mode`
 
 ## Development license
 
-For local development without a shipped license, run with `QMTOOL_LICENSE_MODE=dev` (CLI default). The PyQt entry sets `QMTOOL_LICENSE_MODE` to `production` unless already set; ship a valid `license/license.json` with the bundle.
+For local development, use `QMTOOL_LICENSE_MODE=dev` (CLI default). Dev mode auto-provisions a signed dev license for `training` on the local machine. PyQt defaults to `production`; without a customer license the app still starts but `training` remains locked.

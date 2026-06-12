@@ -127,8 +127,10 @@ CLI wiring currently creates a local dev license for deterministic local startup
 - `interfaces/cli/main.py`
 - controlled by `QMTOOL_LICENSE_MODE` (`dev`/`auto` enables local dev autoprovisioning; other values disable implicit generation).
 
-Internal licensing tool (not customer-facing):
-- `python scripts/license_generate.py --output <license.json> --private-key-pem <issuer.pem> --key-id <id> --license-id <id> --issued-to <name> --customer-id <id> --expires-at <iso8601> --enable-module <tag> [--enable-module <tag> ...]`
+Licensing spec (canonical): `docs/LICENSE_SPEC.md`
+
+Internal license issuer (not customer-facing, not bundled):
+- `python tools/internal_license_issuer/create_license.py create-license --type trial|full ...`
 
 ## 8) Event Bus Usage
 

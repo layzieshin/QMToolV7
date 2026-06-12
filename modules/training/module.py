@@ -62,6 +62,9 @@ TRAINING_SETTINGS_CONTRIBUTION = SettingsContribution(
 
 
 def start_training_module(container) -> None:
+    from .eventing import subscribe_training_events
+
+    subscribe_training_events(container)
     logger = container.get_port("logger")
     logger.info("training", "module started")
     container.get_port("event_bus").publish(
@@ -95,7 +98,7 @@ def create_training_module_contract() -> ModuleContract:
         required_capabilities=[],
         provided_capabilities=["training.assignment.manage", "training.quiz.execute"],
         settings_contribution=TRAINING_SETTINGS_CONTRIBUTION,
-        license_tag=None,
+        license_tag="training",
         register=register_training_ports,
         start=start_training_module,
         stop=stop_training_module,

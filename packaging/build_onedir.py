@@ -1,4 +1,4 @@
-"""Build a Windows onedir GUI bundle (PyInstaller) + production license + ZIP.
+"""Build a Windows onedir GUI bundle (PyInstaller) + ZIP.
 
 Run from repository root:
   python packaging/build_onedir.py
@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ICON_PNG = ROOT / "packaging" / "icons" / "app_icon.png"
 ICON_ICO = ROOT / "packaging" / "icons" / "app.ico"
 ENTRY = ROOT / "interfaces" / "pyqt" / "main.py"
-ISSUE_LICENSE = ROOT / "scripts" / "issue_production_license.py"
+VERIFY_BUNDLE = ROOT / "packaging" / "verify_customer_bundle.py"
+PROD_PUBLIC_KEY = ROOT / "qm_platform" / "licensing" / "keys" / "prod_ed25519_public.pem"
 
 # PyInstaller does not ship *.sql / *.json next to packages by default; mirror repo paths under _internal.
 _ADD_DATA_SEP = ";" if os.name == "nt" else ":"
@@ -30,6 +31,7 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
     ("modules/signature/schema.sql", "modules/signature"),
     ("modules/training/schema.sql", "modules/training"),
     ("interfaces/pyqt/shell/styles.qss", "interfaces/pyqt/shell"),
+    ("qm_platform/licensing/keys/prod_ed25519_public.pem", "qm_platform/licensing/keys"),
 ]
 
 
@@ -51,6 +53,8 @@ def _png_to_ico() -> None:
 
 def main() -> int:
     os.chdir(ROOT)
+    if not PROD_PUBLIC_KEY.is_file():
+        raise SystemExit(f"Missing production public key: {PROD_PUBLIC_KEY}")
     _png_to_ico()
 
     dist_out = ROOT / "packaging" / "dist_output"
@@ -96,11 +100,12 @@ def main() -> int:
     if not exe.is_file():
         raise SystemExit(f"Expected output missing: {exe}")
 
-    subprocess.check_call([sys.executable, str(ISSUE_LICENSE), "--output-dir", str(bundle_dir)], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(VERIFY_BUNDLE), str(bundle_dir)], cwd=ROOT)
 
     for rel in (
         "storage/platform/logs",
         "storage/platform/session",
+        "license",
     ):
         (bundle_dir / rel).mkdir(parents=True, exist_ok=True)
 

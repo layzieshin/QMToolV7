@@ -17,7 +17,7 @@ class HomeDashboardWidget(QWidget):
         self._container = container
         self._um = container.get_port("usermanagement_service")
         self._pool = container.get_port("documents_pool_api")
-        self._training = container.get_port("training_api")
+        self._training = container.get_port("training_api") if container.has_port("training_api") else None
         self._presenter = HomeDashboardPresenter()
 
         layout = QVBoxLayout(self)
@@ -92,7 +92,12 @@ class HomeDashboardWidget(QWidget):
         tasks = self._pool.list_tasks_for_user(user.user_id, effective_role)
         review_items = self._pool.list_review_actions_for_user(user.user_id, effective_role)
         recent_docs = self._pool.list_recent_documents_for_user(user.user_id, effective_role)
-        training_required = self._training.list_training_inbox_for_user(user.user_id, open_only=True)
+        training_required = []
+        if self._training is not None:
+            try:
+                training_required = self._training.list_training_inbox_for_user(user.user_id, open_only=True)
+            except Exception:  # noqa: BLE001
+                training_required = []
         self._set(
             "tasks",
             len(tasks),

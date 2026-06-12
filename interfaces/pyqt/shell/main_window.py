@@ -154,38 +154,24 @@ class MainWindow(QMainWindow):
 
     def _license_availability(self) -> dict[str, tuple[bool, str]]:
         """
-        Returns contribution availability based on license and dependency hints.
-        This is GUI-only decoration and does not alter runtime behavior.
+        Returns contribution availability for license-gated modules.
+        GUI decoration only; runtime enforcement is in lifecycle + LicensedPortProxy.
         """
+        from qm_platform.runtime import bootstrap as runtime_bootstrap
+
         container = self._host.require_container()
         result: dict[str, tuple[bool, str]] = {}
         if not container.has_port("license_service"):
             return result
         license_service = container.get_port("license_service")
-        try:
-            signature_ok = bool(license_service.is_module_allowed("signature"))
-        except Exception as exc:  # noqa: BLE001
-            signature_ok = False
-            result["signature.workspace"] = (False, f"Lizenzprüfung fehlgeschlagen: {exc}")
-        else:
-            if not signature_ok:
-                result["signature.workspace"] = (False, "Signatur-Lizenz fehlt")
-        try:
-            documents_ok = bool(license_service.is_module_allowed("documents"))
-        except Exception as exc:  # noqa: BLE001
-            documents_ok = False
-            result["documents.workflow"] = (False, f"Dokumenten-Lizenzprüfung fehlgeschlagen: {exc}")
-            result["documents.pool"] = (False, f"Dokumenten-Lizenzprüfung fehlgeschlagen: {exc}")
-        else:
-            if not documents_ok:
-                result["documents.workflow"] = (False, "Dokumenten-Lizenz fehlt")
-                result["documents.pool"] = (False, "Dokumenten-Lizenz fehlt")
-        if not signature_ok:
-            # Documents module depends on signature_api; expose dependency state in GUI.
-            if "documents.workflow" not in result:
-                result["documents.workflow"] = (False, "Abhängig blockiert: Signatur-Lizenz fehlt")
-            if "documents.pool" not in result:
-                result["documents.pool"] = (False, "Abhängig blockiert: Signatur-Lizenz fehlt")
+        licensed_by_module = {module_id: tag for module_id, tag in runtime_bootstrap.core_licensed_modules()}
+        for contribution in self._all_contributions.values():
+            tag = licensed_by_module.get(contribution.module_id)
+            if not tag:
+                continue
+            reason = license_service.block_reason_for_module(tag)
+            if reason:
+                result[contribution.contribution_id] = (False, reason)
         return result
 
     def _refresh_shell_for_session(self) -> None:

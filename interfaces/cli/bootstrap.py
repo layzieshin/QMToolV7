@@ -12,13 +12,17 @@ from qm_platform.events.event_bus import EventBus
 from qm_platform.licensing.keyring import PublicKeyring
 from qm_platform.licensing.license_guard import LicenseGuard
 from qm_platform.licensing.license_policy import LicensePolicy
+from qm_platform.licensing.license_schema import SCHEMA_VERSION
 from qm_platform.licensing.license_service import (
     LicenseExpiredError,
     LicenseInvalidError,
+    LicenseMachineMismatchError,
     LicenseMissingError,
     LicenseService,
+    LicenseTypeError,
 )
 from qm_platform.licensing.license_verifier import LicenseVerifier
+from qm_platform.licensing.machine_id import get_machine_id
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.backup_reminder import BackupReminderService
 from qm_platform.logging.log_backup_service import LogBackupService
@@ -30,6 +34,45 @@ from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
 from qm_platform.settings.settings_store import SettingsStore
+
+
+def _prod_public_key_path(resources: Path) -> Path:
+    return resources / "qm_platform" / "licensing" / "keys" / "prod_ed25519_public.pem"
+
+
+def _register_public_keys(keyring: PublicKeyring, *, license_mode: str, app_home: Path, resources: Path) -> None:
+    bundled_prod = _prod_public_key_path(resources)
+    if bundled_prod.exists():
+        keyring.add_key("prod-key", bundled_prod.read_text(encoding="utf-8"))
+    legacy_prod = resolve_home_path(app_home, "storage/platform/license/prod_ed25519_public.pem")
+    if legacy_prod.exists() and not keyring.has_key("prod-key"):
+        keyring.add_key("prod-key", legacy_prod.read_text(encoding="utf-8"))
+    if license_mode in ("dev", "auto"):
+        dev_public_key = resolve_home_path(app_home, "storage/platform/license/dev_ed25519_public.pem")
+        if dev_public_key.exists():
+            keyring.add_key("dev-key", dev_public_key.read_text(encoding="utf-8"))
+
+
+def _sign_dev_payload(payload: dict, private_key) -> dict:
+    signed = dict(payload)
+    message = LicenseVerifier.canonical_payload_bytes(signed)
+    signed["signature"] = base64.b64encode(private_key.sign(message)).decode("ascii")
+    return signed
+
+
+def _dev_license_payload(*, enabled_modules: list[str], machine_id: str) -> dict:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "license_id": "DEV-LICENSE-001",
+        "license_type": "full",
+        "issued_to": "Local Development",
+        "customer_id": "DEV",
+        "issued_at": "2026-01-01T00:00:00+00:00",
+        "expires_at": None,
+        "enabled_modules": sorted(enabled_modules),
+        "machine_id": machine_id,
+        "key_id": "dev-key",
+    }
 
 
 def _ensure_dev_license(license_file: Path, keyring: PublicKeyring) -> None:
@@ -57,35 +100,25 @@ def _ensure_dev_license(license_file: Path, keyring: PublicKeyring) -> None:
     keyring.add_key("dev-key", public_pem)
 
     private_key = serialization.load_pem_private_key(private_key_file.read_bytes(), password=None)
-    desired_modules = set(runtime_bootstrap.core_license_tags())
+    desired_modules = sorted(runtime_bootstrap.core_license_tags())
+    machine_id = get_machine_id()
 
     if license_file.exists():
         existing = json.loads(license_file.read_text(encoding="utf-8"))
-        modules = set(existing.get("enabled_modules", []))
-        if desired_modules.issubset(modules):
+        needs_rewrite = (
+            int(existing.get("schema_version", 0)) != SCHEMA_VERSION
+            or existing.get("machine_id") != machine_id
+            or set(existing.get("enabled_modules", [])) != set(desired_modules)
+        )
+        if not needs_rewrite:
             return
-        existing["enabled_modules"] = sorted(modules | desired_modules)
-        message = LicenseVerifier.canonical_payload_bytes(existing)
-        existing["signature"] = base64.b64encode(private_key.sign(message)).decode("ascii")
-        license_file.write_text(json.dumps(existing, indent=2, ensure_ascii=True), encoding="utf-8")
-        return
+        payload = _dev_license_payload(enabled_modules=desired_modules, machine_id=machine_id)
+    else:
+        payload = _dev_license_payload(enabled_modules=desired_modules, machine_id=machine_id)
 
-    payload = {
-        "license_id": "DEV-LICENSE-001",
-        "issued_to": "Local Development",
-        "customer_id": "DEV",
-        "plan": "dev",
-        "issued_at": "2026-01-01T00:00:00+00:00",
-        "expires_at": "2099-01-01T00:00:00+00:00",
-        "enabled_modules": sorted(desired_modules),
-        "device_binding": {"mode": "optional"},
-        "constraints": {},
-        "key_id": "dev-key",
-    }
-    message = LicenseVerifier.canonical_payload_bytes(payload)
-    payload["signature"] = base64.b64encode(private_key.sign(message)).decode("ascii")
+    signed = _sign_dev_payload(payload, private_key)
     license_file.parent.mkdir(parents=True, exist_ok=True)
-    license_file.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    license_file.write_text(json.dumps(signed, indent=2, ensure_ascii=True), encoding="utf-8")
 
 
 def build_container() -> RuntimeContainer:
@@ -102,34 +135,24 @@ def build_container() -> RuntimeContainer:
     license_mode = os.environ.get("QMTOOL_LICENSE_MODE", "dev").strip().lower()
     if license_mode in ("dev", "auto"):
         _ensure_dev_license(license_file, keyring)
-    else:
-        dev_public_key = resolve_home_path(app_home, "storage/platform/license/dev_ed25519_public.pem")
-        if dev_public_key.exists():
-            keyring.add_key("dev-key", dev_public_key.read_text(encoding="utf-8"))
-        prod_public_key = resolve_home_path(app_home, "storage/platform/license/prod_ed25519_public.pem")
-        if prod_public_key.exists():
-            keyring.add_key("prod-key", prod_public_key.read_text(encoding="utf-8"))
+    _register_public_keys(keyring, license_mode=license_mode, app_home=app_home, resources=resources)
+
     license_service = LicenseService(
         license_file=license_file,
         verifier=LicenseVerifier(keyring),
-        policy=LicensePolicy(),
+        policy=LicensePolicy(local_machine_id=get_machine_id()),
     )
     if license_mode not in ("dev", "auto"):
         try:
             license_service.validate()
-        except LicenseMissingError as exc:
-            logger.error("platform", f"license missing: {exc}")
-            raise RuntimeError(
-                f"Produktionslizenz fehlt: erwartete Datei {license_file}. "
-                "Legen Sie eine signierte license/license.json ab oder setzen Sie QMTOOL_LICENSE_MODE=dev für die Entwicklung."
-            ) from exc
-        except (LicenseInvalidError, LicenseExpiredError) as exc:
-            logger.error("platform", f"license invalid: {exc}")
-            raise RuntimeError(
-                f"Produktionslizenz ungültig: {exc}. "
-                "Prüfen Sie license/license.json und den passenden öffentlichen Schlüssel unter "
-                "storage/platform/license/prod_ed25519_public.pem."
-            ) from exc
+        except (
+            LicenseMissingError,
+            LicenseInvalidError,
+            LicenseExpiredError,
+            LicenseTypeError,
+            LicenseMachineMismatchError,
+        ) as exc:
+            logger.warning("platform", f"license not valid at startup (app continues): {exc}")
     license_guard = LicenseGuard(license_service)
 
     container.register_port("logger", logger)
@@ -161,4 +184,3 @@ def build_container() -> RuntimeContainer:
     container.register_port("app_home", app_home)
     container.register_port("resource_root", resources)
     return container
-

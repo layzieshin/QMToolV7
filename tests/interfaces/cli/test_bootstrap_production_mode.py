@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import os
 import tempfile
 import unittest
@@ -9,18 +8,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _load_issue_module():
-    path = _REPO_ROOT / "scripts" / "issue_production_license.py"
-    spec = importlib.util.spec_from_file_location("issue_production_license", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("cannot load issue_production_license")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 class BootstrapProductionModeTest(unittest.TestCase):
-    def test_missing_license_raises_clear_message(self) -> None:
+    def test_missing_license_does_not_block_startup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home.mkdir()
@@ -29,30 +18,33 @@ class BootstrapProductionModeTest(unittest.TestCase):
             os.environ["QMTOOL_LICENSE_MODE"] = "production"
             try:
                 from interfaces.cli.bootstrap import build_container
+                from qm_platform.runtime import bootstrap as runtime_bootstrap
 
-                with self.assertRaises(RuntimeError) as ctx:
-                    build_container()
-                self.assertIn("Produktionslizenz", str(ctx.exception))
+                container = build_container()
+                lifecycle = runtime_bootstrap.register_core_modules(container)
+                lifecycle.start(strict=False)
+                self.assertIn("training", lifecycle.failed_modules())
             finally:
                 os.environ.clear()
                 os.environ.update(old_environ)
 
-    def test_valid_production_license_loads(self) -> None:
+    def test_dev_autogen_enables_training_module(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home.mkdir()
-            mod = _load_issue_module()
-            mod.issue_bundle(home)
             old_environ = os.environ.copy()
             os.environ["QMTOOL_HOME"] = str(home)
-            os.environ["QMTOOL_LICENSE_MODE"] = "production"
+            os.environ["QMTOOL_LICENSE_MODE"] = "dev"
             try:
                 from interfaces.cli.bootstrap import build_container
+                from qm_platform.runtime import bootstrap as runtime_bootstrap
 
                 container = build_container()
+                lifecycle = runtime_bootstrap.register_core_modules(container)
+                lifecycle.start(strict=False)
+                self.assertNotIn("training", lifecycle.failed_modules())
                 lic = container.get_port("license_service")
-                payload = lic.validate()
-                self.assertEqual(payload.get("plan"), "production")
+                self.assertTrue(lic.is_module_allowed("training"))
             finally:
                 os.environ.clear()
                 os.environ.update(old_environ)

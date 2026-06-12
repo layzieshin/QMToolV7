@@ -11,6 +11,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/MODULES_DEVELOPER_GUIDE.md`
 - `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`
 - `docs/OPERATIONS_CANONICAL.md`
+- `docs/LICENSE_SPEC.md`
 - `docs/TEST_SMOKE_GATES.md`
 
 ## P1 (important, domain/process detail)

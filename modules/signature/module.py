@@ -62,7 +62,7 @@ def create_signature_module_contract() -> ModuleContract:
         required_capabilities=["auth.authenticate"],
         provided_capabilities=["signature.visual.sign", "signature.api.fixed_position"],
         settings_contribution=SIGNATURE_SETTINGS_CONTRIBUTION,
-        license_tag="signature",
+        license_tag=None,
         register=register_signature_ports,
         start=start_signature_module,
         stop=stop_signature_module,

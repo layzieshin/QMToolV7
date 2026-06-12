@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from modules.training.eventing import subscribe_training_events
 from modules.training.wiring import register_training_ports
 from qm_platform.events.event_bus import EventBus
 from qm_platform.events.event_envelope import EventEnvelope
@@ -72,6 +73,7 @@ class TrainingReadEventReceiptVerificationTest(unittest.TestCase):
             app_home = Path(tmp)
             c = self._prepare_container(app_home, _ReadApiMissing())
             register_training_ports(c)
+            subscribe_training_events(c)
             event_bus = c.get_port("event_bus")
             event_bus.publish(
                 EventEnvelope.create(
@@ -87,6 +89,7 @@ class TrainingReadEventReceiptVerificationTest(unittest.TestCase):
             app_home = Path(tmp)
             c = self._prepare_container(app_home, _ReadApiPresent())
             register_training_ports(c)
+            subscribe_training_events(c)
             event_bus = c.get_port("event_bus")
             event_bus.publish(
                 EventEnvelope.create(
