@@ -34,6 +34,14 @@ def core_license_tags() -> list[str]:
     return sorted(str(tag) for tag in tags)
 
 
+def core_licensed_modules() -> list[tuple[str, str]]:
+    return [
+        (contract.module_id, str(contract.license_tag))
+        for contract in core_module_contracts()
+        if contract.license_tag
+    ]
+
+
 def register_core_modules(container: RuntimeContainer) -> LifecycleManager:
     lifecycle = LifecycleManager(container)
     for contract in core_module_contracts():
