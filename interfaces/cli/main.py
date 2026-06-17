@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 
+from interfaces.cli.commands.incident_management_commands import cmd_incident
 from interfaces.cli.commands.documents_commands import cmd_documents
 from interfaces.cli.commands.platform_commands import cmd_health, cmd_license_check, cmd_logs_backup
 from interfaces.cli.commands.runtime_commands import cmd_init, cmd_doctor
@@ -11,6 +12,7 @@ from interfaces.cli.commands.settings_commands import cmd_settings
 from interfaces.cli.commands.signature_commands import cmd_sign, cmd_sign_visual
 from interfaces.cli.commands.training_commands import cmd_training
 from interfaces.cli.commands.users_commands import cmd_users
+from interfaces.cli.parsers.incident_management_parsers import register_incident_management_parsers
 from interfaces.cli.parsers.documents_parsers import register_documents_parsers
 from interfaces.cli.parsers.runtime_parsers import register_runtime_parsers
 from interfaces.cli.parsers.session_parsers import register_session_parsers
@@ -30,6 +32,7 @@ def _build_parser() -> argparse.ArgumentParser:
     register_signature_parsers(sub)
     register_documents_parsers(sub)
     register_training_parsers(sub)
+    register_incident_management_parsers(sub)
     return parser
 
 
@@ -64,6 +67,8 @@ def main() -> int:
         return cmd_documents(args)
     if args.command == "training":
         return cmd_training(args)
+    if args.command == "incident":
+        return cmd_incident(args)
     return 1
 
 

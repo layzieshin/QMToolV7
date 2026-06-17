@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from modules.documents.module import create_documents_module_contract
+from modules.incident_management.module import create_incident_management_module_contract
 from modules.registry.module import create_registry_module_contract
 from modules.signature.module import create_signature_module_contract
 from modules.training.module import create_training_module_contract
@@ -26,6 +27,7 @@ def core_module_contracts() -> list[ModuleContract]:
         create_registry_module_contract(),
         create_documents_module_contract(),
         create_training_module_contract(),
+        create_incident_management_module_contract(),
     ]
 
 

@@ -5,6 +5,13 @@ GOVERNANCE_CRITICAL_KEYS: dict[str, frozenset[str]] = {
     "documents": frozenset({"default_profile_id", "allow_custom_profiles", "profiles_file"}),
     "signature": frozenset({"require_password", "master_key_path"}),
     "training": frozenset({"quiz_master_key_path"}),
+    "incident_management": frozenset({
+        "criticality_groups",
+        "standard_deadlines",
+        "effectiveness_delay",
+        "capa_required_rules",
+        "report_templates",
+    }),
 }
 
 

@@ -2,6 +2,12 @@
 
 This file defines document priority and decision authority for the repository.
 
+## Entry points (start here)
+
+- `AGENTS.md` — entry point for AI-assisted and human work (environment, architecture essentials, canonical links)
+- `.cursor/rules/00-agent-workflow.mdc` — auto-loaded agent workflow + verification commands (single source of truth)
+- `CONTRIBUTING.md` — developer entry point (setup + documentation map)
+
 ## P0 (canonical, decision-making)
 
 - `README.md`
@@ -9,6 +15,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/GUI_ARCHITECTURE_PROJECT.md`
 - `docs/PYQT_CONTRIBUTIONS_REFERENCE.md`
 - `docs/MODULES_DEVELOPER_GUIDE.md`
+- `docs/MODULE_INTEGRATION_POLICY.md`
 - `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`
 - `docs/OPERATIONS_CANONICAL.md`
 - `docs/LICENSE_SPEC.md`
@@ -17,12 +24,15 @@ This file defines document priority and decision authority for the repository.
 ## P1 (important, domain/process detail)
 
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
+- `docs/INCIDENT_MANAGEMENT_ARCHITECTURE_CONTRACT.md`
 - `docs/DOCUMENTS_CLI_REFERENCE.md`
 - `docs/DOCUMENTS_TEST_COVERAGE.md`
 - `docs/MODULES_USER_GUIDE.md`
 - `docs/QMToolV7_ENTWICKLUNG.md`
 
-## P2 (legacy/history or roadmap support)
+## P2 (legacy/history or roadmap support) — not for onboarding
+
+These are historical/roadmap references. For onboarding use the entry points and P0 docs above.
 
 - `docs/DEVGUIDE.md`
 - `docs/AGENTS_PROJECT.md`

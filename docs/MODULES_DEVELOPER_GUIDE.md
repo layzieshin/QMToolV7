@@ -6,6 +6,8 @@ Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
 
 This guide summarizes each module for implementation and extension work.
 
+**New module onboarding checklist:** `docs/MODULE_INTEGRATION_POLICY.md`
+
 Normative architecture contract for document control:
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
 User-facing module operations:
@@ -467,3 +469,58 @@ Policy:
 - `tests/modules/test_training_event_contracts.py`
 - `tests/modules/test_training_module_ports.py`
 - `tests/e2e_cli/test_training_cli.py`
+
+## incident_management
+
+Architecture contract: `docs/INCIDENT_MANAGEMENT_ARCHITECTURE_CONTRACT.md`
+
+### Ports / capabilities
+
+- Provided ports:
+  - `incident_management_api`
+- Required ports:
+  - `logger`, `audit_logger`, `event_bus`, `settings_service`, `usermanagement_service`, `app_home`
+- Provided capabilities:
+  - `incident_management.incident.manage`
+  - `incident_management.capa.manage`
+  - `incident_management.review.manage`
+- License tag: `incident_management`
+
+### Settings
+
+- Contribution in `modules/incident_management/module.py`
+
+| Key | Governance class | Notes |
+| --- | --- | --- |
+| `incident_db_path` | operational | SQLite store path |
+| `artifacts_root` | operational | Attachment and report storage |
+| `categories` | operational | Incident category list |
+| `label_groups` | operational | Label grouping config |
+| `criticality_groups` | governance_critical | Resolved on assess (event `criticality_group`); not a second role source |
+| `standard_deadlines` | governance_critical | Default due dates for actions (`immediate_action_days`, `corrective_action_days`, `preventive_action_days`, `qmb_review_days`) |
+| `effectiveness_delay` | governance_critical | Days until planned effectiveness review when no explicit date |
+| `capa_required_rules` | governance_critical | CAPA trigger rules in `capa_rules.derive_capa_required` |
+| `report_templates` | governance_critical | Default template IDs on `ReportResult.report_template_id` |
+
+Leitung (module-internal role) is assigned via `assign_module_role` / `module_role_assignments` in the incident DB — not via a parallel settings list.
+
+Module settings may be changed by **Admin or QMB** through `incident_management_api.set_module_settings`. Governance-critical keys require `acknowledge_governance_change=True` (platform `SettingsService` gate).
+
+### Events
+
+- `domain.incident_management.incident.submitted.v1`
+- `domain.incident_management.inquiry.opened.v1` / `.answered.v1`
+- `domain.incident_management.incident.assessed.v1`
+- `domain.incident_management.capa.required.v1` / `.updated.v1`
+- `domain.incident_management.action.created.v1` / `.completed.v1`
+- `domain.incident_management.effectiveness.planned.v1` / `.reviewed.v1`
+- `domain.incident_management.leadership.forwarded.v1` / `.acknowledged.v1`
+- `domain.incident_management.management_review.created.v1` / `.in_discussion.v1` / `.acknowledged.v1`
+- `domain.incident_management.report.generated.v1`
+- `domain.incident_management.incident.closed.v1` / `.archived.v1`
+
+### Tests / extension points
+
+- `tests/modules/test_incident_management_*.py`
+- `tests/e2e_cli/test_incident_management_cli_*.py`
+- `tests/interfaces/test_incident_management_pyqt_navigation_smoke.py`

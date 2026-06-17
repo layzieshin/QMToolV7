@@ -22,6 +22,7 @@ This reference documents active PyQt contributions in `interfaces/pyqt/*` with t
 | `documents.pool` | `interfaces/pyqt/contributions/documents_pool_view.py` | Refresh, search/select, read/open | Released documents list and read action | `usermanagement_service`, `documents_pool_api` | `ReleasedDocumentItem`, `DocumentStatus`, artifact DTOs |
 | `signature.workspace` | `interfaces/pyqt/contributions/signature_view.py` | Input/signature file pickers, canvas dialog, sign trigger, profile select | Ad-hoc sign result, profile preview, audit conflict feedback | `signature_api`, `usermanagement_service`, optional `audit_logger` | `SignRequest`, `SignResult`, `SignaturePlacementInput`, `LabelLayoutInput`, `UserSignatureTemplate` |
 | `training.workspace` | `interfaces/pyqt/contributions/training_placeholder.py` | Assignment reload, read confirm, quiz start/submit, admin actions | Training overview updates, quiz sessions/results, admin assignment sync | `training_api`, `training_admin_api`, `usermanagement_service` | `TrainingAssignment`, `TrainingOverviewItem`, `OpenTrainingAssignmentItem`, `QuizSession`, `QuizResult` |
+| `incident_management.workspace` | `interfaces/pyqt/contributions/incident_management_views.py` | Area navigation, report form preview/submit, register/my-incidents tables, QMB assess wizard | Incident submissions, list reloads, QMB assessments | `incident_management_api`, `usermanagement_service` | `IncidentSubmission`, `IncidentAssessmentInput`, `IncidentCase`, `IncidentListFilter` |
 | `platform.settings_admin` | `interfaces/pyqt/contributions/settings_view.py` | Profile edits, password change, settings save/load, signature config edits, license input | Persisted module settings, signature profile updates, license updates | `usermanagement_service`, `settings_service`, `signature_api`, `license_service`, `app_home` | `AuthenticatedUser`, signature template/layout DTOs, module settings payloads |
 | `platform.audit_logs` | `interfaces/pyqt/contributions/audit_logs_view.py` | Filter inputs, export actions, admin checks | Filtered tables, CSV/PDF exports, check results | `registry_api`, `documents_service`, `documents_pool_api`, `license_service`, `settings_service`, `log_query_service`, `app_home` | audit/log query rows from `qm_platform/logging/log_query_service.py` |
 | `platform.admin_debug` | `interfaces/pyqt/contributions/admin_debug_view.py` | Manual reload button | Raw technical payload panel for admin-only debugging | `app_home`, `license_service` | runtime/license payload dictionaries (technical only) |
@@ -39,6 +40,7 @@ This reference documents active PyQt contributions in `interfaces/pyqt/*` with t
   - `interfaces/pyqt/presenters/home_presenter.py`
   - `interfaces/pyqt/presenters/documents_workflow_presenter.py`
   - `interfaces/pyqt/presenters/training_presenter.py`
+  - `interfaces/pyqt/presenters/incident_management_presenter.py`
   - `interfaces/pyqt/presenters/settings_presenter.py`
 - Contribution widgets own rendering and signal wiring.
 - Presenters own formatting/routing-policy/action-visibility helpers.

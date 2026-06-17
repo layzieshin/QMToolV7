@@ -15,6 +15,7 @@ from interfaces.pyqt.contributions import (
     documents_pool_view,
     documents_workflow_contribution,
     home_view,
+    incident_management_views,
     settings_view,
     signature_view,
     training_placeholder,
@@ -29,6 +30,7 @@ def all_contributions() -> list[QtModuleContribution]:
     items.extend(documents_pool_view.contributions())
     items.extend(signature_view.contributions())
     items.extend(training_placeholder.contributions())
+    items.extend(incident_management_views.contributions())
     items.extend(settings_view.contributions())
     items.extend(audit_logs_view.contributions())
     items.extend(admin_debug_view.contributions())

@@ -110,7 +110,8 @@ Manage document lifecycle from planning to archive with strict role and status c
 - Signature-required GUI step blocked (`documents.workflow`):
   - For annual extension and required transitions, a callable signature backend is mandatory; if unavailable, the action is intentionally aborted.
 - `Keine PDF-Datei fuer Signatur gefunden` / DOCX fallback errors:
-  - Ensure a PDF artifact exists first; DOCX->PDF fallback requires Windows + `docx2pdf` and an available MS Word installation.
+  - Ensure a PDF artifact exists first, or import PDF directly instead of DOCX.
+  - DOCX-to-PDF conversion requires **Windows** and **Microsoft Word** (COM). Pure PDF import skips conversion.
 
 ### Migration note for users
 
@@ -180,6 +181,35 @@ Assign mandatory document reading, collect read confirmations, run quizzes, and 
   - Admin quiz import for this document/version is missing.
 - Superseded version behavior:
   - Older active assignments become `SUPERSEDED`; only latest approved version remains active requirement.
+
+## incident_management
+
+### Purpose
+
+Record errors, deviations, near-misses and risks; run QMB assessment, CAPA/RCA workflows, effectiveness reviews, leadership acknowledgement, and management review batches.
+
+### Typical workflows
+
+- User: submit incident:
+  - `python -m interfaces.cli.main incident submit --title "..." --description "..." --category Prozess`
+- QMB: assess incident:
+  - `python -m interfaces.cli.main incident assess --incident-id <id> --classification ERROR --critical`
+- QMB: CAPA / RCA / actions / effectiveness / close:
+  - `python -m interfaces.cli.main incident capa-start --incident-id <id>`
+  - `python -m interfaces.cli.main incident rca-create --incident-id <id> --root-causes "..."`
+  - `python -m interfaces.cli.main incident close --incident-id <id>`
+- Reports:
+  - `python -m interfaces.cli.main incident report-case --incident-id <id>`
+  - `python -m interfaces.cli.main incident report-register`
+- GUI: shell entry **Fehler und Abweichung** with internal areas (melden, register, QMB-Pruefung).
+
+### Frequent issues
+
+- `open inquiry must be answered before assessment`:
+  - Answer pending inquiry before QMB assessment.
+- `leadership acknowledgement required before closure`:
+  - Forward to Leitung and wait for acknowledgement for critical/CAPA incidents.
+- Module requires license tag `incident_management`.
 
 ## settings/ui
 
