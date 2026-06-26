@@ -16,9 +16,10 @@ from interfaces.pyqt.contributions import (
     documents_workflow_contribution,
     home_view,
     incident_management_views,
+    registry_view,
     settings_view,
     signature_view,
-    training_placeholder,
+    training_workspace,
 )
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 
@@ -29,7 +30,8 @@ def all_contributions() -> list[QtModuleContribution]:
     items.extend(documents_workflow_contribution.contributions())
     items.extend(documents_pool_view.contributions())
     items.extend(signature_view.contributions())
-    items.extend(training_placeholder.contributions())
+    items.extend(training_workspace.contributions())
+    items.extend(registry_view.contributions())
     items.extend(incident_management_views.contributions())
     items.extend(settings_view.contributions())
     items.extend(audit_logs_view.contributions())

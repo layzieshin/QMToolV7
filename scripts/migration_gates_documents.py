@@ -4,6 +4,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from contextlib import closing
 from pathlib import Path
 
 
@@ -90,7 +91,7 @@ def evaluate_gates(
     baseline_other_count: int | None,
 ) -> dict[str, object]:
     profile_mapping = _load_profiles(profiles_path)
-    with sqlite3.connect(documents_db_path) as conn:
+    with closing(sqlite3.connect(documents_db_path)) as conn:
         other_count = int(
             conn.execute(
                 "SELECT COUNT(*) FROM document_headers WHERE doc_type = 'OTHER'"
@@ -128,7 +129,7 @@ def evaluate_gates(
 
 
 def evaluate_registry_drift(*, documents_db_path: Path, registry_db_path: Path) -> dict[str, object]:
-    with sqlite3.connect(documents_db_path) as docs_conn:
+    with closing(sqlite3.connect(documents_db_path)) as docs_conn:
         header_ids = {
             str(row[0])
             for row in docs_conn.execute(
@@ -160,7 +161,7 @@ def evaluate_registry_drift(*, documents_db_path: Path, registry_db_path: Path) 
         if status is not None:
             latest_status_by_doc[doc_id] = status
 
-    with sqlite3.connect(registry_db_path) as reg_conn:
+    with closing(sqlite3.connect(registry_db_path)) as reg_conn:
         registry_rows = reg_conn.execute(
             """
             SELECT document_id, active_version, register_state, is_findable

@@ -10,13 +10,13 @@ Die erste UI-Variante (Tk, Legacy/MVP) ist verfügbar unter:
 Start:
 
 ```bash
-python -m interfaces.gui.main
+.\.venv\Scripts\python.exe -m interfaces.gui.main
 ```
 
 Initialize first-run runtime structure (recommended before GUI/EXE start):
 
 ```bash
-python -m interfaces.cli.main init --non-interactive --admin-password "<set-strong-password>"
+.\.venv\Scripts\python.exe -m interfaces.cli.main init --non-interactive --admin-password "<set-strong-password>"
 ```
 
 Security note:
@@ -26,7 +26,7 @@ Security note:
 Runtime diagnostics:
 
 ```bash
-python -m interfaces.cli.main doctor
+.\.venv\Scripts\python.exe -m interfaces.cli.main doctor
 ```
 
 Build onefile EXE (Legacy Tk):
@@ -52,7 +52,7 @@ Die aktive GUI-Weiterentwicklung läuft in `interfaces/pyqt/*`.
 Start:
 
 ```bash
-python -m interfaces.pyqt
+.\.venv\Scripts\python.exe -m interfaces.pyqt
 ```
 
 PyQt onefile build:

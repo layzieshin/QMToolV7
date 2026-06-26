@@ -8,7 +8,7 @@ from interfaces.pyqt.presenters.home_presenter import HomeDashboardPresenter
 from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.widgets.entity_cards import EntityCard
 from qm_platform.runtime.container import RuntimeContainer
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 
 
 class HomeDashboardWidget(QWidget):

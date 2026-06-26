@@ -11,13 +11,13 @@ Security note:
 - In production, use strong credentials provisioned via `init` and hardened user setup.
 
 ```bash
-python -m interfaces.cli.main login --username admin --password "<strong-password>"
+.\.venv\Scripts\python.exe -m interfaces.cli.main login --username admin --password "<strong-password>"
 ```
 
 Create a document version (starts in `PLANNED`):
 
 ```bash
-python -m interfaces.cli.main documents create-version \
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents create-version \
   --document-id DOC-100 --version 1 \
   --doc-type VA --control-class CONTROLLED --workflow-profile-id long_release
 ```
@@ -25,7 +25,7 @@ python -m interfaces.cli.main documents create-version \
 Assign workflow roles:
 
 ```bash
-python -m interfaces.cli.main documents assign-roles \
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents assign-roles \
   --document-id DOC-100 --version 1 \
   --editors editor-1,editor-2 \
   --reviewers reviewer-1 \
@@ -35,7 +35,7 @@ python -m interfaces.cli.main documents assign-roles \
 Start workflow with default profile:
 
 ```bash
-python -m interfaces.cli.main documents workflow-start --document-id DOC-100 --version 1
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents workflow-start --document-id DOC-100 --version 1
 ```
 
 ## Workflow Commands
@@ -45,7 +45,7 @@ python -m interfaces.cli.main documents workflow-start --document-id DOC-100 --v
 If profile transition `IN_PROGRESS->IN_REVIEW` requires signature, pass sign parameters:
 
 ```bash
-python -m interfaces.cli.main documents editing-complete \
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents editing-complete \
   --document-id DOC-100 --version 1 \
   --sign-input C:/tmp/input.pdf \
   --sign-output C:/tmp/output.pdf \
@@ -62,8 +62,8 @@ Accept:
 If profile transition `IN_REVIEW->IN_APPROVAL` requires signature, pass sign parameters:
 
 ```bash
-python -m interfaces.cli.main login --username reviewer --password "<strong-password>"
-python -m interfaces.cli.main documents review-accept \
+.\.venv\Scripts\python.exe -m interfaces.cli.main login --username reviewer --password "<strong-password>"
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents review-accept \
   --document-id DOC-100 --version 1 \
   --sign-input C:/tmp/input.pdf \
   --sign-output C:/tmp/output.pdf \
@@ -76,7 +76,7 @@ python -m interfaces.cli.main documents review-accept \
 Reject (template and/or free text required):
 
 ```bash
-python -m interfaces.cli.main documents review-reject \
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents review-reject \
   --document-id DOC-100 --version 1 \
   --reason-template-id TPL-001 --reason-template-text "Missing reference" \
   --reason-free-text "Please add SOP link."
@@ -87,8 +87,8 @@ python -m interfaces.cli.main documents review-reject \
 Accept:
 
 ```bash
-python -m interfaces.cli.main login --username approver --password "<strong-password>"
-python -m interfaces.cli.main documents approval-accept \
+.\.venv\Scripts\python.exe -m interfaces.cli.main login --username approver --password "<strong-password>"
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents approval-accept \
   --document-id DOC-100 --version 1 \
   --sign-input C:/tmp/input.pdf \
   --sign-output C:/tmp/output.pdf \
@@ -101,7 +101,7 @@ python -m interfaces.cli.main documents approval-accept \
 Reject:
 
 ```bash
-python -m interfaces.cli.main documents approval-reject \
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents approval-reject \
   --document-id DOC-100 --version 1 \
   --reason-template-text "Insufficient validation evidence"
 ```
@@ -109,7 +109,7 @@ python -m interfaces.cli.main documents approval-reject \
 ### Abort Workflow
 
 ```bash
-python -m interfaces.cli.main documents workflow-abort --document-id DOC-100 --version 1
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents workflow-abort --document-id DOC-100 --version 1
 ```
 
 ### Archive Approved Version
@@ -117,15 +117,15 @@ python -m interfaces.cli.main documents workflow-abort --document-id DOC-100 --v
 Only `QMB` or `ADMIN` is allowed:
 
 ```bash
-python -m interfaces.cli.main login --username qmb --password "<strong-password>"
-python -m interfaces.cli.main documents archive \
+.\.venv\Scripts\python.exe -m interfaces.cli.main login --username qmb --password "<strong-password>"
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents archive \
   --document-id DOC-100 --version 1
 ```
 
 ### Annual Validity Extension
 
 ```bash
-python -m interfaces.cli.main documents annual-extend \
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents annual-extend \
   --document-id DOC-100 --version 1 --signature-present
 ```
 
@@ -136,13 +136,13 @@ python -m interfaces.cli.main documents annual-extend \
 Default status is `PLANNED`:
 
 ```bash
-python -m interfaces.cli.main documents pool-list-by-status
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents pool-list-by-status
 ```
 
 Explicit status:
 
 ```bash
-python -m interfaces.cli.main documents pool-list-by-status --status APPROVED
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents pool-list-by-status --status APPROVED
 ```
 
 ### Header and metadata
@@ -150,21 +150,21 @@ python -m interfaces.cli.main documents pool-list-by-status --status APPROVED
 Read/update header:
 
 ```bash
-python -m interfaces.cli.main documents header-get --document-id DOC-100
-python -m interfaces.cli.main documents header-set --document-id DOC-100 --department QC --site HQ
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents header-get --document-id DOC-100
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents header-set --document-id DOC-100 --department QC --site HQ
 ```
 
 Read/update version metadata:
 
 ```bash
-python -m interfaces.cli.main documents metadata-get --document-id DOC-100 --version 1
-python -m interfaces.cli.main documents metadata-set --document-id DOC-100 --version 1 --title "Updated title" --custom-fields-json "{\"topic\":\"sterility\"}"
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents metadata-get --document-id DOC-100 --version 1
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents metadata-set --document-id DOC-100 --version 1 --title "Updated title" --custom-fields-json "{\"topic\":\"sterility\"}"
 ```
 
 Read central registry projection:
 
 ```bash
-python -m interfaces.cli.main documents pool-get-register --document-id DOC-100
+.\.venv\Scripts\python.exe -m interfaces.cli.main documents pool-get-register --document-id DOC-100
 ```
 
 ## Runtime Notes

@@ -6,13 +6,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 
 class RegistryRecoveryDrillTest(unittest.TestCase):
     def _prepare_docs_db(self, db_path: Path) -> None:
         schema = Path("modules/documents/schema.sql").read_text(encoding="utf-8")
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             conn.executescript(schema)
             conn.execute(
                 """
@@ -72,7 +73,7 @@ class RegistryRecoveryDrillTest(unittest.TestCase):
 
     def _prepare_bad_registry_db(self, db_path: Path) -> None:
         schema = Path("modules/registry/schema.sql").read_text(encoding="utf-8")
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             conn.executescript(schema)
             conn.execute(
                 """

@@ -106,6 +106,7 @@ def register_training_ports(container) -> None:
         projector=projector,
         comment_service=comment_service,
         report_service=report_service,
+        usermanagement_service=usermanagement_service,
     )
 
     container.register_port(

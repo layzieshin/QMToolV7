@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .artifact_query_ops import preferred_pdf_artifact_types, resolve_openable_artifact_refs, sort_artifacts_current_first
 from .contracts import (
+    ArtifactType,
     ControlClass,
     DocumentArtifact,
     DocumentHeader,
@@ -15,6 +17,7 @@ from .contracts import (
     DocumentStatus,
     DocumentType,
     DocumentVersionState,
+    OpenableArtifactRef,
     RejectionReason,
     SystemRole,
     ValidityExtensionOutcome,
@@ -27,17 +30,34 @@ from .contracts import (
     TrackedPdfReadSession,
     WorkflowProfile,
 )
-from .errors import DocumentWorkflowError
+from .docx_to_pdf import convert_docx_to_pdf as _convert_docx_to_pdf
+from .docx_to_pdf import prepare_frozen_stdio as _prepare_frozen_stdio
+from .errors import DocumentWorkflowError, ValidationError
 from .service import DocumentsService
 
 __all__ = [
     "DocumentsApi",
     "DocumentWorkflowError",
-    "ControlClass", "DocumentArtifact", "DocumentHeader", "DocumentTaskItem",
+    "ValidationError",
+    "convert_docx_to_pdf",
+    "prepare_docx_conversion_runtime",
+    "DocumentsArtifactsApi",
+    "ArtifactType", "ControlClass", "DocumentArtifact", "DocumentHeader", "DocumentTaskItem",
+    "OpenableArtifactRef",
     "RecentDocumentItem", "ReleasedDocumentItem", "ReviewActionItem",
     "DocumentStatus", "DocumentType", "DocumentVersionState",
     "RejectionReason", "SystemRole", "ValidityExtensionOutcome", "WorkflowProfile",
 ]
+
+
+def prepare_docx_conversion_runtime() -> None:
+    """Prepare runtime stdio for DOCX conversion in frozen/windowed environments."""
+    _prepare_frozen_stdio()
+
+
+def convert_docx_to_pdf(source: Path, target: Path) -> None:
+    """Convert DOCX to PDF through the public documents API surface."""
+    _convert_docx_to_pdf(source, target)
 
 
 class DocumentsPoolApi:
@@ -49,6 +69,9 @@ class DocumentsPoolApi:
 
     def list_artifacts(self, document_id: str, version: int) -> list[DocumentArtifact]:
         return self._service.list_artifacts(document_id, version)
+
+    def get_document_version(self, document_id: str, version: int) -> DocumentVersionState | None:
+        return self._service.get_document_version(document_id, version)
 
     def get_header(self, document_id: str) -> DocumentHeader | None:
         return self._service.get_document_header(document_id)
@@ -64,6 +87,94 @@ class DocumentsPoolApi:
 
     def list_current_released_documents(self) -> list[ReleasedDocumentItem]:
         return self._service.list_current_released_documents()
+
+
+class DocumentsArtifactsApi:
+    def __init__(self, service: DocumentsService, *, app_home: Path, artifacts_root: Path) -> None:
+        self._service = service
+        self._app_home = app_home
+        self._artifacts_root = artifacts_root
+
+    def resolve_artifact_paths(
+        self,
+        artifact: DocumentArtifact,
+        *,
+        suffixes: tuple[str, ...] = (),
+        existing_only: bool = True,
+    ) -> list[OpenableArtifactRef]:
+        return resolve_openable_artifact_refs(
+            artifact=artifact,
+            app_home=self._app_home,
+            artifacts_root=self._artifacts_root,
+            suffixes=suffixes,
+            existing_only=existing_only,
+        )
+
+    def get_openable_artifact_refs(
+        self,
+        document_id: str,
+        version: int,
+        *,
+        artifact_types: tuple[ArtifactType, ...],
+        suffixes: tuple[str, ...] = (),
+        current_first: bool = True,
+        existing_only: bool = True,
+    ) -> list[OpenableArtifactRef]:
+        artifacts = self._service.list_artifacts(document_id, version)
+        ordered = sort_artifacts_current_first(artifacts) if current_first else artifacts
+        refs: list[OpenableArtifactRef] = []
+        for artifact_type in artifact_types:
+            for artifact in ordered:
+                if artifact.artifact_type != artifact_type:
+                    continue
+                refs.extend(
+                    self.resolve_artifact_paths(
+                        artifact,
+                        suffixes=suffixes,
+                        existing_only=existing_only,
+                    )
+                )
+        return refs
+
+    def get_preferred_pdf_artifact(
+        self,
+        document_id: str,
+        version: int,
+        *,
+        transition: str | None = None,
+        purpose: str = "signature",
+    ) -> OpenableArtifactRef | None:
+        refs = self.get_openable_artifact_refs(
+            document_id,
+            version,
+            artifact_types=preferred_pdf_artifact_types(transition, purpose=purpose),
+            suffixes=(".pdf",),
+            current_first=True,
+            existing_only=True,
+        )
+        return refs[0] if refs else None
+
+    def get_released_pdf_for_reading(self, document_id: str, version: int) -> OpenableArtifactRef | None:
+        refs = self.get_openable_artifact_refs(
+            document_id,
+            version,
+            artifact_types=(ArtifactType.RELEASED_PDF,),
+            suffixes=(".pdf",),
+            current_first=True,
+            existing_only=True,
+        )
+        return refs[0] if refs else None
+
+    def get_source_docx_for_conversion(self, document_id: str, version: int) -> OpenableArtifactRef | None:
+        refs = self.get_openable_artifact_refs(
+            document_id,
+            version,
+            artifact_types=(ArtifactType.SOURCE_DOCX,),
+            suffixes=(".docx",),
+            current_first=True,
+            existing_only=True,
+        )
+        return refs[0] if refs else None
 
 
 class DocumentsWorkflowApi:
@@ -145,6 +256,9 @@ class DocumentsWorkflowApi:
             actor_user_id=actor_user_id,
             actor_role=actor_role,
         )
+
+    def get_profile(self, profile_id: str) -> WorkflowProfile:
+        return self._service.get_profile(profile_id)
 
     def assign_workflow_roles(
         self,

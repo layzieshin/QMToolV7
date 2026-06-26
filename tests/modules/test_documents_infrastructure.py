@@ -4,7 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from modules.documents.contracts import ArtifactType, DocumentStatus, SystemRole, ValidityExtensionOutcome, WorkflowProfile
+from modules.documents.contracts import (
+    ArtifactType,
+    ControlClass,
+    DocumentStatus,
+    SystemRole,
+    ValidityExtensionOutcome,
+    WorkflowProfile,
+)
 from modules.documents.profile_store import WorkflowProfileStoreJSON
 from modules.documents.service import DocumentsService
 from modules.documents.sqlite_repository import SQLiteDocumentsRepository
@@ -50,6 +57,18 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         profile = store.get("long_release")
         self.assertEqual(profile.profile_id, "long_release")
         self.assertTrue(profile.four_eyes_required)
+
+    def test_profile_store_loads_controlled_short_without_signatures(self) -> None:
+        file_path = Path("modules/documents/workflow_profiles.json")
+        store = WorkflowProfileStoreJSON(file_path)
+        profile = store.get("Controlled_Short_woSig")
+
+        self.assertEqual(profile.profile_id, "Controlled_Short_woSig")
+        self.assertEqual(profile.control_class, ControlClass.CONTROLLED_SHORT)
+        self.assertEqual(profile.signature_required_transitions, ())
+        self.assertTrue(profile.requires_editors)
+        self.assertTrue(profile.requires_reviewers)
+        self.assertTrue(profile.requires_approvers)
 
     def test_sqlite_repository_persists_and_lists_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

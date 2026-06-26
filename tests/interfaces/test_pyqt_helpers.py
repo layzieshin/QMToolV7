@@ -5,7 +5,7 @@ from pathlib import Path
 
 from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.presenters.formatting import format_local
-from interfaces.pyqt.presenters.storage_paths import artifacts_root
+from interfaces.pyqt.presenters.storage_paths import workflow_profiles_file
 
 
 class _FakeSettingsService:
@@ -44,7 +44,7 @@ def test_format_local_uses_timezone() -> None:
     assert len(rendered) >= 16
 
 
-def test_artifacts_root_respects_settings_override(tmp_path: Path) -> None:
-    container = _FakeContainer({"artifacts_root": "custom/artifacts"})
-    root = artifacts_root(container, tmp_path)
-    assert root == (tmp_path / "custom" / "artifacts")
+def test_workflow_profiles_file_respects_settings_override(tmp_path: Path) -> None:
+    container = _FakeContainer({"profiles_file": "custom/profiles.json"})
+    path = workflow_profiles_file(container, tmp_path)
+    assert path == (tmp_path / "custom" / "profiles.json")

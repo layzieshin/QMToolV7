@@ -8,6 +8,10 @@ This guide summarizes each module for implementation and extension work.
 
 **New module onboarding checklist:** `docs/MODULE_INTEGRATION_POLICY.md`
 
+Public Python imports for module behavior go through `modules/<module>/api.py`.
+`contracts.py` files are internal DTO/type sources unless a module `api.py` explicitly
+exposes the needed names.
+
 Normative architecture contract for document control:
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
 User-facing module operations:
@@ -41,7 +45,7 @@ Project GUI architecture:
 
 For QM-relevant or production deployments, the following is **mandatory product policy**, not an optional enhancement:
 
-- **`seed_mode` MUST be `hardened`**: no implicit creation of well-known demo accounts; bootstrap only via controlled init (e.g. `python -m interfaces.cli.main init` with explicit admin credentials).
+- **`seed_mode` MUST be `hardened`**: no implicit creation of well-known demo accounts; bootstrap only via controlled init (e.g. `.\.venv\Scripts\python.exe -m interfaces.cli.main init` with explicit admin credentials).
 - **`dev_mode` MUST be `false`** for production-like and release validation runs.
 - **No known-default passwords** in production datasets.
 - **Credential storage**: passwords MUST NOT remain at rest as reversible plaintext for production go-live in regulated environments. The repository uses one-way bcrypt verification for persisted credentials; preserve this behavior for all new auth code paths and migrations.
@@ -336,7 +340,10 @@ Policy:
 - users/settings CLI:
   - `tests/e2e_cli/test_users_and_settings_cli.py`
 
-## Contract quick reference (inputs / outputs / interfaces / contracts)
+## Contract quick reference (inputs / outputs / runtime interfaces / internal contracts)
+
+The file paths below document implementation ownership. They do not create additional
+external Python import boundaries beyond each module's `api.py`.
 
 ### usermanagement
 
@@ -350,7 +357,7 @@ Policy:
 - Interfaces
   - provided: `usermanagement_service`
   - required: `event_bus` (optional), `UserRepository` (optional)
-- Contracts
+- Internal contracts/files
   - `modules/usermanagement/contracts.py`: `AuthenticatedUser`
   - `modules/usermanagement/repository.py`: repository interface for persistence
   - `modules/usermanagement/sqlite_repository.py`: SQLite-backed contract implementation
@@ -367,7 +374,7 @@ Policy:
 - Interfaces
   - provided: `documents_service`, `documents_pool_api`, `documents_workflow_api`
   - required: `signature_api`, `registry_projection_api`
-- Contracts
+- Internal contracts/files
   - `modules/documents/contracts.py`: states, enums, readmodel DTOs
   - `modules/documents/api.py`: adapter API boundaries
   - `modules/documents/readmodel_use_cases.py`: read-side SRP split used by service
@@ -386,9 +393,9 @@ Policy:
 - Interfaces
   - provided: `signature_service`, `signature_api`
   - required: `auth.authenticate` capability, optional crypto signer port
-- Contracts
+- Internal contracts/files
   - `modules/signature/contracts.py`: `SignRequest`, `SignResult`, template/layout DTOs
-  - `modules/signature/api.py`: external API surface
+  - `modules/signature/api.py`: public API surface
   - `modules/signature/sqlite_repository.py` + `schema.sql`: template/asset metadata persistence
 - `modules/signature/template_use_cases.py`: template/asset SRP split used by `SignatureServiceV2`
 
@@ -403,7 +410,7 @@ Policy:
 - Interfaces
   - provided: `registry_service`, `registry_api`, `registry_projection_api`
   - required: document projection payloads from documents service
-- Contracts
+- Internal contracts/files
   - `modules/registry/contracts.py`: `RegistryEntry`
   - `modules/registry/projection_api.py`: constrained write interface
   - `modules/registry/api.py`: read interface
@@ -420,7 +427,7 @@ Policy:
 - Interfaces
   - provided: `training_service`, `training_api`, `training_admin_api`
   - required: `documents_pool_api`, `usermanagement_service`
-- Contracts
+- Internal contracts/files
   - `modules/training/contracts.py`: assignment/quiz/category DTOs
   - `modules/training/api.py`: user/admin API boundaries
   - `modules/training/service.py`: orchestration over repository + quiz blob store

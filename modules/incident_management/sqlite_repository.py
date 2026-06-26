@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 from .contracts import (
     ActionStatus,
@@ -68,11 +70,15 @@ class SQLiteIncidentRepository:
         self._schema_path = schema_path
         self._ensure_schema()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _ensure_schema(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)

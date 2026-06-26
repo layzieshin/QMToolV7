@@ -12,8 +12,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from qm_platform.licensing.license_codec import encode_license_code
-from tools.internal_license_issuer.issuer import create_signed_license
+from qm_platform.runtime import bootstrap as runtime_bootstrap
+
+from tools.internal_license_issuer.service import IssueLicenseRequest, issue_license
 
 
 def _cmd_create_license(args: argparse.Namespace) -> int:
@@ -24,30 +25,33 @@ def _cmd_create_license(args: argparse.Namespace) -> int:
         )
     if not args.enable_module:
         raise SystemExit("at least one --enable-module is required")
-    signed = create_signed_license(
-        license_type=args.type,
-        customer_id=args.customer_id,
-        issued_to=args.issued_to,
-        machine_id=args.machine_id,
-        enabled_modules=args.enable_module,
-        private_key_pem=private_key,
-        key_id=args.key_id,
-        license_id=args.license_id,
-        expires_at=args.expires_at,
+    result = issue_license(
+        IssueLicenseRequest(
+            license_type=args.type,
+            customer_id=args.customer_id,
+            issued_to=args.issued_to,
+            machine_id=args.machine_id,
+            enabled_modules=args.enable_module,
+            private_key_pem=private_key,
+            key_id=args.key_id,
+            license_id=args.license_id,
+            expires_at=args.expires_at,
+            output_dir=None,
+            known_module_tags=set(runtime_bootstrap.core_license_tags()),
+        )
     )
     if args.out:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(signed, indent=2, ensure_ascii=True), encoding="utf-8")
+        out.write_text(json.dumps(result.payload, indent=2, ensure_ascii=True), encoding="utf-8")
         print(f"OK: wrote {out}")
-    code = encode_license_code(signed)
     if args.out_code:
         code_path = Path(args.out_code)
         code_path.parent.mkdir(parents=True, exist_ok=True)
-        code_path.write_text(code + "\n", encoding="utf-8")
+        code_path.write_text(result.license_code + "\n", encoding="utf-8")
         print(f"OK: wrote {code_path}")
     elif not args.out:
-        print(code)
+        print(result.license_code)
     return 0
 
 

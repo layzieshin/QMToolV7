@@ -13,6 +13,7 @@ def test_pyqt_navigation_contains_expected_entries() -> None:
         "Start",
         "Dokumentenlenkung",
         "Dokumente",
+        "Register",
         "Signatur",
         "Schulung",
         "Einstellungen",
@@ -25,6 +26,14 @@ def test_pyqt_role_restrictions_for_sensitive_views() -> None:
     by_title = _by_title()
     assert by_title["Audit & Logs"].allowed_roles == ("Admin", "QMB")
     assert by_title["Admin/Debug"].allowed_roles == ("Admin",)
+
+
+def test_registry_browse_is_top_level_readonly_contribution() -> None:
+    by_id = {item.contribution_id: item for item in all_contributions()}
+    item = by_id["registry.browse"]
+    assert item.title == "Register"
+    assert item.requires_login is True
+    assert item.allowed_roles == ("Admin", "QMB", "User")
 
 
 def test_users_view_is_embedded_not_top_level() -> None:

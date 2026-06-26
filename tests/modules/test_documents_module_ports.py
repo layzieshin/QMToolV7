@@ -42,6 +42,7 @@ class DocumentsModulePortsTest(unittest.TestCase):
 
             self.assertTrue(container.has_port("documents_service"))
             self.assertTrue(container.has_port("documents_pool_api"))
+            self.assertTrue(container.has_port("documents_artifacts_api"))
             self.assertTrue(container.has_port("documents_workflow_api"))
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -223,6 +224,17 @@ class DocumentArtifact:
     is_current: bool
     metadata: dict[str, str]
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class OpenableArtifactRef:
+    artifact_id: str
+    document_id: str
+    version: int
+    artifact_type: ArtifactType
+    path: Path
+    is_current: bool
+    exists: bool
 
 
 @dataclass(frozen=True)

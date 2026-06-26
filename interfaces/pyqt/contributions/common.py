@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, is_dataclass
 
 from modules.documents.contracts import SystemRole
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 
 
 def normalize_role(role: str | None) -> str:

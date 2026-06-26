@@ -26,15 +26,15 @@ Production note: QM-relevant deployments MUST follow the hardened seed and crede
 ### Typical workflows
 
 - First-run init:
-  - `python -m interfaces.cli.main init --non-interactive --admin-password "<your-password>"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main init --non-interactive --admin-password "<your-password>"`
 - Login:
-  - `python -m interfaces.cli.main login --username admin --password "<your-password>"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main login --username admin --password "<your-password>"`
 - Logout:
-  - `python -m interfaces.cli.main logout`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main logout`
 - List users (QMB/Admin only):
-  - `python -m interfaces.cli.main users list`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main users list`
 - Create user (QMB/Admin only):
-  - `python -m interfaces.cli.main users create --username alice --password secret --role User`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main users create --username alice --password secret --role User`
 
 ### Frequent issues
 
@@ -54,26 +54,26 @@ Manage document lifecycle from planning to archive with strict role and status c
 ### Typical workflows
 
 - Create document version:
-  - `python -m interfaces.cli.main documents create-version --document-id DOC-100 --version 1 --doc-type VA --control-class CONTROLLED --workflow-profile-id long_release`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents create-version --document-id DOC-100 --version 1 --doc-type VA --control-class CONTROLLED --workflow-profile-id long_release`
 - Update header metadata (QMB/Admin):
-  - `python -m interfaces.cli.main documents header-set --document-id DOC-100 --department QC --site HQ`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents header-set --document-id DOC-100 --department QC --site HQ`
 - Assign workflow roles:
-  - `python -m interfaces.cli.main documents assign-roles --document-id DOC-100 --version 1 --editors admin --reviewers user --approvers qmb`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents assign-roles --document-id DOC-100 --version 1 --editors admin --reviewers user --approvers qmb`
 - Start workflow:
-  - `python -m interfaces.cli.main documents workflow-start --document-id DOC-100 --version 1`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents workflow-start --document-id DOC-100 --version 1`
 - In der GUI (`Dokumentenlenkung`) bei `Bearbeitung annehmen`:
   - SOURCE_DOCX wird zuerst in SOURCE_PDF ueberfuehrt; ab dann ist SOURCE_PDF das aktive PDF-Asset.
   - Danach oeffnet sich der Signatur-Platzierungsdialog; ohne bestaetigte Platzierung wird der Schritt abgebrochen.
   - Aktionen (Vorbereitung, Platzierung, Abschluss) werden in der Audithistorie erfasst.
 - Continue workflow (review/approval/archive) using role-appropriate accounts.
 - Read central registry evidence:
-  - `python -m interfaces.cli.main documents pool-get-register --document-id DOC-100`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents pool-get-register --document-id DOC-100`
 - Read header metadata:
-  - `python -m interfaces.cli.main documents header-get --document-id DOC-100`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents header-get --document-id DOC-100`
 - Read version metadata:
-  - `python -m interfaces.cli.main documents metadata-get --document-id DOC-100 --version 1`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents metadata-get --document-id DOC-100 --version 1`
 - Update version metadata:
-  - `python -m interfaces.cli.main documents metadata-set --document-id DOC-100 --version 1 --title \"Updated title\" --custom-fields-json "{\"topic\":\"sterility\"}"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main documents metadata-set --document-id DOC-100 --version 1 --title \"Updated title\" --custom-fields-json "{\"topic\":\"sterility\"}"`
 
 ### Metadata model quick note
 
@@ -128,13 +128,13 @@ Place visible signatures on PDF files (visual mode, dry-run or output).
 ### Typical workflows
 
 - Quick dry-run:
-  - `python -m interfaces.cli.main sign visual --input in.pdf --signature-png sig.png --page 0 --x 100 --y 100 --width 120 --signer-user admin --password "<strong-password>" --dry-run`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main sign visual --input in.pdf --signature-png sig.png --page 0 --x 100 --y 100 --width 120 --signer-user admin --password "<strong-password>" --dry-run`
 - Import signature asset (PNG/GIF):
-  - `python -m interfaces.cli.main sign import-asset --owner-user-id admin --input sig.gif`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main sign import-asset --owner-user-id admin --input sig.gif`
 - Create reusable signature template:
-  - `python -m interfaces.cli.main sign template-create --owner-user-id admin --name std --asset-id <asset_id> --x 120 --y 120 --width 120`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main sign template-create --owner-user-id admin --name std --asset-id <asset_id> --x 120 --y 120 --width 120`
 - Sign via template:
-  - `python -m interfaces.cli.main sign template-sign --template-id <template_id> --input in.pdf --signer-user admin --password "<strong-password>"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main sign template-sign --template-id <template_id> --input in.pdf --signer-user admin --password "<strong-password>"`
 
 ### Frequent issues
 
@@ -154,22 +154,22 @@ Assign mandatory document reading, collect read confirmations, run quizzes, and 
 ### Typical workflows
 
 - Admin/QMB: create category and map documents/users:
-  - `python -m interfaces.cli.main training admin-category-create --category-id SOP_CORE --name "Core SOPs"`
-  - `python -m interfaces.cli.main training admin-category-assign-document --category-id SOP_CORE --document-id DOC-100`
-  - `python -m interfaces.cli.main training admin-category-assign-user --category-id SOP_CORE --user-id user`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training admin-category-create --category-id SOP_CORE --name "Core SOPs"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training admin-category-assign-document --category-id SOP_CORE --document-id DOC-100`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training admin-category-assign-user --category-id SOP_CORE --user-id user`
 - Admin/QMB: sync assignments from approved docs:
-  - `python -m interfaces.cli.main training admin-sync`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training admin-sync`
 - User: list open training inbox items:
-  - `python -m interfaces.cli.main training list-required`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training list-required`
 - User: confirm released-document read receipt:
-  - `python -m interfaces.cli.main training confirm-read --document-id DOC-100 --version 1`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training confirm-read --document-id DOC-100 --version 1`
 - Admin/QMB: import quiz JSON for document version:
-  - `python -m interfaces.cli.main training admin-quiz-import --document-id DOC-100 --version 1 --input quiz_doc100_v1.json`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training admin-quiz-import --document-id DOC-100 --version 1 --input quiz_doc100_v1.json`
 - User: run quiz:
-  - `python -m interfaces.cli.main training quiz-start --document-id DOC-100 --version 1`
-  - `python -m interfaces.cli.main training quiz-answer --session-id <session_id> --answers-json "[0,2,1]"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training quiz-start --document-id DOC-100 --version 1`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training quiz-answer --session-id <session_id> --answers-json "[0,2,1]"`
 - User: submit comment:
-  - `python -m interfaces.cli.main training comment-add --document-id DOC-100 --version 1 --comment "Abschnitt 4 bitte präzisieren"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main training comment-add --document-id DOC-100 --version 1 --comment "Abschnitt 4 bitte präzisieren"`
 
 ### Frequent issues
 
@@ -191,16 +191,16 @@ Record errors, deviations, near-misses and risks; run QMB assessment, CAPA/RCA w
 ### Typical workflows
 
 - User: submit incident:
-  - `python -m interfaces.cli.main incident submit --title "..." --description "..." --category Prozess`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main incident submit --title "..." --description "..." --category Prozess`
 - QMB: assess incident:
-  - `python -m interfaces.cli.main incident assess --incident-id <id> --classification ERROR --critical`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main incident assess --incident-id <id> --classification ERROR --critical`
 - QMB: CAPA / RCA / actions / effectiveness / close:
-  - `python -m interfaces.cli.main incident capa-start --incident-id <id>`
-  - `python -m interfaces.cli.main incident rca-create --incident-id <id> --root-causes "..."`
-  - `python -m interfaces.cli.main incident close --incident-id <id>`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main incident capa-start --incident-id <id>`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main incident rca-create --incident-id <id> --root-causes "..."`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main incident close --incident-id <id>`
 - Reports:
-  - `python -m interfaces.cli.main incident report-case --incident-id <id>`
-  - `python -m interfaces.cli.main incident report-register`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main incident report-case --incident-id <id>`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main incident report-register`
 - GUI: shell entry **Fehler und Abweichung** with internal areas (melden, register, QMB-Pruefung).
 
 ### Frequent issues
@@ -220,15 +220,15 @@ Central settings read/write and UI-based orchestration of module features.
 ### Typical workflows
 
 - Check runtime readiness:
-  - `python -m interfaces.cli.main doctor`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor`
 - List modules with settings:
-  - `python -m interfaces.cli.main settings list-modules`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main settings list-modules`
 - Read module settings:
-  - `python -m interfaces.cli.main settings get --module documents`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main settings get --module documents`
 - Write module settings (QMB/Admin):
-  - `python -m interfaces.cli.main settings set --module signature --values-json "{\"require_password\": true, \"default_mode\": \"visual\"}"`
+  - `.\.venv\Scripts\python.exe -m interfaces.cli.main settings set --module signature --values-json "{\"require_password\": true, \"default_mode\": \"visual\"}"`
 - Start UI:
-  - `python -m interfaces.gui.main`
+  - `.\.venv\Scripts\python.exe -m interfaces.gui.main`
 
 ### Frequent issues
 

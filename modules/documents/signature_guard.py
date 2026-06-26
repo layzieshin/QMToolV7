@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
-from modules.signature.errors import SignatureError
+from modules.signature.api import SignatureError
 
 from .contracts import (
     ArtifactSourceType,

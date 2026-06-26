@@ -6,7 +6,7 @@ from pathlib import Path
 
 from modules.documents.api import DocumentWorkflowError, SystemRole
 from modules.signature.api import SignatureError
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 
 from interfaces.cli.bootstrap import build_container

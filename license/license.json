@@ -1,18 +1,16 @@
 {
-  "license_id": "DEV-LICENSE-001",
-  "issued_to": "Local Development",
-  "customer_id": "DEV",
-  "plan": "dev",
-  "issued_at": "2026-01-01T00:00:00+00:00",
-  "expires_at": "2099-01-01T00:00:00+00:00",
+  "customer_id": "Master",
   "enabled_modules": [
-    "documents",
-    "signature"
+    "incident_management",
+    "training"
   ],
-  "device_binding": {
-    "mode": "optional"
-  },
-  "constraints": {},
-  "key_id": "dev-key",
-  "signature": "Bl2CK3pwhjQVZMOKxgPVFLwdUCa7ycITPBavJ61tOerF6W+LmGQZs+7jVTKRi0KOubqgyvkDrc5t/bPK4IqcBA=="
+  "expires_at": null,
+  "issued_at": "2026-06-17T10:57:58+00:00",
+  "issued_to": "Entwicklung",
+  "key_id": "prod-key",
+  "license_id": "LIC-11E4C9161FBB",
+  "license_type": "full",
+  "machine_id": "qmt-771e3754e9e41c3a",
+  "schema_version": 1,
+  "signature": "AC5XBJbGdGiBsi6BuSYa6ZW0E6cByYfT2p3qDLGr1y0ioFkzL9V+fVY7YBASpbjPE5J4XpLOOJPieQGznyfLBw=="
 }

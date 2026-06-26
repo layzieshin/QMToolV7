@@ -16,6 +16,7 @@ class BootstrapProductionModeTest(unittest.TestCase):
             old_environ = os.environ.copy()
             os.environ["QMTOOL_HOME"] = str(home)
             os.environ["QMTOOL_LICENSE_MODE"] = "production"
+            lifecycle = None
             try:
                 from interfaces.cli.bootstrap import build_container
                 from qm_platform.runtime import bootstrap as runtime_bootstrap
@@ -25,6 +26,8 @@ class BootstrapProductionModeTest(unittest.TestCase):
                 lifecycle.start(strict=False)
                 self.assertIn("training", lifecycle.failed_modules())
             finally:
+                if lifecycle is not None:
+                    lifecycle.stop()
                 os.environ.clear()
                 os.environ.update(old_environ)
 
@@ -35,6 +38,7 @@ class BootstrapProductionModeTest(unittest.TestCase):
             old_environ = os.environ.copy()
             os.environ["QMTOOL_HOME"] = str(home)
             os.environ["QMTOOL_LICENSE_MODE"] = "dev"
+            lifecycle = None
             try:
                 from interfaces.cli.bootstrap import build_container
                 from qm_platform.runtime import bootstrap as runtime_bootstrap
@@ -46,6 +50,8 @@ class BootstrapProductionModeTest(unittest.TestCase):
                 lic = container.get_port("license_service")
                 self.assertTrue(lic.is_module_allowed("training"))
             finally:
+                if lifecycle is not None:
+                    lifecycle.stop()
                 os.environ.clear()
                 os.environ.update(old_environ)
 

@@ -12,11 +12,7 @@ from qm_platform.runtime import bootstrap as runtime_bootstrap
 from interfaces.cli.bootstrap import build_container
 
 
-def cmd_sign_visual(args: argparse.Namespace) -> int:
-    container = build_container()
-    lifecycle = runtime_bootstrap.register_core_modules(container)
-    lifecycle.start()
-    service = container.get_port("signature_service")
+def cmd_sign_visual(args: argparse.Namespace, api) -> int:
     date_text = args.date_text or datetime.now().strftime(args.date_format)
     name_text = args.name_text or args.signer_user
     request = SignRequest(
@@ -54,7 +50,7 @@ def cmd_sign_visual(args: argparse.Namespace) -> int:
         reason=args.reason,
     )
     try:
-        result = service.sign_with_fixed_position(request)
+        result = api.sign_with_fixed_position(request)
     except SignatureError as exc:
         print(f"BLOCKED: {exc}")
         return 4
@@ -75,7 +71,7 @@ def cmd_sign(args: argparse.Namespace) -> int:
     api = container.get_port("signature_api")
     try:
         if args.sign_command == "visual":
-            return cmd_sign_visual(args)
+            return cmd_sign_visual(args, api)
         if args.sign_command == "import-asset":
             asset = api.import_signature_asset(args.owner_user_id, Path(args.input))
             print(

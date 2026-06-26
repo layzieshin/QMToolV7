@@ -1,7 +1,7 @@
 # Track B Change Specification
 
 Status: Legacy/History (P2)  
-Canonical replacement: `docs/DOCS_CANONICAL_INDEX.md` and P0 docs
+Start here instead: `CONTRIBUTING.md` (developer entry); authority: `docs/DOCS_CANONICAL_INDEX.md` and P0 docs
 
 Diese Spezifikation beschreibt den separaten Folge-Track für Backend/Runtime nach dem GUI-Track.
 

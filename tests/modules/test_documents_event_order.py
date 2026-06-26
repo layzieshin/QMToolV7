@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 import unittest
 
 from modules.documents.contracts import (
@@ -25,6 +26,9 @@ class _ServiceDouble:
 
     def _assert_assignments_for_profile(self, *_args, **_kwargs):
         return None
+
+    def _write_transaction(self):
+        return nullcontext()
 
     # workflow helpers
     @staticmethod

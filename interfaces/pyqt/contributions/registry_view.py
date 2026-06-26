@@ -93,13 +93,12 @@ class RegistryBrowseWidget(QWidget):
         doc_id = str(self._model._rows[row][0])
         try:
             registry_api = self._container.get_port("registry_api")
-            docs_service = self._container.get_port("documents_service")
             pool_api = self._container.get_port("documents_pool_api")
             entry = registry_api.get_entry(doc_id)
             header = pool_api.get_header(doc_id)
             state = None
             if entry is not None and entry.active_version is not None:
-                state = docs_service.get_document_version(doc_id, int(entry.active_version))
+                state = pool_api.get_document_version(doc_id, int(entry.active_version))
             payload = {
                 "registry_entry": entry,
                 "document_header": header,

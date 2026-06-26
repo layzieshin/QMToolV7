@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .api import DocumentsCommentsApi, DocumentsPoolApi, DocumentsReadApi, DocumentsWorkflowApi
+from .docx_to_pdf import convert_docx_to_pdf
+from .api import DocumentsArtifactsApi, DocumentsCommentsApi, DocumentsPoolApi, DocumentsReadApi, DocumentsWorkflowApi
 from .profile_store import WorkflowProfileStoreJSON
 from .service import DocumentsService
 from .sqlite_repository import SQLiteDocumentsRepository
@@ -48,9 +49,18 @@ def register_documents_ports(container) -> None:
         storage_port=storage_port,
         registry_projection_api=container.get_port("registry_projection_api"),
         audit_logger=container.get_port("audit_logger"),
+        docx_to_pdf_converter=convert_docx_to_pdf,
     )
     container.register_port("documents_service", service)
     container.register_port("documents_pool_api", DocumentsPoolApi(service))
+    container.register_port(
+        "documents_artifacts_api",
+        DocumentsArtifactsApi(
+            service,
+            app_home=app_home,
+            artifacts_root=_resolve_config_path(docs_settings.get("artifacts_root", "storage/documents/artifacts")),
+        ),
+    )
     container.register_port("documents_read_api", DocumentsReadApi(service))
     container.register_port("documents_comments_api", DocumentsCommentsApi(service))
     container.register_port("documents_workflow_api", DocumentsWorkflowApi(service))

@@ -7,9 +7,9 @@ This file is the operational checklist for final release approval.
 
 Primary gate commands:
 
-- `python scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
-- `python scripts/migration_gates_documents.py --documents-db-path "<documents.db>" --profiles-path "modules/documents/workflow_profiles.json" --baseline-other-count <n>`
-- `python scripts/registry_recovery_drill.py --documents-db-path "<documents.db>" --registry-db-path "<registry.db>" --evidence-dir "<evidence-dir>" --rebuilt-registry-db-path "<rebuilt-registry.db>"`
+- `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
+- `.\.venv\Scripts\python.exe scripts/migration_gates_documents.py --documents-db-path "<documents.db>" --profiles-path "modules/documents/workflow_profiles.json" --baseline-other-count <n>`
+- `.\.venv\Scripts\python.exe scripts/registry_recovery_drill.py --documents-db-path "<documents.db>" --registry-db-path "<registry.db>" --evidence-dir "<evidence-dir>" --rebuilt-registry-db-path "<rebuilt-registry.db>"`
 
 ## Required Technical Conditions
 

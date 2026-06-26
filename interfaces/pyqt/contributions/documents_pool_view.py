@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PyQt6.QtWidgets import (
@@ -16,12 +15,9 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
 )
 
-from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
-from interfaces.pyqt.presenters.storage_paths import artifacts_root
 from interfaces.pyqt.registry.contribution import QtModuleContribution
-from modules.documents.contracts import ArtifactType
 from qm_platform.runtime.container import RuntimeContainer
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 
 
 class _PoolTableModel(QAbstractTableModel):
@@ -66,11 +62,10 @@ class DocumentsPoolWidget(QWidget):
     def __init__(self, container: RuntimeContainer) -> None:
         super().__init__()
         self._container = container
-        self._app_home = Path.cwd()
         self._um = container.get_port("usermanagement_service")
         self._pool = container.get_port("documents_pool_api")
+        self._artifacts = container.get_port("documents_artifacts_api")
         self._model = _PoolTableModel()
-        self._artifacts_root = artifacts_root(self._container, self._app_home)
 
         self._search = QLineEdit()
         self._search.setPlaceholderText("Suche nach Dokument-ID oder Titel")
@@ -164,25 +159,12 @@ class DocumentsPoolWidget(QWidget):
             self._error.setText("Bitte zuerst ein Dokument auswählen.")
             return
         row = self._model._rows[selected[0].row()]
-        artifacts = self._pool.list_artifacts(row.document_id, row.version)
-        for artifact in artifacts:
-            if artifact.artifact_type != ArtifactType.RELEASED_PDF:
-                continue
-            for path in resolve_openable_artifact_paths(
-                artifact=artifact,
-                app_home=self._app_home,
-                artifacts_root=self._artifacts_root,
-            ):
-                if not path.exists():
-                    continue
-                if hasattr(os, "startfile"):
-                    os.startfile(str(path))  # type: ignore[attr-defined]
-                    self._error.setText(f"Geöffnet: {path}")
-                    return
+        ref = self._artifacts.get_released_pdf_for_reading(row.document_id, row.version)
+        if ref is not None and hasattr(os, "startfile"):
+            os.startfile(str(ref.path))  # type: ignore[attr-defined]
+            self._error.setText(f"Geöffnet: {ref.path}")
+            return
         self._error.setText("Kein lokal oeffenbares RELEASED_PDF-Artefakt verfuegbar.")
-
-    def _resolve_artifacts_root(self) -> Path:
-        return artifacts_root(self._container, self._app_home)
 
 
 def _build(container: RuntimeContainer) -> QWidget:

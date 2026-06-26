@@ -4,6 +4,8 @@ Contains only TrainingApi and TrainingAdminApi – no business logic.
 """
 from __future__ import annotations
 
+from modules.usermanagement.api import is_effective_qmb
+
 from .contracts import (
     DocumentTagSet,
     ManualAssignment,
@@ -28,6 +30,7 @@ from .contracts import (
     UserTagSet,
 )
 from .document_tag_service import DocumentTagService
+from .errors import TrainingPermissionError
 from .exemption_service import ExemptionService
 from .manual_assignment_service import ManualAssignmentService
 from .quiz_binding_service import QuizBindingService
@@ -123,6 +126,7 @@ class TrainingAdminApi:
         projector: TrainingSnapshotProjector,
         comment_service: TrainingCommentService,
         report_service: TrainingReportService,
+        usermanagement_service: object | None = None,
     ) -> None:
         self._catalog = catalog_reader
         self._quiz_import = quiz_import
@@ -134,19 +138,35 @@ class TrainingAdminApi:
         self._projector = projector
         self._comments = comment_service
         self._report = report_service
+        self._um = usermanagement_service
+
+    def _require_admin_or_qmb(self) -> object:
+        if self._um is None:
+            raise TrainingPermissionError("training admin operation requires user context")
+        current_user = self._um.get_current_user()
+        if current_user is None:
+            raise TrainingPermissionError("training admin operation requires login")
+        role = str(getattr(current_user, "role", "") or "").strip().lower()
+        if role == "admin" or is_effective_qmb(current_user):
+            return current_user
+        raise TrainingPermissionError("training admin operation requires Admin or QMB role")
 
     # --- Document catalog ---
     def list_assignable_documents(self) -> list[TrainingDocumentRef]:
+        self._require_admin_or_qmb()
         return self._catalog.list_released_documents()
 
     # --- Quiz import ---
     def inspect_quiz_json(self, raw_quiz_json: bytes) -> QuizImportPreview:
+        self._require_admin_or_qmb()
         return self._quiz_import.inspect_quiz_json(raw_quiz_json)
 
     def import_quiz_json(self, raw_quiz_json: bytes, *, force: bool = False) -> QuizImportResult:
+        self._require_admin_or_qmb()
         return self._quiz_import.import_quiz_json(raw_quiz_json, force=force)
 
     def list_pending_quiz_mappings(self) -> list[PendingQuizMapping]:
+        self._require_admin_or_qmb()
         pending = self._quiz_binding.list_pending_quiz_mappings()
         by_key = {
             (doc.document_id, doc.version): doc.title
@@ -165,76 +185,99 @@ class TrainingAdminApi:
         ]
 
     def bind_quiz_to_document(self, import_id: str, document_id: str, version: int) -> QuizBinding:
+        self._require_admin_or_qmb()
         return self._quiz_binding.bind_quiz_to_document(import_id, document_id, version)
 
     def list_quiz_bindings(self) -> list[QuizBinding]:
+        self._require_admin_or_qmb()
         return self._quiz_binding.list_quiz_bindings()
 
     def check_quiz_replacement_conflict(self, document_id: str, version: int, new_import_id: str) -> QuizReplacementCheckResult:
+        self._require_admin_or_qmb()
         return self._quiz_binding.check_quiz_replacement_conflict(document_id, version, new_import_id)
 
     def replace_quiz_binding(self, document_id: str, version: int, new_import_id: str, confirmed_by: str) -> QuizBindingReplacementResult:
+        self._require_admin_or_qmb()
         return self._quiz_binding.replace_quiz_binding(document_id, version, new_import_id, confirmed_by)
 
     # --- Tags ---
     def list_document_tags(self, document_id: str) -> DocumentTagSet:
+        self._require_admin_or_qmb()
         return self._doc_tags.list_document_tags(document_id)
 
     def set_document_tags(self, document_id: str, tags: list[str]) -> DocumentTagSet:
+        self._require_admin_or_qmb()
         return self._doc_tags.set_document_tags(document_id, tags)
 
     def list_all_document_tags(self) -> list[DocumentTagSet]:
+        self._require_admin_or_qmb()
         return self._doc_tags.list_all_document_tags()
 
     def list_tag_pool(self) -> list[str]:
+        self._require_admin_or_qmb()
         return self._doc_tags.list_tag_pool()
 
     def list_user_tags(self, user_id: str) -> UserTagSet:
+        self._require_admin_or_qmb()
         return self._user_tags.list_user_tags(user_id)
 
     def set_user_tags(self, user_id: str, tags: list[str]) -> UserTagSet:
+        self._require_admin_or_qmb()
         return self._user_tags.set_user_tags(user_id, tags)
 
     def list_all_user_tags(self) -> list[UserTagSet]:
+        self._require_admin_or_qmb()
         return self._user_tags.list_all_user_tags()
 
     # --- Manual assignment ---
     def grant_manual_assignment(self, user_id: str, document_id: str, reason: str, granted_by: str) -> ManualAssignment:
+        self._require_admin_or_qmb()
         return self._manual.grant_manual_assignment(user_id, document_id, reason, granted_by)
 
     def revoke_manual_assignment(self, assignment_id: str, revoked_by: str) -> None:
+        self._require_admin_or_qmb()
         self._manual.revoke_manual_assignment(assignment_id, revoked_by)
 
     # --- Exemption ---
     def grant_exemption(self, user_id: str, document_id: str, version: int, reason: str, granted_by: str, valid_until=None) -> TrainingExemption:
+        self._require_admin_or_qmb()
         return self._exemption.grant_exemption(user_id, document_id, version, reason, granted_by, valid_until)
 
     def revoke_exemption(self, exemption_id: str, revoked_by: str) -> None:
+        self._require_admin_or_qmb()
         self._exemption.revoke_exemption(exemption_id, revoked_by)
 
     # --- Snapshots ---
     def rebuild_assignment_snapshots(self) -> int:
+        self._require_admin_or_qmb()
         return self._projector.rebuild_all()
 
     def list_assignment_snapshots(self) -> list[TrainingAssignmentSnapshot]:
+        self._require_admin_or_qmb()
         return self._projector._snapshot_repo.list_snapshots()
 
     # --- Comments ---
     def list_active_comments(self) -> list[TrainingCommentListItem]:
+        self._require_admin_or_qmb()
         return self._comments.list_active_comments()
 
     def resolve_comment(self, comment_id: str, resolved_by: str, resolution_note: str | None = None) -> TrainingCommentRecord:
+        self._require_admin_or_qmb()
         return self._comments.resolve_comment(comment_id, resolved_by, resolution_note)
 
     def inactivate_comment(self, comment_id: str, inactive_by: str, inactive_note: str | None = None) -> TrainingCommentRecord:
+        self._require_admin_or_qmb()
         return self._comments.inactivate_comment(comment_id, inactive_by, inactive_note)
 
     # --- Reporting ---
     def get_training_statistics(self) -> TrainingStatistics:
+        self._require_admin_or_qmb()
         return self._report.get_training_statistics()
 
     def list_training_audit_log(self) -> list[TrainingAuditLogItem]:
+        self._require_admin_or_qmb()
         return self._report.list_training_audit_log()
 
     def export_training_matrix(self) -> TrainingMatrixExportResult:
+        self._require_admin_or_qmb()
         return self._report.export_training_matrix()

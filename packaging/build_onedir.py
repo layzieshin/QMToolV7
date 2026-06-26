@@ -19,7 +19,17 @@ ICON_PNG = ROOT / "packaging" / "icons" / "app_icon.png"
 ICON_ICO = ROOT / "packaging" / "icons" / "app.ico"
 ENTRY = ROOT / "interfaces" / "pyqt" / "main.py"
 VERIFY_BUNDLE = ROOT / "packaging" / "verify_customer_bundle.py"
+VERIFY_IMPORTS = ROOT / "packaging" / "verify_bundle_imports.py"
 PROD_PUBLIC_KEY = ROOT / "qm_platform" / "licensing" / "keys" / "prod_ed25519_public.pem"
+
+# Dynamic imports (importlib) are invisible to PyInstaller static analysis.
+_HIDDEN_IMPORTS: list[str] = [
+    "fitz",  # PyMuPDF — PDF preview
+    "pypdf",
+]
+_COLLECT_ALL: list[str] = [
+    "pymupdf",  # native mupdf DLLs for fitz
+]
 
 # PyInstaller does not ship *.sql / *.json next to packages by default; mirror repo paths under _internal.
 _ADD_DATA_SEP = ";" if os.name == "nt" else ":"
@@ -30,6 +40,7 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
     ("modules/registry/schema.sql", "modules/registry"),
     ("modules/signature/schema.sql", "modules/signature"),
     ("modules/training/schema.sql", "modules/training"),
+    ("modules/incident_management/schema.sql", "modules/incident_management"),
     ("interfaces/pyqt/shell/styles.qss", "interfaces/pyqt/shell"),
     ("qm_platform/licensing/keys/prod_ed25519_public.pem", "qm_platform/licensing/keys"),
 ]
@@ -87,6 +98,10 @@ def main() -> int:
         f"--workpath={work}",
         f"--specpath={ROOT / 'packaging'}",
     ]
+    for hidden in _HIDDEN_IMPORTS:
+        cmd.extend(["--hidden-import", hidden])
+    for package in _COLLECT_ALL:
+        cmd.extend(["--collect-all", package])
     for rel, dest in _BUNDLE_DATA:
         src = ROOT / rel
         if not src.is_file():
@@ -101,6 +116,7 @@ def main() -> int:
         raise SystemExit(f"Expected output missing: {exe}")
 
     subprocess.check_call([sys.executable, str(VERIFY_BUNDLE), str(bundle_dir)], cwd=ROOT)
+    subprocess.check_call([sys.executable, str(VERIFY_IMPORTS), str(bundle_dir)], cwd=ROOT)
 
     for rel in (
         "storage/platform/logs",

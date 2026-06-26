@@ -12,7 +12,7 @@ from modules.documents.contracts import (
     RejectionReason, SystemRole, ValidityExtensionOutcome
 )
 from modules.signature.api import SignatureError
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 from modules.signature.contracts import SignRequest, SignaturePlacementInput, LabelLayoutInput
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 
@@ -41,8 +41,8 @@ def _print_documents_state(prefix: str, state) -> None:
     print(f"{prefix}: {json.dumps(payload, ensure_ascii=True)}")
 
 
-def _load_documents_state(service, document_id: str, version: int):
-    state = service.get_document_version(document_id, version)
+def _load_documents_state(pool_api, document_id: str, version: int):
+    state = pool_api.get_document_version(document_id, version)
     if state is None:
         raise DocumentWorkflowError(f"document version not found: {document_id} v{version}")
     return state
@@ -95,7 +95,6 @@ def cmd_documents(args: argparse.Namespace) -> int:
     lifecycle.start()
     pool_api = container.get_port("documents_pool_api")
     workflow_api = container.get_port("documents_workflow_api")
-    service = container.get_port("documents_service")
     registry_api = container.get_port("registry_api")
     usermanagement = container.get_port("usermanagement_service")
     current_user, current_role = _resolve_current_user_and_role(usermanagement)
@@ -141,7 +140,7 @@ def cmd_documents(args: argparse.Namespace) -> int:
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "assign-roles":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             state = workflow_api.assign_workflow_roles(
                 state,
                 editors={v.strip() for v in args.editors.split(",") if v.strip()},
@@ -152,53 +151,53 @@ def cmd_documents(args: argparse.Namespace) -> int:
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "workflow-start":
-            state = _load_documents_state(service, args.document_id, args.version)
-            profile = service.get_profile(args.profile_id)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
+            profile = workflow_api.get_profile(args.profile_id)
             state = workflow_api.start_workflow(state, profile, actor_user_id=current_user.user_id, actor_role=current_role)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "editing-complete":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             sign_request = (_build_sign_request(args, "documents.editing_complete", current_user.username) if args.sign_input else None)
             state = workflow_api.complete_editing(state, sign_request=sign_request, actor_user_id=current_user.user_id, actor_role=current_role)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "review-accept":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             sign_request = (_build_sign_request(args, "documents.review_accept", current_user.username) if args.sign_input else None)
             state = workflow_api.accept_review(state, current_user.user_id, sign_request=sign_request, actor_role=current_role)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "review-reject":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             reason = RejectionReason(template_id=args.reason_template_id, template_text=args.reason_template_text, free_text=args.reason_free_text)
             state = workflow_api.reject_review(state, current_user.user_id, reason, actor_role=current_role)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "approval-accept":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             sign_request = (_build_sign_request(args, "documents.approval_accept", current_user.username) if args.sign_input else None)
             state = workflow_api.accept_approval(state, current_user.user_id, sign_request=sign_request, actor_role=current_role)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "approval-reject":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             reason = RejectionReason(template_id=args.reason_template_id, template_text=args.reason_template_text, free_text=args.reason_free_text)
             state = workflow_api.reject_approval(state, current_user.user_id, reason, actor_role=current_role)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "workflow-abort":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             state = workflow_api.abort_workflow(state, actor_user_id=current_user.user_id, actor_role=current_role)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "archive":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             state = workflow_api.archive_approved(state, current_role, actor_user_id=current_user.user_id)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "annual-extend":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             state, must_recreate = workflow_api.extend_annual_validity(
                 state,
                 actor_user_id=current_user.user_id,
@@ -246,12 +245,12 @@ def cmd_documents(args: argparse.Namespace) -> int:
             print(json.dumps(payload, ensure_ascii=True))
             return 0
         if args.documents_command == "metadata-get":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             payload = {"document_id": state.document_id, "version": state.version, "title": state.title, "description": state.description, "doc_type": state.doc_type.value, "control_class": state.control_class.value, "workflow_profile_id": state.workflow_profile_id, "valid_from": state.valid_from.isoformat() if state.valid_from else None, "valid_until": state.valid_until.isoformat() if state.valid_until else None, "next_review_at": state.next_review_at.isoformat() if state.next_review_at else None, "custom_fields": state.custom_fields}
             print(json.dumps(payload, ensure_ascii=True))
             return 0
         if args.documents_command == "metadata-set":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             custom_fields = json.loads(args.custom_fields_json) if args.custom_fields_json else None
             if custom_fields is not None and not isinstance(custom_fields, dict):
                 print("BLOCKED: --custom-fields-json must be a JSON object")
@@ -260,7 +259,7 @@ def cmd_documents(args: argparse.Namespace) -> int:
             _print_documents_state("OK", updated)
             return 0
         if args.documents_command == "change-request-add":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             updated = workflow_api.add_change_request(
                 state,
                 change_id=args.change_id,
@@ -281,11 +280,11 @@ def cmd_documents(args: argparse.Namespace) -> int:
             )
             return 0
         if args.documents_command == "change-request-list":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             print(json.dumps(workflow_api.list_change_requests(state), ensure_ascii=True))
             return 0
         if args.documents_command == "change-request-export":
-            state = _load_documents_state(service, args.document_id, args.version)
+            state = _load_documents_state(pool_api, args.document_id, args.version)
             rows = workflow_api.list_change_requests(state)
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)

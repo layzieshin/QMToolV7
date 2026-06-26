@@ -11,7 +11,7 @@ def test_compute_target_height_falls_back_to_default_aspect() -> None:
     assert compute_target_height(100.0, signature_aspect=None) == 30.0
 
 
-def test_resolve_label_pdf_anchor_uses_relative_offsets_when_present() -> None:
+def test_resolve_label_pdf_anchor_adds_relative_offsets_to_resolved_anchor() -> None:
     x, y = resolve_label_pdf_anchor(
         placement_x=100.0,
         placement_y=200.0,
@@ -23,7 +23,7 @@ def test_resolve_label_pdf_anchor_uses_relative_offsets_when_present() -> None:
         rel_x=10.0,
         rel_y=5.0,
     )
-    assert (x, y) == (110.0, 205.0)
+    assert (x, y) == (110.0, 247.0)
 
 
 def test_resolve_label_pdf_anchor_below_uses_offsets_without_relative() -> None:

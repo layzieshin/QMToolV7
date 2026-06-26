@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.registry.contribution import QtModuleContribution
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 
 
 class ContributionVisibilityPolicy:

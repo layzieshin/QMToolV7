@@ -9,7 +9,7 @@ except Exception:  # pragma: no cover
     QApplication = None
 
 from interfaces.pyqt.contributions.home_view import HomeDashboardWidget
-from interfaces.pyqt.contributions.training_placeholder import TrainingWorkspace
+from interfaces.pyqt.contributions.training_workspace import TrainingWorkspace
 from modules.training.contracts import AssignmentSource, TrainingInboxItem
 from qm_platform.runtime.container import RuntimeContainer
 
@@ -96,6 +96,11 @@ class _FakeDocsPool:
         return []
 
 
+class _FakeDocumentsArtifactsApi:
+    def get_released_pdf_for_reading(self, *args, **kwargs):
+        return None
+
+
 def _make_container(user=None) -> RuntimeContainer:
     container = RuntimeContainer()
     container.register_port("usermanagement_service", _FakeUserManagement(user))
@@ -103,6 +108,7 @@ def _make_container(user=None) -> RuntimeContainer:
     container.register_port("training_admin_api", _FakeTrainingAdminApi())
     container.register_port("documents_read_api", _FakeReadApi())
     container.register_port("documents_pool_api", _FakeDocsPool())
+    container.register_port("documents_artifacts_api", _FakeDocumentsArtifactsApi())
     return container
 
 
@@ -115,7 +121,7 @@ class TrainingLoginGateTest(unittest.TestCase):
     def test_training_workspace_constructs_without_login(self) -> None:
         widget = TrainingWorkspace(_make_container(user=None))
         self.assertFalse(widget._admin_bar.isVisible())
-        self.assertEqual(widget._table.rowCount(), 0)
+        self.assertEqual(widget._inbox_section.row_count(), 0)
         self.assertIn("Anmeldung erforderlich", widget._out.toPlainText())
 
     def test_training_workspace_refreshes_after_login(self) -> None:
@@ -123,15 +129,15 @@ class TrainingLoginGateTest(unittest.TestCase):
         widget = TrainingWorkspace(container)
         container.get_port("usermanagement_service")._user = _FakeUser("u1", "user", "User")
         widget.refresh_for_session()
-        self.assertEqual(widget._table.rowCount(), 1)
+        self.assertEqual(widget._inbox_section.row_count(), 1)
         self.assertNotIn("Anmeldung erforderlich", widget._out.toPlainText())
 
     def test_admin_action_without_admin_rights_is_guarded_before_admin_api_call(self) -> None:
         container = _make_container(user=_FakeUser("u1", "user", "User"))
         widget = TrainingWorkspace(container)
         admin_api = container.get_port("training_admin_api")
-        with patch("interfaces.pyqt.contributions.training_placeholder.QMessageBox.warning") as warning:
-            widget._on_statistics()
+        with patch("interfaces.pyqt.contributions.training_sections.admin_section.QMessageBox.warning") as warning:
+            widget._admin_bar._on_statistics()
         self.assertEqual(admin_api.calls, [])
         self.assertTrue(warning.called)
 

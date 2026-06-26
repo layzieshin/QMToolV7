@@ -5,7 +5,7 @@ from typing import cast
 
 from PyQt6.QtCore import QPointF
 
-from modules.signature.layout_math import resolve_label_pdf_anchor
+from modules.signature.api import resolve_label_pdf_anchor
 
 
 def compute_label_local_position(

@@ -10,7 +10,7 @@ def test_docx_conversion_worker_emits_finished(tmp_path: Path) -> None:
     output_path.write_bytes(b"pdf")
     events: dict[str, object] = {}
 
-    worker = DocxConversionWorker(lambda _docx: output_path, tmp_path / "input.docx")
+    worker = DocxConversionWorker(lambda: output_path)
     worker.finished.connect(lambda path: events.setdefault("path", path))
     worker.failed.connect(lambda err: events.setdefault("error", err))
     worker.run()
@@ -22,10 +22,10 @@ def test_docx_conversion_worker_emits_finished(tmp_path: Path) -> None:
 def test_docx_conversion_worker_emits_failed_on_exception(tmp_path: Path) -> None:
     events: dict[str, object] = {}
 
-    def _raise(_docx: Path) -> Path:
+    def _raise() -> Path:
         raise RuntimeError("boom")
 
-    worker = DocxConversionWorker(_raise, tmp_path / "input.docx")
+    worker = DocxConversionWorker(_raise)
     worker.finished.connect(lambda path: events.setdefault("path", path))
     worker.failed.connect(lambda err: events.setdefault("error", err))
     worker.run()

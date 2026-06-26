@@ -10,7 +10,7 @@ Offline-capable module licensing for QM-Tool. The **customer application** impor
 
 ## Base license vs. module lock
 
-The license file is the **base license**: it carries customer metadata, machine binding, signature, and `enabled_modules`. It is **not** an application start blocker. The app always starts; only modules with a `license_tag` (currently `training`) are locked when the base license is missing, invalid, expired, or does not enable the module.
+The license file is the **base license**: it carries customer metadata, machine binding, signature, and `enabled_modules`. It is **not** an application start blocker. The app always starts; only modules with a `license_tag` (currently `training`, `incident_management`) are locked when the base license is missing, invalid, expired, or does not enable the module.
 
 ## Schema v1
 
@@ -31,7 +31,13 @@ The license file is the **base license**: it carries customer metadata, machine 
 ```
 
 - `license_type`: `trial` (requires `expires_at`, hard expiry) or `full` (`expires_at: null`, no expiry)
-- `enabled_modules`: module tags from `core_license_tags()` (currently `training`)
+- `enabled_modules`: module tags from `core_license_tags()` (currently `training`, `incident_management`)
+
+## `key_id` vs `enabled_modules`
+
+- **`key_id`** names the Ed25519 **public** key used to verify the license signature (`prod-key` in production). It is not per-module SKU.
+- **`enabled_modules`** lists which module tags are unlocked in this license (e.g. `["training"]` or multiple tags in one file).
+- Use **one** production key pair for signing; control module access via `enabled_modules`, not separate private keys per module.
 
 ## Machine ID
 
@@ -57,6 +63,30 @@ Import decodes to the same payload as `license.json`.
 - Ports: `license_service`, `license_guard`
 - Enforcement: lifecycle `ensure_license`, `LicensedPortProxy` on licensed module APIs, GUI nav decoration
 - CLI: `license-check`, `doctor` (license:* checks)
+
+## Production signing key (one-time operator setup)
+
+The repository ships only `qm_platform/licensing/keys/prod_ed25519_public.pem`. The matching **private** key is **not** in git and is **not** auto-generated (unlike the dev key under `storage/platform/license/dev_ed25519_private.pem` in `QMTOOL_LICENSE_MODE=dev`).
+
+Operators must create the production key pair once before issuing customer licenses:
+
+```powershell
+python tools/internal_license_issuer/generate_prod_keypair.py generate --output-dir I:\qmtool-license-secrets
+```
+
+Then:
+
+1. Copy `prod_ed25519_public.pem` into `qm_platform/licensing/keys/`
+2. Rebuild the customer bundle (`.\.venv\Scripts\python.exe packaging/build_onedir.py`)
+3. Store `prod_ed25519_private.pem` outside the repo; use it only in the internal issuer
+4. Verify: `generate_prod_keypair.py verify-key --private-key-pem …` → `keys match: True`
+5. Before customer delivery: `generate_prod_keypair.py verify-license --license-json …` → `signature valid for customer build: True`
+
+If the private key used for signing does not match the bundled public key, customer import fails with **`license signature verification failed`** even when the issuer GUI “Key testen” succeeds (that test only roundtrips the selected private key).
+
+Key rotation requires a new public key in the repo, a customer EXE rebuild, and re-issuing all licenses.
+
+Details: `tools/internal_license_issuer/README.md`.
 
 ## Internal issuer (not shipped)
 

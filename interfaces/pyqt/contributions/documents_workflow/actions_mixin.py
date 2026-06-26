@@ -20,7 +20,6 @@ from PyQt6.QtWidgets import (
 
 from interfaces.pyqt.contributions.common import parse_csv_set, user_to_system_role
 from interfaces.pyqt.presenters.documents_workflow_presenter import DocumentsWorkflowPresenter
-from interfaces.pyqt.presenters.storage_paths import artifacts_root
 from interfaces.pyqt.widgets.document_create_wizard import DocumentCreateWizard
 from interfaces.pyqt.widgets.reject_reason_dialog import RejectReasonDialog
 from interfaces.pyqt.widgets.validity_extension_dialog import ValidityExtensionDialog
@@ -242,7 +241,7 @@ class DocumentsWorkflowActionsMixin:
             if wizard.exec() != QDialog.DialogCode.Accepted:
                 return
             cfg = wizard.payload()
-            profile = self._docs_service.get_profile(cfg.profile_id)
+            profile = self._wf.get_profile(cfg.profile_id)
             desired_editors = cfg.editors if cfg.editors else set(state.assignments.editors)
             desired_reviewers = cfg.reviewers if cfg.reviewers else set(state.assignments.reviewers)
             desired_approvers = cfg.approvers if cfg.approvers else set(state.assignments.approvers)
@@ -277,10 +276,7 @@ class DocumentsWorkflowActionsMixin:
                 allow_docx_fallback=False,
             )
             if pdf_path is None:
-                docx_path = self._sig_ops.find_docx_source_for_signature(state)
-                if docx_path is not None:
-                    self._convert_docx_for_signature(docx_path)
-            self._wf.ensure_source_pdf_for_signing(state, actor_user_id=user.user_id, actor_role=role)
+                self._ensure_source_pdf_for_signing_async(state, user, role)
             self._audit(
                 action="documents.workflow.editing.prepare_pdf",
                 actor=str(user.user_id),
@@ -333,9 +329,25 @@ class DocumentsWorkflowActionsMixin:
                 self._log.exception("Audit write failed after complete_editing exception")
             self._show_error(exc)
 
-    def _convert_docx_for_signature(self, docx_path: Path) -> None:
+    def _ensure_source_pdf_for_signing_async(self, state: object, user: object, role: object) -> None:
+        def _task() -> object:
+            from modules.documents.api import prepare_docx_conversion_runtime
+
+            prepare_docx_conversion_runtime()
+            path = self._wf.ensure_source_pdf_for_signing(
+                state,
+                actor_user_id=user.user_id,
+                actor_role=role,
+            )
+            if path is None:
+                raise RuntimeError(
+                    "SOURCE_PDF konnte nicht erzeugt werden. "
+                    "Prüfen Sie die DOCX-Quelle und ob Microsoft Word installiert ist."
+                )
+            return path
+
         worker_thread = QThread(self)
-        worker = DocxConversionWorker(self._sig_ops.convert_docx_to_temp_pdf, docx_path)
+        worker = DocxConversionWorker(_task)
         worker.moveToThread(worker_thread)
         loop = QEventLoop(self)
         result: dict[str, object] = {"path": None, "error": None}
@@ -353,7 +365,7 @@ class DocumentsWorkflowActionsMixin:
         worker.failed.connect(_on_failed)
         worker.finished.connect(worker_thread.quit)
         worker.failed.connect(worker_thread.quit)
-        progress = QProgressDialog("DOCX wird fuer Signatur nach PDF konvertiert ...", None, 0, 0, self)
+        progress = QProgressDialog("DOCX wird nach PDF überführt ...", None, 0, 0, self)
         progress.setWindowTitle("Dokumentenlenkung")
         progress.setCancelButton(None)
         progress.setMinimumDuration(0)
@@ -614,6 +626,3 @@ class DocumentsWorkflowActionsMixin:
             self._reload_table()
         except Exception as exc:  # noqa: BLE001
             self._show_error(exc)
-
-    def _resolve_artifacts_root(self) -> Path:
-        return artifacts_root(self._container, self._app_home)

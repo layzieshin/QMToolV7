@@ -5,6 +5,8 @@ import importlib
 from pathlib import Path
 from typing import cast
 
+import fitz
+
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
     QBrush,
@@ -32,8 +34,8 @@ from PyQt6.QtWidgets import (
 
 from interfaces.pyqt.logging_adapter import get_logger
 from interfaces.pyqt.widgets.pdf_rendering import get_page_count, pixmap_to_qpixmap, render_page
+from modules.signature.api import compute_target_height, resolve_label_pdf_anchor
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
-from modules.signature.layout_math import compute_target_height, resolve_label_pdf_anchor
 
 from .graphics_views import DraggableSignaturePixmapItem, ZoomablePlacementView
 from .options_mixin import SignaturePlacementOptionsMixin
@@ -275,7 +277,6 @@ class SignaturePlacementDialog(SignaturePlacementOptionsMixin, QDialog):
         self._sig_item = None
         self._render_error.clear()
         try:
-            fitz = importlib.import_module("fitz")
             with fitz.open(str(self._input_pdf)) as doc:
                 page_index = int(self._page.value())
                 if page_index < 0 or page_index >= doc.page_count:

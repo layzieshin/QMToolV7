@@ -1,0 +1,68 @@
+---
+description: Global workflow rule for safe step-by-step agentic coding in QMToolV7
+globs:
+alwaysApply: true
+---
+
+# Agent Workflow: Step-by-step execution with verification
+
+For every non-trivial coding task in this repository, follow this workflow.
+
+## Canonical project rules (do not duplicate)
+
+Before changing code, read the relevant canonical docs:
+
+- `docs/DOCS_CANONICAL_INDEX.md` (P0 overrules P1/P2)
+- `docs/ARCHITECTURE_REFACTOR_CANONICAL.md` (P0 architecture boundaries)
+- `docs/MODULE_INTEGRATION_POLICY.md` (P0 onboarding and integration rules)
+- `docs/TEST_SMOKE_GATES.md` (P0 verification gates)
+
+Architecture pointers (details live in the docs above):
+
+- Business logic belongs in `modules/*` services and `qm_platform/*`, not in PyQt widgets or CLI parsers.
+- External Python access to a module goes through `modules/<name>/api.py`; do not add new imports from module internals.
+- Runtime ports, capabilities, settings contributions, and domain events are integration mechanisms, not alternative import surfaces.
+- `src/backend/*` is a transport host; public backend imports go through `src/backend/api.py`.
+- Verify features CLI-first before GUI integration.
+- Before roadmap/backend/multiuser work, check `docs/MASTER_ORCHESTRATION_ROADMAP.md`.
+- Do not combine multiple roadmap packages in one implementation task.
+
+## Environment (this repo)
+
+- OS/shell: Windows / PowerShell — chain commands with `;`, not `&&`.
+- Python `3.14.x`; use the workspace venv explicitly:
+  `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest`.
+
+## Workflow
+
+1. Do not implement the whole task in one pass.
+2. First create a short numbered plan with small, independently testable steps.
+3. Execute exactly one step at a time.
+4. After each step, run the smallest relevant verification command for the changed layer:
+
+   | Change area | Command |
+   | --- | --- |
+| Platform/runtime | `.\.venv\Scripts\python.exe -m pytest tests/platform -q` |
+| Module service/logic | `.\.venv\Scripts\python.exe -m pytest tests/modules -q` or targeted `.\.venv\Scripts\python.exe -m pytest tests/modules/test_<module>_*.py -q` |
+| PyQt/GUI adapter | `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q` |
+| CLI flow | `.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -q` |
+| Backend host | `.\.venv\Scripts\python.exe -m src.backend` and `GET /health` when the server is running |
+| Runtime smoke | `.\.venv\Scripts\python.exe -m interfaces.cli.main health` |
+| Stricter runtime check | `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor --strict` |
+
+   This repo has no configured linter or typechecker (no ruff/flake8/mypy/pre-commit). Do not invent lint/typecheck steps.
+
+5. Do not continue to the next implementation step if the previous step has failing tests, CLI smoke failures, or obvious regressions.
+6. If a verification fails, fix the failure inside the current step before moving on.
+7. After each step, report:
+   - what changed
+   - which files were touched
+   - which verification command was run
+   - whether it passed or failed
+   - the next proposed step
+8. For behavior changes, add or update tests before considering the step complete.
+9. Before finalizing the task, run the broader relevant test suite unless it is clearly too expensive; if skipped, explain why. Use these broader gates when applicable:
+   - full layer runs: `.\.venv\Scripts\python.exe -m pytest tests/platform -q`, `tests/modules -q`, `tests/interfaces -q`, `tests/e2e_cli -q`
+   - packaging impact: `.\.venv\Scripts\python.exe packaging/build_onedir.py`
+   - release/migration impact: `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
+10. Prefer minimal, reviewable diffs over large rewrites.

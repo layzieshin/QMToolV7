@@ -4,6 +4,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,12 +34,12 @@ def _expected_registry_state(status: str | None) -> tuple[str, bool]:
 def rebuild_registry_from_documents(*, documents_db_path: Path, rebuilt_registry_db_path: Path) -> None:
     schema = Path("modules/registry/schema.sql").read_text(encoding="utf-8")
     rebuilt_registry_db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(rebuilt_registry_db_path) as reg_conn:
+    with closing(sqlite3.connect(rebuilt_registry_db_path)) as reg_conn:
         reg_conn.executescript(schema)
         reg_conn.execute("DELETE FROM document_registry")
         reg_conn.commit()
 
-    with sqlite3.connect(documents_db_path) as docs_conn:
+    with closing(sqlite3.connect(documents_db_path)) as docs_conn:
         doc_ids = [
             str(row[0])
             for row in docs_conn.execute(
@@ -57,7 +58,7 @@ def rebuild_registry_from_documents(*, documents_db_path: Path, rebuilt_registry
     for document_id, version, status in versions:
         status_by_doc.setdefault(str(document_id), []).append((int(version), str(status)))
 
-    with sqlite3.connect(rebuilt_registry_db_path) as reg_conn:
+    with closing(sqlite3.connect(rebuilt_registry_db_path)) as reg_conn:
         for doc_id in doc_ids:
             rows = status_by_doc.get(doc_id, [])
             approved_versions = [version for version, status in rows if status == "APPROVED"]

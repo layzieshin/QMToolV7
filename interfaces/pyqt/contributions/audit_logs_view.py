@@ -26,7 +26,7 @@ from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.widgets.audit_log_helpers import build_admin_checks, build_doc_history, build_technical_rows
 from interfaces.pyqt.widgets.table_helpers import configure_readonly_table, fill_table
 from qm_platform.runtime.container import RuntimeContainer
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 
 
 class AuditLogsWidget(QWidget):
@@ -34,7 +34,6 @@ class AuditLogsWidget(QWidget):
         super().__init__()
         self._container = container
         self._registry = container.get_port("registry_api")
-        self._docs = container.get_port("documents_service")
         self._pool = container.get_port("documents_pool_api")
         self._license = container.get_port("license_service")
         self._settings = container.get_port("settings_service")
@@ -202,7 +201,7 @@ class AuditLogsWidget(QWidget):
         if not doc_id:
             return
         version = int(self._version.text().strip() or "1")
-        payload = build_doc_history(self._registry, self._pool, self._docs, doc_id, version)
+        payload = build_doc_history(self._registry, self._pool, doc_id, version)
         state = payload.get("state")
         self._functional_rows = [
             (

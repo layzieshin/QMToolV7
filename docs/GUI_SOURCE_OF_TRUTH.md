@@ -17,4 +17,4 @@ Die einzige aktive GUI-Quelle für QMToolV7 ist:
 ## Konsequenz für Entwicklung
 
 - Navigation, Contributions und Widgets werden nur in `interfaces/pyqt` gepflegt.
-- Build und Test fokussieren auf den PyQt-Entry (`python -m interfaces.pyqt`) sowie `dist/QmToolPyQt.exe`.
+- Build und Test fokussieren auf den PyQt-Entry (`.\.venv\Scripts\python.exe -m interfaces.pyqt`) sowie `dist/QmToolPyQt.exe`.

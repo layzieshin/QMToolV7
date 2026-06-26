@@ -23,7 +23,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from interfaces.pyqt.presenters.artifact_paths import resolve_openable_artifact_paths
 from interfaces.pyqt.presenters.formatting import format_local, now_utc_aware
 from modules.documents.contracts import ArtifactType
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
@@ -50,17 +49,15 @@ class DocumentsSignatureOps:
         *,
         signature_api: object | None,
         pool_api: object,
+        artifacts_api: object,
         um_service: object,
         audit_logger: object | None,
-        app_home: Path,
-        artifacts_root: Path,
     ) -> None:
         self._signature_api = signature_api
         self._pool = pool_api
+        self._artifacts = artifacts_api
         self._um = um_service
         self._audit_logger = audit_logger
-        self._app_home = app_home
-        self._artifacts_root = artifacts_root
 
     # ------------------------------------------------------------------
     # Audit helper
@@ -389,22 +386,15 @@ class DocumentsSignatureOps:
         transition: str | None = None,
         allow_docx_fallback: bool = True,
     ) -> Path | None:
-        artifacts = self._pool.list_artifacts(state.document_id, state.version)
         transition_key = (transition or "").strip().upper()
-        if transition_key in {"IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED"}:
-            priorities = [ArtifactType.SIGNED_PDF]
-        elif transition_key == "EXTEND_VALIDITY":
-            priorities = [ArtifactType.SIGNED_PDF, ArtifactType.RELEASED_PDF]
-        else:
-            priorities = [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF, ArtifactType.RELEASED_PDF]
-        ordered_artifacts = sorted(artifacts, key=lambda a: 0 if getattr(a, "is_current", False) else 1)
-        for artifact_type in priorities:
-            for artifact in ordered_artifacts:
-                if artifact.artifact_type != artifact_type:
-                    continue
-                for path in self.resolve_openable_artifact_paths(artifact):
-                    if path.exists() and path.suffix.lower() == ".pdf":
-                        return path
+        ref = self._artifacts.get_preferred_pdf_artifact(
+            state.document_id,
+            state.version,
+            transition=transition,
+            purpose="signature",
+        )
+        if ref is not None:
+            return ref.path
 
         if transition_key in {"IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED", "EXTEND_VALIDITY"}:
             return None
@@ -412,106 +402,48 @@ class DocumentsSignatureOps:
         if not allow_docx_fallback:
             return None
 
-        conversion_errors: list[str] = []
-        for artifact in ordered_artifacts:
-            if artifact.artifact_type != ArtifactType.SOURCE_DOCX:
-                continue
-            for docx_path in self.resolve_openable_artifact_paths(artifact):
-                if docx_path.exists() and docx_path.suffix.lower() == ".docx":
-                    try:
-                        converted = self.convert_docx_to_temp_pdf(docx_path)
-                    except RuntimeError as exc:
-                        conversion_errors.append(str(exc))
-                        continue
-                    if converted is not None:
-                        return converted
-        if conversion_errors:
-            raise RuntimeError(conversion_errors[0])
+        docx_ref = self._artifacts.get_source_docx_for_conversion(state.document_id, state.version)
+        if docx_ref is not None:
+            try:
+                return self.convert_docx_to_temp_pdf(docx_ref.path)
+            except RuntimeError as exc:
+                raise RuntimeError(str(exc)) from exc
         return None
 
     def find_docx_source_for_signature(self, state: object) -> Path | None:
-        artifacts = self._pool.list_artifacts(state.document_id, state.version)
-        ordered_artifacts = sorted(artifacts, key=lambda a: 0 if getattr(a, "is_current", False) else 1)
-        for artifact in ordered_artifacts:
-            if artifact.artifact_type != ArtifactType.SOURCE_DOCX:
-                continue
-            for docx_path in self.resolve_openable_artifact_paths(artifact):
-                if docx_path.exists() and docx_path.suffix.lower() == ".docx":
-                    return docx_path
-        return None
+        ref = self._artifacts.get_source_docx_for_conversion(state.document_id, state.version)
+        return ref.path if ref is not None else None
 
     def convert_docx_to_temp_pdf(self, docx_path: Path) -> Path | None:
-        if os.name != "nt":
-            raise RuntimeError("DOCX-zu-PDF Fallback wird nur unter Windows unterstuetzt")
+        from modules.documents.api import ValidationError, convert_docx_to_pdf
+
         safe_stem = self.safe_document_title_token(docx_path.stem)
         output_name = f"{safe_stem}_{uuid4().hex[:8]}.pdf"
         output_path = Path(tempfile.gettempdir()) / output_name
         try:
-            import win32com.client  # type: ignore[import]
-
-            word = win32com.client.Dispatch("Word.Application")
-            word.Visible = False
-            word.DisplayAlerts = False
-            try:
-                doc = word.Documents.Open(str(docx_path.resolve()))
-                try:
-                    if doc.Revisions.Count > 0:
-                        doc.Revisions.AcceptAll()
-                    doc.ExportAsFixedFormat(
-                        str(output_path.resolve()),
-                        17, False, 0, 0, 1, 1, 0, True, True, 0, True, True, False,
-                    )
-                finally:
-                    doc.Close(False)
-            finally:
-                word.Quit()
-        except ImportError:
-            try:
-                from docx2pdf import convert  # type: ignore[import]
-                convert(str(docx_path), str(output_path))
-            except ImportError:
-                raise RuntimeError(
-                    "Weder pywin32 noch docx2pdf verfuegbar. "
-                    "Bitte installieren: pip install pywin32 (empfohlen) oder pip install docx2pdf"
-                )
-        except Exception as exc:
-            raise RuntimeError(f"Fehler bei DOCX-zu-PDF Konvertierung: {exc}") from exc
-        if output_path.exists() and output_path.stat().st_size > 0:
-            return output_path
-        raise RuntimeError(f"DOCX-zu-PDF Konvertierung fehlgeschlagen fuer {docx_path}")
+            convert_docx_to_pdf(docx_path, output_path)
+        except ValidationError as exc:
+            raise RuntimeError(str(exc)) from exc
+        return output_path
 
     # ------------------------------------------------------------------
     # Artifact path resolution
     # ------------------------------------------------------------------
 
     def open_artifact(self, state: object, artifact_type: ArtifactType) -> bool:
-        artifacts = self._pool.list_artifacts(state.document_id, state.version)
-        for artifact in artifacts:
-            if artifact.artifact_type != artifact_type:
-                continue
-            for path in self.resolve_openable_artifact_paths(artifact):
-                if not path.exists():
-                    continue
-                if hasattr(os, "startfile"):
-                    os.startfile(str(path))  # type: ignore[attr-defined]
-                    return True
+        refs = self._artifacts.get_openable_artifact_refs(
+            state.document_id,
+            state.version,
+            artifact_types=(artifact_type,),
+            existing_only=True,
+        )
+        if refs and hasattr(os, "startfile"):
+            os.startfile(str(refs[0].path))  # type: ignore[attr-defined]
+            return True
         return False
 
-    def resolve_openable_artifact_paths(self, artifact: object) -> list[Path]:
-        return resolve_openable_artifact_paths(
-            artifact=artifact,
-            app_home=self._app_home,
-            artifacts_root=self._artifacts_root,
-        )
-
     def resolve_openable_path_from_state(self, state: object) -> Path | None:
-        artifacts = self._pool.list_artifacts(state.document_id, state.version)
-        for artifact in artifacts:
-            if artifact.artifact_type not in {ArtifactType.RELEASED_PDF, ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF}:
-                continue
-            paths = self.resolve_openable_artifact_paths(artifact)
-            if paths:
-                return paths[0]
-        return None
+        ref = self._artifacts.get_preferred_pdf_artifact(state.document_id, state.version, purpose="signature")
+        return ref.path if ref is not None else None
 
 

@@ -104,6 +104,7 @@ def create_documents_module_contract() -> ModuleContract:
         provided_ports=[
             "documents_service",
             "documents_pool_api",
+            "documents_artifacts_api",
             "documents_read_api",
             "documents_comments_api",
             "documents_workflow_api",

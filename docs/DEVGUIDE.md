@@ -1,11 +1,12 @@
 # Developer Guide (Modular Platform)
 
 Status: Legacy/History (P2)  
-Canonical replacement: `docs/DOCS_CANONICAL_INDEX.md` and P0 docs
+Start here instead: `CONTRIBUTING.md` (developer entry) / `AGENTS.md` (AI entry); authority: `docs/DOCS_CANONICAL_INDEX.md` and P0 docs
 
 This guide is the fixed implementation reference for all new modules in this repository.
 
 Additional project rule sets:
+- `docs/MODULE_INTEGRATION_POLICY.md` (canonical onboarding checklist)
 - `docs/AGENTS_PROJECT.md`
 - `docs/GUI_ARCHITECTURE_PROJECT.md`
 - `docs/OPERATIONS_CANONICAL.md`
@@ -61,17 +62,18 @@ Runtime enforcement in `qm_platform/runtime/lifecycle.py` checks:
 
 Create:
 - `modules/<module>/contracts.py`
+- `modules/<module>/api.py`
 - `modules/<module>/service.py`
 - `modules/<module>/module.py`
-- optional `modules/<module>/api.py`
 
 Steps:
-1. Define typed request/result contracts (dataclasses).
-2. Implement service with explicit injected dependencies.
-3. Define `create_<module>_module_contract()` in `module.py`.
-4. Register module in `qm_platform/runtime/bootstrap.py`.
-5. Add CLI adapter if needed in `interfaces/cli/main.py`.
-6. Add tests in all relevant layers.
+1. Define typed request/result contracts (dataclasses) internally.
+2. Expose public DTOs/use cases explicitly through `api.py`.
+3. Implement service with explicit injected dependencies.
+4. Define `create_<module>_module_contract()` in `module.py`.
+5. Register module in `qm_platform/runtime/bootstrap.py`.
+6. Add CLI adapter if needed in `interfaces/cli/main.py`.
+7. Add tests in all relevant layers.
 
 ## 5) Port vs Capability
 
@@ -146,9 +148,9 @@ Keep payloads small, structured, and non-sensitive.
 ## 9) CLI-First Workflow
 
 Primary local verification commands:
-- `python -m interfaces.cli.main health`
-- `python -m interfaces.cli.main login --username admin --password "<strong-password>"`
-- `python -m interfaces.cli.main sign visual --help`
+- `.\.venv\Scripts\python.exe -m interfaces.cli.main health`
+- `.\.venv\Scripts\python.exe -m interfaces.cli.main login --username admin --password "<strong-password>"`
+- `.\.venv\Scripts\python.exe -m interfaces.cli.main sign visual --help`
 
 All feature work should be testable from CLI before GUI integration.
 
@@ -171,9 +173,9 @@ CI recommendation:
 - fail pipeline on any gate violation.
 - reference workflow in repository: `.github/workflows/ci-gates.yml`.
 - optional consolidated local gate:
-  - `python scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`.
+  - `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`.
 - reference implementation command:
-  - `python scripts/migration_gates_documents.py --documents-db-path "<path-to-documents.db>" --profiles-path "modules/documents/workflow_profiles.json" --baseline-other-count <pre-migration-count>`
+  - `.\.venv\Scripts\python.exe scripts/migration_gates_documents.py --documents-db-path "<path-to-documents.db>" --profiles-path "modules/documents/workflow_profiles.json" --baseline-other-count <pre-migration-count>`
   - optional registry drift checks: add `--registry-db-path "<path-to-registry.db>"`.
 
 ## 10) Testing Matrix (Required)
@@ -238,10 +240,11 @@ def create_<module>_module_contract() -> ModuleContract:
 
 When migrating legacy code (`core/`, `documents/`, old `signature/`):
 1. Define new typed contracts in `modules/<module>/contracts.py`.
-2. Wrap legacy internals in a new service (adapter style).
-3. Route CLI paths to new module service.
-4. Add parity tests before deleting legacy callsites.
-5. Remove legacy dependencies only after green qm_platform/module/e2e tests.
+2. Expose public imports through `modules/<module>/api.py`.
+3. Wrap legacy internals in a new service (adapter style).
+4. Route CLI paths to the public module API.
+5. Add parity tests before deleting legacy callsites.
+6. Remove legacy dependencies only after green qm_platform/module/e2e tests.
 
 Keep migration incremental and test-driven.
 

@@ -107,7 +107,7 @@ Notes:
 - Registry `active_version` not matching latest valid documents projection.
 - Registry state/status mismatch against document version state mapping.
 - Projection reject events (`domain.registry.projection.rejected.v1`) above threshold.
-- Reference automation: `python scripts/migration_gates_documents.py --documents-db-path "<...>" --registry-db-path "<...>"` reports machine-readable drift metrics for the first three checks.
+- Reference automation: `.\.venv\Scripts\python.exe scripts/migration_gates_documents.py --documents-db-path "<...>" --registry-db-path "<...>"` reports machine-readable drift metrics for the first three checks.
 
 ### Rebuild/reconciliation strategy
 
@@ -140,7 +140,7 @@ Notes:
 ### Recovery drill automation reference
 
 - Internal drill script:
-  - `python scripts/registry_recovery_drill.py --documents-db-path "<documents.db>" --registry-db-path "<registry.db>" --evidence-dir "<evidence-dir>" --rebuilt-registry-db-path "<rebuilt-registry.db>"`
+  - `.\.venv\Scripts\python.exe scripts/registry_recovery_drill.py --documents-db-path "<documents.db>" --registry-db-path "<registry.db>" --evidence-dir "<evidence-dir>" --rebuilt-registry-db-path "<rebuilt-registry.db>"`
 - Evidence output:
   - `registry_recovery_drill_evidence.json` with `drift_before` and `drift_after_rebuild` metrics.
 - Drill success criterion:

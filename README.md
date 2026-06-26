@@ -13,16 +13,18 @@ CLI-first modular quality management platform.
 - Supported runtime: `Python 3.14.x`
 - Project policy source: `pyproject.toml` (`requires-python = ">=3.14,<3.15"`)
 - Recommended local setup uses constraints for reproducible installs:
-  `python -m pip install -c constraints-py314.txt -r requirements.txt -r requirements-pyqt.txt`
+  `py -3.14 -m venv .venv`
+  `.\.venv\Scripts\python.exe -m pip install -c constraints-py314.txt -r requirements.txt -r requirements-pyqt.txt -r requirements-dev.txt`
 
 ## Active entry points
 
-- CLI: `python -m interfaces.cli.main`
-- PyQt GUI (current): `python -m interfaces.pyqt`
-- UI MVP (legacy/test-only): `python -m interfaces.gui.main`
-- First-run init: `python -m interfaces.cli.main init --non-interactive --admin-password "<password>"`
-- Runtime diagnostics: `python -m interfaces.cli.main doctor`
-- PyQt onefile build: `powershell -ExecutionPolicy Bypass -File "scripts/build_pyqt_onefile.ps1"`
+- CLI: `.\.venv\Scripts\python.exe -m interfaces.cli.main`
+- PyQt GUI (current): `.\.venv\Scripts\python.exe -m interfaces.pyqt`
+- UI MVP (legacy/test-only): `.\.venv\Scripts\python.exe -m interfaces.gui.main`
+- First-run init: `.\.venv\Scripts\python.exe -m interfaces.cli.main init --non-interactive --admin-password "<password>"`
+- Runtime diagnostics: `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor`
+- PyQt production build (onedir + ZIP): `.\.venv\Scripts\python.exe packaging/build_onedir.py` — see [`packaging/README.md`](packaging/README.md)
+- PyQt onefile build (**deprecated**): `powershell -ExecutionPolicy Bypass -File "scripts/build_pyqt_onefile.ps1"`
 
 ## Architecture overview
 
@@ -34,7 +36,9 @@ CLI-first modular quality management platform.
 ## Key docs
 
 - `docs/DOCS_CANONICAL_INDEX.md`
+- `docs/MODULE_INTEGRATION_POLICY.md` (module onboarding for contributors)
 - `docs/OPERATIONS_CANONICAL.md`
+- `docs/LICENSE_SPEC.md`
 - `docs/CLI_FIRST_MIGRATION.md`
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
 - `docs/GUI_SOURCE_OF_TRUTH.md`
@@ -48,9 +52,9 @@ CLI-first modular quality management platform.
 
 - Legacy GUI-first architecture paths were removed as part of the CLI-first migration.
 - Runtime settings and data are stored under `storage/` unless overridden by environment/config.
-- Reproducible test invocation (PowerShell): ``$env:PYTHONPATH="."; python -m pytest``.
+- Reproducible test invocation (PowerShell): ``.\.venv\Scripts\python.exe -m pytest``.
 - `docx2pdf` remains environment-dependent (Windows + installed Office/COM availability).
-- Current onefile output path for PyQt builds: `dist/QmToolPyQt.exe`.
+- Production PyQt output: `packaging/dist_output/QM-Tool/` and `QM-Tool.zip` (see `packaging/README.md`). Legacy onefile `dist/QmToolPyQt.exe` is deprecated.
 - GUI source of truth: `interfaces/pyqt/*` (legacy Tk UI is only for compatibility tests).
 - Existing UI smoke test coverage is currently legacy Tk-focused (`tests/interfaces/test_ui_mvp_smoke.py`); PyQt role-smokes are tracked in the current SRP/docs workstream.
 - Git client choice is IDE-independent (`PyCharm`, CLI, Cursor); CI gates remain the merge authority.

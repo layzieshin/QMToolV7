@@ -22,7 +22,7 @@ from interfaces.pyqt.registry.contribution import QtModuleContribution
 from interfaces.pyqt.widgets.access_guards import require_admin_or_qmb
 from interfaces.pyqt.widgets.users_admin_helpers import UsersAdminPresenter
 from qm_platform.runtime.container import RuntimeContainer
-from modules.usermanagement.role_policies import normalize_base_role
+from modules.usermanagement.api import normalize_base_role
 
 
 class UsersAdminWidget(QWidget):

@@ -23,7 +23,7 @@ from interfaces.pyqt.contributions.settings_sections import (
 )
 from interfaces.pyqt.contributions.users_view import UsersAdminWidget
 from interfaces.pyqt.registry.contribution import QtModuleContribution
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 from qm_platform.runtime.container import RuntimeContainer
 
 

@@ -38,7 +38,7 @@ class LabelLayoutInput:
     date_above: float = 18.0
     date_below: float = 24.0
     x_offset: float = 0.0
-    # Optional fine-grained relative offsets (preferred when set).
+    # Optional fine-grained offsets added to the resolved label anchor.
     name_rel_x: float | None = None
     name_rel_y: float | None = None
     date_rel_x: float | None = None

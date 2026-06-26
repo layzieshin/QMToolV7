@@ -102,7 +102,7 @@ def convert_docx_to_temp_pdf(
         except Exception as exc:
             if isinstance(exc, ValidationError):
                 raise
-            raise ValidationError(f"docx to pdf conversion failed: {exc}") from exc
+            raise ValidationError(f"DOCX-zu-PDF fehlgeschlagen: {exc}") from exc
 
 
 def create_artifact(

@@ -22,53 +22,47 @@ Dieses Verzeichnis ist die **schlanke Projekt-Arbeitskopie** (aus QmToolPyV4 üb
 ### Abhängigkeiten
 
 ```text
-python -m pip install -c constraints-py314.txt -r requirements.txt -r requirements-pyqt.txt
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -c constraints-py314.txt -r requirements.txt -r requirements-pyqt.txt -r requirements-dev.txt
 ```
 
 ### Einstiegspunkte
 
 | Zweck | Befehl (im Projektroot) |
 |--------|-------------------------|
-| CLI | `python -m interfaces.cli.main` |
-| PyQt-GUI | `python -m interfaces.pyqt` |
-| Tk-UI-MVP (Tests/Legacy) | `python -m interfaces.gui.main` |
-| Erst-Init (nicht-interaktiv) | `python -m interfaces.cli.main init --non-interactive --admin-password "<passwort>"` |
-| Diagnose | `python -m interfaces.cli.main doctor` |
+| CLI | `.\.venv\Scripts\python.exe -m interfaces.cli.main` |
+| PyQt-GUI | `.\.venv\Scripts\python.exe -m interfaces.pyqt` |
+| Tk-UI-MVP (Tests/Legacy) | `.\.venv\Scripts\python.exe -m interfaces.gui.main` |
+| Erst-Init (nicht-interaktiv) | `.\.venv\Scripts\python.exe -m interfaces.cli.main init --non-interactive --admin-password "<passwort>"` |
+| Diagnose | `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor` |
 
 ### Tests
 
 ```text
-$env:PYTHONPATH="."
-python -m pytest
+.\.venv\Scripts\python.exe -m pytest
 ```
 
-Hinweis: Auf einigen Umgebungen wird der Projektroot ohne gesetztes `PYTHONPATH` nicht immer automatisch als Import-Basis erkannt.
+Hinweis: `pytest.ini` setzt den Projektroot als Import-Basis; nutze trotzdem den expliziten `.venv`-Interpreter.
 Zusatz: `docx2pdf` ist weiterhin Office/COM-abhängig und kann auf minimalen CI-/VM-Umgebungen eingeschränkt sein.
 
-### Windows-Onefile-EXE (PyQt)
+### Windows-Build (PyQt, Onedir + ZIP)
+
+Primärer Produktions-Build (siehe `packaging/README.md`):
 
 ```text
-powershell -ExecutionPolicy Bypass -File scripts\build_pyqt_onefile.ps1
+.\.venv\Scripts\python.exe packaging/build_onedir.py
 ```
 
-Ausgabe: `dist\QmToolPyQt.exe` (lokaler Build unter `%LOCALAPPDATA%\QmToolPyQtBuild` wird bei Erfolg ins Projekt-`dist` kopiert). Bei Defender/Share-Problemen: Ausnahmen für den Build-Ordner siehe Kommentare in `qm_tool_pyqt.spec` / Build-Skript.
+Ausgabe: `packaging/dist_output/QM-Tool/` (Ordner mit `QM-Tool.exe`, `_internal/`) und `packaging/dist_output/QM-Tool.zip`. Der Build führt automatisch `packaging/verify_customer_bundle.py` und `packaging/verify_bundle_imports.py` als Gates aus.
 
-### Onefile-Schnelltest (PyQt)
+Hinweis: Das frühere Onefile-Skript `scripts/build_pyqt_onefile.ps1` (`dist\QmToolPyQt.exe`) ist **deprecated** und sollte nicht mehr für Releases verwendet werden.
 
-1. EXE bauen:
+### Schnelltest (PyQt)
 
-```text
-powershell -ExecutionPolicy Bypass -File scripts\build_pyqt_onefile.ps1
-```
-
-2. EXE starten:
-
-```text
-dist\QmToolPyQt.exe
-```
-
+1. Bundle bauen: `.\.venv\Scripts\python.exe packaging/build_onedir.py`
+2. EXE starten: `packaging\dist_output\QM-Tool\QM-Tool.exe`
 3. Bei Startproblemen:
-- zuerst `python -m interfaces.cli.main doctor` ausführen
+- zuerst `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor` ausführen
 - Lizenz-/Modulstatus in der GUI unter `Einstellungen -> Lizenzverwaltung` prüfen
 - auf Netzwerkpfaden ggf. EXE lokal testen (Defender/Policy-Einfluss)
 
@@ -94,7 +88,7 @@ Zusatz: `Admin/Debug` ist für Admins persistent ein-/ausblendbar (`Ansicht -> A
 - Start-Dashboard nutzt klickbare Arbeitskarten mit Navigation in `Dokumentenlenkung`, `Dokumente` und `Schulung`.
 - Signaturbereich setzt Ausgabe automatisch (`_signiert.pdf`), blockiert existierende Zieldateien und bietet Canvas-Zeichnen für Signaturen.
 - Audit-&-Logs-Ansicht nutzt Tabellen + Filter + CSV/PDF-Export auf Basis `log_query_service`.
-- Onefile-Build erfolgreich getestet: `dist\QmToolPyQt.exe`.
+- Produktions-Build auf Onedir + ZIP umgestellt: `packaging/dist_output/QM-Tool/` und `QM-Tool.zip` (Onefile deprecated).
 
 ## Dokumentation (Überblick)
 

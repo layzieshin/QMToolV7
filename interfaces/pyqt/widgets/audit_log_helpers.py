@@ -26,11 +26,11 @@ def build_functional_summary(registry_api, pool_api) -> dict[str, object]:
     }
 
 
-def build_doc_history(registry_api, pool_api, documents_service, doc_id: str, version: int) -> dict[str, object]:
+def build_doc_history(registry_api, pool_api, doc_id: str, version: int) -> dict[str, object]:
     return {
         "registry": registry_api.get_entry(doc_id),
         "header": pool_api.get_header(doc_id),
-        "state": documents_service.get_document_version(doc_id, version),
+        "state": pool_api.get_document_version(doc_id, version),
         "artifacts": pool_api.list_artifacts(doc_id, version),
     }
 

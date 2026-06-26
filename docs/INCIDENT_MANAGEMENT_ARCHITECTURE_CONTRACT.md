@@ -25,10 +25,12 @@ CAPA, reports, and management review are **internal subdomains** — not separat
 
 ## Public boundary
 
-External callers import only:
+External Python callers import only:
 
 - `modules/incident_management/api.py`
-- `modules/incident_management/contracts.py`
+
+DTOs and contract names needed outside the module must be exposed by `api.py`; direct new
+external imports from `contracts.py` are not a public boundary.
 
 Port name: `incident_management_api`  
 License tag: `incident_management`

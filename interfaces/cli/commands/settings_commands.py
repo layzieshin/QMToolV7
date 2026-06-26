@@ -6,7 +6,7 @@ import json
 from modules.documents.contracts import SystemRole
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.settings.settings_service import SettingsService
-from modules.usermanagement.role_policies import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb
 
 from interfaces.cli.bootstrap import build_container
 

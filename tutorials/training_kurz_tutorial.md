@@ -34,12 +34,12 @@ Hinweis:
 ## 5) Kurz-Check per Tests
 ```powershell
 cd I:\Projekte\QMToolV7
-python -m pytest tests/training/test_training_events.py tests/training/test_training_read_event_receipt_verification.py -q
+.\.venv\Scripts\python.exe -m pytest tests/training/test_training_events.py tests/training/test_training_read_event_receipt_verification.py -q
 ```
 
 Optional (breiter Regression-Check):
 ```powershell
 cd I:\Projekte\QMToolV7
-python -m pytest tests/training/ tests/interfaces/test_training_login_gate.py tests/modules/test_documents_event_order.py -q
+.\.venv\Scripts\python.exe -m pytest tests/training/ tests/interfaces/test_training_login_gate.py tests/modules/test_documents_event_order.py -q
 ```
 

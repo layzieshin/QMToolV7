@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from interfaces.pyqt.registry import catalog
@@ -10,6 +11,74 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _read(rel_path: str) -> str:
     return (ROOT / rel_path).read_text(encoding="utf-8")
+
+
+def _pyqt_production_files() -> list[Path]:
+    return sorted((ROOT / "interfaces" / "pyqt").rglob("*.py"))
+
+
+def _documents_pyqt_files() -> list[Path]:
+    base = ROOT / "interfaces" / "pyqt"
+    candidates = [
+        base / "contributions" / "documents_pool_view.py",
+        base / "contributions" / "training_workspace.py",
+        base / "contributions" / "documents_workflow_view.py",
+        base / "presenters" / "documents_signature_ops.py",
+    ]
+    candidates.extend((base / "contributions" / "documents_workflow").rglob("*.py"))
+    candidates.extend(base.glob("presenters/documents_*.py"))
+    return sorted({path for path in candidates if path.exists()})
+
+
+def _declared_contribution_ids(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    ids: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "QtModuleContribution":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "contribution_id" and isinstance(keyword.value, ast.Constant):
+                if isinstance(keyword.value.value, str):
+                    ids.add(keyword.value.value)
+    return ids
+
+
+def _contributions_returns_empty_list(path: Path) -> bool:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or node.name != "contributions":
+            continue
+        returns = [child for child in node.body if isinstance(child, ast.Return)]
+        return len(returns) == 1 and isinstance(returns[0].value, ast.List) and returns[0].value.elts == []
+    return False
+
+
+def test_pyqt_contribution_modules_are_registered_or_explicitly_embedded() -> None:
+    """Top-level contribution modules must not drift out of the shell catalog."""
+    catalog_ids = {item.contribution_id for item in catalog.all_contributions()}
+    contributions_root = ROOT / "interfaces" / "pyqt" / "contributions"
+    explicit_non_catalog_modules = {
+        "training_placeholder.py": "legacy compatibility wrapper",
+        "users_view.py": "embedded in settings_view",
+    }
+
+    missing: list[str] = []
+    for path in sorted(contributions_root.glob("*.py")):
+        if path.name in explicit_non_catalog_modules:
+            continue
+        declared_ids = _declared_contribution_ids(path)
+        if not declared_ids:
+            continue
+        missing_ids = sorted(declared_ids - catalog_ids)
+        if missing_ids:
+            missing.append(f"{path.relative_to(ROOT)} -> {missing_ids}")
+
+    assert missing == []
+    assert _declared_contribution_ids(contributions_root / "training_placeholder.py") == set()
+    assert _contributions_returns_empty_list(contributions_root / "users_view.py")
+    assert "platform.users_admin" not in catalog_ids
 
 
 def test_home_dashboard_routes_by_contribution_id() -> None:
@@ -29,7 +98,7 @@ def test_dashboard_targets_exist_in_catalog() -> None:
 def test_hotspots_use_presenter_layer() -> None:
     assert "DocumentsWorkflowPresenter" in _read("interfaces/pyqt/contributions/documents_workflow_view.py")
     assert "DocumentsWorkflowFilterPresenter" in _read("interfaces/pyqt/contributions/documents_workflow_view.py")
-    assert "TrainingPresenter" in _read("interfaces/pyqt/contributions/training_placeholder.py") or "TrainingPresenter" in _read("interfaces/pyqt/presenters/training_presenter.py")
+    assert "TrainingPresenter" in _read("interfaces/pyqt/contributions/training_workspace.py") or "TrainingPresenter" in _read("interfaces/pyqt/presenters/training_presenter.py")
     assert "SettingsProfilePresenter" in _read(
         "interfaces/pyqt/contributions/settings_sections/profile_section.py"
     )
@@ -41,8 +110,168 @@ def test_hotspots_use_presenter_layer() -> None:
 
 def test_domain_ui_hotspots_no_json_renderer() -> None:
     assert "as_json_text(" not in _read("interfaces/pyqt/contributions/home_view.py")
-    assert "as_json_text(" not in _read("interfaces/pyqt/contributions/training_placeholder.py")
+    assert "as_json_text(" not in _read("interfaces/pyqt/contributions/training_workspace.py")
     assert "as_json_text(" not in _read("interfaces/pyqt/contributions/signature_view.py")
+
+
+def test_training_workspace_remains_composition_only() -> None:
+    """Training workspace composes sections; feature handlers belong to those sections."""
+    content = _read("interfaces/pyqt/contributions/training_workspace.py")
+    tree = ast.parse(content)
+
+    forbidden_functions = {
+        # Admin-section handlers must stay in training_sections/admin_section.py.
+        "_on_import_quiz",
+        "_on_bind_quiz",
+        "_on_statistics",
+        "_on_comments_admin",
+        "_on_set_document_tags",
+        "_on_set_user_tags",
+        "_on_rebuild_snapshots",
+        "_on_export_matrix",
+        "_open_tag_editor_dialog",
+        # Inbox table state/rendering must stay in training_sections/inbox_section.py.
+        "_load_inbox",
+        "load_inbox",
+        "_render_table",
+        "_on_selection_changed",
+        "current_item",
+        "row_count",
+        # User-action handlers must stay in training_sections/user_actions_section.py.
+        "_on_read",
+        "_open_released_pdf",
+        "_on_start_quiz",
+        "_on_show_last_quiz_review",
+        "_on_add_comment",
+    }
+    forbidden_self_attrs = {
+        "_inbox_items",
+        "_selected_item",
+        "_btn_read",
+        "_btn_quiz_start",
+        "_btn_quiz_review",
+        "_btn_comment",
+        "_btn_import_quiz",
+        "_btn_bind_quiz",
+        "_btn_stats",
+        "_btn_comments_admin",
+        "_btn_doc_tags",
+        "_btn_user_tags",
+        "_btn_rebuild",
+        "_btn_export",
+        "_btn_refresh",
+        "_table",
+    }
+    forbidden_imports_or_calls = {
+        # Direct table/layout/dialog widgets owned by the extracted sections.
+        "QDialog",
+        "QDialogButtonBox",
+        "QFileDialog",
+        "QHBoxLayout",
+        "QInputDialog",
+        "QTableWidget",
+        "QTableWidgetItem",
+        "PdfViewerDialog",
+        "PdfViewerRequest",
+        "QuizDialog",
+        "QuizBindingDialog",
+        "QuizResultDialog",
+        "TagEditorWidget",
+        "TrainingCommentsAdminDialog",
+    }
+
+    function_offenders = sorted(
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name in forbidden_functions
+    )
+    attr_offenders = sorted(
+        {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+            and node.attr in forbidden_self_attrs
+        }
+    )
+    import_or_call_offenders = sorted(
+        {
+            node.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id in forbidden_imports_or_calls
+        }
+    )
+
+    assert function_offenders == []
+    assert attr_offenders == []
+    assert import_or_call_offenders == []
+    assert "class TrainingWorkspace(" in content
+    assert "TrainingAdminSection" in content
+    assert "TrainingInboxSection" in content
+    assert "TrainingUserActionsSection" in content
+    assert "def _build(" in content
+    assert "def contributions(" in content
+
+
+def test_training_placeholder_is_thin_compatibility_wrapper() -> None:
+    """The legacy placeholder module must only re-export the canonical training workspace."""
+    content = _read("interfaces/pyqt/contributions/training_placeholder.py")
+    tree = ast.parse(content)
+
+    executable_nodes = [
+        node
+        for node in tree.body
+        if not (
+            isinstance(node, ast.ImportFrom)
+            or isinstance(node, ast.Assign)
+            or (
+                isinstance(node, ast.Expr)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            )
+        )
+    ]
+    import_from_modules = {
+        node.module
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module != "__future__"
+    }
+    workspace_imports = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "interfaces.pyqt.contributions.training_workspace"
+    ]
+    assignments = [node for node in tree.body if isinstance(node, ast.Assign)]
+    defined_functions = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
+    defined_classes = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+
+    assert executable_nodes == []
+    assert import_from_modules == {"interfaces.pyqt.contributions.training_workspace"}
+    assert len(workspace_imports) == 1
+    assert {alias.name for alias in workspace_imports[0].names} == {
+        "TrainingWorkspace",
+        "_build",
+        "contributions",
+    }
+    assert len(assignments) == 1
+    assert len(assignments[0].targets) == 1
+    assert isinstance(assignments[0].targets[0], ast.Name)
+    assert assignments[0].targets[0].id == "__all__"
+    assert isinstance(assignments[0].value, ast.List)
+    assert [item.value for item in assignments[0].value.elts if isinstance(item, ast.Constant)] == [
+        "TrainingWorkspace",
+        "_build",
+        "contributions",
+    ]
+    assert defined_functions == []
+    assert defined_classes == []
+    assert calls == []
+    assert "TrainingWorkspace" in content
+    assert "_build" in content
+    assert "contributions" in content
 
 
 def test_documents_workflow_uses_business_document_id_in_creation_flow() -> None:
@@ -108,6 +337,53 @@ def test_boundary_gate_cli_commands_no_internal_imports() -> None:
             assert "from modules." not in content.split(".errors")[0].split("\n")[-1] or "api" in content, (
                 f"{name} imports errors directly instead of via api.py"
             )
+
+
+def test_boundary_gate_cli_commands_no_broad_module_service_ports() -> None:
+    """CLI commands use public module APIs instead of broad Documents/Signature service ports."""
+    content = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (ROOT / "interfaces" / "cli" / "commands").glob("*.py")
+    )
+    assert 'get_port("documents_service")' not in content
+    assert 'get_port("signature_service")' not in content
+
+
+def test_boundary_gate_pyqt_no_broad_documents_service_port() -> None:
+    """PyQt uses specialized Documents APIs instead of the broad Documents service port."""
+    offenders: list[str] = []
+    for path in _pyqt_production_files():
+        content = path.read_text(encoding="utf-8")
+        if 'get_port("documents_service")' in content:
+            offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []
+
+
+def test_boundary_gate_pyqt_no_documents_artifact_path_helper_imports() -> None:
+    """Documents artifact path resolution belongs to documents_artifacts_api."""
+    assert not (ROOT / "interfaces/pyqt/presenters/artifact_paths.py").exists()
+    for path in _pyqt_production_files():
+        content = path.read_text(encoding="utf-8")
+        assert "interfaces.pyqt.presenters.artifact_paths" not in content, (
+            f"{path.relative_to(ROOT)} imports the old PyQt artifact path helper"
+        )
+
+
+def test_boundary_gate_pyqt_no_documents_artifact_storage_paths() -> None:
+    """PyQt must not know concrete Documents artifact storage paths."""
+    for path in _pyqt_production_files():
+        content = path.read_text(encoding="utf-8")
+        assert "storage/documents/artifacts" not in content, (
+            f"{path.relative_to(ROOT)} contains Documents artifact storage path details"
+        )
+
+
+def test_boundary_gate_documents_pyqt_no_storage_key_path_logic() -> None:
+    """Documents PyQt code must use documents_artifacts_api instead of storage_key path logic."""
+    for path in _documents_pyqt_files():
+        content = path.read_text(encoding="utf-8")
+        assert "storage_key" not in content, f"{path.relative_to(ROOT)} still references Documents storage_key"
+        assert "artifacts_root" not in content, f"{path.relative_to(ROOT)} still references Documents artifacts_root"
 
 
 def test_documents_signature_ops_extracted() -> None:

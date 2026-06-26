@@ -8,22 +8,24 @@ For AI-assisted work, see [`AGENTS.md`](AGENTS.md) and `.cursor/rules/00-agent-w
 ## Setup and start
 
 - Python `3.14.x` (`pyproject.toml` `requires-python = ">=3.14,<3.15"`).
+- Use the workspace venv explicitly: `.\.venv\Scripts\python.exe`.
 - Install (PowerShell; chain with `;`, not `&&`):
 
 ```powershell
-python -m pip install -c constraints-py314.txt -r requirements.txt -r requirements-pyqt.txt
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -c constraints-py314.txt -r requirements.txt -r requirements-pyqt.txt -r requirements-dev.txt
 ```
 
 Entry points (run from the project root):
 
 | Purpose | Command |
 | --- | --- |
-| CLI | `python -m interfaces.cli.main` |
-| PyQt GUI (current) | `python -m interfaces.pyqt` |
-| First-run init | `python -m interfaces.cli.main init --non-interactive --admin-password "<password>"` |
-| Diagnostics | `python -m interfaces.cli.main doctor` (`--strict` for production checks) |
-| Tests | `$env:PYTHONPATH="."; python -m pytest` |
-| Production build | `python packaging/build_onedir.py` |
+| CLI | `.\.venv\Scripts\python.exe -m interfaces.cli.main` |
+| PyQt GUI (current) | `.\.venv\Scripts\python.exe -m interfaces.pyqt` |
+| First-run init | `.\.venv\Scripts\python.exe -m interfaces.cli.main init --non-interactive --admin-password "<password>"` |
+| Diagnostics | `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor` (`--strict` for production checks) |
+| Tests | `.\.venv\Scripts\python.exe -m pytest` |
+| Production build | `.\.venv\Scripts\python.exe packaging/build_onedir.py` |
 
 ## Documentation map ("I want X -> read Y")
 
@@ -45,7 +47,9 @@ Recommended reading order follows the "Mandatory Reading Order" in [`docs/OPERAT
 ## Core rules (summary)
 
 - Business logic in `modules/*` services and `qm_platform/*`; keep UI/CLI as thin adapters.
-- Cross-module access only via a module's public boundary (`modules/<name>/api.py` + `contracts.py`).
+- External Python access to modules goes through `modules/<name>/api.py`; runtime ports,
+  capabilities and events are integration mechanisms, not alternative import surfaces.
+- State-changing operations from outside a module must use explicit public API contracts.
 - Enforce auth/roles in the service layer, not in widgets or CLI parsers.
 - Verify features CLI-first before GUI integration.
 

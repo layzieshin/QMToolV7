@@ -10,12 +10,15 @@ password_crypto.py, repository.py
 from __future__ import annotations
 
 from .contracts import AuthenticatedUser
+from .role_policies import is_effective_qmb, normalize_base_role
 
 __all__ = [
     "AuthenticatedUser",
     "get_usermanagement_service",
     "bootstrap_admin",
     "self_register",
+    "is_effective_qmb",
+    "normalize_base_role",
 ]
 
 

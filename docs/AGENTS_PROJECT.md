@@ -53,15 +53,21 @@ Each module should expose:
 - `contracts.py`
 - `service.py`
 - `module.py`
-- optional `api.py`
+- `api.py`
 
-State-changing operations must end in the authoritative module service.
+State-changing operations from outside a module must enter through that module's public API.
+The internal service remains a module implementation detail.
 
-### Public Surface Policy (Normative)
+### Public Surface Policy (Historical)
 
-- The only supported external integration surface of a module is its declared `provided_ports`.
-- Interfaces and other modules must call module behavior through these declared ports only.
-- Importing non-contract internals across module boundaries is forbidden, even if technically possible.
+This P2 document is not the authority for public boundaries. Use
+`docs/ARCHITECTURE_REFACTOR_CANONICAL.md` and `docs/MODULE_INTEGRATION_POLICY.md`.
+
+- The target public Python import boundary of a module is `api.py`.
+- `contracts.py`, declared ports, capabilities, and domain events remain implementation or
+  runtime integration mechanisms unless exposed by `api.py`.
+- Interfaces and other modules must call module behavior through public APIs or explicit runtime wiring.
+- Importing module internals across module boundaries is forbidden, even if technically possible.
 - If a module exposes multiple provided ports, each port must have a clear scope:
   - authoritative write kernel
   - specialized read view
@@ -81,8 +87,8 @@ State-changing operations must end in the authoritative module service.
 
 Allowed:
 - module -> platform
-- interface -> module API/service ports
-- module -> other module only via declared ports/APIs
+- interface -> module API/runtime wiring
+- module -> other module only via public APIs or explicit runtime integration mechanisms
 
 Avoid:
 - importing internals of other modules

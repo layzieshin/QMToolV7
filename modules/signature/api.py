@@ -5,11 +5,13 @@ from pathlib import Path
 
 from .contracts import SignRequest, SignResult, SignatureAsset, SignaturePlacementInput, UserSignatureTemplate, LabelLayoutInput
 from .errors import SignatureError
+from .layout_math import compute_target_height, resolve_label_pdf_anchor
 from .service import SignatureServiceV2
 
 __all__ = [
     "SignatureApi",
     "SignatureError",
+    "compute_target_height", "resolve_label_pdf_anchor",
     "SignRequest", "SignResult", "SignatureAsset",
     "SignaturePlacementInput", "UserSignatureTemplate", "LabelLayoutInput",
 ]

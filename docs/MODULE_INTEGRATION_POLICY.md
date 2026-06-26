@@ -20,7 +20,7 @@ Related P0 sources (authoritative detail):
 
 - In-repository module development under `modules/*`
 - Registration in `qm_platform/runtime/bootstrap.py` (`core_module_contracts()`)
-- Integration via **ports**, **capabilities**, **settings contributions**, **domain events**, **CLI**, and **PyQt contributions**
+- Integration via explicit module APIs, **ports**, **capabilities**, **settings contributions**, **domain events**, **CLI**, and **PyQt contributions**
 - Offline licensing, local auth, structured logging, and audit trails
 
 ### Out of scope (today)
@@ -47,7 +47,7 @@ Use this checklist when adding or extending a module. Every item is blocking bef
   - `required_capabilities` / `provided_capabilities`
   - optional `settings_contribution`, optional `license_tag`
 - [ ] **Registration** — add `create_<name>_module_contract()` to `qm_platform/runtime/bootstrap.py` → `core_module_contracts()`
-- [ ] **Public boundary** — external callers import only `modules/<name>/api.py` and `contracts.py` (see `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`)
+- [ ] **Public boundary** — external Python callers import only `modules/<name>/api.py`; DTOs/contracts needed outside the module must be explicitly exposed there (see `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`)
 - [ ] **Licensing** — if commercial gating is required, set `license_tag` and follow section 3; register tag is auto-discovered via `core_license_tags()`
 - [ ] **Auth** — enforce roles in **service layer**, not in widgets or CLI parsers (section 4)
 - [ ] **Logging** — use correct logger type per section 5
@@ -118,8 +118,8 @@ See `docs/MODULES_DEVELOPER_GUIDE.md` (usermanagement) and `docs/OPERATIONS_CANO
 ### CLI session
 
 ```bash
-python -m interfaces.cli.main login --username <user> --password "<password>"
-python -m interfaces.cli.main logout
+.\.venv\Scripts\python.exe -m interfaces.cli.main login --username <user> --password "<password>"
+.\.venv\Scripts\python.exe -m interfaces.cli.main logout
 ```
 
 Session file: `storage/platform/session/current_user.json` under `QMTOOL_HOME`.
@@ -152,11 +152,21 @@ Log imports via `audit_logger` (GUI already emits `license.import.file` / `licen
 
 From `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`:
 
-- External imports: `modules/<modul>/api.py` + `contracts.py` only
-- Forbidden from outside: `service.py`, repositories, internal helpers
-- Adapters (`interfaces/cli/*`, `interfaces/pyqt/*`) must not bypass service invariants
-- Cross-module access: **declared ports** and **capabilities**, not direct internal imports
-- State-changing operations must end in the authoritative module service
+- The public Python import boundary of a module is `modules/<modul>/api.py`.
+- `contracts.py` may contain internal DTOs/types, but external DTO access must be made
+  explicit through `api.py`; direct new external imports from `contracts.py` are not allowed.
+- Registered `RuntimeContainer` ports, declared `ModuleContract` capabilities, settings
+  contributions, and domain events are runtime integration mechanisms, not alternative
+  Python import surfaces.
+- Forbidden from outside: `service.py`, repositories, `storage.py`, `errors.py`,
+  `*_ops.py`, `module.py`, `wiring.py`, internal helpers, and concrete path/persistence/rendering/layout logic.
+- Adapters (`interfaces/cli/*`, `interfaces/pyqt/*`) must not bypass service invariants.
+- Cross-module access: public `api.py` contracts or explicit runtime wiring, not direct
+  internal imports.
+- Events notify about domain events, state changes, or explicitly modeled domain actions;
+  they are not a substitute for targeted queries and must not become hidden request/response.
+- State-changing operations from outside a module must go through explicit public API
+  contracts; internal services remain module implementation details.
 
 ## 7. Adapter integration (CLI-first)
 
@@ -203,27 +213,28 @@ Minimum before merge:
 Run locally:
 
 ```bash
-python -m unittest discover -s tests -p "test_*.py" -q
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -q
 ```
 
-Release gates: `docs/TEST_SMOKE_GATES.md`, `scripts/golive_gate.py`, `python -m interfaces.cli.main doctor --strict`.
+Release gates: `docs/TEST_SMOKE_GATES.md`, `scripts/golive_gate.py`,
+`.\.venv\Scripts\python.exe -m interfaces.cli.main doctor --strict`.
 
 ## 10. Release and bundle constraints
 
 - Customer bundle must pass `packaging/verify_customer_bundle.py` (no private keys, no internal issuer)
 - See `packaging/README.md` and `docs/LICENSE_SPEC.md`
-- PyQt build: `python packaging/build_onedir.py`
+- PyQt build: `.\.venv\Scripts\python.exe packaging/build_onedir.py`
 
 ## 11. Quick reference — integration surfaces
 
 | Surface | Location | Consumer |
 | --- | --- | --- |
-| Module port | `container.get_port("<port>")` | CLI, PyQt, other modules |
-| Public API | `modules/<m>/api.py` | Adapters, cross-module calls |
+| Public Python API | `modules/<m>/api.py` | Adapters, cross-module calls |
+| Runtime port | `container.get_port("<port>")` | Runtime-wired adapters/modules |
 | Capability | string in `ModuleContract` | Startup validation |
 | Settings | `settings_service.get_module_settings(module_id)` | Services, adapters |
 | License check | `license_guard.ensure_module_allowed(tag)` | Licensed write/read APIs |
-| Event publish | `event_bus.publish(envelope)` | Cross-module workflows |
+| Event publish | `event_bus.publish(envelope)` | Cross-module notifications |
 
 ## 12. Agent and contributor rule
 

@@ -536,9 +536,11 @@ werden ersetzt durch:
 
 ## 8. GUI-Vorgabe für die neue Trainingsansicht
 
-Die bestehende `training_placeholder.py` ist nur ein Platzhalter und darf nicht einfach weiter aufgeblasen werden.
+Der kanonische Einstieg fuer die Trainings-GUI ist `interfaces/pyqt/contributions/training_workspace.py`.
+`interfaces/pyqt/contributions/training_placeholder.py` bleibt nur als Legacy-Kompatibilitaetswrapper bestehen
+und darf keine eigene GUI-Logik enthalten.
 
-Es ist eine neue fachlich saubere Trainings-Workspace-Ansicht zu bauen, strukturell angelehnt an die Dokumentenlenkung.
+Die fachlich saubere Trainings-Workspace-Ansicht ist strukturell an die Dokumentenlenkung angelehnt.
 
 ## 8.1 Grundlayout
 Die GUI ist **dreigeteilt**:

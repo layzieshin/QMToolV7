@@ -9,6 +9,8 @@ from pathlib import Path
 FORBIDDEN_PATH_PARTS = (
     "tools/internal_license_issuer",
     "tools\\internal_license_issuer",
+    "tools/license_issuer_gui",
+    "tools\\license_issuer_gui",
     "scripts/license_generate.py",
     "scripts\\license_generate.py",
     "scripts/issue_production_license.py",

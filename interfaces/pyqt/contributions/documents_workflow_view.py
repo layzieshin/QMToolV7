@@ -22,7 +22,6 @@ from interfaces.pyqt.models.workflow_table_model import WorkflowTableModel
 from interfaces.pyqt.presenters.documents_signature_ops import DocumentsSignatureOps
 from interfaces.pyqt.presenters.documents_workflow_filter_presenter import DocumentsWorkflowFilterPresenter
 from interfaces.pyqt.presenters.documents_workflow_presenter import DocumentsWorkflowPresenter
-from interfaces.pyqt.presenters.storage_paths import artifacts_root
 from interfaces.pyqt.sections.action_bar import build_workflow_action_bar
 from interfaces.pyqt.sections.detail_drawer import (
     DetailDrawerBuilder,
@@ -51,23 +50,21 @@ class DocumentsWorkflowWidget(
         self._container = container
         self._app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
         self._um = container.get_port("usermanagement_service")
-        self._docs_service = container.get_port("documents_service")
         self._pool = container.get_port("documents_pool_api")
         self._wf = container.get_port("documents_workflow_api")
+        self._artifacts = container.get_port("documents_artifacts_api")
         self._comments_api = container.get_port("documents_comments_api") if container.has_port("documents_comments_api") else None
         self._registry = container.get_port("registry_api") if container.has_port("registry_api") else None
         self._signature_api = container.get_port("signature_api") if container.has_port("signature_api") else None
         self._audit_logger = container.get_port("audit_logger") if container.has_port("audit_logger") else None
-        self._artifacts_root = artifacts_root(self._container, self._app_home)
         self._presenter = DocumentsWorkflowPresenter()
         self._filter_presenter = DocumentsWorkflowFilterPresenter()
         self._sig_ops = DocumentsSignatureOps(
             signature_api=self._signature_api,
             pool_api=self._pool,
+            artifacts_api=self._artifacts,
             um_service=self._um,
             audit_logger=self._audit_logger,
-            app_home=self._app_home,
-            artifacts_root=self._artifacts_root,
         )
         self._current_state = None
         self._advanced_filters: dict[str, object] = {

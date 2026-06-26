@@ -16,14 +16,14 @@ from qm_platform.licensing.license_service import LicenseService
 from qm_platform.licensing.license_verifier import LicenseVerifier
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 
-TEST_MACHINE = "qmt-integrationtest01"
+TEST_MACHINE = "qmt-0123456789abcdef"
 
 
 class LicensingIntegrationTest(unittest.TestCase):
     def test_core_license_tags_match_module_contracts(self) -> None:
         expected = sorted({c.license_tag for c in runtime_bootstrap.core_module_contracts() if c.license_tag})
         self.assertEqual(runtime_bootstrap.core_license_tags(), expected)
-        self.assertEqual(expected, ["training"])
+        self.assertEqual(expected, ["incident_management", "training"])
 
     def test_internal_issuer_outputs_valid_signed_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
