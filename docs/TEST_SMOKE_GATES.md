@@ -44,7 +44,10 @@ Für jedes Paket im PR-/Änderungsprotokoll:
 - Offene Altfehler (falls vorhanden)
 - Smoke-Ergebnis (Rollen, kurz)
 
-## Aktueller Stand (letzter Gate-Run)
+## Aktueller Stand (historischer Snapshot, 2026-04)
+
+Die folgenden Zahlen stammen aus einem früheren Gate-Run und dienen nur als Referenz.
+Für aktuelle Verifikation immer die Befehle in `.cursor/rules/00-agent-workflow.mdc` und CI ausführen.
 
 - `.\.venv\Scripts\python.exe -m pytest tests/modules -q` -> 60 passed (1 known pypdf deprecation warning)
 - `.\.venv\Scripts\python.exe -m pytest tests/platform -q` -> 25 passed

@@ -62,7 +62,7 @@ Services remain authoritative for:
 
 ## Contribution Model
 
-Preferred target structure for growing GUI modularity:
+Current PyQt structure (active implementation):
 
 ```text
 interfaces/pyqt/
@@ -70,15 +70,20 @@ interfaces/pyqt/
 ├─ shell/main_window.py
 ├─ registry/catalog.py
 ├─ contributions/*
+├─ presenters/*
+├─ sections/*
 └─ widgets/*
-
-modules/<module>/ui/
-├─ contribution.py
-├─ view.py
-└─ presenter.py
 ```
 
-Current implementation is already on this PyQt structure and should be expanded there only.
+New screens register via `contributions/<name>.py` and `registry/catalog.py`.
+See `docs/PYQT_CONTRIBUTIONS_REFERENCE.md` for the contribution matrix.
+
+## UI action reuse (mandatory)
+
+- One user intent = one existing action owner (button, contribution, presenter, or section).
+- Before adding a button or menu item: search `contributions/`, `sections/`, `presenters/`, and `registry/catalog.py`.
+- Extend the existing action; do not add a parallel similarly named control.
+- New top-level contributions must be registered in `catalog.py` or explicitly documented as embedded.
 
 ## PyQt Guidance (Current Stack)
 

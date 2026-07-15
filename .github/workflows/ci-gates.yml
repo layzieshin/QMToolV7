@@ -30,7 +30,7 @@ jobs:
 
       - name: Run regression gates
         run: |
-          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_users_and_settings_cli.py -q
+          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/modules/test_incident_management_boundary.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_users_and_settings_cli.py tests/interfaces/test_architecture_gates.py tests/interfaces/test_pyqt_navigation_smoke.py -q
 
       - name: Prepare migration-gate fixture db
         run: |

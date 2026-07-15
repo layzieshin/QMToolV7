@@ -23,6 +23,8 @@ This file defines document priority and decision authority for the repository.
 
 ## P1 (important, domain/process detail)
 
+- `docs/AGENT_INSTRUCTION_BOOTSTRAP_PROMPT.md` — generic Codex-first bootstrap prompt for new repos
+- `docs/MASTER_ORCHESTRATION_ROADMAP.md` — active work-package steering (planning only; P0 architecture docs win on boundaries)
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
 - `docs/INCIDENT_MANAGEMENT_ARCHITECTURE_CONTRACT.md`
 - `docs/DOCUMENTS_CLI_REFERENCE.md`

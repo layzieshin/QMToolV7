@@ -2,6 +2,24 @@
 
 Entry point for AI-assisted and human work in QMToolV7. For full engineering rules, use the canonical docs linked below.
 
+## Agent guardrails (mandatory)
+
+Before creating anything new, search the repo for an existing owner:
+
+- Entrypoints: `README.md`, `CONTRIBUTING.md`, `interfaces/cli/main.py`, `interfaces/pyqt/`, `src/backend/`
+- Public APIs: `modules/<name>/api.py`, `src/backend/api.py`
+- GUI actions: `interfaces/pyqt/registry/catalog.py`, `interfaces/pyqt/contributions/`, `interfaces/pyqt/sections/`, `interfaces/pyqt/presenters/`
+- CLI commands: `interfaces/cli/commands/`, `interfaces/cli/parsers/`
+
+Rules:
+
+- Extend an existing action, command, contribution, or API before adding a parallel one.
+- Do not add a second button, menu item, or flow for the same user intent.
+- Do not add new entrypoints, public surfaces, wrappers, `*_helper.py`, or parallel implementation paths without explicit scope.
+- If overlap is unclear, stop and ask.
+- Do not change existing behavior silently; update tests and docs together with behavior changes.
+- One task = one hotspot or one use case; do not combine roadmap packages.
+
 ## Workflow and verification
 
 The step-by-step workflow and the per-layer verification commands are defined once in

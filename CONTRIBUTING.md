@@ -46,7 +46,8 @@ Recommended reading order follows the "Mandatory Reading Order" in [`docs/OPERAT
 
 ## Core rules (summary)
 
-- Business logic in `modules/*` services and `qm_platform/*`; keep UI/CLI as thin adapters.
+- Fachliche business logic in `modules/*` services only; `qm_platform/*` is platform infrastructure. Keep UI/CLI as thin adapters.
+- Before adding entrypoints, UI actions, or public APIs: search existing owners first (`AGENTS.md` guardrails).
 - External Python access to modules goes through `modules/<name>/api.py`; runtime ports,
   capabilities and events are integration mechanisms, not alternative import surfaces.
 - State-changing operations from outside a module must use explicit public API contracts.

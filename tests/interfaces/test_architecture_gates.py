@@ -81,6 +81,87 @@ def test_pyqt_contribution_modules_are_registered_or_explicitly_embedded() -> No
     assert "platform.users_admin" not in catalog_ids
 
 
+def test_catalog_contribution_ids_and_titles_unique() -> None:
+    """Shell navigation entries must have unique IDs and titles."""
+    items = catalog.all_contributions()
+    ids = [item.contribution_id for item in items]
+    titles = [item.title for item in items]
+    duplicate_ids = sorted({item for item in ids if ids.count(item) > 1})
+    duplicate_titles = sorted({item for item in titles if titles.count(item) > 1})
+    assert duplicate_ids == [], f"duplicate contribution_id values: {duplicate_ids}"
+    assert duplicate_titles == [], f"duplicate navigation titles: {duplicate_titles}"
+
+
+def test_catalog_imports_declared_contribution_modules() -> None:
+    """Top-level contribution modules with IDs must be imported in catalog.py."""
+    catalog_source = _read("interfaces/pyqt/registry/catalog.py")
+    contributions_root = ROOT / "interfaces" / "pyqt" / "contributions"
+    explicit_non_catalog_modules = {
+        "training_placeholder.py",
+        "users_view.py",
+    }
+    missing_imports: list[str] = []
+    for path in sorted(contributions_root.glob("*.py")):
+        if path.name in explicit_non_catalog_modules or path.name == "__init__.py":
+            continue
+        if not _declared_contribution_ids(path):
+            continue
+        if path.stem not in catalog_source:
+            missing_imports.append(str(path.relative_to(ROOT)))
+    assert missing_imports == []
+
+
+def _workflow_action_bar_labels() -> set[str]:
+    content = _read("interfaces/pyqt/sections/action_bar.py")
+    labels: set[str] = set()
+    for line in content.splitlines():
+        stripped = line.strip()
+        if '", on_' in stripped or "', on_" in stripped:
+            for quote in ('"', "'"):
+                if quote in stripped:
+                    label = stripped.split(quote)[1]
+                    if label:
+                        labels.add(label)
+    return labels
+
+
+def test_documents_workflow_does_not_duplicate_central_action_bar_labels() -> None:
+    """Workflow view/sections must not re-create buttons owned by sections/action_bar.py."""
+    labels = _workflow_action_bar_labels()
+    assert labels, "expected workflow action labels in action_bar.py"
+    offenders: list[str] = []
+    for path in _documents_pyqt_files():
+        if "sections" in path.parts:
+            continue
+        content = path.read_text(encoding="utf-8")
+        for label in labels:
+            if f'QPushButton("{label}")' in content or f"QPushButton('{label}')" in content:
+                offenders.append(f"{path.relative_to(ROOT)} -> {label}")
+    assert offenders == []
+
+
+ALLOWED_PRODUCT_ENTRYPOINTS = frozenset({
+    "interfaces/cli/main.py",
+    "interfaces/pyqt/main.py",
+    "interfaces/pyqt/__main__.py",
+    "interfaces/gui/main.py",
+    "src/backend/__main__.py",
+})
+
+
+def test_allowed_product_entrypoints_only() -> None:
+    """Product areas may only expose documented entrypoint files."""
+    found: set[str] = set()
+    for root in (ROOT / "interfaces", ROOT / "src" / "backend"):
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*.py"):
+            if path.name in {"main.py", "__main__.py"}:
+                found.add(path.relative_to(ROOT).as_posix())
+    unexpected = sorted(found - ALLOWED_PRODUCT_ENTRYPOINTS)
+    assert unexpected == [], f"unexpected entrypoints: {unexpected}"
+
+
 def test_home_dashboard_routes_by_contribution_id() -> None:
     content = _read("interfaces/pyqt/contributions/home_view.py")
     assert "navigate_to_contribution" in content

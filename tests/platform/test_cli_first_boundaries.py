@@ -7,7 +7,8 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_DIRS = (
     ROOT / "interfaces",
     ROOT / "modules",
-    ROOT / "platform",
+    ROOT / "qm_platform",
+    ROOT / "src" / "backend",
     ROOT / "tests",
 )
 FORBIDDEN_IMPORT_FRAGMENTS = (

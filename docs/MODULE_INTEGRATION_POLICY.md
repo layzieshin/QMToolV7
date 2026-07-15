@@ -212,8 +212,8 @@ Minimum before merge:
 
 Run locally:
 
-```bash
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -q
+```powershell
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 Release gates: `docs/TEST_SMOKE_GATES.md`, `scripts/golive_gate.py`,

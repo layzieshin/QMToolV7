@@ -19,7 +19,7 @@ Before changing code, read the relevant canonical docs:
 
 Architecture pointers (details live in the docs above):
 
-- Business logic belongs in `modules/*` services and `qm_platform/*`, not in PyQt widgets or CLI parsers.
+- Fachliche business logic belongs in `modules/*` services only; `qm_platform/*` is platform/runtime infrastructure, not domain logic. Keep PyQt widgets and CLI parsers thin.
 - External Python access to a module goes through `modules/<name>/api.py`; do not add new imports from module internals.
 - Runtime ports, capabilities, settings contributions, and domain events are integration mechanisms, not alternative import surfaces.
 - `src/backend/*` is a transport host; public backend imports go through `src/backend/api.py`.
