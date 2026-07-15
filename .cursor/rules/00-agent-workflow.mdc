@@ -6,7 +6,7 @@ alwaysApply: true
 
 # Agent Workflow: Step-by-step execution with verification
 
-For every non-trivial coding task in this repository, follow this workflow.
+For every task in this repository, begin with scope classification and follow all applicable phases.
 
 ## Canonical project rules (do not duplicate)
 
@@ -33,15 +33,86 @@ Architecture pointers (details live in the docs above):
 - Python `3.14.x`; use the workspace venv explicitly:
   `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest`.
 
-## Workflow
+## Phase 0: Scope classification
 
-1. Do not implement the whole task in one pass.
-2. First create a short numbered plan with small, independently testable steps.
-3. Execute exactly one step at a time.
-4. After each step, run the smallest relevant verification command for the changed layer:
+Before acting, classify the task by its primary scope:
 
-   | Change area | Command |
-   | --- | --- |
+- trivial documentation-only change
+- non-trivial code change
+- behavior change
+- architecture or boundary change
+- roadmap/backend/multiuser work
+- release, packaging, or migration work
+
+The classification determines the required analysis and verification. A task is not trivial merely
+because the requested code edit appears small. Any change involving behavior, persistence,
+permissions, public APIs, module boundaries, runtime wiring, backend transport, licensing,
+migrations, or user-visible actions is non-trivial.
+
+## Phase 1: Analysis before editing
+
+Before editing, inspect the working tree with `git status --short`. Identify pre-existing changes
+and leave them untouched; do not reset, restore, stage, unstage, stash, or otherwise alter unrelated
+user work.
+
+For code or behavior changes, run the smallest relevant existing verification before editing when
+practical and record the result as the baseline. Distinguish baseline failures from failures
+introduced by the current task. A baseline product test is normally not required for a trivial
+documentation-only task unless an existing test specifically validates the affected governance
+documentation.
+
+For every non-trivial coding task, investigate read-only before changing any file. Identify:
+
+1. the existing owner
+2. the complete current execution path
+3. the public API or port
+4. the relevant service or use case
+5. persistence or external side effects
+6. existing authorization enforcement
+7. relevant tests
+8. similar existing implementations
+9. the smallest reasonable change
+10. risks of introducing a parallel path
+
+Identify the observable acceptance criteria before implementation. They must describe externally
+observable or testable behavior. If the request is ambiguous in a way that could change behavior,
+architecture, persistence, permissions, licensing, module boundaries, a public surface, or a
+user-visible action, stop and ask instead of choosing an interpretation silently.
+
+No file may be changed during this phase. If the existing owner cannot be identified, stop instead
+of creating a new owner by default.
+
+## Phase 2: Implementation plan
+
+Before implementation, produce a short numbered plan of independently testable steps. For every
+step, state:
+
+- intended behavior
+- files expected to change and the responsibility of each file
+- verification command and expected result
+- acceptance criteria addressed by the step and how verification demonstrates them
+- explicitly excluded areas
+
+Also state whether the task extends an existing use case, adds a use case to an existing module,
+extends an existing public API, requires a genuinely new public surface, or affects a roadmap work
+package. A genuinely new entrypoint, public API, module, service, persistence path, or user action
+requires explicit task scope.
+
+Stop after presenting the plan and wait for explicit user approval when the task affects architecture
+or module boundaries, roadmap/backend/multiuser work, persistence or migrations, authorization or
+roles, licensing, runtime registration or the composition root, or introduces a genuinely new
+entrypoint, public API or public surface, module, service, persistence path, or user action.
+
+For other clearly scoped tasks, implementation may continue after the plan unless the user requested
+a separate approval step.
+
+## Phase 3: Step-by-step implementation
+
+Execute exactly one planned step at a time. Keep each step small and reviewable; do not begin the
+next step until the current step is verified. Use the smallest relevant verification:
+
+| Change area | Command |
+| --- | --- |
 | Platform/runtime | `.\.venv\Scripts\python.exe -m pytest tests/platform -q` |
 | Module service/logic | `.\.venv\Scripts\python.exe -m pytest tests/modules -q` or targeted `.\.venv\Scripts\python.exe -m pytest tests/modules/test_<module>_*.py -q` |
 | PyQt/GUI adapter | `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q` |
@@ -50,19 +121,143 @@ Architecture pointers (details live in the docs above):
 | Runtime smoke | `.\.venv\Scripts\python.exe -m interfaces.cli.main health` |
 | Stricter runtime check | `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor --strict` |
 
-   This repo has no configured linter or typechecker (no ruff/flake8/mypy/pre-commit). Do not invent lint/typecheck steps.
+For behavior changes, add or update tests before considering the step complete. Stop on newly
+introduced failures; do not broaden scope to fix unrelated failures or rewrite unrelated code while
+touching a hotspot.
 
-5. Do not continue to the next implementation step if the previous step has failing tests, CLI smoke failures, or obvious regressions.
-6. If a verification fails, fix the failure inside the current step before moving on.
-7. After each step, report:
-   - what changed
-   - which files were touched
-   - which verification command was run
-   - whether it passed or failed
-   - the next proposed step
-8. For behavior changes, add or update tests before considering the step complete.
-9. Before finalizing the task, run the broader relevant test suite unless it is clearly too expensive; if skipped, explain why. Use these broader gates when applicable:
-   - full layer runs: `.\.venv\Scripts\python.exe -m pytest tests/platform -q`, `tests/modules -q`, `tests/interfaces -q`, `tests/e2e_cli -q`
-   - packaging impact: `.\.venv\Scripts\python.exe packaging/build_onedir.py`
-   - release/migration impact: `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
-10. Prefer minimal, reviewable diffs over large rewrites.
+After each step, report a checkpoint:
+
+- what changed
+- files touched
+- verification command and result
+- any deviation from the plan
+- next planned step
+
+## Phase 4: Failure protocol
+
+When verification fails, classify the failure as:
+
+1. caused by the current change
+2. pre-existing
+3. environmental
+4. outside the task scope
+5. not yet understood
+
+Apply these rules:
+
+- Fix a failure caused by the current change before continuing.
+- Demonstrate a pre-existing failure with evidence when practical.
+- For an environmental failure, record the command and exact limitation.
+- Do not silently repair an outside-scope failure.
+- An unexplained failure blocks further implementation.
+- Do not disable, weaken, skip, or rewrite tests merely to obtain a passing result.
+- Do not swallow exceptions to make a test pass.
+- Do not remove assertions without behavior-based justification.
+
+## Phase 5: Broader verification
+
+Run targeted checks after every implementation step. Before finalizing, run the broader relevant
+layer suite unless it is clearly too expensive; explain every skipped applicable gate.
+
+- Full layer runs: `.\.venv\Scripts\python.exe -m pytest tests/platform -q`,
+  `.\.venv\Scripts\python.exe -m pytest tests/modules -q`,
+  `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q`,
+  `.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -q`
+- Run applicable architecture gates when changing public surfaces, imports, entrypoints, module
+  boundaries, GUI actions, backend boundaries, or runtime registration.
+- Packaging impact only: `.\.venv\Scripts\python.exe packaging/build_onedir.py`
+- Release or migration impact only:
+  `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
+  and the applicable migration gate documented in `docs/TEST_SMOKE_GATES.md` or the owning P0
+  operations document.
+
+This repo has no configured linter, formatter, typechecker, security scanner, or pre-commit command.
+Do not invent such verification steps.
+
+## Phase 6: Adversarial final review
+
+After implementation and before declaring success, inspect the final diff as if another agent had
+written it. If subagents or a separate review agent are available, use one; otherwise perform a
+fresh explicit review pass.
+
+Check for:
+
+- a new or duplicated entrypoint, user action, public API, service, wrapper, persistence path,
+  or `*_helper.py`
+- direct imports from module internals
+- business logic in GUI, CLI parsers, backend transport, or platform infrastructure
+- authorization enforced only in the interface
+- direct repository or SQL access outside the owning module
+- silent exception handling
+- fallback or compatibility paths not required by scope
+- unrelated refactoring or roadmap scope expansion
+- placeholder implementation
+- disabled or weakened tests
+- undocumented behavior changes
+- missing verification evidence
+
+Correct every discovered violation and repeat applicable verification before completion.
+
+## Phase 7: Definition of Done
+
+This is the authoritative Definition of Done for implementation tasks. The task may be declared
+complete only when every applicable item is satisfied. Mark non-applicable items `N/A` and explain
+why; if an applicable item is not satisfied, do not declare completion.
+
+### Scope
+
+- The implementation matches the explicit task.
+- No unrelated roadmap package was started.
+- No unrelated refactoring was included.
+- The final changed-file list matches the approved plan, or every deviation is justified.
+
+### Ownership and architecture
+
+- The existing owner was extended where appropriate.
+- No parallel implementation path was introduced.
+- No unauthorized entrypoint or public surface was created.
+- Module boundaries remain intact.
+- Business logic remains in the owning module service or use-case layer.
+- Authorization remains enforced in the service layer.
+- Backend transport remains free of domain logic and direct domain persistence.
+- Runtime registration still uses the canonical composition root.
+
+### Behavior
+
+- Acceptance criteria are demonstrably satisfied.
+- Error paths and permission paths are covered where applicable.
+- Persistence and restart behavior were checked where applicable.
+- Existing behavior outside scope was not silently changed.
+- No TODO, placeholder, mock, skipped branch, or disabled test is presented as completion.
+
+### Verification
+
+- Targeted verification passed after every implementation step.
+- Broader applicable layer verification passed.
+- Applicable architecture gates passed.
+- Packaging, release, or migration gates passed when relevant.
+- Every skipped gate is explicitly justified.
+- Exact commands and results are recorded.
+
+### Review
+
+- The final diff was reviewed adversarially.
+- No duplicate entrypoint, action, API, service, wrapper, helper, or persistence path remains.
+- No module-internal import was added outside an explicitly allowed boundary.
+- No broad exception handler hides a failure.
+- No test was weakened solely to obtain a passing result.
+- No unrelated file was modified by the current task.
+- Pre-existing working-tree changes remained untouched.
+
+### Reporting
+
+The final response must include:
+
+1. summary of implemented behavior
+2. final execution path
+3. changed files with responsibility
+4. verification commands and results
+5. Definition of Done checklist
+6. known limitations
+7. remaining unrelated findings
+8. explicit statement about whether new public surfaces or parallel paths were introduced

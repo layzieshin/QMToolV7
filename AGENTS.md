@@ -11,14 +11,28 @@ Before creating anything new, search the repo for an existing owner:
 - GUI actions: `interfaces/pyqt/registry/catalog.py`, `interfaces/pyqt/contributions/`, `interfaces/pyqt/sections/`, `interfaces/pyqt/presenters/`
 - CLI commands: `interfaces/cli/commands/`, `interfaces/cli/parsers/`
 
-Rules:
+## Change discipline
 
-- Extend an existing action, command, contribution, or API before adding a parallel one.
-- Do not add a second button, menu item, or flow for the same user intent.
-- Do not add new entrypoints, public surfaces, wrappers, `*_helper.py`, or parallel implementation paths without explicit scope.
-- If overlap is unclear, stop and ask.
-- Do not change existing behavior silently; update tests and docs together with behavior changes.
+Before editing any non-trivial implementation, identify the existing behavior owner; trace the
+current path from interface through public API or port and service to persistence or external
+effect; locate protecting tests and similar implementations; and name the smallest required file set.
+If the owner or overlap is unclear, stop and ask.
+
+- Extend the existing owner. Unless the task explicitly requires it, do not add parallel implementations,
+  duplicate public APIs, user actions, services, or persistence paths; compatibility layers, fallback
+  implementations, temporary alternate paths, generic wrappers or `*_helper.py` files; entrypoints; or public surfaces.
+- Do not create a module for behavior owned by an existing module, or a public API when the existing
+  API can responsibly be extended. Do not bypass module APIs by importing services, repositories,
+  wiring, storage, internal errors, internal contracts, or other implementation details.
+- Do not perform unrelated refactoring, hide failures with broad exception handling, or silently
+  change behavior. Update tests and docs with behavior changes.
+- TODOs, placeholders, mocks, disabled tests, skipped implementation, and unrelated pre-existing
+  failures are not completed work. Report unrelated failures separately; do not silently fix or hide them.
 - One task = one hotspot or one use case; do not combine roadmap packages.
+
+For completed implementation work, report the resulting execution path, changed files and their
+responsibilities, exact verification commands and results, remaining limitations, and whether any
+entrypoint, public surface, service, wrapper, helper, user action, or persistence path was introduced.
 
 ## Workflow and verification
 
