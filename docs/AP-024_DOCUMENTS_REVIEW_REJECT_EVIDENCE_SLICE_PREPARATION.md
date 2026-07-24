@@ -3,6 +3,7 @@
 ## 1. Status
 - Arbeitspaket: AP-024
 - Typ: Analyse / Umsetzungsvorbereitung
+- Folgepaket: AP-026 Evidence Baseline (Test-Gate; keine Produktänderung)
 - Codeänderungen: nein
 - Teständerungen: nein
 - Refactoring: nein
@@ -350,4 +351,4 @@ Keine Tests ausgeführt, weil die Fundstellen ohne Testlauf einordenbar waren.
 - Nur `docs/AP-024_DOCUMENTS_REVIEW_REJECT_EVIDENCE_SLICE_PREPARATION.md` wurde neu angelegt.
 
 ## 20. Maximal ein sinnvoller nächster Schritt
-Ein separat freizugebendes, enges Codepaket für `Documents Review ablehnen` freigeben oder zurückstellen.
+AP-026 Evidence Baseline (Test-Gate ohne Produktänderung) ist das Folgepaket zu dieser Vorbereitung.
