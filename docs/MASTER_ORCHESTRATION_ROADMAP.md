@@ -21,7 +21,10 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
 ## Roadmap-Status
 - Phase 0 `Backend-Basis / Healthcheck`: erledigt. Backend ist lokal startbar und `GET /health` wurde erfolgreich verifiziert.
 - Phase 1 `Backend-Smoke-/Dependency-Stabilisierung`: erledigt bzw. nur noch optionaler Dokumentations-/Smoke-Gate-Nachtrag, falls spaeter ausdruecklich freigegeben.
-- Naechster Schwerpunkt: keine Backend-Feature-Implementierung, sondern Boundary-, User/Auth-, UserContext-, Rollen- und Audit-Actor-Klaerung.
+- AP-002 Public-Boundary-Inventar: erledigt (Analyse/Inventar; Cleanup braucht separate Freigabe).
+- ADR-/Analyse-Kette AP-003 bis AP-024: dokumentiert (Entscheidungen und Matrizen; keine Code-Implementierung in diesen Paketen).
+- AP-025 Agent Guardrails und Repo-Konsistenz: erledigt (Governance/Docs/Gates; kein fachliches Produktverhalten).
+- Naechster Schwerpunkt: kein Backend-Feature-Betrieb ohne Freigabe; kleinster naechster Code-Kandidat ist der Documents Review-ablehnen Nachweisslice (AP-023/AP-024), ebenfalls nur nach separater Freigabe.
 
 ## Zielarchitektur
 ```mermaid
@@ -152,7 +155,9 @@ Konflikte markieren statt aendern:
 - Trainingsspezifikation enthaelt Detailarchitektur; fuer diese Roadmap nur Charter-/Priorisierungsebene nutzen.
 
 ## Naechste freigegebene Aktion
-AP-002 Public-Boundary-Verstoesse inventarisieren.
+Keine Code-Aktion ist derzeit freigegeben.
+
+Nach separater Freigabe: kleinster Documents-MVP-Nachweisslice **Review ablehnen** laut AP-023/AP-024 (Umsetzungsvorbereitung liegt vor; Implementierung, Tests und Schema-Aenderungen brauchen eigenes Paket).
 
 ## Nicht freigegeben
 - Boundary-Cleanups
@@ -161,7 +166,8 @@ AP-002 Public-Boundary-Verstoesse inventarisieren.
 - API-Aenderungen
 - Backend-Feature-Routen
 - Datenbank-/Artefaktmigration
+- Review-ablehnen Evidence-Slice-Implementierung (AP-024 ist nur Vorbereitung)
 
 ## Hinweis zu AP-002
-Ergebnis von AP-002 ist nur ein Inventar.
-Aus AP-002 entstehende Cleanup-Arbeitspakete brauchen separate Freigabe.
+Ergebnis von AP-002 ist nur ein Inventar und liegt vor.
+Aus AP-002 entstehende Cleanup-Arbeitspakete brauchen weiterhin separate Freigabe.
