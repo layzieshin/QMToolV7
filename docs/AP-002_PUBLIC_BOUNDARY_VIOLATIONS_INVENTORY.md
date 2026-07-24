@@ -10,8 +10,8 @@
 
 ## Suchmethode
 - Verwendete Kommandos / Werkzeuge:
-  - `Glob` auf `docs/AP-002_PUBLIC_BOUNDARY_VIOLATIONS_INVENTORY.md` zur Existenzprüfung.
-  - `ReadFile` für `docs/MASTER_ORCHESTRATION_ROADMAP.md`, `AGENTS.md` und `.cursor/rules/00-agent-workflow.mdc`.
+  - `Test-Path -LiteralPath docs\AP-002_PUBLIC_BOUNDARY_VIOLATIONS_INVENTORY.md` zur Existenzprüfung.
+  - `Get-Content -LiteralPath docs\MASTER_ORCHESTRATION_ROADMAP.md`, `Get-Content -LiteralPath AGENTS.md` und `Get-Content -LiteralPath .cursor\rules\00-agent-workflow.mdc`.
   - `rg "^\\s*(from\\s+modules\\.[A-Za-z0-9_\\.]+\\s+import\\s+|import\\s+modules\\.[A-Za-z0-9_\\.]+)"` in `interfaces`, `tests`, `modules`, `src/backend`, `qm_platform`.
   - `rg "^\\s*(from\\s+src\\.backend\\.[A-Za-z0-9_\\.]+\\s+import\\s+|import\\s+src\\.backend\\.[A-Za-z0-9_\\.]+)"`.
   - `rg` auf Dokumentationshinweise zu `api.py`, `contracts.py`, Public Boundary, Re-Exports und Wrapper-APIs.
@@ -173,11 +173,11 @@ Stichproben:
 
 ## Ausgeführte Gates
 - Such-/Analysekommandos:
-  - `Glob` Existenzprüfung für `docs/AP-002_PUBLIC_BOUNDARY_VIOLATIONS_INVENTORY.md` -> Datei existierte nicht.
-  - `ReadFile` der freigegebenen Regel-/Roadmap-Dateien -> erfolgreich.
+  - `Test-Path` Existenzprüfung für `docs/AP-002_PUBLIC_BOUNDARY_VIOLATIONS_INVENTORY.md` -> Datei vorhanden.
+  - `Get-Content` der freigegebenen Regel-/Roadmap-Dateien -> erfolgreich.
   - Mehrere `rg`-Suchen nach `from modules.`, `import modules.`, `from src.backend.`, `import src.backend.` -> erfolgreich.
   - Lokale Python-AST-Analyse mit `.\.venv\Scripts\python.exe -c ...` -> erfolgreich, 285 Import-Funde klassifiziert.
-  - Ein zusätzlicher Verdichtungsversuch per PowerShell/Python scheiterte an PowerShell-Quoting; es wurden keine Projektdateien geändert und die erfolgreiche AST-Analyse blieb maßgeblich.
+  - Ein zusätzlicher `rg`-Suchlauf scheiterte zunächst an PowerShell-Quoting; der Suchlauf wurde anschließend mit korrigierter quoting-Form erfolgreich wiederholt. Es wurden dabei keine Projektdateien geändert.
 - Ergebnis:
   - Inventar erstellt.
   - Keine Testsuite ausgeführt, weil AP-002 ein Analyse-/Inventar-Paket ist und nur eine Markdown-Inventardatei angelegt wurde.
