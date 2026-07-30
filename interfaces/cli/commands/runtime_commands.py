@@ -159,7 +159,8 @@ def cmd_doctor(*, strict: bool = False) -> int:
     if strict:
         checks["security:seed_mode_hardened"] = str(user_cfg.get("seed_mode", "")).strip() == "hardened"
         checks["security:password_hashes_only"] = _all_user_passwords_hashed(usermanagement)
-    ok = all(checks.values())
+    gate_results = [value for value in checks.values() if isinstance(value, bool)]
+    ok = bool(gate_results) and all(gate_results)
     print(
         json.dumps(
             {

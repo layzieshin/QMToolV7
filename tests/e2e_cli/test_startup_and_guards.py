@@ -251,6 +251,9 @@ class StartupAndGuardsCliTest(unittest.TestCase):
             self.assertEqual(doctor.returncode, 0, msg=doctor.stderr + doctor.stdout)
             payload = json.loads(doctor.stdout.strip() or "{}")
             self.assertTrue(payload.get("ok"), msg=doctor.stdout)
+            checks = payload.get("checks", {})
+            self.assertEqual(checks.get("license:errors"), [], msg=doctor.stdout)
+            self.assertEqual(checks.get("license:unknown_modules"), [], msg=doctor.stdout)
 
     def test_doctor_blocks_production_profile_with_legacy_seed_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -316,7 +319,45 @@ class StartupAndGuardsCliTest(unittest.TestCase):
             self.assertTrue(payload.get("checks", {}).get("security:seed_mode_hardened"), msg=doctor.stdout)
             self.assertTrue(payload.get("checks", {}).get("security:password_hashes_only"), msg=doctor.stdout)
 
+    def test_doctor_strict_fails_when_seed_mode_is_not_hardened(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            env = dict(os.environ)
+            env["QMTOOL_HOME"] = str(home)
+            init_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "interfaces.cli.main",
+                    "init",
+                    "--non-interactive",
+                    "--admin-password",
+                    "admin",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(init_result.returncode, 0, msg=init_result.stderr + init_result.stdout)
+
+            settings_path = home / "storage" / "platform" / "settings.json"
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            settings["usermanagement"]["seed_mode"] = "legacy_defaults"
+            settings_path.write_text(json.dumps(settings, ensure_ascii=True), encoding="utf-8")
+
+            doctor = subprocess.run(
+                [sys.executable, "-m", "interfaces.cli.main", "doctor", "--strict"],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(doctor.returncode, 8, msg=doctor.stderr + doctor.stdout)
+            payload = json.loads(doctor.stdout.strip() or "{}")
+            self.assertFalse(payload.get("ok"), msg=doctor.stdout)
+            self.assertFalse(payload.get("checks", {}).get("security:seed_mode_hardened"), msg=doctor.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
-
