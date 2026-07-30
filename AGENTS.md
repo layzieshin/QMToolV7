@@ -38,7 +38,12 @@ entrypoint, public surface, service, wrapper, helper, user action, or persistenc
 
 The step-by-step workflow and the per-layer verification commands are defined once in
 [`.cursor/rules/00-agent-workflow.mdc`](.cursor/rules/00-agent-workflow.mdc) (loaded automatically by Cursor).
-Do not duplicate them here. In short: work step by step, verify after each step, do not proceed on failure, keep diffs small.
+Branch, commit, push, and pull-request behavior is defined once in
+[`.cursor/rules/01-git-workflow.mdc`](.cursor/rules/01-git-workflow.mdc) (also auto-loaded).
+Do not duplicate either rule set here. In short: work step by step, verify after each step, do not
+proceed on failure, keep diffs small, and keep commit, push, pull request, and branch deletion
+user-gated. Creating a local feature branch for an explicitly commissioned change remains allowed
+and expected when required by the Git workflow rule.
 
 ## Environment (this repo)
 

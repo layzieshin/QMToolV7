@@ -1,0 +1,86 @@
+---
+description: Binding Git branch, commit, push, and PR workflow for Cursor agents
+globs:
+alwaysApply: true
+---
+
+# Git Workflow: Branches, commits, push, and pull requests
+
+This rule governs how Cursor uses Git in QMToolV7. It complements
+`.cursor/rules/00-agent-workflow.mdc` (implementation and verification) and does not replace it.
+
+Roadmap and architecture freigaben remain authoritative for *what* may be implemented. This rule
+governs *how* Git is used when changes are made.
+
+## When a branch is required
+
+Analysis, review, planning, and Ask-/Plan-mode work do **not** require a new branch and must not
+create one by default.
+
+Before any file change that writes to the repository:
+
+1. Run `git status --short --branch`.
+2. Confirm the current branch and whether the working tree is clean or already dirty.
+3. Leave pre-existing unrelated changes untouched (no stash, reset, restore, stage, or unstage of
+   foreign work).
+
+Product or project changes must **not** be made directly on `main`.
+
+When the user explicitly commissions a change that edits repository files:
+
+1. If already on a suitable task branch for that exact purpose, continue there.
+2. Otherwise, before creating a feature branch from `main`, verify that `main` has a configured
+   `origin/main` upstream and that `git status --short --branch` shows `main` is neither ahead,
+   behind, nor diverged from that upstream.
+3. If that check fails: **stop and report**. Do not automatically pull, merge, or rebase to "fix"
+   the drift.
+4. If the check passes, create and switch to `feature/<ap-oder-thema>` **before the first edit**.
+5. Prefer AP-style names when an Arbeitspaket is known, e.g. `feature/ap-027-request-context`.
+6. One branch = one Arbeitspaket or one clearly bounded purpose. Do not mix packages.
+
+If the agent is unexpectedly on `main` with unclear local changes, or the working tree contains
+unrelated dirty state that blocks safe work: **stop and ask**. Do not invent a cleanup path.
+
+## Forbidden Git operations
+
+Never use:
+
+- `git reset --hard`
+- `git clean` (any form that deletes untracked or ignored files)
+- rebase (`git rebase`, `git pull --rebase`)
+- force-push (`--force`, `--force-with-lease`, or equivalent)
+
+Do not use `git add .` or other blanket staging. Stage only the exact files intended for the
+commissioned commit, by explicit path.
+
+## Commit, push, PR, and branch deletion
+
+These actions are **user-gated**:
+
+| Action | Allowed only when |
+| --- | --- |
+| Commit | User explicitly asks to commit |
+| Push | User explicitly asks to push; never push to `main` |
+| Pull request | User explicitly asks to create a PR; base branch must be `main` |
+| Branch deletion | User explicitly asks. Normally only after confirmed integration into `main`. An unmerged branch may be deleted only on an explicit, unambiguous delete instruction, after warning that the work will be lost |
+
+Before commit, push, or PR, inspect:
+
+- `git status --short`
+- staged and unstaged diffs for the intended paths
+- that only commissioned files are included
+- relevant verification from `00-agent-workflow.mdc` for the change type
+
+Do not commit secrets, licenses with private keys, or unrelated dirty files.
+
+## Reporting
+
+In the final response for work that touched Git, state explicitly:
+
+- current branch name
+- whether a commit was created (and hash/message if so)
+- whether a push occurred (and remote/branch)
+- whether a PR was created (and URL if so)
+
+If none of commit/push/PR were requested, say that Git write actions were left undone pending
+explicit user approval.
