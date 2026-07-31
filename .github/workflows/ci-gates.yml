@@ -159,7 +159,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # Linux job must not install Windows-only requirements (pywin32).
-          python -m pip install -c constraints-py314.txt "psycopg[binary]>=3.2.0" pytest
+          python -m pip install -c constraints-py314.txt "psycopg[binary]>=3.2.0" bcrypt pytest
 
       - name: Run PostgreSQL migration gate
         run: |
