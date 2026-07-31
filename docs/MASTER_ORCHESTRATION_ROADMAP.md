@@ -25,8 +25,9 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
 - ADR-/Analyse-Kette AP-003 bis AP-024: dokumentiert (Entscheidungen und Matrizen; keine Code-Implementierung in diesen Paketen).
 - AP-025 Agent Guardrails und Repo-Konsistenz: erledigt (Governance/Docs/Gates; kein fachliches Produktverhalten).
 - AP-026 Documents Review-ablehnen Evidence Baseline: erledigt (Test-Gate fuer bestehenden Servicefluss; Produktverhalten unveraendert; Kettenstatus bleibt `ketten-eingeschraenkt`).
-- AP-027 Verbindliches Datenbank-Migrationsfundament: einzige freigegebene Code-Aktion; Umsetzung auf `feature/ap-027-database-evolution-foundation`, Abschluss erst nach Green Gates, Entwicklungsdaten-Kopien und Merge.
-- Naechster Schwerpunkt nach AP-027: frueh nutzbarer Documents-Multiuser-MVP; kein Backend-Feature-Betrieb vor erfolgreicher Backup-/Restore-Generalprobe.
+- AP-027 Verbindliches Datenbank-Migrationsfundament: erledigt/gemergt in `main` (Commit-Grundlage `Establish AP-027 database migration foundation`); SQLite-Owner V1, forward-only Runner, Gates und Policy. PostgreSQL blieb bewusst ausserhalb AP-027.
+- AP-028 Backend-gestuetztes Usermanagement mit serverseitigen Sessions: naechster freigegebener Schwerpunkt; Roadmap und Milestone-0-Prompt unter `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` und `docs/AP-028_MILESTONE_0_PROMPT.md`. Milestone 0 Ist-/Zielmatrix: `docs/AP-028_M0_STATE_MATRIX.md`. Umsetzung milestone-weise; kein Big-Bang.
+- Nach Abschluss AP-028: Documents-Multiuser-MVP als separat freizugebendes Arbeitspaket (setzt bestaetigten UserContext/Sessions voraus).
 
 ## Zielarchitektur
 ```mermaid
@@ -55,16 +56,21 @@ Entschieden:
 - Services bleiben fachliche Wahrheit fuer Autorisierung, Invarianten und Transaktionsgrenzen.
 - Use-Case-Migration erfolgt komplett pro Use Case, nie halb lokal/halb backendseitig.
 
+Entschiedene Zielentscheidungen (AP-028 / Supervisor 2026-07-31):
+- internes Login fuer dieses Arbeitspaket (kein externes IdP/SSO in AP-028)
+- serverseitige opake Sessions als Erstmodell (kein JWT als Erstlösung)
+- bestaetigter, serverseitig erzeugter UserContext als Identitaetsgrundlage fuer backend-migrierte Aufrufe
+- Admin ist nicht automatisch QMB (AP-005 Option B angenommen)
+- PostgreSQL-Zeitpunkt fuer den Scope Usermanagement: in AP-028 (Schema `usermanagement`); andere Module nicht Big-Bang
+
 Offene Zielentscheidungen:
-- internes Login oder externe Identitaet
-- Token oder serverseitige Session
-- UserContext- und Actor-Modell
-- Rollenmodell, QMB-Semantik, Befugnisse/Kompetenzen
-- Audit-Nachweisniveau und elektronische Signatur
-- langfristige Backend-Transportart
-- PostgreSQL-Zeitpunkt
+- Actor-/Audit-Nachweisniveau-Feinheiten und elektronische Signatur (Orientierung AP-006/006A; Umsetzung Auth-Audit in AP-028 M7)
+- langfristige Backend-Transportart jenseits des internen FastAPI-Hosts
+- PostgreSQL-Zeitpunkt fuer die übrigen Fachmodule
 - zentrale Artefaktablage
 - Mehrmandantenfaehigkeit, Lizenzpruefung, Exportanforderungen
+- Befugnisse/Kompetenzen jenseits globaler Basisrollen/`is_qmb`
+- Restpunkte in `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` Abschnitt E (u. a. Passwortwechsel-Session-Policy, user_id-Remapping beim Cutover)
 
 ## MVP-Priorisierung
 Zuerst stabilisieren:
@@ -157,25 +163,35 @@ Konflikte markieren statt aendern:
 - Trainingsspezifikation enthaelt Detailarchitektur; fuer diese Roadmap nur Charter-/Priorisierungsebene nutzen.
 
 ## Naechste freigegebene Aktion
-AP-027 ist die einzige freigegebene Code-Aktion.
+AP-028 ist die naechste freigegebene Aktion (Usermanagement Backend Sessions).
 
-Ziel: sechs verbindliche V1-Schemas, gemeinsamer Vorwaerts-Migrationsmechanismus,
-Runtime-Preflight, Backup/Restore, Database-CLI, Doctor-Checks und CI-Gates.
-Keine produktiven Dateien unter `storage/` werden waehrend der Umsetzung
-veraendert. Nach Merge und Generalprobe folgt der Documents-Multiuser-MVP als
-separat freizugebendes Arbeitspaket.
+Planungsartefakte:
+- `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md`
+- `docs/AP-028_MILESTONE_0_PROMPT.md`
+- `docs/AP-028_M0_STATE_MATRIX.md` (Milestone 0)
+
+Umsetzung erfolgt streng milestone-weise (M0 Dokumentation → M1 Contracts → …
+→ M9 Legacy-Grenze). Jeder Milestone braucht sein Test-Gate, bevor der naechste
+beginnt. Documents-Multiuser-MVP bleibt danach separat freizugeben.
 
 ## Nicht freigegeben
-- Boundary-Cleanups
-- Auth-Implementierung
-- UserContext-Implementierung
-- RequestContext-/Kettenkontext-Implementierung
+- Boundary-Cleanups ausserhalb der in AP-028 explizit genannten Legacy-Grenzen
+- RequestContext-/Kettenkontext-Vollimplementierung (AP-022) jenseits Request-ID am Auth-Rand von AP-028
 - Command-ID-/Use-Case-ID-Implementierung
-- Event-/Auditlog-Schemaaenderungen
-- API-Aenderungen
-- Backend-Feature-Routen
-- Fachliche Datenuebernahme oder Artefaktmigration ausserhalb des technischen AP-027-Fundaments
+- Event-/Auditlog-Schemaaenderungen ausserhalb Usermanagement-Auth-Audit (AP-028 M7)
+- Backend-Feature-Routen ausserhalb der AP-028 Auth-/Session-Endpunkte
+- PostgreSQL-Migration anderer Fachmodule
+- Fachliche Datenuebernahme oder Artefaktmigration ausserhalb Usermanagement-Cutover (AP-028 M8)
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
+- Documents-Multiuser-MVP (erst nach AP-028, separate Freigabe)
+- Incident-Modul Cleanup Admin=QMB (bekannte Abweichung; ausserhalb AP-028)
+
+Im Rahmen von AP-028 freigegeben (milestone-weise):
+- Auth-Implementierung (serverseitige Sessions)
+- UserContext-Implementierung im Usermanagement-Scope
+- API-Erweiterungen von `modules/usermanagement/api.py` laut Milestone-Plan
+- Backend Auth-Routen (`/auth/*`) als Transport ohne Businesslogik
+- PostgreSQL fuer Schema `usermanagement` inkl. Cutover-Vorbereitung
 
 ## Hinweis zu AP-002
 Ergebnis von AP-002 ist nur ein Inventar und liegt vor.
