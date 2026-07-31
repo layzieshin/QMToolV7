@@ -18,6 +18,7 @@ This is the single operational starting point for daily work, release checks, an
 ## Daily Start Flow
 
 1. Run health and runtime checks:
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main database status`
    - `.\.venv\Scripts\python.exe -m interfaces.cli.main health`
    - `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor`
    - `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor --strict` for production-hardening checks (`seed_mode=hardened` and hashed credential store).
@@ -29,6 +30,8 @@ This is the single operational starting point for daily work, release checks, an
 
 ## Release Gate Checklist (Blocking)
 
+- Database status reports all six databases as `current` with integrity `ok`.
+- `scripts/database_migration_gate.py` is green and its JSON evidence is attached.
 - Pre/post migration data-quality report attached.
 - No increase in `doc_type=OTHER`.
 - Invalid `doc_type/control_class/workflow_profile_id` combinations are `0`.
@@ -38,6 +41,24 @@ This is the single operational starting point for daily work, release checks, an
 - Consolidated local gate command:
   - `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
   - optional DB-backed checks: add `--documents-db-path "<documents.db>" --registry-db-path "<registry.db>" --baseline-other-count <n>`.
+
+## Database Migration Window
+
+1. Inspect without changing data:
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main database status`
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main database migrate --dry-run`
+2. Run the controlled forward migration:
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main database migrate`
+3. Verify:
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main database status`
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor --strict`
+4. List recovery points:
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main database backups`
+5. Restore only under an explicit incident/release decision:
+   - `.\.venv\Scripts\python.exe -m interfaces.cli.main database restore --backup-id "<id>"`
+
+The full contract and mandatory schema-change package are defined in
+`docs/DATABASE_EVOLUTION_POLICY.md`.
 
 ## Registry Projection Recovery Entry
 

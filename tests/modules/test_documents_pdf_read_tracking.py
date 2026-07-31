@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from modules.documents.pdf_read_tracking_service import PdfReadTrackingService
-from modules.documents.sqlite_repository import SQLiteDocumentsRepository
+from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
 
 
 def test_pdf_read_tracking_completes_after_all_pages(tmp_path: Path) -> None:
-    repo = SQLiteDocumentsRepository(tmp_path / "docs.db", Path("modules/documents/schema.sql"))
+    repo = SQLiteDocumentsRepository(tmp_path / "docs.db")
     service = PdfReadTrackingService(repo)
     session = service.start(
         user_id="u1",

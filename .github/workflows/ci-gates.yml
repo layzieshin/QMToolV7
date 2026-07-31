@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -29,20 +31,49 @@ jobs:
 
       - name: Run regression gates
         run: |
-          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/modules/test_incident_management_boundary.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_users_and_settings_cli.py tests/interfaces/test_architecture_gates.py tests/interfaces/test_pyqt_navigation_smoke.py -q
+          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/platform/test_database_migration_gate.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/modules/test_incident_management_boundary.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_database_commands.py tests/e2e_cli/test_users_and_settings_cli.py tests/interfaces/test_architecture_gates.py tests/interfaces/test_pyqt_navigation_smoke.py -q
+
+      - name: Run database migration foundation gate
+        run: |
+          python scripts/database_migration_gate.py --base-ref "${{ github.event.pull_request.base.sha || github.event.before }}" --output build/database-migration-gate-output.json
 
       - name: Prepare migration-gate fixture db
         shell: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           import sqlite3
           from pathlib import Path
 
+          from modules.documents.module import DOCUMENTS_DATABASE_CONTRIBUTION
+          from qm_platform.persistence import (
+              DataValidationQuery,
+              DatabaseEvolutionService,
+              DatabaseSpec,
+              MigrationStep,
+          )
+
           path = Path("build") / "ci-documents.db"
           path.parent.mkdir(parents=True, exist_ok=True)
-          schema = Path("modules/documents/schema.sql").read_text(encoding="utf-8")
+          contribution = DOCUMENTS_DATABASE_CONTRIBUTION
+          spec = DatabaseSpec(
+              database_id=contribution.database_id,
+              path=path,
+              migrations=tuple(
+                  MigrationStep(item.version, item.name, item.sql_path)
+                  for item in contribution.migrations
+              ),
+              validation_queries=tuple(
+                  DataValidationQuery(item.name, item.sql)
+                  for item in contribution.validation_queries
+              ),
+          )
+          DatabaseEvolutionService(app_home=Path("build")).migrate(
+              (spec,),
+              reason="ci_documents_fixture",
+          )
 
           with sqlite3.connect(path) as connection:
-              connection.executescript(schema)
               connection.execute(
                   """
                   INSERT INTO document_headers (
@@ -93,4 +124,5 @@ jobs:
           name: migration-gate-output
           path: |
             build/migration-gate-output.json
+            build/database-migration-gate-output.json
             build/golive-gate-output.json

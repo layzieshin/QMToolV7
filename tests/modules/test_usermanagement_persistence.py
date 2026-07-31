@@ -8,7 +8,11 @@ from pathlib import Path
 
 from modules.usermanagement.password_crypto import is_password_hash
 from modules.usermanagement.service import UserManagementService
-from modules.usermanagement.sqlite_repository import SQLiteUserRepository
+from qm_platform.persistence.database_evolution import DatabaseEvolutionError
+from tests.database_helpers import (
+    prepare_test_database,
+    user_repository as SQLiteUserRepository,
+)
 
 
 class UserManagementPersistenceTest(unittest.TestCase):
@@ -17,7 +21,6 @@ class UserManagementPersistenceTest(unittest.TestCase):
             root = Path(tmp)
             repo = SQLiteUserRepository(
                 db_path=root / "users.db",
-                schema_path=Path("modules/usermanagement/schema.sql"),
             )
             repo.ensure_seed_users([("admin", "admin", "Admin")])
             service = UserManagementService(repository=repo)
@@ -37,7 +40,6 @@ class UserManagementPersistenceTest(unittest.TestCase):
             root = Path(tmp)
             repo = SQLiteUserRepository(
                 db_path=root / "users.db",
-                schema_path=Path("modules/usermanagement/schema.sql"),
             )
             service = UserManagementService(repository=repo)
             created = service.create_user("alpha", "pw1", "User")
@@ -55,7 +57,6 @@ class UserManagementPersistenceTest(unittest.TestCase):
             root = Path(tmp)
             repo = SQLiteUserRepository(
                 db_path=root / "users.db",
-                schema_path=Path("modules/usermanagement/schema.sql"),
             )
             service = UserManagementService(repository=repo)
             service.create_user("anna", "pw1", "User")
@@ -84,7 +85,6 @@ class UserManagementPersistenceTest(unittest.TestCase):
             db_path = root / "users.db"
             repo = SQLiteUserRepository(
                 db_path=db_path,
-                schema_path=Path("modules/usermanagement/schema.sql"),
             )
             with closing(sqlite3.connect(db_path)) as conn:
                 conn.execute(
@@ -102,7 +102,7 @@ class UserManagementPersistenceTest(unittest.TestCase):
             assert upgraded is not None
             self.assertTrue(is_password_hash(upgraded[1]))
 
-    def test_legacy_display_name_formats_are_backfilled_to_first_last_name(self) -> None:
+    def test_unknown_legacy_user_schema_is_rejected_without_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db_path = root / "users.db"
@@ -141,22 +141,10 @@ class UserManagementPersistenceTest(unittest.TestCase):
                 )
                 conn.commit()
 
-            repo = SQLiteUserRepository(
-                db_path=db_path,
-                schema_path=Path("modules/usermanagement/schema.sql"),
-            )
-
-            anna = repo.get_user("anna")
-            self.assertIsNotNone(anna)
-            assert anna is not None
-            self.assertEqual("Anna", anna.first_name)
-            self.assertEqual("Muster", anna.last_name)
-
-            max_user = repo.get_user("max")
-            self.assertIsNotNone(max_user)
-            assert max_user is not None
-            self.assertEqual("Max", max_user.first_name)
-            self.assertEqual("Mustermann", max_user.last_name)
+            original = db_path.read_bytes()
+            with self.assertRaises(DatabaseEvolutionError):
+                prepare_test_database("users", db_path)
+            self.assertEqual(original, db_path.read_bytes())
 
 
 if __name__ == "__main__":

@@ -12,13 +12,13 @@ from pathlib import Path
 
 class MigrationGatesDocumentsScriptTest(unittest.TestCase):
     def _prepare_db(self, db_path: Path) -> None:
-        schema = Path("modules/documents/schema.sql").read_text(encoding="utf-8")
+        schema = Path("modules/documents/migrations/0001_initial.sql").read_text(encoding="utf-8")
         with closing(sqlite3.connect(db_path)) as conn:
             conn.executescript(schema)
             conn.commit()
 
     def _prepare_registry_db(self, db_path: Path) -> None:
-        schema = Path("modules/registry/schema.sql").read_text(encoding="utf-8")
+        schema = Path("modules/registry/migrations/0001_initial.sql").read_text(encoding="utf-8")
         with closing(sqlite3.connect(db_path)) as conn:
             conn.executescript(schema)
             conn.commit()

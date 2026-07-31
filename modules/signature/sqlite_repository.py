@@ -14,11 +14,8 @@ def _utcnow() -> datetime:
 
 
 class SQLiteSignatureRepository:
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     def add_asset(self, asset: SignatureAsset) -> None:
         with self._connect() as conn:
@@ -199,28 +196,6 @@ class SQLiteSignatureRepository:
             created_at=datetime.fromisoformat(str(row["created_at"])),
             scope=str(row["scope"]) if "scope" in row.keys() and row["scope"] else "user",
         )
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with self._connect() as conn:
-            conn.executescript(sql)
-            self._ensure_migration_columns(conn)
-            conn.commit()
-
-    @staticmethod
-    def _ensure_migration_columns(conn: sqlite3.Connection) -> None:
-        cols = {row["name"] for row in conn.execute("PRAGMA table_info(user_signature_templates)").fetchall()}
-        add_specs = [
-            ("name_rel_x", "REAL"),
-            ("name_rel_y", "REAL"),
-            ("date_rel_x", "REAL"),
-            ("date_rel_y", "REAL"),
-            ("scope", "TEXT NOT NULL DEFAULT 'user'"),
-        ]
-        for col_name, sql_type in add_specs:
-            if col_name not in cols:
-                conn.execute(f"ALTER TABLE user_signature_templates ADD COLUMN {col_name} {sql_type}")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_signature_templates_scope ON user_signature_templates(scope)")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

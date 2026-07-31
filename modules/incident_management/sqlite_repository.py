@@ -65,10 +65,8 @@ def _labels_dump(labels: tuple[str, ...]) -> str:
 
 
 class SQLiteIncidentRepository:
-    def __init__(self, *, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, *, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._ensure_schema()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -79,13 +77,6 @@ class SQLiteIncidentRepository:
             yield conn
         finally:
             conn.close()
-
-    def _ensure_schema(self) -> None:
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with self._connect() as conn:
-            conn.executescript(sql)
-            conn.commit()
 
     def allocate_incident_id(self, reported_at: datetime) -> str:
         key = report_date_key(reported_at)

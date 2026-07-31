@@ -19,11 +19,8 @@ from .contracts import (
 
 
 class TrainingQuizRepository:
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     @staticmethod
     def _parse_dt(raw: str | None) -> datetime | None:
@@ -222,20 +219,3 @@ class TrainingQuizRepository:
                 (user_id,),
             ).fetchall()
         return [dict(r) for r in rows]
-
-    # --- infra ---
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with connect(self._db_path) as conn:
-            conn.executescript(sql)
-            cols = {
-                str(r["name"])
-                for r in conn.execute("PRAGMA table_info(training_quiz_attempts)").fetchall()
-            }
-            if "presented_questions_json" not in cols:
-                conn.execute(
-                    "ALTER TABLE training_quiz_attempts ADD COLUMN presented_questions_json TEXT NOT NULL DEFAULT '[]'"
-                )
-            conn.commit()
-

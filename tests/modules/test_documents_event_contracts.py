@@ -6,9 +6,9 @@ from pathlib import Path
 
 from modules.documents.contracts import RejectionReason, SystemRole, ValidityExtensionOutcome, WorkflowProfile
 from modules.documents.service import DocumentsService
-from modules.documents.sqlite_repository import SQLiteDocumentsRepository
+from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
+from tests.database_helpers import registry_repository as SQLiteRegistryRepository
 from modules.registry.projection_api import RegistryProjectionApi
-from modules.registry.sqlite_repository import SQLiteRegistryRepository
 from modules.registry.service import RegistryService
 from modules.documents.storage import FileSystemDocumentsStorage
 from qm_platform.events.event_bus import EventBus
@@ -45,10 +45,10 @@ class DocumentsEventContractsTest(unittest.TestCase):
                 events,
             )
 
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             storage = FileSystemDocumentsStorage(root / "artifacts")
             registry = RegistryService(
-                SQLiteRegistryRepository(db_path=root / "registry.db", schema_path=Path("modules/registry/schema.sql"))
+                SQLiteRegistryRepository(db_path=root / "registry.db")
             )
             service = DocumentsService(
                 event_bus=bus,
@@ -177,9 +177,9 @@ class DocumentsEventContractsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             bus = EventBus()
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             registry = RegistryService(
-                SQLiteRegistryRepository(db_path=root / "registry.db", schema_path=Path("modules/registry/schema.sql"))
+                SQLiteRegistryRepository(db_path=root / "registry.db")
             )
             service = DocumentsService(
                 event_bus=bus,
@@ -202,9 +202,9 @@ class DocumentsEventContractsTest(unittest.TestCase):
     def test_registry_projection_stays_consistent_with_documents_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             registry = RegistryService(
-                SQLiteRegistryRepository(db_path=root / "registry.db", schema_path=Path("modules/registry/schema.sql"))
+                SQLiteRegistryRepository(db_path=root / "registry.db")
             )
             service = DocumentsService(
                 repository=repo,

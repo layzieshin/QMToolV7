@@ -12,11 +12,8 @@ from .contracts import CommentStatus, TrainingCommentListItem, TrainingCommentRe
 
 
 class TrainingCommentRepository:
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     @staticmethod
     def _parse_dt(raw: str | None) -> datetime | None:
@@ -122,46 +119,3 @@ class TrainingCommentRepository:
             status=CommentStatus(str(r["status"])),
             created_at=self._parse_dt(str(r["created_at"])) or datetime.now(timezone.utc),
         )
-
-    # --- infra ---
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with connect(self._db_path) as conn:
-            conn.executescript(sql)
-            if (
-                conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_comments'"
-                ).fetchone()
-                is None
-            ):
-                conn.commit()
-                return
-
-            def comment_cols() -> set[str]:
-                return {str(r["name"]) for r in conn.execute("PRAGMA table_info(training_comments)").fetchall()}
-
-            # CREATE TABLE IF NOT EXISTS leaves legacy tables missing newer columns.
-            for col, ddl in (
-                ("page_number", "ALTER TABLE training_comments ADD COLUMN page_number INTEGER"),
-                ("anchor_json", "ALTER TABLE training_comments ADD COLUMN anchor_json TEXT"),
-                ("status", "ALTER TABLE training_comments ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE'"),
-                (
-                    "document_title_snapshot",
-                    "ALTER TABLE training_comments ADD COLUMN document_title_snapshot TEXT NOT NULL DEFAULT ''",
-                ),
-                (
-                    "username_snapshot",
-                    "ALTER TABLE training_comments ADD COLUMN username_snapshot TEXT NOT NULL DEFAULT ''",
-                ),
-                ("resolved_by", "ALTER TABLE training_comments ADD COLUMN resolved_by TEXT"),
-                ("resolved_at", "ALTER TABLE training_comments ADD COLUMN resolved_at TEXT"),
-                ("resolution_note", "ALTER TABLE training_comments ADD COLUMN resolution_note TEXT"),
-                ("inactive_by", "ALTER TABLE training_comments ADD COLUMN inactive_by TEXT"),
-                ("inactive_at", "ALTER TABLE training_comments ADD COLUMN inactive_at TEXT"),
-                ("inactive_note", "ALTER TABLE training_comments ADD COLUMN inactive_note TEXT"),
-            ):
-                if col not in comment_cols():
-                    conn.execute(ddl)
-            conn.commit()
-

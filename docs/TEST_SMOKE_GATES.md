@@ -35,6 +35,14 @@ Verpflichtende Vorher/Nachher-Gates für SRP- und Doku-Pakete.
 - `.\.venv\Scripts\python.exe -m pytest tests/platform -q`
 - optional fokussierte Läufe je betroffener Komponente
 
+### Database schema or persistence package
+
+- `.\.venv\Scripts\python.exe scripts/database_migration_gate.py --output build/database-migration-gate-output.json`
+- `.\.venv\Scripts\python.exe -m pytest tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/e2e_cli/test_database_commands.py -q`
+- `.\.venv\Scripts\python.exe scripts/golive_gate.py --output build/golive-gate-output.json`
+- A migration above V1 requires the immediately preceding version fixture and
+  explicit data-retention coverage.
+
 ## Nachweisformat
 
 Für jedes Paket im PR-/Änderungsprotokoll:

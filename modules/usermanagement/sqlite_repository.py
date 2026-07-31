@@ -19,11 +19,8 @@ def _row_must_change(row: sqlite3.Row) -> bool:
 
 
 class SQLiteUserRepository(UserRepository):
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     def get_by_username(self, username: str) -> tuple[str, str, str] | None:
         with self._connect() as conn:
@@ -330,49 +327,6 @@ class SQLiteUserRepository(UserRepository):
                     now,
                 ),
             )
-            conn.commit()
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with self._connect() as conn:
-            conn.executescript(sql)
-            for statement in (
-                "ALTER TABLE users ADD COLUMN display_name TEXT",
-                "ALTER TABLE users ADD COLUMN first_name TEXT",
-                "ALTER TABLE users ADD COLUMN last_name TEXT",
-                "ALTER TABLE users ADD COLUMN email TEXT",
-                "ALTER TABLE users ADD COLUMN department TEXT",
-                "ALTER TABLE users ADD COLUMN scope TEXT",
-                "ALTER TABLE users ADD COLUMN organization_unit TEXT",
-                "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
-                "ALTER TABLE users ADD COLUMN is_qmb INTEGER NOT NULL DEFAULT 0",
-                "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0",
-            ):
-                try:
-                    conn.execute(statement)
-                except sqlite3.OperationalError:
-                    pass
-            conn.execute("UPDATE users SET user_id = username WHERE user_id IS NULL OR user_id = ''")
-            conn.execute("UPDATE users SET display_name = username WHERE display_name IS NULL OR display_name = ''")
-            rows = conn.execute("SELECT username, display_name, first_name, last_name FROM users").fetchall()
-            for row in rows:
-                first = row["first_name"]
-                last = row["last_name"]
-                if (first and str(first).strip()) or (last and str(last).strip()):
-                    continue
-                f_name, l_name = self._split_display_name(str(row["display_name"] or row["username"]))
-                conn.execute(
-                    "UPDATE users SET first_name = ?, last_name = ?, display_name = ? WHERE username = ?",
-                    (
-                        f_name,
-                        l_name,
-                        ", ".join([part for part in (f_name, l_name) if part is not None]) or row["username"],
-                        row["username"],
-                    ),
-                )
-            conn.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL")
-            conn.execute("UPDATE users SET is_qmb = 0 WHERE is_qmb IS NULL")
-            conn.execute("UPDATE users SET must_change_password = 0 WHERE must_change_password IS NULL")
             conn.commit()
 
     @staticmethod

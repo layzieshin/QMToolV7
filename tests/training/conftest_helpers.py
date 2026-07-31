@@ -28,9 +28,7 @@ from modules.training.training_inbox_query_service import TrainingInboxQueryServ
 from modules.training.quiz_execution_service import QuizExecutionService
 from modules.training.training_comment_service import TrainingCommentService
 from modules.training.training_report_service import TrainingReportService
-
-
-SCHEMA_PATH = Path("modules/training/schema.sql")
+from tests.database_helpers import prepare_training_database
 
 SAMPLE_QUIZ_JSON = json.dumps({
     "document_id": "DOC-1", "document_version": 1,
@@ -114,14 +112,14 @@ class FakeSettingsService:
 
 
 def make_repos(root: Path):
-    db = root / "training.db"
+    db = prepare_training_database(root / "training.db")
     return {
-        "tag_repo": TrainingTagRepository(db, SCHEMA_PATH),
-        "override_repo": TrainingOverrideRepository(db, SCHEMA_PATH),
-        "snapshot_repo": TrainingSnapshotRepository(db, SCHEMA_PATH),
-        "quiz_repo": TrainingQuizRepository(db, SCHEMA_PATH),
-        "comment_repo": TrainingCommentRepository(db, SCHEMA_PATH),
-        "report_repo": TrainingReportRepository(db, SCHEMA_PATH),
+        "tag_repo": TrainingTagRepository(db),
+        "override_repo": TrainingOverrideRepository(db),
+        "snapshot_repo": TrainingSnapshotRepository(db),
+        "quiz_repo": TrainingQuizRepository(db),
+        "comment_repo": TrainingCommentRepository(db),
+        "report_repo": TrainingReportRepository(db),
     }
 
 

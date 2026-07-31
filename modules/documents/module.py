@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
 
 from qm_platform.events.event_envelope import EventEnvelope
-from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
+from qm_platform.sdk.module_contract import (
+    DatabaseContribution,
+    DatabaseMigrationContribution,
+    DatabaseValidationContribution,
+    ModuleContract,
+    SettingsContribution,
+)
 
 from .wiring import register_documents_ports
 
@@ -69,6 +76,30 @@ DOCUMENTS_SETTINGS_CONTRIBUTION = SettingsContribution(
     migrations=[],
 )
 
+DOCUMENTS_DATABASE_CONTRIBUTION = DatabaseContribution(
+    database_id="documents",
+    module_id="documents",
+    setting_key="documents_db_path",
+    default_path="storage/documents/documents.db",
+    migrations=(
+        DatabaseMigrationContribution(
+            version=1,
+            name="initial",
+            sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
+        ),
+    ),
+    validation_queries=(
+        DatabaseValidationContribution(
+            name="document versions without header",
+            sql=(
+                "SELECT COUNT(*) FROM document_versions v "
+                "LEFT JOIN document_headers h ON h.document_id = v.document_id "
+                "WHERE h.document_id IS NULL"
+            ),
+        ),
+    ),
+)
+
 
 
 def start_documents_module(container) -> None:
@@ -121,5 +152,6 @@ def create_documents_module_contract() -> ModuleContract:
         register=register_documents_ports,
         start=start_documents_module,
         stop=stop_documents_module,
+        database_contributions=(DOCUMENTS_DATABASE_CONTRIBUTION,),
     )
 

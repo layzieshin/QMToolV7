@@ -34,13 +34,16 @@ _COLLECT_ALL: list[str] = [
 # PyInstaller does not ship *.sql / *.json next to packages by default; mirror repo paths under _internal.
 _ADD_DATA_SEP = ";" if os.name == "nt" else ":"
 _BUNDLE_DATA: list[tuple[str, str]] = [
-    ("modules/usermanagement/schema.sql", "modules/usermanagement"),
-    ("modules/documents/schema.sql", "modules/documents"),
+    ("modules/usermanagement/migrations/0001_initial.sql", "modules/usermanagement/migrations"),
+    ("modules/documents/migrations/0001_initial.sql", "modules/documents/migrations"),
     ("modules/documents/workflow_profiles.json", "modules/documents"),
-    ("modules/registry/schema.sql", "modules/registry"),
-    ("modules/signature/schema.sql", "modules/signature"),
-    ("modules/training/schema.sql", "modules/training"),
-    ("modules/incident_management/schema.sql", "modules/incident_management"),
+    ("modules/registry/migrations/0001_initial.sql", "modules/registry/migrations"),
+    ("modules/signature/migrations/0001_initial.sql", "modules/signature/migrations"),
+    ("modules/training/migrations/0001_initial.sql", "modules/training/migrations"),
+    (
+        "modules/incident_management/migrations/0001_initial.sql",
+        "modules/incident_management/migrations",
+    ),
     ("interfaces/pyqt/shell/styles.qss", "interfaces/pyqt/shell"),
     ("qm_platform/licensing/keys/prod_ed25519_public.pem", "qm_platform/licensing/keys"),
 ]

@@ -12,11 +12,8 @@ from .contracts import AssignmentSource, TrainingAssignmentSnapshot, TrainingPro
 
 
 class TrainingSnapshotRepository:
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     @staticmethod
     def _parse_dt(raw: str | None) -> datetime | None:
@@ -130,18 +127,3 @@ class TrainingSnapshotRepository:
             )
             for r in rows
         ]
-
-    # --- infra ---
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with connect(self._db_path) as conn:
-            conn.executescript(sql)
-            cols = {
-                str(r["name"])
-                for r in conn.execute("PRAGMA table_info(training_progress)").fetchall()
-            }
-            if "last_failed_at" not in cols:
-                conn.execute("ALTER TABLE training_progress ADD COLUMN last_failed_at TEXT")
-            conn.commit()
-

@@ -30,10 +30,8 @@ def register_documents_ports(container) -> None:
 
     settings_service = container.get_port("settings_service")
     docs_settings = settings_service.get_module_settings("documents")
-    schema_path = Path(__file__).parent / "schema.sql"
     repository = SQLiteDocumentsRepository(
         db_path=_resolve_config_path(docs_settings.get("documents_db_path", "storage/documents/documents.db")),
-        schema_path=schema_path,
     )
     profile_store = WorkflowProfileStoreJSON(
         _resolve_profile_path(docs_settings.get("profiles_file", "modules/documents/workflow_profiles.json"))

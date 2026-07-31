@@ -12,11 +12,8 @@ from .contracts import ManualAssignment, TrainingExemption
 
 
 class TrainingOverrideRepository:
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     @staticmethod
     def _parse_dt(raw: str | None) -> datetime | None:
@@ -122,12 +119,3 @@ class TrainingOverrideRepository:
             valid_until=self._parse_dt(r["valid_until"]) if r["valid_until"] else None,
             revoked_at=self._parse_dt(r["revoked_at"]) if r["revoked_at"] else None,
         )
-
-    # --- infra ---
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with connect(self._db_path) as conn:
-            conn.executescript(sql)
-            conn.commit()
-

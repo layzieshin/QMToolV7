@@ -14,7 +14,7 @@ from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInpu
 from modules.signature.errors import PasswordRequiredError
 from modules.signature.secure_store import EncryptedSignatureBlobStore
 from modules.signature.service import SignatureServiceV2
-from modules.signature.sqlite_repository import SQLiteSignatureRepository
+from tests.database_helpers import signature_repository as SQLiteSignatureRepository
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
 from qm_platform.sdk.module_contract import SettingsContribution
@@ -69,7 +69,6 @@ class SignatureTemplatesTest(unittest.TestCase):
             )
             repository = SQLiteSignatureRepository(
                 db_path=root / "templates.db",
-                schema_path=Path("modules/signature/schema.sql"),
             )
             secure_store = EncryptedSignatureBlobStore(
                 root=root / "assets",
@@ -129,7 +128,6 @@ class SignatureTemplatesTest(unittest.TestCase):
             )
             repository = SQLiteSignatureRepository(
                 db_path=root / "templates.db",
-                schema_path=Path("modules/signature/schema.sql"),
             )
             secure_store = EncryptedSignatureBlobStore(
                 root=root / "assets",

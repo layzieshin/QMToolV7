@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from modules.training.training_comment_repository import TrainingCommentRepository
+from tests.database_helpers import prepare_training_database
 from modules.training.training_comment_service import TrainingCommentService
 
 
 def test_training_pdf_comment_fields_roundtrip(tmp_path: Path) -> None:
-    repo = TrainingCommentRepository(tmp_path / "training.db", Path("modules/training/schema.sql"))
+    repo = TrainingCommentRepository(prepare_training_database(tmp_path / "training.db"))
     service = TrainingCommentService(comment_repo=repo)
     created = service.add_pdf_comment(
         "u1",

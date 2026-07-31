@@ -1,8 +1,6 @@
 """Port wiring for the training module (clean-slate redesign)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from qm_platform.licensing.licensed_proxy import LicensedPortProxy
 
 from .api import TrainingAdminApi, TrainingApi
@@ -33,15 +31,14 @@ def register_training_ports(container) -> None:
     cfg = settings_service.get_module_settings("training")
 
     db_path = app_home / cfg.get("training_db_path", "storage/training/training.db")
-    schema_path = Path(__file__).parent / "schema.sql"
 
     # --- Repositories ---
-    tag_repo = TrainingTagRepository(db_path, schema_path)
-    override_repo = TrainingOverrideRepository(db_path, schema_path)
-    snapshot_repo = TrainingSnapshotRepository(db_path, schema_path)
-    quiz_repo = TrainingQuizRepository(db_path, schema_path)
-    comment_repo = TrainingCommentRepository(db_path, schema_path)
-    report_repo = TrainingReportRepository(db_path, schema_path)
+    tag_repo = TrainingTagRepository(db_path)
+    override_repo = TrainingOverrideRepository(db_path)
+    snapshot_repo = TrainingSnapshotRepository(db_path)
+    quiz_repo = TrainingQuizRepository(db_path)
+    comment_repo = TrainingCommentRepository(db_path)
+    report_repo = TrainingReportRepository(db_path)
 
     secure_store = EncryptedTrainingBlobStore(
         root=app_home / cfg.get("quiz_blob_root", "storage/training/quiz_blobs"),

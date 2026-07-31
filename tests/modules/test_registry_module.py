@@ -7,13 +7,14 @@ from pathlib import Path
 from modules.registry.contracts import RegisterState, ReleaseEvidenceMode
 from modules.registry.module import create_registry_module_contract
 from modules.registry.service import RegistryService
-from modules.registry.sqlite_repository import SQLiteRegistryRepository
+from tests.database_helpers import registry_repository as SQLiteRegistryRepository
 from qm_platform.events.event_bus import EventBus
 from qm_platform.events.event_envelope import EventEnvelope
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.lifecycle import LifecycleManager
+from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
 from qm_platform.settings.settings_store import SettingsStore
@@ -31,9 +32,11 @@ class RegistryModuleTest(unittest.TestCase):
                 "settings_service",
                 SettingsService(SettingsRegistry(), SettingsStore(root / "settings.json")),
             )
+            container.register_port("app_home", root)
 
             lifecycle = LifecycleManager(container)
-            lifecycle.register(create_registry_module_contract())
+            lifecycle.prepare(create_registry_module_contract())
+            runtime_bootstrap.activate_core_modules(container, lifecycle)
             lifecycle.start()
 
             self.assertTrue(container.has_port("registry_service"))
@@ -57,9 +60,11 @@ class RegistryModuleTest(unittest.TestCase):
                 "settings_service",
                 SettingsService(SettingsRegistry(), SettingsStore(root / "settings.json")),
             )
+            container.register_port("app_home", root)
 
             lifecycle = LifecycleManager(container)
-            lifecycle.register(create_registry_module_contract())
+            lifecycle.prepare(create_registry_module_contract())
+            runtime_bootstrap.activate_core_modules(container, lifecycle)
             lifecycle.start()
 
             projection = container.get_port("registry_projection_api")
@@ -79,8 +84,7 @@ class RegistryModuleTest(unittest.TestCase):
         """Same inputs + fixed event envelope yield identical registry rows (rebuild/replay primitive)."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            schema_path = Path(__file__).resolve().parents[2] / "modules" / "registry" / "schema.sql"
-            repo = SQLiteRegistryRepository(root / "registry.db", schema_path)
+            repo = SQLiteRegistryRepository(root / "registry.db")
             service = RegistryService(repo)
             evt = EventEnvelope(
                 event_id="recovery-replay-1",
@@ -116,7 +120,6 @@ class RegistryModuleTest(unittest.TestCase):
         """Simulate empty registry after incident: replaying the same projection reproduces the row."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            schema_path = Path(__file__).resolve().parents[2] / "modules" / "registry" / "schema.sql"
             evt = EventEnvelope(
                 event_id="recovery-replay-2",
                 name="domain.documents.state.replay.v1",
@@ -128,7 +131,7 @@ class RegistryModuleTest(unittest.TestCase):
                 payload={"document_id": "DOC-R2", "version": 1},
             )
             db_before = root / "registry_before.db"
-            svc_before = RegistryService(SQLiteRegistryRepository(db_before, schema_path))
+            svc_before = RegistryService(SQLiteRegistryRepository(db_before))
             svc_before.apply_documents_state(
                 document_id="DOC-R2",
                 version=1,
@@ -139,7 +142,7 @@ class RegistryModuleTest(unittest.TestCase):
             self.assertIsNotNone(expected)
 
             db_after = root / "registry_after_fresh.db"
-            svc_after = RegistryService(SQLiteRegistryRepository(db_after, schema_path))
+            svc_after = RegistryService(SQLiteRegistryRepository(db_after))
             svc_after.apply_documents_state(
                 document_id="DOC-R2",
                 version=1,

@@ -14,7 +14,7 @@ from modules.documents.contracts import (
 )
 from modules.documents.errors import InvalidTransitionError, PermissionDeniedError, SignatureTransitionError, ValidationError
 from modules.documents.service import DocumentsService
-from modules.documents.sqlite_repository import SQLiteDocumentsRepository
+from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
 from modules.documents.storage import FileSystemDocumentsStorage
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 
@@ -397,7 +397,7 @@ class DocumentsServiceTest(unittest.TestCase):
     def test_signature_transition_requires_signed_output_pdf_when_storage_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             storage = FileSystemDocumentsStorage(root / "artifacts")
             service = DocumentsService(repository=repo, storage_port=storage, signature_api=_NoOutputSignatureApi())
             state = service.create_document_version("DOC-NO-SIGNED", 1)
@@ -425,4 +425,3 @@ class DocumentsServiceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

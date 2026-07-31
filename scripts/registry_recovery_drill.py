@@ -13,6 +13,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.migration_gates_documents import evaluate_registry_drift
+from modules.registry.module import REGISTRY_DATABASE_CONTRIBUTION
+from qm_platform.persistence import (
+    DataValidationQuery,
+    DatabaseEvolutionService,
+    DatabaseSpec,
+    MigrationStep,
+)
 
 
 def _now_iso() -> str:
@@ -32,10 +39,29 @@ def _expected_registry_state(status: str | None) -> tuple[str, bool]:
 
 
 def rebuild_registry_from_documents(*, documents_db_path: Path, rebuilt_registry_db_path: Path) -> None:
-    schema = Path("modules/registry/schema.sql").read_text(encoding="utf-8")
-    rebuilt_registry_db_path.parent.mkdir(parents=True, exist_ok=True)
+    contribution = REGISTRY_DATABASE_CONTRIBUTION
+    spec = DatabaseSpec(
+        database_id=contribution.database_id,
+        path=rebuilt_registry_db_path,
+        migrations=tuple(
+            MigrationStep(
+                version=item.version,
+                name=item.name,
+                sql_path=item.sql_path,
+            )
+            for item in contribution.migrations
+        ),
+        validation_queries=tuple(
+            DataValidationQuery(name=item.name, sql=item.sql)
+            for item in contribution.validation_queries
+        ),
+    )
+    migration_service = DatabaseEvolutionService(
+        app_home=rebuilt_registry_db_path.parent,
+        backup_root=rebuilt_registry_db_path.parent / ".registry-recovery-backups",
+    )
+    migration_service.migrate((spec,), reason="registry_recovery_rebuild")
     with closing(sqlite3.connect(rebuilt_registry_db_path)) as reg_conn:
-        reg_conn.executescript(schema)
         reg_conn.execute("DELETE FROM document_registry")
         reg_conn.commit()
 

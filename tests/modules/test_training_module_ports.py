@@ -14,6 +14,7 @@ from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.lifecycle import LifecycleManager
+from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
 from qm_platform.settings.settings_store import SettingsStore
@@ -37,11 +38,15 @@ class TrainingModulePortsTest(unittest.TestCase):
             container.register_port("app_home", root)
             container.register_port("resource_root", root)
             lifecycle = LifecycleManager(container)
-            lifecycle.register(create_usermanagement_module_contract())
-            lifecycle.register(create_signature_module_contract())
-            lifecycle.register(create_registry_module_contract())
-            lifecycle.register(create_documents_module_contract())
-            lifecycle.register(create_training_module_contract())
+            for contract in (
+                create_usermanagement_module_contract(),
+                create_signature_module_contract(),
+                create_registry_module_contract(),
+                create_documents_module_contract(),
+                create_training_module_contract(),
+            ):
+                lifecycle.prepare(contract)
+            runtime_bootstrap.activate_core_modules(container, lifecycle)
             lifecycle.start()
             self.assertTrue(container.has_port("training_api"))
             self.assertTrue(container.has_port("training_admin_api"))

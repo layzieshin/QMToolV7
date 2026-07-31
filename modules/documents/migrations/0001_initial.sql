@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS document_headers (
     department TEXT,
     site TEXT,
     regulatory_scope TEXT,
+    distribution_roles_json TEXT NOT NULL DEFAULT '[]',
+    distribution_sites_json TEXT NOT NULL DEFAULT '[]',
+    distribution_departments_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -41,6 +44,10 @@ CREATE TABLE IF NOT EXISTS document_versions (
     archived_by TEXT,
     superseded_by_version INTEGER,
     extension_count INTEGER NOT NULL,
+    last_extended_at TEXT,
+    last_extended_by TEXT,
+    last_extension_reason TEXT,
+    last_extension_review_outcome TEXT,
     custom_fields_json TEXT NOT NULL,
     last_event_id TEXT,
     last_event_at TEXT,

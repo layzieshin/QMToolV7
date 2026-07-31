@@ -9,9 +9,9 @@ from modules.documents.contracts import ControlClass, DocumentStatus, DocumentTy
 from modules.documents.errors import PermissionDeniedError, ValidationError
 from modules.documents.profile_store import WorkflowProfileStoreJSON
 from modules.documents.service import DocumentsService
-from modules.documents.sqlite_repository import SQLiteDocumentsRepository
+from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
+from tests.database_helpers import registry_repository as SQLiteRegistryRepository
 from modules.registry.projection_api import RegistryProjectionApi
-from modules.registry.sqlite_repository import SQLiteRegistryRepository
 from modules.registry.service import RegistryService
 
 
@@ -24,11 +24,9 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
     def _service(self, root: Path) -> DocumentsService:
         docs_repo = SQLiteDocumentsRepository(
             db_path=root / "documents.db",
-            schema_path=Path("modules/documents/schema.sql"),
         )
         reg_repo = SQLiteRegistryRepository(
             db_path=root / "registry.db",
-            schema_path=Path("modules/registry/schema.sql"),
         )
         return DocumentsService(
             repository=docs_repo,
@@ -71,11 +69,9 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
             root = Path(tmp)
             docs_repo = SQLiteDocumentsRepository(
                 db_path=root / "documents.db",
-                schema_path=Path("modules/documents/schema.sql"),
             )
             reg_repo = SQLiteRegistryRepository(
                 db_path=root / "registry.db",
-                schema_path=Path("modules/registry/schema.sql"),
             )
             registry = RegistryService(reg_repo)
             service = DocumentsService(

@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from qm_platform.events.event_envelope import EventEnvelope
-from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
+from qm_platform.sdk.module_contract import (
+    DatabaseContribution,
+    DatabaseMigrationContribution,
+    DatabaseValidationContribution,
+    ModuleContract,
+    SettingsContribution,
+)
 
 from .wiring import register_signature_ports
 
@@ -30,6 +38,29 @@ SIGNATURE_SETTINGS_CONTRIBUTION = SettingsContribution(
     },
     scope="module_global",
     migrations=[],
+)
+
+SIGNATURE_DATABASE_CONTRIBUTION = DatabaseContribution(
+    database_id="signature",
+    module_id="signature",
+    setting_key="templates_db_path",
+    default_path="storage/signature/templates.db",
+    migrations=(
+        DatabaseMigrationContribution(
+            version=1,
+            name="initial",
+            sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
+        ),
+    ),
+    validation_queries=(
+        DatabaseValidationContribution(
+            name="invalid signature template scope",
+            sql=(
+                "SELECT COUNT(*) FROM user_signature_templates "
+                "WHERE scope NOT IN ('user', 'global')"
+            ),
+        ),
+    ),
 )
 
 
@@ -73,5 +104,6 @@ def create_signature_module_contract() -> ModuleContract:
         register=register_signature_ports,
         start=start_signature_module,
         stop=stop_signature_module,
+        database_contributions=(SIGNATURE_DATABASE_CONTRIBUTION,),
     )
 

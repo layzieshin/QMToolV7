@@ -4,7 +4,13 @@ import os
 from pathlib import Path
 
 from qm_platform.events.event_envelope import EventEnvelope
-from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
+from qm_platform.sdk.module_contract import (
+    DatabaseContribution,
+    DatabaseMigrationContribution,
+    DatabaseValidationContribution,
+    ModuleContract,
+    SettingsContribution,
+)
 
 from .service import UserManagementService
 from .sqlite_repository import SQLiteUserRepository
@@ -32,6 +38,30 @@ USERMANAGEMENT_SETTINGS_CONTRIBUTION = SettingsContribution(
     migrations=[],
 )
 
+USERMANAGEMENT_DATABASE_CONTRIBUTION = DatabaseContribution(
+    database_id="users",
+    module_id="usermanagement",
+    setting_key="users_db_path",
+    default_path="storage/platform/users.db",
+    migrations=(
+        DatabaseMigrationContribution(
+            version=1,
+            name="initial",
+            sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
+        ),
+    ),
+    validation_queries=(
+        DatabaseValidationContribution(
+            name="users without stable identity",
+            sql=(
+                "SELECT COUNT(*) FROM users "
+                "WHERE user_id IS NULL OR TRIM(user_id) = '' "
+                "OR username IS NULL OR TRIM(username) = ''"
+            ),
+        ),
+    ),
+)
+
 
 def register_usermanagement_ports(container) -> None:
     app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
@@ -42,7 +72,6 @@ def register_usermanagement_ports(container) -> None:
         users_db_path = app_home / users_db_path
     repository = SQLiteUserRepository(
         db_path=users_db_path,
-        schema_path=Path(__file__).with_name("schema.sql"),
     )
     seed_mode = str(user_settings.get("seed_mode", "admin_only"))
     dev_mode = bool(user_settings.get("dev_mode", False))
@@ -96,5 +125,6 @@ def create_usermanagement_module_contract() -> ModuleContract:
         register=register_usermanagement_ports,
         start=start_usermanagement_module,
         stop=stop_usermanagement_module,
+        database_contributions=(USERMANAGEMENT_DATABASE_CONTRIBUTION,),
     )
 

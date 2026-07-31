@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
 
 from qm_platform.events.event_envelope import EventEnvelope
-from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
+from qm_platform.sdk.module_contract import (
+    DatabaseContribution,
+    DatabaseMigrationContribution,
+    DatabaseValidationContribution,
+    ModuleContract,
+    SettingsContribution,
+)
 
 from .wiring import register_registry_ports
 
@@ -21,6 +28,29 @@ REGISTRY_SETTINGS_CONTRIBUTION = SettingsContribution(
     defaults={"registry_db_path": "storage/documents/registry.db"},
     scope="module_global",
     migrations=[],
+)
+
+REGISTRY_DATABASE_CONTRIBUTION = DatabaseContribution(
+    database_id="registry",
+    module_id="registry",
+    setting_key="registry_db_path",
+    default_path="storage/documents/registry.db",
+    migrations=(
+        DatabaseMigrationContribution(
+            version=1,
+            name="initial",
+            sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
+        ),
+    ),
+    validation_queries=(
+        DatabaseValidationContribution(
+            name="registry rows without update event",
+            sql=(
+                "SELECT COUNT(*) FROM document_registry "
+                "WHERE last_update_event_id IS NULL OR TRIM(last_update_event_id) = ''"
+            ),
+        ),
+    ),
 )
 
 
@@ -56,4 +86,5 @@ def create_registry_module_contract() -> ModuleContract:
         register=register_registry_ports,
         start=start_registry_module,
         stop=stop_registry_module,
+        database_contributions=(REGISTRY_DATABASE_CONTRIBUTION,),
     )

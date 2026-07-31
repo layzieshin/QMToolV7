@@ -6,7 +6,7 @@ from pathlib import Path
 
 from modules.usermanagement.role_policies import is_effective_qmb
 from modules.usermanagement.service import UserManagementService
-from modules.usermanagement.sqlite_repository import SQLiteUserRepository
+from tests.database_helpers import user_repository as SQLiteUserRepository
 
 
 class UserManagementQmbFlagTest(unittest.TestCase):
@@ -14,7 +14,6 @@ class UserManagementQmbFlagTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = SQLiteUserRepository(
                 db_path=Path(tmp) / "users.db",
-                schema_path=Path("modules/usermanagement/schema.sql"),
             )
             service = UserManagementService(repository=repo)
             service.create_user("alpha", "pw", "User")
