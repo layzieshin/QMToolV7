@@ -39,6 +39,8 @@ jobs:
 
       - name: Prepare migration-gate fixture db
         shell: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           import sqlite3
           from pathlib import Path
