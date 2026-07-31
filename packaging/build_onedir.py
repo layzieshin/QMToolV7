@@ -29,12 +29,22 @@ _HIDDEN_IMPORTS: list[str] = [
 ]
 _COLLECT_ALL: list[str] = [
     "pymupdf",  # native mupdf DLLs for fitz
+    "psycopg",
+    "psycopg_binary",
 ]
 
 # PyInstaller does not ship *.sql / *.json next to packages by default; mirror repo paths under _internal.
 _ADD_DATA_SEP = ";" if os.name == "nt" else ":"
 _BUNDLE_DATA: list[tuple[str, str]] = [
     ("modules/usermanagement/migrations/0001_initial.sql", "modules/usermanagement/migrations"),
+    (
+        "modules/usermanagement/postgres/migrations/0001_initial.sql",
+        "modules/usermanagement/postgres/migrations",
+    ),
+    (
+        "modules/usermanagement/postgres/provision_roles.sql",
+        "modules/usermanagement/postgres",
+    ),
     ("modules/documents/migrations/0001_initial.sql", "modules/documents/migrations"),
     ("modules/documents/workflow_profiles.json", "modules/documents"),
     ("modules/registry/migrations/0001_initial.sql", "modules/registry/migrations"),
