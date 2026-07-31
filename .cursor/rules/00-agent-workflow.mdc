@@ -114,7 +114,7 @@ next step until the current step is verified. Use the smallest relevant verifica
 | Change area | Command |
 | --- | --- |
 | Platform/runtime | `.\.venv\Scripts\python.exe -m pytest tests/platform -q` |
-| Module service/logic | `.\.venv\Scripts\python.exe -m pytest tests/modules -q` or targeted `.\.venv\Scripts\python.exe -m pytest tests/modules/test_<module>_*.py -q` |
+| Module service/logic | `.\.venv\Scripts\python.exe -m pytest tests/modules -q` or targeted PowerShell `.\.venv\Scripts\python.exe -m pytest @((Get-ChildItem -Path tests/modules -Filter 'test_<module>_*.py').FullName) -q` (do not pass unexpanded `*.py` globs; PowerShell and pytest will not expand them) |
 | PyQt/GUI adapter | `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q` |
 | CLI flow | `.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -q` |
 | Backend host | `.\.venv\Scripts\python.exe -m src.backend` and `GET /health` when the server is running |

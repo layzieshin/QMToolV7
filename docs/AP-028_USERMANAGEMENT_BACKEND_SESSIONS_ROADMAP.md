@@ -203,7 +203,9 @@ Milestone 0 abgeschlossen.
 **Test-Gate**
 
 ```text
-.\.venv\Scripts\python.exe -m pytest tests/modules/test_usermanagement*.py tests/modules/usermanagement -q
+# PowerShell: Shell-Globs wie test_usermanagement*.py werden nicht expandiert;
+# pytest erhält sonst ein Literal und findet keine Dateien. Mit FullName auflösen:
+.\.venv\Scripts\python.exe -m pytest @((Get-ChildItem -Path tests/modules -Filter 'test_usermanagement*.py').FullName) tests/modules/usermanagement -q
 .\.venv\Scripts\python.exe -m pytest tests/interfaces/test_architecture_gates.py -q
 Neue Contract-Tests grün
 Keine Backend-/Persistenz-Regression
