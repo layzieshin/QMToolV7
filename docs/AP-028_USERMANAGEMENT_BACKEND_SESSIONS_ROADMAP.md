@@ -482,6 +482,7 @@ Zusätzlich Dependency/Middleware: Token annehmen, hashen, Session resolve, Cont
 3. Logout widerruft aktuelle Session.
 4. `/auth/me` liefert serverseitig bestimmten Kontext (keine Client-Rollen).
 5. HTTP-Fehlerübersetzung ohne Geheimnisoffenlegung.
+6. Übergabepunkt aus M2: `resolve_session(..., password_change_allowed=True)` darf ausschließlich vom dedizierten Change-Password-Endpunkt gesetzt werden — niemals client-steuerbar, niemals von anderen Routen.
 
 **Tests**
 

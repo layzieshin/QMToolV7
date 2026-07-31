@@ -6,12 +6,14 @@ External callers (CLI, GUI, backend, tests) MUST import only from this file.
 
 Forbidden from outside: service.py, sqlite_repository.py,
 password_crypto.py, repository.py, session_store.py, auth_ops.py,
-user_admin_ops.py, wiring.py
+user_admin_ops.py, wiring.py, session_ops.py, session_repository.py,
+memory_session_repository.py, session_token.py
 """
 from __future__ import annotations
 
 from .contracts import (
     AuthenticatedUser,
+    IssuedSession,
     SessionRecord,
     SystemExecutionContext,
     UserContext,
@@ -36,6 +38,7 @@ __all__ = [
     "UserContext",
     "SystemExecutionContext",
     "SessionRecord",
+    "IssuedSession",
     "issue_user_context",
     "issue_system_execution_context",
     "UsermanagementError",
