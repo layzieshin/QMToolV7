@@ -87,6 +87,17 @@ class SessionRecord:
     revoked_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class IssuedSession:
+    """One-time return of a newly created opaque session.
+
+    ``raw_token`` is returned to the client only at creation time and must never be persisted.
+    """
+
+    raw_token: str
+    session: SessionRecord
+
+
 def _require_aware_utc(value: datetime, field_name: str) -> datetime:
     if value.tzinfo is None:
         raise ValueError(f"{field_name} must be timezone-aware (UTC)")

@@ -1,4 +1,9 @@
-"""Session persistence for the usermanagement module (SRP split B3)."""
+"""Legacy desktop current-user persistence (SRP split B3).
+
+AP-028: This JSON file store is a local Desktop/Legacy session source only.
+It must not be used as backend multiuser session truth. Opaque server-side
+sessions live in ``session_ops`` / ``SessionRepository``.
+"""
 from __future__ import annotations
 
 import json
@@ -9,7 +14,7 @@ from .repository import UserRepository
 
 
 class SessionStore:
-    """Read/write the current-user session from a JSON file."""
+    """Read/write the legacy current-user session from a JSON file."""
 
     def __init__(self, session_file: Path | None, repository: UserRepository | None = None) -> None:
         self._session_file = session_file

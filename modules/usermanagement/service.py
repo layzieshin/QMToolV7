@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from qm_platform.events.event_envelope import EventEnvelope
 
 from .auth_ops import AuthOps
-from .contracts import AuthenticatedUser
-from .password_crypto import is_password_hash, verify_password
+from .contracts import AuthenticatedUser, IssuedSession, UserContext
 from .repository import UserRepository
+from .session_ops import SessionOps
+from .session_repository import SessionRepository
 from .session_store import SessionStore
 from .user_admin_ops import UserAdminOps
 
@@ -19,6 +19,7 @@ class UserManagementService:
     event_bus: object | None = None
     session_file: Path | None = None
     repository: UserRepository | None = None
+    session_repository: SessionRepository | None = None
     _users: dict[str, tuple[str, str]] = field(
         default_factory=lambda: {
             "admin": ("admin", "Admin"),
@@ -38,6 +39,12 @@ class UserManagementService:
             event_bus=self.event_bus,
             fallback_users=self._users,
         )
+        self._session_ops: SessionOps | None = None
+        if self.session_repository is not None:
+            self._session_ops = SessionOps(
+                session_repository=self.session_repository,
+                users=_ServiceUserByIdLookup(self),
+            )
 
     # -- Auth delegation -----------------------------------------------------
 
@@ -55,6 +62,57 @@ class UserManagementService:
 
     def all_passwords_hashed(self) -> bool:
         return self._auth_ops.all_passwords_hashed()
+
+    # -- Opaque server-side sessions (AP-028) --------------------------------
+
+    def create_session(
+        self,
+        user: AuthenticatedUser,
+        *,
+        client_type: str,
+        lifetime=None,
+        now=None,
+        authentication_level: str = "password",
+    ) -> IssuedSession:
+        return self._require_session_ops().create_session(
+            user,
+            client_type=client_type,
+            lifetime=lifetime,
+            now=now,
+            authentication_level=authentication_level,
+        )
+
+    def resolve_session(
+        self,
+        raw_token: str | None,
+        *,
+        request_id: str,
+        now=None,
+        password_change_allowed: bool = False,
+        touch: bool = True,
+    ) -> UserContext:
+        return self._require_session_ops().resolve_session(
+            raw_token,
+            request_id=request_id,
+            now=now,
+            password_change_allowed=password_change_allowed,
+            touch=touch,
+        )
+
+    def revoke_session(self, *, session_id: str | None = None, raw_token: str | None = None, now=None):
+        return self._require_session_ops().revoke_session(
+            session_id=session_id,
+            raw_token=raw_token,
+            now=now,
+        )
+
+    def revoke_all_sessions_for_user(self, user_id: str, *, now=None):
+        return self._require_session_ops().revoke_all_for_user(user_id, now=now)
+
+    def _require_session_ops(self) -> SessionOps:
+        if self._session_ops is None:
+            raise RuntimeError("opaque session repository is not configured")
+        return self._session_ops
 
     # -- Admin delegation ----------------------------------------------------
 
@@ -150,3 +208,19 @@ class UserManagementService:
             )
         )
 
+
+class _ServiceUserByIdLookup:
+    def __init__(self, service: UserManagementService) -> None:
+        self._service = service
+
+    def get_user_by_id(self, user_id: str) -> AuthenticatedUser | None:
+        if self._service.repository is not None:
+            for user in self._service.repository.list_users():
+                if user.user_id == user_id:
+                    return user
+            return None
+        entry = self._service._users.get(user_id)
+        if entry is None:
+            return None
+        _password, role = entry
+        return AuthenticatedUser(user_id=user_id, username=user_id, role=role)
