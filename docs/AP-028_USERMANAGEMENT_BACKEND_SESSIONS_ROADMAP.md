@@ -85,6 +85,8 @@ Keine parallelen Implementierungs-Milestones. M0 ist dokumentations-/entscheidun
 
 ### Milestone 0 – Bestandsaufnahme und verbindliche Sollentscheidungen
 
+**Ergebnisartefakt:** [`docs/AP-028_M0_STATE_MATRIX.md`](AP-028_M0_STATE_MATRIX.md) (Ist-/Zielmatrix; einzige Wahrheit für M0).
+
 **Ziel**
 
 Ist- und Zielmatrix für Usermanagement/Auth/Sessions/Backend/Persistenz verbindlich festschreiben. Keine Code-Implementierung.

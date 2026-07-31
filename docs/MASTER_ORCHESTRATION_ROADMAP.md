@@ -26,7 +26,7 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
 - AP-025 Agent Guardrails und Repo-Konsistenz: erledigt (Governance/Docs/Gates; kein fachliches Produktverhalten).
 - AP-026 Documents Review-ablehnen Evidence Baseline: erledigt (Test-Gate fuer bestehenden Servicefluss; Produktverhalten unveraendert; Kettenstatus bleibt `ketten-eingeschraenkt`).
 - AP-027 Verbindliches Datenbank-Migrationsfundament: erledigt/gemergt in `main` (Commit-Grundlage `Establish AP-027 database migration foundation`); SQLite-Owner V1, forward-only Runner, Gates und Policy. PostgreSQL blieb bewusst ausserhalb AP-027.
-- AP-028 Backend-gestuetztes Usermanagement mit serverseitigen Sessions: naechster freigegebener Schwerpunkt; Roadmap und Milestone-0-Prompt unter `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` und `docs/AP-028_MILESTONE_0_PROMPT.md`. Umsetzung milestone-weise; kein Big-Bang.
+- AP-028 Backend-gestuetztes Usermanagement mit serverseitigen Sessions: naechster freigegebener Schwerpunkt; Roadmap und Milestone-0-Prompt unter `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` und `docs/AP-028_MILESTONE_0_PROMPT.md`. Milestone 0 Ist-/Zielmatrix: `docs/AP-028_M0_STATE_MATRIX.md`. Umsetzung milestone-weise; kein Big-Bang.
 - Nach Abschluss AP-028: Documents-Multiuser-MVP als separat freizugebendes Arbeitspaket (setzt bestaetigten UserContext/Sessions voraus).
 
 ## Zielarchitektur
@@ -168,6 +168,7 @@ AP-028 ist die naechste freigegebene Aktion (Usermanagement Backend Sessions).
 Planungsartefakte:
 - `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md`
 - `docs/AP-028_MILESTONE_0_PROMPT.md`
+- `docs/AP-028_M0_STATE_MATRIX.md` (Milestone 0)
 
 Umsetzung erfolgt streng milestone-weise (M0 Dokumentation → M1 Contracts → …
 → M9 Legacy-Grenze). Jeder Milestone braucht sein Test-Gate, bevor der naechste
