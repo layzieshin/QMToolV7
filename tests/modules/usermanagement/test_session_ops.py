@@ -136,9 +136,12 @@ def test_session_repository_port_requires_list_for_user() -> None:
     from modules.usermanagement.session_repository import SessionRepository
 
     assert "list_for_user" in SessionRepository.__abstractmethods__
+    assert "touch" in SessionRepository.__abstractmethods__
+    assert "revoke" in SessionRepository.__abstractmethods__
+    assert "revoke_all_for_user" in SessionRepository.__abstractmethods__
 
     class IncompleteRepository(SessionRepository):
-        def save(self, session):  # type: ignore[override]
+        def add(self, session):  # type: ignore[override]
             pass
 
         def get_by_token_hash(self, token_hash):  # type: ignore[override]
@@ -146,6 +149,15 @@ def test_session_repository_port_requires_list_for_user() -> None:
 
         def get_by_session_id(self, session_id):  # type: ignore[override]
             return None
+
+        def touch(self, session_id, last_seen_at):  # type: ignore[override]
+            return None
+
+        def revoke(self, session_id, revoked_at):  # type: ignore[override]
+            return None
+
+        def revoke_all_for_user(self, user_id, revoked_at):  # type: ignore[override]
+            return []
 
         def delete(self, session_id):  # type: ignore[override]
             pass
@@ -190,6 +202,43 @@ def test_revoke_all_for_user_blocks_existing_sessions() -> None:
         ops.resolve_session(first.raw_token, request_id="r", now=_utc(hour=10, minute=6))
     with pytest.raises(RevokedSessionError):
         ops.resolve_session(second.raw_token, request_id="r", now=_utc(hour=10, minute=6))
+
+
+@pytest.mark.parametrize("touch", [True, False])
+def test_touch_cannot_overwrite_a_concurrent_revocation(touch: bool) -> None:
+    class RevokeBeforeTouchRepository(InMemorySessionRepository):
+        def touch(self, session_id, last_seen_at):  # type: ignore[override]
+            self.revoke(session_id, last_seen_at)
+            return super().touch(session_id, last_seen_at)
+
+    user = _user()
+    users = MappingUserByIdLookup({user.user_id: user})
+    repo = RevokeBeforeTouchRepository()
+    ops = SessionOps(repo, users)
+    issued = ops.create_session(user, client_type="test", now=_utc())
+
+    with pytest.raises(RevokedSessionError):
+        ops.resolve_session(
+            issued.raw_token,
+            request_id="r",
+            now=_utc(hour=10, minute=1),
+            touch=touch,
+        )
+    stored = repo.get_by_session_id(issued.session.session_id)
+    assert stored is not None
+    expected_revoked_at = _utc(hour=10, minute=1) if touch else _utc()
+    assert stored.revoked_at == expected_revoked_at
+
+
+def test_revoke_requires_exactly_one_session_identifier() -> None:
+    user = _user()
+    ops, _users, _repo = _ops(user)
+    issued = ops.create_session(user, client_type="test", now=_utc())
+
+    with pytest.raises(InvalidSessionError, match="exactly one"):
+        ops.revoke_session()
+    with pytest.raises(InvalidSessionError, match="exactly one"):
+        ops.revoke_session(session_id=issued.session.session_id, raw_token=issued.raw_token)
 
 
 def test_service_delegates_opaque_sessions_when_repository_configured() -> None:

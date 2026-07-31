@@ -5,7 +5,6 @@ a desktop/legacy current-user file and must not be used as backend session truth
 """
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
@@ -78,7 +77,7 @@ class SessionOps:
             authentication_level=str(authentication_level),
             revoked_at=None,
         )
-        self._sessions.save(record)
+        self._sessions.add(record)
         return IssuedSession(raw_token=raw_token, session=record)
 
     def resolve_session(
@@ -122,10 +121,14 @@ class SessionOps:
         if user.must_change_password and not password_change_allowed:
             raise PasswordChangeRequiredError("password change required")
 
-        if touch:
-            updated = replace(session, last_seen_at=moment)
-            self._sessions.save(updated)
-            session = updated
+        last_seen_at = moment if touch else session.last_seen_at
+        session = self._sessions.touch(session.session_id, last_seen_at)
+        if session is None:
+            raise SessionNotFoundError("session not found")
+        if session.revoked_at is not None:
+            raise RevokedSessionError("session has been revoked")
+        if moment >= session.expires_at:
+            raise ExpiredSessionError("session has expired")
 
         role = normalize_base_role(user.role)
         return issue_user_context(
@@ -146,25 +149,17 @@ class SessionOps:
         now: datetime | None = None,
     ) -> SessionRecord:
         session = self._load_for_revoke(session_id=session_id, raw_token=raw_token)
-        if session.revoked_at is not None:
-            return session
         moment = _as_utc(now or _utc_now())
-        revoked = replace(session, revoked_at=moment)
-        self._sessions.save(revoked)
+        revoked = self._sessions.revoke(session.session_id, moment)
+        if revoked is None:
+            raise SessionNotFoundError("session not found")
         return revoked
 
     def revoke_all_for_user(self, user_id: str, *, now: datetime | None = None) -> list[SessionRecord]:
         if not user_id:
             raise ValueError("user_id is required")
         moment = _as_utc(now or _utc_now())
-        revoked_sessions: list[SessionRecord] = []
-        for session in self._sessions.list_for_user(user_id):
-            if session.revoked_at is not None:
-                continue
-            revoked = replace(session, revoked_at=moment)
-            self._sessions.save(revoked)
-            revoked_sessions.append(revoked)
-        return revoked_sessions
+        return self._sessions.revoke_all_for_user(user_id, moment)
 
     def _load_for_revoke(
         self,
@@ -172,12 +167,13 @@ class SessionOps:
         session_id: str | None,
         raw_token: str | None,
     ) -> SessionRecord:
+        if bool(session_id) == bool(raw_token):
+            raise InvalidSessionError("exactly one of session_id or raw_token is required to revoke")
         if session_id:
             session = self._sessions.get_by_session_id(session_id)
-        elif raw_token:
-            session = self._sessions.get_by_token_hash(hash_session_token(raw_token))
         else:
-            raise InvalidSessionError("session_id or raw_token is required to revoke")
+            assert raw_token is not None
+            session = self._sessions.get_by_token_hash(hash_session_token(raw_token))
         if session is None:
             raise SessionNotFoundError("session not found")
         return session

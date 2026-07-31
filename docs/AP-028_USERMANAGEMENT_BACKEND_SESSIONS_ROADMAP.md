@@ -405,7 +405,7 @@ Milestone 3.
 **Implementierungsaufgaben**
 
 1. CRUD/Lookup User inkl. Aktivstatus und Rollenfeldern.
-2. Session insert/find-by-hash/revoke/expire/update last_seen.
+2. Session insert/find-by-hash sowie atomare `touch`-/`revoke`-/`revoke_all_for_user`-Transitions; ein paralleler Touch darf einen Widerruf niemals überschreiben.
 3. Fehler bei Constraint-Verletzungen klar mappen.
 4. SQLite-Repo bleibt bis M8/M9 als Legacy-Pfad gekennzeichnet, nicht Dual-Write.
 
@@ -413,6 +413,7 @@ Milestone 3.
 
 - Repository-Integrationstests gegen Test-PostgreSQL (oder dokumentierte Teststrategie)
 - Integrität: Unique username, FK session→user, revoked/expired Filter
+- Konkurrenztest: paralleler Touch/Widerruf bleibt monoton widerrufen
 
 **Test-Gate**
 
