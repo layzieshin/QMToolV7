@@ -13,6 +13,8 @@ from qm_platform.sdk.module_contract import (
 )
 
 from .service import UserManagementService
+from .postgres_session_repository import PostgresSessionRepository
+from .postgres_user_repository import PostgresUserRepository
 from .sqlite_repository import SQLiteUserRepository
 
 
@@ -67,12 +69,24 @@ def register_usermanagement_ports(container) -> None:
     app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
     settings_service = container.get_port("settings_service")
     user_settings = settings_service.get_module_settings("usermanagement")
-    users_db_path = Path(user_settings.get("users_db_path", "storage/platform/users.db"))
-    if not users_db_path.is_absolute():
-        users_db_path = app_home / users_db_path
-    repository = SQLiteUserRepository(
-        db_path=users_db_path,
+    postgres_dsn = (
+        container.get_port("usermanagement_postgres_dsn")
+        if container.has_port("usermanagement_postgres_dsn")
+        else None
     )
+    if postgres_dsn:
+        repository = PostgresUserRepository(str(postgres_dsn))
+        session_repository = PostgresSessionRepository(str(postgres_dsn))
+        session_file = None
+    else:
+        users_db_path = Path(user_settings.get("users_db_path", "storage/platform/users.db"))
+        if not users_db_path.is_absolute():
+            users_db_path = app_home / users_db_path
+        repository = SQLiteUserRepository(
+            db_path=users_db_path,
+        )
+        session_repository = None
+        session_file = app_home / "storage/platform/session/current_user.json"
     seed_mode = str(user_settings.get("seed_mode", "admin_only"))
     dev_mode = bool(user_settings.get("dev_mode", False))
     runtime_profile = os.environ.get("QMTOOL_RUNTIME_PROFILE", "").strip().lower()
@@ -88,8 +102,9 @@ def register_usermanagement_ports(container) -> None:
         "usermanagement_service",
         UserManagementService(
             event_bus=container.get_port("event_bus"),
-            session_file=app_home / "storage/platform/session/current_user.json",
+            session_file=session_file,
             repository=repository,
+            session_repository=session_repository,
         ),
     )
 
