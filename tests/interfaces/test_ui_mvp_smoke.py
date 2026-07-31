@@ -5,10 +5,12 @@ import unittest
 import uuid
 
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tkinter as tk
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -61,11 +63,23 @@ def _build_sign_request(input_pdf: Path, output_pdf: Path, signature_png: Path, 
 
 class UiMvpSmokeTest(unittest.TestCase):
     def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self._environment = patch.dict(
+            os.environ,
+            {"QMTOOL_HOME": str(Path(self._tmp.name) / "home")},
+        )
+        self._environment.start()
         self.controller = UiController()
+        self.controller.login("admin", "admin")
+        self.controller.create_user("user", "user", "User")
+        self.controller.create_user("qmb", "qmb", "QMB")
         self.controller.logout()
 
     def tearDown(self) -> None:
         self.controller.logout()
+        self.controller.lifecycle.stop()
+        self._environment.stop()
+        self._tmp.cleanup()
 
     def test_multi_account_workflow_smoke(self) -> None:
         doc_id = f"DOC-UI-SMOKE-{uuid.uuid4().hex[:8]}"

@@ -7,6 +7,7 @@ from pathlib import Path
 from qm_platform.runtime.container import RuntimeContainer
 
 from modules.usermanagement.module import register_usermanagement_ports
+from tests.database_helpers import prepare_test_database
 
 
 class _SettingsServiceStub:
@@ -40,6 +41,10 @@ class SeedAdminOnlyTest(unittest.TestCase):
                 ),
             )
             container.register_port("event_bus", _EventBusStub())
+            prepare_test_database(
+                "users",
+                Path(tmp) / "storage" / "platform" / "users.db",
+            )
             register_usermanagement_ports(container)
             service = container.get_port("usermanagement_service")
             users = service.list_users()

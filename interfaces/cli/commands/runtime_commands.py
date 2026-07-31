@@ -78,8 +78,7 @@ def cmd_init(args) -> int:
             raise ValueError("admin_password is required")
 
         container = build_container()
-        lifecycle = runtime_bootstrap.register_core_modules(container)
-        lifecycle.start()
+        lifecycle = runtime_bootstrap.prepare_core_modules(container)
         settings_service: SettingsService = container.get_port("settings_service")
         user_cfg = settings_service.get_module_settings("usermanagement")
         user_cfg["users_db_path"] = users_db_path
@@ -95,6 +94,8 @@ def cmd_init(args) -> int:
         reg_cfg["registry_db_path"] = registry_db_path
         settings_service.set_module_settings("registry", reg_cfg, acknowledge_governance_change=True)
 
+        runtime_bootstrap.activate_core_modules(container, lifecycle)
+        lifecycle.start()
         _seed_admin_credentials(container, admin_username, admin_password)
         print(
             json.dumps(
@@ -122,15 +123,30 @@ def cmd_init(args) -> int:
 
 def cmd_doctor(*, strict: bool = False) -> int:
     container = build_container()
-    lifecycle = runtime_bootstrap.register_core_modules(container)
-    lifecycle.start(strict=False)
+    lifecycle = runtime_bootstrap.prepare_core_modules(container)
+    database_service, database_specs = runtime_bootstrap.configure_database_evolution(
+        container,
+        lifecycle,
+    )
+    database_statuses = database_service.statuses(database_specs)
+    databases_current = all(status.ok for status in database_statuses)
+    if databases_current:
+        lifecycle.wire_all()
+        lifecycle.start(strict=False)
     app_home = container.get_port("app_home")
     settings_service: SettingsService = container.get_port("settings_service")
-    usermanagement = container.get_port("usermanagement_service")
+    usermanagement = (
+        container.get_port("usermanagement_service")
+        if container.has_port("usermanagement_service")
+        else None
+    )
     user_cfg = settings_service.get_module_settings("usermanagement")
     docs_cfg = settings_service.get_module_settings("documents")
     reg_cfg = settings_service.get_module_settings("registry")
     checks = {}
+    checks["database:no_interrupted_migration"] = (
+        not database_service.has_interrupted_migration
+    )
     paths = {
         "users_db": resolve_home_path(app_home, user_cfg.get("users_db_path", "storage/platform/users.db")),
         "documents_db": resolve_home_path(app_home, docs_cfg.get("documents_db_path", "storage/documents/documents.db")),
@@ -155,10 +171,39 @@ def cmd_doctor(*, strict: bool = False) -> int:
         module_id in settings_service.registry.list_module_ids()
         for module_id in ("usermanagement", "documents", "registry", "signature", "training")
     )
-    checks["users:admin_exists"] = any(u.username == "admin" and u.role == "Admin" for u in usermanagement.list_users())
+    for status in database_statuses:
+        checks[f"database:{status.database_id}:version_current"] = (
+            status.current_version == status.target_version and status.state == "current"
+        )
+        checks[f"database:{status.database_id}:integrity"] = status.integrity == "ok"
+        checks[f"database:{status.database_id}:no_pending_migrations"] = (
+            not status.pending_versions
+        )
+    checks["database:all_current"] = databases_current
+    checks["users:admin_exists"] = bool(
+        usermanagement is not None
+        and any(
+            user.username == "admin" and user.role == "Admin"
+            for user in usermanagement.list_users()
+        )
+    )
+    runtime_profile = os.environ.get("QMTOOL_RUNTIME_PROFILE", "").strip().lower()
+    if runtime_profile in ("prod", "production"):
+        production_seed_valid = str(user_cfg.get("seed_mode", "")).strip() in (
+            "hardened",
+            "admin_only",
+        )
+        checks["security:production_seed_mode_valid"] = production_seed_valid
+        if not production_seed_valid:
+            checks["security:production_profile_error"] = (
+                "production profile requires usermanagement.seed_mode="
+                "'hardened' or 'admin_only'"
+            )
     if strict:
         checks["security:seed_mode_hardened"] = str(user_cfg.get("seed_mode", "")).strip() == "hardened"
-        checks["security:password_hashes_only"] = _all_user_passwords_hashed(usermanagement)
+        checks["security:password_hashes_only"] = bool(
+            usermanagement is not None and _all_user_passwords_hashed(usermanagement)
+        )
     gate_results = [value for value in checks.values() if isinstance(value, bool)]
     ok = bool(gate_results) and all(gate_results)
     print(

@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
 
 from qm_platform.events.event_envelope import EventEnvelope
-from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
+from qm_platform.sdk.module_contract import (
+    DatabaseContribution,
+    DatabaseMigrationContribution,
+    DatabaseValidationContribution,
+    ModuleContract,
+    SettingsContribution,
+)
 
 from .wiring import register_training_ports
 
@@ -59,6 +66,29 @@ TRAINING_SETTINGS_CONTRIBUTION = SettingsContribution(
     ],
 )
 
+TRAINING_DATABASE_CONTRIBUTION = DatabaseContribution(
+    database_id="training",
+    module_id="training",
+    setting_key="training_db_path",
+    default_path="storage/training/training.db",
+    migrations=(
+        DatabaseMigrationContribution(
+            version=1,
+            name="initial",
+            sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
+        ),
+    ),
+    validation_queries=(
+        DatabaseValidationContribution(
+            name="invalid training comment status",
+            sql=(
+                "SELECT COUNT(*) FROM training_comments "
+                "WHERE status NOT IN ('ACTIVE', 'RESOLVED', 'INACTIVE')"
+            ),
+        ),
+    ),
+)
+
 
 
 def start_training_module(container) -> None:
@@ -104,4 +134,5 @@ def create_training_module_contract() -> ModuleContract:
         register=register_training_ports,
         start=start_training_module,
         stop=stop_training_module,
+        database_contributions=(TRAINING_DATABASE_CONTRIBUTION,),
     )

@@ -20,6 +20,7 @@ from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.lifecycle import LifecycleManager
+from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
 from qm_platform.settings.settings_store import SettingsStore
@@ -86,7 +87,8 @@ def _build_licensed_incident_container(
     container.register_port("resource_root", root)
     container.register_port("usermanagement_service", _FakeUserManagement(_FakeUser("u1", "User")))
     lifecycle = LifecycleManager(container)
-    lifecycle.register(create_incident_management_module_contract())
+    lifecycle.prepare(create_incident_management_module_contract())
+    runtime_bootstrap.activate_core_modules(container, lifecycle)
     lifecycle.start(strict=strict_start)
     if container.has_port("incident_management_api"):
         _install_fake_usermanagement(container, _FakeUser("u1", "User"))

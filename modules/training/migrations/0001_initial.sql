@@ -1,4 +1,4 @@
--- Training module schema – clean-slate (§4, §12.3)
+-- Training database schema V1.
 
 -- Tags
 CREATE TABLE IF NOT EXISTS training_document_tags (

@@ -15,6 +15,7 @@ from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
 from qm_platform.settings.settings_store import SettingsStore
 from scripts.migration_gates_documents import evaluate_gates, evaluate_registry_drift
+from scripts.database_migration_gate import evaluate_database_migration_gate
 
 
 def _has_text(path: Path, needle: str) -> bool:
@@ -59,6 +60,9 @@ def evaluate_golive_gate(*, documents_db_path: Path | None, registry_db_path: Pa
     }
 
     diagnostics: dict[str, object] = {}
+    database_gate = evaluate_database_migration_gate()
+    diagnostics["database_migration_gate"] = database_gate
+    checks["database_migration_foundation_ok"] = bool(database_gate["ok"])
     if not checks["ci_workflow_present"]:
         diagnostics["ci_workflow_present"] = {
             "path": str(ci_workflow_path),

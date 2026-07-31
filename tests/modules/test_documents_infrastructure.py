@@ -14,9 +14,9 @@ from modules.documents.contracts import (
 )
 from modules.documents.profile_store import WorkflowProfileStoreJSON
 from modules.documents.service import DocumentsService
-from modules.documents.sqlite_repository import SQLiteDocumentsRepository
 from modules.documents.storage import FileSystemDocumentsStorage
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
+from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
 
 
 class _FakeSignatureApi:
@@ -74,8 +74,7 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db_path = root / "documents.db"
-            schema_path = Path("modules/documents/schema.sql")
-            repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+            repo = SQLiteDocumentsRepository(db_path=db_path)
             service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
 
             planned = service.create_document_version("DOC-PERSIST-1", 1)
@@ -99,9 +98,8 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db_path = root / "documents.db"
-            schema_path = Path("modules/documents/schema.sql")
             storage = FileSystemDocumentsStorage(root / "artifacts")
-            repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+            repo = SQLiteDocumentsRepository(db_path=db_path)
             service = DocumentsService(repository=repo, storage_port=storage, signature_api=_FakeSignatureApi())
 
             source_docx = root / "source.docx"
@@ -133,9 +131,8 @@ class DocumentsInfrastructureTest(unittest.TestCase):
     def test_complete_editing_generates_source_pdf_from_docx_and_marks_current(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="qmtool-docs-infra-"))
         db_path = root / "documents.db"
-        schema_path = Path("modules/documents/schema.sql")
         storage = FileSystemDocumentsStorage(root / "artifacts")
-        repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+        repo = SQLiteDocumentsRepository(db_path=db_path)
         audit = _FakeAuditLogger()
 
         def _fake_docx_to_pdf(source: Path, target: Path) -> None:
@@ -186,9 +183,8 @@ class DocumentsInfrastructureTest(unittest.TestCase):
     def test_complete_editing_persists_signed_pdf_for_followup_phases(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="qmtool-docs-sign-"))
         db_path = root / "documents.db"
-        schema_path = Path("modules/documents/schema.sql")
         storage = FileSystemDocumentsStorage(root / "artifacts")
-        repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+        repo = SQLiteDocumentsRepository(db_path=db_path)
 
         def _fake_docx_to_pdf(_source: Path, target: Path) -> None:
             target.write_bytes(b"%PDF-1.4\n%source\n")
@@ -237,8 +233,7 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db_path = root / "documents.db"
-            schema_path = Path("modules/documents/schema.sql")
-            repo = SQLiteDocumentsRepository(db_path=db_path, schema_path=schema_path)
+            repo = SQLiteDocumentsRepository(db_path=db_path)
             service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
 
             state = service.create_document_version("DOC-DIST", 1, owner_user_id="owner-1")
@@ -270,7 +265,7 @@ class DocumentsInfrastructureTest(unittest.TestCase):
     def test_signature_chain_uses_latest_current_signed_pdf_for_next_transition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             storage = FileSystemDocumentsStorage(root / "artifacts")
             def _fake_docx_to_pdf(_source: Path, target: Path) -> None:
                 target.write_bytes(b"%PDF-1.4\n%source\n")
@@ -349,7 +344,7 @@ class DocumentsInfrastructureTest(unittest.TestCase):
     def test_sqlite_roundtrip_persists_validity_extension_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db", schema_path=Path("modules/documents/schema.sql"))
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
             state = service.create_document_version("DOC-EXT-SQL", 1, owner_user_id="owner-1")
             state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 
@@ -19,6 +20,29 @@ class SettingsContribution:
 
 
 @dataclass(frozen=True)
+class DatabaseMigrationContribution:
+    version: int
+    name: str
+    sql_path: Path
+
+
+@dataclass(frozen=True)
+class DatabaseValidationContribution:
+    name: str
+    sql: str
+
+
+@dataclass(frozen=True)
+class DatabaseContribution:
+    database_id: str
+    module_id: str
+    setting_key: str
+    default_path: str
+    migrations: tuple[DatabaseMigrationContribution, ...]
+    validation_queries: tuple[DatabaseValidationContribution, ...] = ()
+
+
+@dataclass(frozen=True)
 class ModuleContract:
     module_id: str
     version: str
@@ -33,4 +57,5 @@ class ModuleContract:
     register: LifecycleFn
     start: LifecycleFn
     stop: LifecycleFn
+    database_contributions: tuple[DatabaseContribution, ...] = ()
 

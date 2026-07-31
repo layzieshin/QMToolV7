@@ -1,4 +1,4 @@
--- incident_management module schema (V1)
+-- Incident management database schema V1.
 
 CREATE TABLE IF NOT EXISTS incident_id_counters (
     report_date TEXT PRIMARY KEY,

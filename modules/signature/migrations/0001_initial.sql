@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS user_signature_templates (
 
 CREATE INDEX IF NOT EXISTS idx_signature_assets_owner ON signature_assets(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_signature_templates_owner ON user_signature_templates(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_signature_templates_scope ON user_signature_templates(scope);
 
 CREATE TABLE IF NOT EXISTS user_active_signatures (
     owner_user_id TEXT PRIMARY KEY,

@@ -3,11 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from modules.training.api import TrainingAdminApi
 from modules.training.contracts import QuizImportResult, TrainingDocumentRef
 from modules.training.quiz_binding_service import QuizBindingService
 from modules.training.training_quiz_repository import TrainingQuizRepository
+from tests.database_helpers import prepare_training_database
 
 
 class _CatalogStub:
@@ -27,12 +29,17 @@ class _Noop:
         return lambda *args, **kwargs: []  # noqa: ARG005
 
 
+class _AdminContext:
+    @staticmethod
+    def get_current_user():
+        return SimpleNamespace(role="Admin", is_qmb=False)
+
+
 class TrainingPendingQuizMappingTest(unittest.TestCase):
     def test_pending_mapping_contains_question_count_and_title(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = TrainingQuizRepository(
-                db_path=Path(tmp) / "training.db",
-                schema_path=Path("modules/training/schema.sql"),
+                db_path=prepare_training_database(Path(tmp) / "training.db"),
             )
             repo.create_quiz_import(
                 QuizImportResult(
@@ -56,6 +63,7 @@ class TrainingPendingQuizMappingTest(unittest.TestCase):
                 projector=_Noop(),
                 comment_service=_Noop(),
                 report_service=_Noop(),
+                usermanagement_service=_AdminContext(),
             )
             rows = admin_api.list_pending_quiz_mappings()
             self.assertEqual(1, len(rows))

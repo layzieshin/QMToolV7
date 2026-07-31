@@ -1,8 +1,6 @@
 """Port wiring for incident_management."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from qm_platform.licensing.licensed_proxy import LicensedPortProxy
 
 from .api import IncidentManagementApi
@@ -18,9 +16,8 @@ def register_incident_management_ports(container) -> None:
 
     db_path = app_home / cfg.get("incident_db_path", "storage/incident_management/incidents.db")
     artifacts_root = app_home / cfg.get("artifacts_root", "storage/incident_management/artifacts")
-    schema_path = Path(__file__).parent / "schema.sql"
 
-    repo = SQLiteIncidentRepository(db_path=db_path, schema_path=schema_path)
+    repo = SQLiteIncidentRepository(db_path=db_path)
     storage = IncidentArtifactStorage(artifacts_root)
 
     service = IncidentManagementService(

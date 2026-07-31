@@ -17,7 +17,6 @@ def register_usermanagement_ports(container) -> None:
         users_db_path = app_home / users_db_path
     repository = SQLiteUserRepository(
         db_path=users_db_path,
-        schema_path=Path(__file__).parent / "schema.sql",
     )
     seed_mode = str(user_settings.get("seed_mode", "admin_only"))
     dev_mode = bool(user_settings.get("dev_mode", False))

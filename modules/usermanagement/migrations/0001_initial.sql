@@ -1,3 +1,4 @@
+-- User management database schema V1.
 CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,

@@ -1,0 +1,50 @@
+{
+  "documents": [
+    {
+      "version": 1,
+      "name": "initial",
+      "path": "modules/documents/migrations/0001_initial.sql",
+      "sha256": "29c1844d7f49ef8218fe549ec8fb842d5b9f50485da5615aa25c33339c426286"
+    }
+  ],
+  "incidents": [
+    {
+      "version": 1,
+      "name": "initial",
+      "path": "modules/incident_management/migrations/0001_initial.sql",
+      "sha256": "2d3dc0184cac18f5881383e8f6f25d81d4c6ee7d59d8433716b965e32d6dc39f"
+    }
+  ],
+  "registry": [
+    {
+      "version": 1,
+      "name": "initial",
+      "path": "modules/registry/migrations/0001_initial.sql",
+      "sha256": "32f1914f8f62ada9f6f921086cc49868a05b12011c8794a7205ffc5a259efbdd"
+    }
+  ],
+  "signature": [
+    {
+      "version": 1,
+      "name": "initial",
+      "path": "modules/signature/migrations/0001_initial.sql",
+      "sha256": "2aab1f743f15cb8a1db79f2cbd314b52c58a693940bd708d46b3d77c3c222835"
+    }
+  ],
+  "training": [
+    {
+      "version": 1,
+      "name": "initial",
+      "path": "modules/training/migrations/0001_initial.sql",
+      "sha256": "bc083556900541229a8b87b9fa551e3ed107363c776d3d04af938b6cee9cd665"
+    }
+  ],
+  "users": [
+    {
+      "version": 1,
+      "name": "initial",
+      "path": "modules/usermanagement/migrations/0001_initial.sql",
+      "sha256": "1135f268f37d9a93146b7665bf94d61e30fe2dac677ef165dab06aaf71c05906"
+    }
+  ]
+}

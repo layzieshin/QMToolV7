@@ -4,15 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from modules.usermanagement.sqlite_repository import SQLiteUserRepository
+from tests.database_helpers import user_repository as SQLiteUserRepository
 
 
 class MustChangePasswordTest(unittest.TestCase):
     def test_change_password_clears_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "users.db"
-            schema = Path(__file__).resolve().parents[3] / "modules" / "usermanagement" / "schema.sql"
-            repo = SQLiteUserRepository(db_path=db, schema_path=schema)
+            repo = SQLiteUserRepository(db_path=db)
             repo.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
             u = repo.get_user("admin")
             assert u is not None

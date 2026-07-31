@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from qm_platform.events.event_envelope import EventEnvelope
-from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
+from qm_platform.sdk.module_contract import (
+    DatabaseContribution,
+    DatabaseMigrationContribution,
+    DatabaseValidationContribution,
+    ModuleContract,
+    SettingsContribution,
+)
 
 from .wiring import register_incident_management_ports
 
@@ -65,6 +73,29 @@ INCIDENT_SETTINGS_CONTRIBUTION = SettingsContribution(
     migrations=[],
 )
 
+INCIDENT_DATABASE_CONTRIBUTION = DatabaseContribution(
+    database_id="incidents",
+    module_id="incident_management",
+    setting_key="incident_db_path",
+    default_path="storage/incident_management/incidents.db",
+    migrations=(
+        DatabaseMigrationContribution(
+            version=1,
+            name="initial",
+            sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
+        ),
+    ),
+    validation_queries=(
+        DatabaseValidationContribution(
+            name="incidents without identity",
+            sql=(
+                "SELECT COUNT(*) FROM incidents "
+                "WHERE incident_id IS NULL OR TRIM(incident_id) = ''"
+            ),
+        ),
+    ),
+)
+
 
 def start_incident_management_module(container) -> None:
     logger = container.get_port("logger")
@@ -116,4 +147,5 @@ def create_incident_management_module_contract() -> ModuleContract:
         register=register_incident_management_ports,
         start=start_incident_management_module,
         stop=stop_incident_management_module,
+        database_contributions=(INCIDENT_DATABASE_CONTRIBUTION,),
     )

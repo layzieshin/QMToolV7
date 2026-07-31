@@ -25,7 +25,8 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
 - ADR-/Analyse-Kette AP-003 bis AP-024: dokumentiert (Entscheidungen und Matrizen; keine Code-Implementierung in diesen Paketen).
 - AP-025 Agent Guardrails und Repo-Konsistenz: erledigt (Governance/Docs/Gates; kein fachliches Produktverhalten).
 - AP-026 Documents Review-ablehnen Evidence Baseline: erledigt (Test-Gate fuer bestehenden Servicefluss; Produktverhalten unveraendert; Kettenstatus bleibt `ketten-eingeschraenkt`).
-- Naechster Schwerpunkt: kein Backend-Feature-Betrieb ohne Freigabe; Request-/Kettenkontext und Event-Audit-Kopplung fuer Documents bleiben nur nach separater Freigabe.
+- AP-027 Verbindliches Datenbank-Migrationsfundament: einzige freigegebene Code-Aktion; Umsetzung auf `feature/ap-027-database-evolution-foundation`, Abschluss erst nach Green Gates, Entwicklungsdaten-Kopien und Merge.
+- Naechster Schwerpunkt nach AP-027: frueh nutzbarer Documents-Multiuser-MVP; kein Backend-Feature-Betrieb vor erfolgreicher Backup-/Restore-Generalprobe.
 
 ## Zielarchitektur
 ```mermaid
@@ -156,9 +157,13 @@ Konflikte markieren statt aendern:
 - Trainingsspezifikation enthaelt Detailarchitektur; fuer diese Roadmap nur Charter-/Priorisierungsebene nutzen.
 
 ## Naechste freigegebene Aktion
-Keine Code-Aktion ist derzeit freigegeben.
+AP-027 ist die einzige freigegebene Code-Aktion.
 
-Nach separater Freigabe: Request-/Kettenkontext oder Event-Audit-Kopplung fuer Documents (AP-020/021/022 und Folge), nicht still mit der erledigten AP-026 Baseline vermengen.
+Ziel: sechs verbindliche V1-Schemas, gemeinsamer Vorwaerts-Migrationsmechanismus,
+Runtime-Preflight, Backup/Restore, Database-CLI, Doctor-Checks und CI-Gates.
+Keine produktiven Dateien unter `storage/` werden waehrend der Umsetzung
+veraendert. Nach Merge und Generalprobe folgt der Documents-Multiuser-MVP als
+separat freizugebendes Arbeitspaket.
 
 ## Nicht freigegeben
 - Boundary-Cleanups
@@ -169,7 +174,7 @@ Nach separater Freigabe: Request-/Kettenkontext oder Event-Audit-Kopplung fuer D
 - Event-/Auditlog-Schemaaenderungen
 - API-Aenderungen
 - Backend-Feature-Routen
-- Datenbank-/Artefaktmigration
+- Fachliche Datenuebernahme oder Artefaktmigration ausserhalb des technischen AP-027-Fundaments
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
 
 ## Hinweis zu AP-002

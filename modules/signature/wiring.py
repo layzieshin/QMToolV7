@@ -17,7 +17,7 @@ def register_signature_ports(container) -> None:
     templates_db = app_home / signature_cfg.get("templates_db_path", "storage/signature/templates.db")
     assets_root = app_home / signature_cfg.get("assets_root", "storage/signature/assets")
     key_path = app_home / signature_cfg.get("master_key_path", "storage/platform/signature_master.key")
-    repository = SQLiteSignatureRepository(db_path=templates_db, schema_path=Path(__file__).parent / "schema.sql")
+    repository = SQLiteSignatureRepository(db_path=templates_db)
     secure_store = EncryptedSignatureBlobStore(root=assets_root, key_file=key_path)
     service = SignatureServiceV2(
         settings_service=settings_service,

@@ -57,7 +57,7 @@ The repository defaults (`seed_mode=legacy_defaults`, `dev_mode=true`) exist for
 
 - SQLite users DB via `SQLiteUserRepository`
 - Session file: `storage/platform/session/current_user.json`
-- Schema: `modules/usermanagement/schema.sql`
+- Schema migration: `modules/usermanagement/migrations/0001_initial.sql`
 
 ### Events
 
@@ -113,7 +113,7 @@ Contract framing:
 - SQLite document DB (`documents_db_path`)
 - Artifact storage filesystem (`artifacts_root`)
 - Released-PDF-Dateinamensregel (`DocumentsService._build_released_filename`): Umlaute werden transliteriert (`ae/oe/ue/ss`), unsichere Zeichen entfernt, leerer Titel faellt auf `Dokument` zurueck.
-- Schema: `modules/documents/schema.sql`
+- Schema migration: `modules/documents/migrations/0001_initial.sql`
 - Profile config: `modules/documents/workflow_profiles.json`
 - Master/Version split:
   - `document_headers`
@@ -218,7 +218,7 @@ Contract framing:
 - SQLite template/asset metadata DB (`templates_db_path`)
 - Encrypted signature asset blobs under `assets_root`
 - Master key file at `master_key_path`
-- Schema: `modules/signature/schema.sql`
+- Schema migration: `modules/signature/migrations/0001_initial.sql`
 
 ### Events
 
@@ -256,7 +256,7 @@ Contract framing:
 ### Persistence / files
 
 - SQLite registry DB (`registry_db_path`)
-- Schema: `modules/registry/schema.sql`
+- Schema migration: `modules/registry/migrations/0001_initial.sql`
 
 ### Events
 
@@ -396,7 +396,7 @@ external Python import boundaries beyond each module's `api.py`.
 - Internal contracts/files
   - `modules/signature/contracts.py`: `SignRequest`, `SignResult`, template/layout DTOs
   - `modules/signature/api.py`: public API surface
-  - `modules/signature/sqlite_repository.py` + `schema.sql`: template/asset metadata persistence
+  - `modules/signature/sqlite_repository.py` + registered migration chain: template/asset metadata persistence
 - `modules/signature/template_use_cases.py`: template/asset SRP split used by `SignatureServiceV2`
 
 ### registry
@@ -460,7 +460,7 @@ external Python import boundaries beyond each module's `api.py`.
 
 - SQLite training DB (`training_db_path`)
 - Encrypted quiz blobs (`quiz_blob_root`)
-- Schema: `modules/training/schema.sql`
+- Schema migration: `modules/training/migrations/0001_initial.sql`
 
 ### Events
 

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from modules.usermanagement.service import UserManagementService
-from modules.usermanagement.sqlite_repository import SQLiteUserRepository
+from tests.database_helpers import user_repository as SQLiteUserRepository
 
 
 class UserManagementSelfRegisterTest(unittest.TestCase):
@@ -13,7 +13,6 @@ class UserManagementSelfRegisterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = SQLiteUserRepository(
                 db_path=Path(tmp) / "users.db",
-                schema_path=Path("modules/usermanagement/schema.sql"),
             )
             service = UserManagementService(repository=repo)
             created = service.self_register(

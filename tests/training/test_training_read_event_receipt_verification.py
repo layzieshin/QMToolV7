@@ -10,6 +10,7 @@ from modules.training.wiring import register_training_ports
 from qm_platform.events.event_bus import EventBus
 from qm_platform.events.event_envelope import EventEnvelope
 from qm_platform.runtime.container import RuntimeContainer
+from tests.database_helpers import prepare_training_database
 
 
 class _SettingsService:
@@ -56,6 +57,9 @@ class TrainingReadEventReceiptVerificationTest(unittest.TestCase):
         c.register_port("documents_pool_api", _DocsPool())
         c.register_port("documents_read_api", read_api)
         c.register_port("usermanagement_service", _Users())
+        prepare_training_database(
+            app_home / "storage" / "training" / "training.db"
+        )
         return c
 
     def _count_progress_rows(self, db_path: Path) -> int:

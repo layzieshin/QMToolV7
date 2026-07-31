@@ -29,12 +29,9 @@ from .repository import DocumentsRepository
 
 
 class SQLiteDocumentsRepository(DocumentsRepository):
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
         self._transaction_conn: sqlite3.Connection | None = None
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     @staticmethod
     def _utcnow_iso() -> str:
@@ -298,15 +295,6 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             )
             self._commit_if_needed(conn)
 
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with self._connect() as conn:
-            conn.executescript(sql)
-            self._ensure_document_headers_migration(conn)
-            self._ensure_document_versions_migration(conn)
-            self._ensure_comments_and_read_tracking_migration(conn)
-            self._commit_if_needed(conn)
-
     @contextmanager
     def write_transaction(self):
         if self._transaction_conn is not None:
@@ -325,84 +313,6 @@ class SQLiteDocumentsRepository(DocumentsRepository):
         finally:
             self._transaction_conn = None
             conn.close()
-
-    @staticmethod
-    def _ensure_document_headers_migration(conn: sqlite3.Connection) -> None:
-        table_exists = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='document_headers'"
-        ).fetchone()
-        if table_exists is None:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS document_headers (
-                    document_id TEXT PRIMARY KEY,
-                    doc_type TEXT NOT NULL DEFAULT 'OTHER',
-                    control_class TEXT NOT NULL DEFAULT 'CONTROLLED',
-                    workflow_profile_id TEXT NOT NULL DEFAULT 'long_release',
-                    register_binding INTEGER NOT NULL DEFAULT 1,
-                    department TEXT,
-                    site TEXT,
-                    regulatory_scope TEXT,
-                    distribution_roles_json TEXT NOT NULL DEFAULT '[]',
-                    distribution_sites_json TEXT NOT NULL DEFAULT '[]',
-                    distribution_departments_json TEXT NOT NULL DEFAULT '[]',
-                    created_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00',
-                    updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00'
-                )
-                """
-            )
-        else:
-            cols = {row["name"] for row in conn.execute("PRAGMA table_info(document_headers)").fetchall()}
-            if "control_class" not in cols:
-                conn.execute("ALTER TABLE document_headers ADD COLUMN control_class TEXT NOT NULL DEFAULT 'CONTROLLED'")
-            if "distribution_roles_json" not in cols:
-                conn.execute("ALTER TABLE document_headers ADD COLUMN distribution_roles_json TEXT NOT NULL DEFAULT '[]'")
-            if "distribution_sites_json" not in cols:
-                conn.execute("ALTER TABLE document_headers ADD COLUMN distribution_sites_json TEXT NOT NULL DEFAULT '[]'")
-            if "distribution_departments_json" not in cols:
-                conn.execute("ALTER TABLE document_headers ADD COLUMN distribution_departments_json TEXT NOT NULL DEFAULT '[]'")
-
-    @staticmethod
-    def _ensure_document_versions_migration(conn: sqlite3.Connection) -> None:
-        cols = {row["name"] for row in conn.execute("PRAGMA table_info(document_versions)").fetchall()}
-        alter_specs = [
-            ("title", "TEXT NOT NULL DEFAULT ''"),
-            ("description", "TEXT"),
-            ("doc_type", "TEXT NOT NULL DEFAULT 'OTHER'"),
-            ("control_class", "TEXT NOT NULL DEFAULT 'CONTROLLED'"),
-            ("workflow_profile_id", "TEXT NOT NULL DEFAULT 'long_release'"),
-            ("owner_user_id", "TEXT"),
-            ("edit_signature_done", "INTEGER NOT NULL DEFAULT 0"),
-            ("valid_from", "TEXT"),
-            ("valid_until", "TEXT"),
-            ("next_review_at", "TEXT"),
-            ("review_completed_at", "TEXT"),
-            ("review_completed_by", "TEXT"),
-            ("approval_completed_at", "TEXT"),
-            ("approval_completed_by", "TEXT"),
-            ("archived_at", "TEXT"),
-            ("archived_by", "TEXT"),
-            ("superseded_by_version", "INTEGER"),
-            ("last_extended_at", "TEXT"),
-            ("last_extended_by", "TEXT"),
-            ("last_extension_reason", "TEXT"),
-            ("last_extension_review_outcome", "TEXT"),
-            ("custom_fields_json", "TEXT NOT NULL DEFAULT '{}'"),
-            ("last_event_id", "TEXT"),
-            ("last_event_at", "TEXT"),
-            ("last_actor_user_id", "TEXT"),
-            ("created_at", "TEXT"),
-            ("created_by", "TEXT"),
-        ]
-        for col_name, sql_type in alter_specs:
-            if col_name not in cols:
-                conn.execute(f"ALTER TABLE document_versions ADD COLUMN {col_name} {sql_type}")
-
-    @staticmethod
-    def _ensure_comments_and_read_tracking_migration(conn: sqlite3.Connection) -> None:
-        cols = {row["name"] for row in conn.execute("PRAGMA table_info(document_workflow_comments)").fetchall()}
-        if cols and "ref_no" not in cols:
-            conn.execute("ALTER TABLE document_workflow_comments ADD COLUMN ref_no TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _connect(self):
@@ -825,4 +735,3 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             created_at=self._parse_dt(str(row["created_at"])) or datetime.now(timezone.utc),
             updated_at=self._parse_dt(str(row["updated_at"])) or datetime.now(timezone.utc),
         )
-

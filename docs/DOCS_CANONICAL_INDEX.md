@@ -18,6 +18,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/MODULE_INTEGRATION_POLICY.md`
 - `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`
 - `docs/OPERATIONS_CANONICAL.md`
+- `docs/DATABASE_EVOLUTION_POLICY.md`
 - `docs/LICENSE_SPEC.md`
 - `docs/TEST_SMOKE_GATES.md`
 
@@ -31,6 +32,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/DOCUMENTS_TEST_COVERAGE.md`
 - `docs/MODULES_USER_GUIDE.md`
 - `docs/QMToolV7_ENTWICKLUNG.md`
+- `docs/AP-027_DATABASE_EVOLUTION_FOUNDATION.md`
 
 ## P2 (legacy/history or roadmap support) — not for onboarding
 

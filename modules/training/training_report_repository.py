@@ -11,11 +11,8 @@ from .contracts import TrainingAuditLogItem
 
 
 class TrainingReportRepository:
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     @staticmethod
     def _parse_dt(raw: str | None) -> datetime | None:
@@ -77,12 +74,3 @@ class TrainingReportRepository:
                    ORDER BY s.user_id, s.document_id, s.version"""
             ).fetchall()
         return [dict(r) for r in rows]
-
-    # --- infra ---
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with connect(self._db_path) as conn:
-            conn.executescript(sql)
-            conn.commit()
-

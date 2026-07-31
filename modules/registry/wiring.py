@@ -18,7 +18,6 @@ def register_registry_ports(container) -> None:
         db_path = app_home / db_path
     repository = SQLiteRegistryRepository(
         db_path=db_path,
-        schema_path=Path(__file__).parent / "schema.sql",
     )
     service = RegistryService(repository)
     container.register_port("registry_service", service)

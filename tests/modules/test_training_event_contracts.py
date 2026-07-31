@@ -22,6 +22,7 @@ from modules.training.quiz_binding_service import QuizBindingService
 from modules.training.quiz_execution_service import QuizExecutionService
 from modules.training.training_comment_service import TrainingCommentService
 from modules.training.training_snapshot_projector import TrainingSnapshotProjector
+from tests.database_helpers import prepare_training_database
 
 
 @dataclass
@@ -101,10 +102,9 @@ class TrainingEventContractsTest(unittest.TestCase):
     def test_comment_event_contains_required_payload_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            schema = Path("modules/training/schema.sql")
-            db = root / "t.db"
+            db = prepare_training_database(root / "t.db")
             bus = _Bus()
-            comment_repo = TrainingCommentRepository(db, schema)
+            comment_repo = TrainingCommentRepository(db)
             svc = TrainingCommentService(comment_repo=comment_repo, event_bus=bus)
             comment = svc.add_comment("user", "DOC-1", 1, "Hinweis")
             self.assertTrue(comment.comment_id)
@@ -115,8 +115,7 @@ class TrainingEventContractsTest(unittest.TestCase):
     def test_quiz_completion_event_contains_required_payload_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            schema = Path("modules/training/schema.sql")
-            db = root / "t.db"
+            db = prepare_training_database(root / "t.db")
             bus = _Bus()
             docs = _FakeDocsPool([
                 DocumentVersionState(
@@ -125,10 +124,10 @@ class TrainingEventContractsTest(unittest.TestCase):
                     owner_user_id="admin", title="Doc2",
                 ),
             ])
-            tag_repo = TrainingTagRepository(db, schema)
-            override_repo = TrainingOverrideRepository(db, schema)
-            snapshot_repo = TrainingSnapshotRepository(db, schema)
-            quiz_repo = TrainingQuizRepository(db, schema)
+            tag_repo = TrainingTagRepository(db)
+            override_repo = TrainingOverrideRepository(db)
+            snapshot_repo = TrainingSnapshotRepository(db)
+            quiz_repo = TrainingQuizRepository(db)
             secure_store = EncryptedTrainingBlobStore(root / "quiz", root / "quiz.key")
             catalog = ReleasedDocumentCatalogReader(documents_pool_api=docs)
             settings = _Settings()

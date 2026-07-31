@@ -4,6 +4,7 @@ import argparse
 import os
 
 from interfaces.cli.commands.incident_management_commands import cmd_incident
+from interfaces.cli.commands.database_commands import cmd_database
 from interfaces.cli.commands.documents_commands import cmd_documents
 from interfaces.cli.commands.platform_commands import cmd_health, cmd_license_check, cmd_logs_backup
 from interfaces.cli.commands.runtime_commands import cmd_init, cmd_doctor
@@ -47,6 +48,8 @@ def main() -> int:
     if args.command == "doctor":
         strict_mode = bool(args.strict or os.environ.get("QMTOOL_DOCTOR_STRICT", "0") == "1")
         return cmd_doctor(strict=strict_mode)
+    if args.command == "database":
+        return cmd_database(args)
     if args.command == "license-check":
         return cmd_license_check(args.module, verbose=bool(args.verbose))
     if args.command == "logs-backup":

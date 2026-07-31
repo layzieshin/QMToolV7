@@ -11,6 +11,7 @@ from modules.documents.contracts import DocumentStatus, DocumentType, ControlCla
 from modules.training.secure_store import EncryptedTrainingBlobStore
 from modules.training.contracts import CommentStatus
 from modules.training.training_tag_repository import TrainingTagRepository
+from tests.database_helpers import prepare_training_database
 from modules.training.training_override_repository import TrainingOverrideRepository
 from modules.training.training_snapshot_repository import TrainingSnapshotRepository
 from modules.training.training_quiz_repository import TrainingQuizRepository
@@ -144,14 +145,13 @@ class _FakeSettingsService:
 
 
 def _make_services(root: Path):
-    schema = Path("modules/training/schema.sql")
-    db = root / "training.db"
-    tag_repo = TrainingTagRepository(db, schema)
-    override_repo = TrainingOverrideRepository(db, schema)
-    snapshot_repo = TrainingSnapshotRepository(db, schema)
-    quiz_repo = TrainingQuizRepository(db, schema)
-    comment_repo = TrainingCommentRepository(db, schema)
-    report_repo = TrainingReportRepository(db, schema)
+    db = prepare_training_database(root / "training.db")
+    tag_repo = TrainingTagRepository(db)
+    override_repo = TrainingOverrideRepository(db)
+    snapshot_repo = TrainingSnapshotRepository(db)
+    quiz_repo = TrainingQuizRepository(db)
+    comment_repo = TrainingCommentRepository(db)
+    report_repo = TrainingReportRepository(db)
     secure_store = EncryptedTrainingBlobStore(root / "quiz", root / "quiz.key")
     bus = _FakeBus()
     docs = _FakeDocsPool([

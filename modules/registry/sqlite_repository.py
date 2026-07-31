@@ -10,11 +10,8 @@ from .repository import RegistryRepository
 
 
 class SQLiteRegistryRepository(RegistryRepository):
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     def upsert(self, entry: RegistryEntry) -> None:
         with self._connect() as conn:
@@ -65,12 +62,6 @@ class SQLiteRegistryRepository(RegistryRepository):
                 "SELECT * FROM document_registry ORDER BY document_id ASC",
             ).fetchall()
         return [self._row_to_entry(row) for row in rows]
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with self._connect() as conn:
-            conn.executescript(sql)
-            conn.commit()
 
     @contextmanager
     def _connect(self):

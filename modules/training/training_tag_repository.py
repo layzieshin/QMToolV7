@@ -9,11 +9,8 @@ from .contracts import DocumentTagSet, UserTagSet
 
 
 class TrainingTagRepository:
-    def __init__(self, db_path: Path, schema_path: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._schema_path = schema_path
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     # --- Document Tags ---
 
@@ -85,36 +82,6 @@ class TrainingTagRepository:
         with connect(self._db_path) as conn:
             rows = conn.execute("SELECT tag FROM training_tag_pool ORDER BY tag").fetchall()
         return [str(r["tag"]) for r in rows]
-
-    # --- infra ---
-
-    def _ensure_schema(self) -> None:
-        sql = self._schema_path.read_text(encoding="utf-8")
-        with connect(self._db_path) as conn:
-            conn.executescript(sql)
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS training_tag_pool (
-                    tag TEXT PRIMARY KEY,
-                    first_seen_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO training_tag_pool (tag, first_seen_at)
-                SELECT DISTINCT tag, ? FROM training_document_tags
-                """,
-                (datetime.now(timezone.utc).isoformat(),),
-            )
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO training_tag_pool (tag, first_seen_at)
-                SELECT DISTINCT tag, ? FROM training_user_tags
-                """,
-                (datetime.now(timezone.utc).isoformat(),),
-            )
-            conn.commit()
 
     def _upsert_tag_pool(self, conn, tags: list[str]) -> None:
         if not tags:

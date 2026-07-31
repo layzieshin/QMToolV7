@@ -1,3 +1,4 @@
+-- Registry database schema V1.
 CREATE TABLE IF NOT EXISTS document_registry (
     document_id TEXT PRIMARY KEY,
     active_version INTEGER,
