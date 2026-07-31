@@ -7,7 +7,7 @@ External callers (CLI, GUI, backend, tests) MUST import only from this file.
 Forbidden from outside: service.py, sqlite_repository.py,
 password_crypto.py, repository.py, session_store.py, auth_ops.py,
 user_admin_ops.py, wiring.py, session_ops.py, session_repository.py,
-memory_session_repository.py, session_token.py
+memory_session_repository.py, session_token.py, postgres_schema.py
 """
 from __future__ import annotations
 

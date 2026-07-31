@@ -126,3 +126,56 @@ jobs:
             build/migration-gate-output.json
             build/database-migration-gate-output.json
             build/golive-gate-output.json
+
+  postgres-usermanagement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qmtool
+          POSTGRES_PASSWORD: qmtool
+          POSTGRES_DB: qmtool_um
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qmtool -d qmtool_um"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Linux job must not install Windows-only requirements (pywin32).
+          python -m pip install -c constraints-py314.txt "psycopg[binary]>=3.2.0" pytest
+
+      - name: Run PostgreSQL migration gate
+        run: |
+          python scripts/postgres_migration_gate.py --base-ref "${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}" --output build/postgres-migration-gate-output.json
+
+      - name: Run Usermanagement PostgreSQL live tests
+        env:
+          QMTOOL_PG_DSN: postgresql://qmtool:qmtool@localhost:5432/qmtool_um
+          QMTOOL_PG_REQUIRED: "1"
+          PYTHONPATH: .
+        run: |
+          python -m pytest tests/modules/usermanagement/test_postgres_schema_live.py -m postgres -q
+
+      - name: Upload PostgreSQL gate artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-migration-gate-output
+          path: build/postgres-migration-gate-output.json

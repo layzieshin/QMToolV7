@@ -304,65 +304,81 @@ Getestete Session-Domainlogik → Milestone 3.
 
 **Ziel**
 
-PostgreSQL-Anbindung für Usermanagement vorbereiten: Treiber-Dependency, Evolution-Erweiterung soweit nötig, Schema `usermanagement` mit `users` und `sessions`, Indizes/Constraints, Runtime-/Migrator-Rollenkonzept.
+PostgreSQL-Anbindung für Usermanagement vorbereiten: Treiber-Dependency, paralleler
+PG-Schema-Pfad (ohne AP-027-Rewrite), Schema `usermanagement` mit `users` und `sessions`,
+fail-closed Applicator mit Fingerprint, NOLOGIN-Rechterollen, Bundle-/CI-Absicherung.
+Details: `docs/AP-028_M3_POSTGRES_SCHEMA.md`.
 
 **Voraussetzungen**
 
-Milestone 2; AP-027-Policy verstanden (`docs/DATABASE_EVOLUTION_POLICY.md`).
+Milestone 2 integriert in `main`; AP-027-Policy verstanden (`docs/DATABASE_EVOLUTION_POLICY.md`).
 
 **Scope**
 
-- Dependency (z. B. `psycopg`) in Requirements/`pyproject` nach Repo-Konvention
-- Schema-Migrationen für Owner Usermanagement auf PostgreSQL-Zielmodell
-- Tabellen mindestens `users`, `sessions` (+ ggf. Auth-Ereignisse nur wenn ohne Scope-Überladung nötig; sonst M7)
-- DB-Rollenkonzept dokumentiert/skriptiert: `qmtool_migrator`, `qmtool_runtime`
-- Validatoren / Fingerprint-Äquivalent soweit Foundation es für PG vorsieht oder schrittweise erweitert
+- Dependency `psycopg[binary]` in `requirements.txt` / `constraints-py314.txt`
+- `provision_roles.sql` **vor** `0001_initial` (NOLOGIN-Rollen, leeres Schema, kein Secret)
+- Migrationen unter `modules/usermanagement/postgres/migrations/`
+- History mit `schema_fingerprint`; Applicator mit `SET ROLE qmtool_migrator`
+- `scripts/postgres_migration_gate.py` (append-only, immutable, Bundle)
+- Bundle: PG-SQL + `psycopg`/`psycopg_binary`; CI-Job mit echtem Provisioning
 
 **Nicht-Ziele**
 
 - Migration aller anderen Module
-- Produktiv-Cutover
-- Dual-Write
+- Produktiv-Cutover / Dual-Write / Backup-Restore (M8)
+- Rewrite von AP-027 / `database_evolution.py`
+- PostgreSQL-Repositories (M4), Backend-Routen (M5)
 - Vollständige generische RBAC-Tabellen
 
 **Betroffene Dateien/Bausteine**
 
-- `modules/usermanagement/migrations/` (PG-taugliche Migrationen oder paralleler Owner-Pfad gemäß Foundation-Erweiterung)
-- `qm_platform/persistence/database_evolution.py` und Policy-Docs nur soweit zwingend für PG-Owner
-- `requirements.txt` / Manifeste
-- Gate-Skripte nur bei notwendiger Erweiterung
+- `modules/usermanagement/postgres/` und `postgres_schema.py`
+- `docs/AP-028_M3_POSTGRES_SCHEMA.md`, M0-State-Matrix Punkt 5
+- `requirements.txt`, `constraints-py314.txt`, `pytest.ini`, `.github/workflows/ci-gates.yml`
+- `packaging/build_onedir.py`, `packaging/verify_bundle_imports.py`
+- `scripts/postgres_migration_gate.py`
+- Tests unter `tests/modules/usermanagement/test_postgres_schema_*.py`
 
 **Implementierungsaufgaben**
 
-1. Stabile `user_id` als UUID im Zielschema; Username unique und änderbar.
-2. Soft-Deaktivierung (`is_active`, `deactivated_at`); kein Hard-Delete.
-3. Sessions: `token_hash`, Zeiten UTC, `revoked_at`, Indizes auf `token_hash` und `user_id`.
-4. Keine Klartextpasswörter/Klartexttokens im Schema.
-5. Fresh-Install- und Idempotenzpfad für PG-Usermanagement.
+1. Stabile `user_id` als UUID (App-seitig); Username unique case-insensitiv (`lower(username)`).
+2. Soft-Deaktivierung: aktiv ⇒ `deactivated_at` NULL; inaktiv darf historisch unbekannt NULL bleiben.
+3. Sessions: `token_hash UNIQUE`, Zeiten UTC, `revoked_at`, FK `ON DELETE RESTRICT`, Index auf `user_id`.
+4. Keine Klartextpasswörter/Klartexttokens; Provisioning ohne Passwörter.
+5. Fail-closed: Historien-Präfix, Fingerprint-Drift, `pg_try_advisory_lock`, echte Migrationstransaktion.
+6. Runtime: DML auf `users`/`sessions`, kein DDL, keine History-Änderung.
 
 **Tests**
 
-- Migrations-Tests (fresh install, idempotent, constraints)
-- Gate: `scripts/database_migration_gate.py` bzw. erweiterte PG-Variante laut Policy
-- Architektur: Backend greift nicht auf Repositories zu
+- Statisch ohne PG: Kette, SQL-Verträge, Secrets-Verbot, Gate-Discovery, Bundle-Collect
+- Live mit PG: echtes Provisioning, Fresh Install, No-Op, Constraints, Drift/Lock/Rollback, Runtime-Rechte
+- SQLite-Evolution-Gates und Onedir-Build unverändert bzw. erweitert grün
 
 **Test-Gate**
 
 ```text
-Anwendbare Migration-/Evolution-Tests grün
-.\.venv\Scripts\python.exe -m pytest tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py -q
-(ggf. neue PG-spezifische Tests) grün
+git diff --check
+.\.venv\Scripts\python.exe -m pytest tests/modules/usermanagement -q
+.\.venv\Scripts\python.exe -m pytest tests/modules -q
+.\.venv\Scripts\python.exe -m pytest tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/platform/test_database_migration_gate.py tests/interfaces/test_architecture_gates.py -q
+.\.venv\Scripts\python.exe scripts/postgres_migration_gate.py --base-ref origin/main --output build/postgres-migration-gate-output.json
+.\.venv\Scripts\python.exe scripts/database_migration_gate.py --output build/database-migration-gate-output.json
+.\.venv\Scripts\python.exe scripts/golive_gate.py --output build/golive-gate-output.json
+.\.venv\Scripts\python.exe packaging/build_onedir.py
+Live-PG: lokal falls QMTOOL_PG_DSN gesetzt, sonst verbindlich CI-Job postgres-usermanagement (QMTOOL_PG_REQUIRED=1, keine Skips)
 Keine produktiven storage/-Dateien mutieren
 ```
 
 **Abnahmekriterien**
 
-- Schema versioniert; Runtime darf kein DDL
+- Schema versioniert; Tabellen-Owner = `qmtool_migrator`; Runtime ohne DDL
 - Foundation-Invarianten nicht gebrochen
+- PG-Live-Tests und Bundle-Prüfung in CI nicht übersprungen
+- Kein produktiver PG-Cutover vor M8
 
 **Risiken**
 
-- Scope-Explosion der Foundation → nur Usermanagement-Owner + minimale Runner-Erweiterung
+- Scope-Explosion der Foundation → bewusst paralleler UM-Pfad statt Foundation-Rewrite
 
 **Eskalationskriterien**
 
@@ -536,6 +552,7 @@ Milestone 5.
 **Scope**
 
 - `set_user_active` / Deaktivierung blockiert bestehende Sessions bei Resolve
+- Bei neuer Deaktivierung: `deactivated_at` als echten UTC-Zeitpunkt setzen; bei Reaktivierung entfernen (`NULL`)
 - Rollen- und `is_qmb`-Änderungen ohne Session-Freeze
 - `POST /auth/logout-all` und/oder Session-Liste/Löschung falls ohne Überladung
 - Passwortwechselwirkung gemäß Abschnitt E (wenn entschieden; sonst explizite Default-Policy dokumentieren und testen)
@@ -692,9 +709,10 @@ Milestones 3–7; Backup/Restore-Gates der Foundation.
 **Implementierungsaufgaben**
 
 1. Mapping alter `user_id`(=username) → stabile UUID-Strategie explizit entscheiden und dokumentieren (wenn noch offen → Eskalation).
-2. Hash-Übernahme ohne Re-Hash-Verlust.
-3. Sessions: Alt-JSON nicht als PG-Sessions importieren (kein Fake-Token); Nutzer müssen neu einloggen nach Cutover.
-4. Backup/Restore-Drill für Usermanagement-PG.
+2. Case-insensitive Username-Kollisionen gegen PG-Index `UNIQUE (lower(username))` vor Import validieren und auflösen.
+3. Hash-Übernahme ohne Re-Hash-Verlust.
+4. Sessions: Alt-JSON nicht als PG-Sessions importieren (kein Fake-Token); Nutzer müssen neu einloggen nach Cutover.
+5. Backup/Restore-Drill für Usermanagement-PG.
 
 **Tests**
 
@@ -891,9 +909,9 @@ Nur echte Restoffenheiten. Bereits entschieden und hier nicht erneut fraglich:
    Ob `GET/POST/PATCH /users` und activate/deactivate in AP-028 oder Folgepaket.
    Empfehlung: Auth/Session zuerst (M5–M7); Admin-REST nur wenn Milestone-Größe es erlaubt, sonst eigenes kleines Folge-Milestone/AP.
 
-5. **PostgreSQL-Testinfrastruktur**
-   CI/local: Container-Pflicht vs. optionale Markierung.
-   Vor M3/M4 klären; nicht still überspringen.
+5. **PostgreSQL-Testinfrastruktur** — **entschieden in M3:** verbindlicher CI-Job
+   `postgres-usermanagement` (`ubuntu-latest`, Service `postgres:16`, `QMTOOL_PG_REQUIRED=1`).
+   Lokal ohne DSN nur Live-Tests skippen; in CI ist Skip ein Fehler.
 
 ### Bewusst nicht in diesem AP entschieden
 

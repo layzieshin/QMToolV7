@@ -11,6 +11,8 @@ from pathlib import Path
 _REQUIRED_MODULES: tuple[str, ...] = (
     "fitz",
     "pypdf",
+    "psycopg",
+    "psycopg_binary",
 )
 
 _WINDOWS_MODULES: tuple[str, ...] = (
