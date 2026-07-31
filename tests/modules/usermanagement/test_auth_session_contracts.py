@@ -19,6 +19,8 @@ from modules.usermanagement.api import (
     SystemExecutionContext,
     UserContext,
     UsermanagementError,
+)
+from modules.usermanagement.contracts import (
     issue_system_execution_context,
     issue_user_context,
 )
@@ -162,8 +164,6 @@ def test_public_api_exports_do_not_require_internal_imports() -> None:
         "UserContext",
         "SystemExecutionContext",
         "SessionRecord",
-        "issue_user_context",
-        "issue_system_execution_context",
         "UsermanagementError",
         "AuthenticationError",
         "InactiveUserError",
@@ -176,3 +176,8 @@ def test_public_api_exports_do_not_require_internal_imports() -> None:
     ):
         assert name in api.__all__
         assert hasattr(api, name)
+
+    assert "issue_user_context" not in api.__all__
+    assert "issue_system_execution_context" not in api.__all__
+    assert not hasattr(api, "issue_user_context")
+    assert not hasattr(api, "issue_system_execution_context")
