@@ -173,6 +173,7 @@ jobs:
         run: |
           python -m pytest tests/modules/usermanagement/test_postgres_schema_static.py tests/modules/usermanagement/test_postgres_migration_gate.py -q
           python -m pytest tests/modules/usermanagement/test_postgres_schema_live.py -m postgres -q
+          python -m pytest tests/modules/usermanagement/test_postgres_repositories_live.py -m postgres -q
 
       - name: Upload PostgreSQL gate artifact
         if: always()

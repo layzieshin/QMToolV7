@@ -423,6 +423,7 @@ Milestone 3 einschließlich M3.1 integriert. M4 prüft zusätzlich die deploymen
 - `modules/usermanagement/repository.py` und neue PG-Implementierung (kein Import von Internals außerhalb des Moduls)
 - Wiring/`module.py` (Runtime-Registrierung nur über Composition Root / ModuleContract)
 - Repository-Tests
+- `docs/AP-028_M4_POSTGRES_REPOSITORIES.md`
 
 **Implementierungsaufgaben**
 
@@ -434,6 +435,7 @@ Milestone 3 einschließlich M3.1 integriert. M4 prüft zusätzlich die deploymen
 **Tests**
 
 - Repository-Integrationstests gegen Test-PostgreSQL (oder dokumentierte Teststrategie)
+- Live-Test des expliziten PostgreSQL-Composition-Ports und des opaken `UserManagementService`-Sessionpfads
 - Integrität: Unique username, FK session→user, revoked/expired Filter
 - Konkurrenztest: paralleler Touch/Widerruf bleibt monoton widerrufen
 
