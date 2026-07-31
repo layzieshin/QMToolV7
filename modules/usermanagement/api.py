@@ -1,19 +1,48 @@
 """
 Public surface of the usermanagement module.
 
-External callers (CLI, GUI, tests) MUST import only from this file or
-from ``modules.usermanagement.contracts``.
+External callers (CLI, GUI, backend, tests) MUST import only from this file.
+``contracts`` and ``errors`` are implementation details unless re-exported here.
 
 Forbidden from outside: service.py, sqlite_repository.py,
-password_crypto.py, repository.py
+password_crypto.py, repository.py, session_store.py, auth_ops.py,
+user_admin_ops.py, wiring.py
 """
 from __future__ import annotations
 
-from .contracts import AuthenticatedUser
+from .contracts import (
+    AuthenticatedUser,
+    SessionRecord,
+    SystemExecutionContext,
+    UserContext,
+)
+from .errors import (
+    AuthenticationError,
+    ExpiredSessionError,
+    InactiveUserError,
+    InvalidSessionError,
+    PasswordChangeRequiredError,
+    RevokedSessionError,
+    SessionError,
+    SessionNotFoundError,
+    UsermanagementError,
+)
 from .role_policies import is_effective_qmb, normalize_base_role
 
 __all__ = [
     "AuthenticatedUser",
+    "UserContext",
+    "SystemExecutionContext",
+    "SessionRecord",
+    "UsermanagementError",
+    "AuthenticationError",
+    "InactiveUserError",
+    "PasswordChangeRequiredError",
+    "SessionError",
+    "SessionNotFoundError",
+    "InvalidSessionError",
+    "ExpiredSessionError",
+    "RevokedSessionError",
     "get_usermanagement_service",
     "bootstrap_admin",
     "self_register",
@@ -56,5 +85,3 @@ def self_register(
         last_name=last_name,
         email=email,
     )
-
-
