@@ -176,6 +176,7 @@ def test_public_api_exports_do_not_require_internal_imports() -> None:
     ):
         assert name in api.__all__
         assert hasattr(api, name)
+
     assert "issue_user_context" not in api.__all__
     assert "issue_system_execution_context" not in api.__all__
     assert not hasattr(api, "issue_user_context")
