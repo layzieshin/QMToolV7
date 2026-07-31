@@ -6,6 +6,8 @@
 - Cleanup: nein
 - API-Änderung: nein
 - Migration: nein
+- Supervisor-Entscheidung Admin ≠ QMB: **angenommen** (2026-07-31, Option B; Bezug AP-028)
+- Incident-Modul-Abweichung (Admin als QMB): bewusst noch nicht bereinigt; Cleanup außerhalb AP-028
 
 ## Kontext
 - Bezug auf AP-003: `docs/AP-003_USER_AUTH_CURRENT_STATE_MAP.md` dokumentiert uneinheitliche Rollen-/QMB-Verwendungen, unter anderem `modules/usermanagement/role_policies.py`, `modules/incident_management/authorization.py`, CLI-Rollenmapping in Documents/Settings und PyQt-`access_guards`.
@@ -46,7 +48,7 @@ Modulrollen, Befugnisse und Kompetenzen ergänzen die Basisrollen, ersetzen sie 
 
 | Rolle/Konzept | Bedeutung | fachliche Wirkung | technische Wirkung | darf in UserContext stehen: ja/nein/offen | entscheidet welche Schicht | offene Punkte |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Admin` | Technisch/organisatorische Administrationsrolle. | Nicht automatisch QMB; fachliche Rechte nur nach Service-Regel. | Benutzer-/Konfigurationsverwaltung, Adminbereiche, Diagnose. | offen, als Rollenreferenz/Claim möglich | Services für fachliche Wirkung; Plattform/Settings für technische Adminfunktionen | Supervisor muss Admin-als-QMB-Frage entscheiden. |
+| `Admin` | Technisch/organisatorische Administrationsrolle. | Nicht automatisch QMB; fachliche Rechte nur nach Service-Regel. | Benutzer-/Konfigurationsverwaltung, Adminbereiche, Diagnose. | offen, als Rollenreferenz/Claim möglich | Services für fachliche Wirkung; Plattform/Settings für technische Adminfunktionen | Supervisor-Entscheidung 2026-07-31: Admin ≠ QMB (Option B). |
 | `QMB` | Basisrolle für Qualitätsmanagement-Verantwortung. | QMB-Fachrechte nach Modul-Service-Regeln. | Sichtbarkeit von QMB-Bereichen möglich. | offen, als Rollenreferenz/Claim möglich | Services | Detailrechte je Modul und Prozess offen. |
 | `User` | Standardrolle für authentifizierte Benutzer. | Keine pauschalen QMB/Admin-Rechte. | Normale Nutzung, eigene Aufgaben/Objekte. | offen, als Rollenreferenz/Claim möglich | Services | Objektbezogene Owner-/Verantwortlichenrechte je Use Case. |
 | `is_qmb` | Zusatzflag für QMB-Wirkung. | Verleiht QMB-Fachrechte nur nach bestätigter Service-Regel. | Kann UI-Sichtbarkeit beeinflussen. | offen, als Rollenreferenz/Claim möglich | Services | Governance: Wer darf Flag setzen, wie wird es auditiert? |
@@ -74,6 +76,7 @@ Modulrollen, Befugnisse und Kompetenzen ergänzen die Basisrollen, ersetzen sie 
   - Kleine Teams könnten erwarten, dass Admin zugleich QMB-Aufgaben wahrnehmen darf.
   - Initiale Admin-/QMB-Bootstrap-Prozesse müssen später fachlich sauber definiert werden.
 - Explizite Supervisor-Entscheidung nötig: ja.
+- Supervisor-Entscheidung (2026-07-31): **Option B angenommen.** Admin ist nicht automatisch QMB. QMB-Fachrechte entstehen über Basisrolle `QMB` oder `is_qmb=True`. Die Abweichung in `modules/incident_management/authorization.py` bleibt bis zu einem separat freigegebenen Cleanup bestehen und ist nicht Teil von AP-028.
 
 ## Service-Autorisierung und Adapter-Gates
 - Zielregel für Services:
@@ -176,13 +179,14 @@ Modulrollen, Befugnisse und Kompetenzen ergänzen die Basisrollen, ersetzen sie 
   - Audit-Actor darf nicht aus Rollenlogik abgeleitet werden.
 
 ## Offene Supervisor-Entscheidungen
-- Soll Admin im Zielmodell ausdrücklich nicht automatisch QMB sein?
+- ~~Soll Admin im Zielmodell ausdrücklich nicht automatisch QMB sein?~~ **Erledigt 2026-07-31: nein, Admin ist nicht automatisch QMB (Option B).**
 - Soll `is_qmb` dauerhaft als Zusatzrecht bestehen oder später durch Befugnisse/Kompetenzen ersetzt werden?
 - Wer darf `is_qmb` setzen oder entziehen, und welches Nachweisniveau gilt dafür?
 - Welche MVP-Use Cases benötigen QMB-Rechte zwingend zuerst?
 - Welche GUI-/CLI-Gates gelten als reine UX und welche müssen priorisiert durch Service-Gates abgesichert werden?
 - Wie werden Modulrollen wie `Leitung` gegenüber QMB und Admin priorisiert?
 - Wann wird eine Befugnisse-/Kompetenz-Detailplanung gestartet?
+- Wann wird die Incident-Abweichung Admin=QMB bereinigt (separates Paket, nicht AP-028)?
 
 ## Ausgeführte Prüfungen
 - Gelesene Dateien:
@@ -210,4 +214,4 @@ Modulrollen, Befugnisse und Kompetenzen ergänzen die Basisrollen, ersetzen sie 
 - Nur `docs/AP-005_ROLES_QMB_SEMANTICS_ADR.md` wurde neu angelegt oder geändert.
 
 ## Maximal ein sinnvoller nächster Schritt
-Supervisor soll als nächstes die Admin-als-QMB-Zielentscheidung ausdrücklich annehmen, ablehnen oder ändern; keine Implementierung automatisch starten.
+AP-028 Milestone 0 (Ist-/Zielmatrix) bzw. danach Milestone 1 (öffentliche Identitäts- und Sessionverträge) starten; Incident-Admin=QMB-Cleanup nicht mitziehen.
