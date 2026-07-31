@@ -267,7 +267,7 @@ def _schema_types(conn: psycopg.Connection) -> list[tuple[object, ...]]:
                typ.typnotnull,
                typ.typdefault,
                collation_ns.nspname,
-               collation.collname,
+               coll.collname,
                COALESCE((
                    SELECT json_agg(enum_value.enumlabel ORDER BY enum_value.enumsortorder)::text
                    FROM pg_enum enum_value
@@ -303,9 +303,9 @@ def _schema_types(conn: psycopg.Connection) -> list[tuple[object, ...]]:
         FROM pg_type typ
         JOIN pg_namespace ns ON ns.oid = typ.typnamespace
         LEFT JOIN pg_class rel ON rel.oid = typ.typrelid
-        LEFT JOIN pg_collation collation ON collation.oid = typ.typcollation
+        LEFT JOIN pg_collation coll ON coll.oid = typ.typcollation
         LEFT JOIN pg_namespace collation_ns
-          ON collation_ns.oid = collation.collnamespace
+          ON collation_ns.oid = coll.collnamespace
         LEFT JOIN pg_range range_contract
           ON range_contract.rngtypid = typ.oid
           OR range_contract.rngmultitypid = typ.oid
