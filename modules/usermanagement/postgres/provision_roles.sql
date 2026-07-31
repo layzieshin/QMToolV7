@@ -58,6 +58,22 @@ BEGIN
             NOBYPASSRLS;
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+        FROM pg_auth_members memberships
+        JOIN pg_roles member_role ON member_role.oid = memberships.member
+        WHERE member_role.rolname IN ('qmtool_migrator', 'qmtool_runtime')
+    ) THEN
+        RAISE EXCEPTION
+            'qmtool privilege roles must not inherit membership in other roles';
+    END IF;
+
+    IF pg_has_role('qmtool_runtime', 'qmtool_migrator', 'MEMBER')
+       OR pg_has_role('qmtool_runtime', 'qmtool_migrator', 'SET') THEN
+        RAISE EXCEPTION
+            'qmtool_runtime must not inherit or SET ROLE to qmtool_migrator';
+    END IF;
+
     IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'usermanagement') THEN
         SELECT r.rolname INTO schema_owner
         FROM pg_namespace n

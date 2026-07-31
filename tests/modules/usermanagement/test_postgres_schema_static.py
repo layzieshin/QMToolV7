@@ -60,6 +60,9 @@ def test_provision_roles_bootstrap_contract() -> None:
     assert "LOGIN PASSWORD" not in text.upper()
     assert "CREATE SCHEMA usermanagement AUTHORIZATION qmtool_migrator" in text
     assert "REVOKE CREATE ON SCHEMA usermanagement FROM qmtool_runtime" in text
+    assert "pg_has_role('qmtool_runtime', 'qmtool_migrator', 'MEMBER')" in text
+    assert "pg_has_role('qmtool_runtime', 'qmtool_migrator', 'SET')" in text
+    assert "pg_auth_members" in text
     assert "ALTER DEFAULT PRIVILEGES" not in text.upper()
     assert pgs.PROVISION_ROLES_PATH.parent.name == "postgres"
 

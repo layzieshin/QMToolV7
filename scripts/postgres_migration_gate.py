@@ -15,15 +15,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from modules.usermanagement.postgres_schema import (  # noqa: E402
-    MIGRATIONS_DIR,
-    PROVISION_ROLES_PATH,
     PostgresSchemaError,
     discover_migrations,
 )
 
-PACKAGING_BUILD_PATH = ROOT / "packaging" / "build_onedir.py"
-PG_MIGRATION_GLOB = "modules/usermanagement/postgres/migrations/*.sql"
-PROVISION_REL = "modules/usermanagement/postgres/provision_roles.sql"
+PG_MIGRATIONS_REL = Path("modules/usermanagement/postgres/migrations")
+PROVISION_REL = Path("modules/usermanagement/postgres/provision_roles.sql")
+PACKAGING_BUILD_REL = Path("packaging/build_onedir.py")
 
 
 def _sha256_text(content: bytes) -> str:
@@ -31,10 +29,10 @@ def _sha256_text(content: bytes) -> str:
     return hashlib.sha256(normalized).hexdigest()
 
 
-def _git_file(base_ref: str, relative: str) -> bytes | None:
+def _git_file(root: Path, base_ref: str, relative: str) -> bytes | None:
     probe = subprocess.run(
         ["git", "cat-file", "-e", f"{base_ref}:{relative}"],
-        cwd=ROOT,
+        cwd=root,
         capture_output=True,
         check=False,
     )
@@ -42,144 +40,210 @@ def _git_file(base_ref: str, relative: str) -> bytes | None:
         return None
     result = subprocess.run(
         ["git", "show", f"{base_ref}:{relative}"],
-        cwd=ROOT,
+        cwd=root,
         capture_output=True,
-        check=True,
+        check=False,
     )
-    return result.stdout
+    return result.stdout if result.returncode == 0 else None
 
 
-def _bundled_data_paths() -> set[str]:
-    tree = ast.parse(
-        PACKAGING_BUILD_PATH.read_text(encoding="utf-8"),
-        filename=str(PACKAGING_BUILD_PATH),
-    )
+def _literal_assignment(path: Path, variable: str) -> object | None:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in tree.body:
         if not isinstance(node, ast.AnnAssign):
             continue
-        if not isinstance(node.target, ast.Name) or node.target.id != "_BUNDLE_DATA":
-            continue
-        entries = ast.literal_eval(node.value)
-        return {str(source).replace("\\", "/") for source, _target in entries}
-    return set()
+        if isinstance(node.target, ast.Name) and node.target.id == variable:
+            return ast.literal_eval(node.value)
+    return None
 
 
-def _collect_all_packages() -> set[str]:
-    tree = ast.parse(
-        PACKAGING_BUILD_PATH.read_text(encoding="utf-8"),
-        filename=str(PACKAGING_BUILD_PATH),
-    )
-    for node in tree.body:
-        if not isinstance(node, ast.AnnAssign):
-            continue
-        if not isinstance(node.target, ast.Name) or node.target.id != "_COLLECT_ALL":
-            continue
-        return set(ast.literal_eval(node.value))
-    return set()
+def _bundled_data_paths(packaging_build_path: Path) -> set[str]:
+    entries = _literal_assignment(packaging_build_path, "_BUNDLE_DATA")
+    if not isinstance(entries, list):
+        return set()
+    return {str(source).replace("\\", "/") for source, _target in entries}
 
 
-def evaluate_postgres_migration_gate(*, base_ref: str) -> dict:
+def _collect_all_packages(packaging_build_path: Path) -> set[str]:
+    entries = _literal_assignment(packaging_build_path, "_COLLECT_ALL")
+    if not isinstance(entries, list):
+        return set()
+    return {str(entry) for entry in entries}
+
+
+def _migration_version(relative: str) -> int | None:
+    name = Path(relative).name
+    if len(name) < 4 or not name[:4].isdigit():
+        return None
+    return int(name[:4])
+
+
+def evaluate_postgres_migration_gate(
+    *,
+    base_ref: str,
+    root: Path = ROOT,
+) -> dict[str, object]:
+    root = root.resolve()
+    migrations_dir = root / PG_MIGRATIONS_REL
+    provision_roles_path = root / PROVISION_REL
+    packaging_build_path = root / PACKAGING_BUILD_REL
     checks: dict[str, bool] = {}
     diagnostics: dict[str, object] = {}
 
     try:
-        steps = discover_migrations()
+        discover_migrations(migrations_dir)
         checks["migration_chain_valid"] = True
     except PostgresSchemaError as exc:
         checks["migration_chain_valid"] = False
         diagnostics["migration_chain_error"] = str(exc)
-        steps = ()
 
     sqlite_discovered = {
-        path.relative_to(ROOT).as_posix()
-        for path in ROOT.glob("modules/*/migrations/*.sql")
+        path.relative_to(root).as_posix()
+        for path in root.glob("modules/*/migrations/*.sql")
     }
     pg_paths = {
-        path.relative_to(ROOT).as_posix()
-        for path in ROOT.glob(PG_MIGRATION_GLOB)
+        path.relative_to(root).as_posix()
+        for path in migrations_dir.glob("*.sql")
     }
-    checks["pg_migrations_outside_sqlite_discovery"] = pg_paths.isdisjoint(sqlite_discovered)
-    checks["provision_roles_present"] = PROVISION_ROLES_PATH.is_file()
+    checks["pg_migrations_outside_sqlite_discovery"] = pg_paths.isdisjoint(
+        sqlite_discovered
+    )
+    checks["provision_roles_present"] = provision_roles_path.is_file()
 
     provision_text = (
-        PROVISION_ROLES_PATH.read_text(encoding="utf-8") if PROVISION_ROLES_PATH.is_file() else ""
+        provision_roles_path.read_text(encoding="utf-8")
+        if provision_roles_path.is_file()
+        else ""
     )
+    provision_upper = provision_text.upper()
     checks["provision_has_no_passwords"] = (
-        "PASSWORD '" not in provision_text.upper()
-        and 'PASSWORD "' not in provision_text.upper()
-        and "LOGIN PASSWORD" not in provision_text.upper()
+        "PASSWORD '" not in provision_upper
+        and 'PASSWORD "' not in provision_upper
+        and "LOGIN PASSWORD" not in provision_upper
     )
     checks["provision_roles_are_nologin"] = (
-        provision_text.count("NOLOGIN") >= 2
-        and "LOGIN PASSWORD" not in provision_text.upper()
-        and "CREATE ROLE qmtool_migrator LOGIN" not in provision_text
-        and "CREATE ROLE qmtool_runtime LOGIN" not in provision_text
+        provision_upper.count("NOLOGIN") >= 2
+        and "LOGIN PASSWORD" not in provision_upper
+        and "CREATE ROLE QMTOOL_MIGRATOR LOGIN" not in provision_upper
+        and "CREATE ROLE QMTOOL_RUNTIME LOGIN" not in provision_upper
     )
 
-    immutable_ok = True
-    append_only_ok = True
-    base_versions: list[int] = []
-    for path in sorted((ROOT / "modules/usermanagement/postgres/migrations").glob("*.sql")):
-        relative = path.relative_to(ROOT).as_posix()
-        current = path.read_bytes()
-        previous = _git_file(base_ref, relative)
-        if previous is None:
-            # New file — must append after base max version
-            continue
-        if _sha256_text(previous) != _sha256_text(current):
-            immutable_ok = False
-            diagnostics.setdefault("mutated_migrations", []).append(relative)  # type: ignore[union-attr]
-        # track base versions
-        name = path.name
-        if len(name) >= 4 and name[:4].isdigit():
-            base_versions.append(int(name[:4]))
-
-    base_pg_files = []
-    list_result = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", base_ref, "modules/usermanagement/postgres/migrations"],
-        cwd=ROOT,
+    verify_result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{base_ref}^{{commit}}"],
+        cwd=root,
         capture_output=True,
         text=True,
         check=False,
     )
-    if list_result.returncode == 0 and list_result.stdout.strip():
-        base_pg_files = [line.strip() for line in list_result.stdout.splitlines() if line.strip()]
+    base_ref_valid = verify_result.returncode == 0
+    checks["base_ref_valid"] = base_ref_valid
+    if not base_ref_valid:
+        diagnostics["base_ref_error"] = (
+            verify_result.stderr.strip() or f"invalid git base ref: {base_ref}"
+        )
 
-    base_max = 0
-    for relative in base_pg_files:
-        name = Path(relative).name
-        if len(name) >= 4 and name[:4].isdigit():
-            base_max = max(base_max, int(name[:4]))
+    list_result = None
+    if base_ref_valid:
+        list_result = subprocess.run(
+            [
+                "git",
+                "ls-tree",
+                "-r",
+                "--name-only",
+                base_ref,
+                "--",
+                PG_MIGRATIONS_REL.as_posix(),
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    base_listing_ok = bool(list_result is not None and list_result.returncode == 0)
+    checks["base_listing_ok"] = base_listing_ok
 
-    for step in steps:
-        relative = step.sql_path.relative_to(ROOT).as_posix()
-        if relative in base_pg_files:
-            continue
-        if step.version <= base_max:
-            append_only_ok = False
-            diagnostics.setdefault("non_append_migrations", []).append(relative)  # type: ignore[union-attr]
+    if not base_ref_valid or not base_listing_ok:
+        if base_ref_valid and list_result is not None:
+            diagnostics["base_listing_error"] = (
+                list_result.stderr.strip()
+                or "failed to list PostgreSQL migrations at base ref"
+            )
+        checks["no_deleted_migrations"] = False
+        checks["existing_pg_migrations_immutable"] = False
+        checks["pg_migrations_append_only"] = False
+    else:
+        assert list_result is not None
+        base_pg_files = {
+            line.strip()
+            for line in list_result.stdout.splitlines()
+            if line.strip().endswith(".sql")
+        }
+        deleted = sorted(base_pg_files - pg_paths)
+        checks["no_deleted_migrations"] = not deleted
+        if deleted:
+            diagnostics["deleted_migrations"] = deleted
 
-    checks["existing_pg_migrations_immutable"] = immutable_ok
-    checks["pg_migrations_append_only"] = append_only_ok
+        unreadable: list[str] = []
+        mutated: list[str] = []
+        for relative in sorted(base_pg_files & pg_paths):
+            previous = _git_file(root, base_ref, relative)
+            if previous is None:
+                unreadable.append(relative)
+                continue
+            current = (root / relative).read_bytes()
+            if _sha256_text(previous) != _sha256_text(current):
+                mutated.append(relative)
+        checks["existing_pg_migrations_immutable"] = not unreadable and not mutated
+        if unreadable:
+            diagnostics["unreadable_base_migrations"] = unreadable
+        if mutated:
+            diagnostics["mutated_migrations"] = mutated
 
-    bundled = _bundled_data_paths()
+        base_versions = [
+            version
+            for relative in base_pg_files
+            if (version := _migration_version(relative)) is not None
+        ]
+        base_max = max(base_versions, default=0)
+        non_append = sorted(
+            relative
+            for relative in pg_paths - base_pg_files
+            if (version := _migration_version(relative)) is None
+            or version <= base_max
+        )
+        checks["pg_migrations_append_only"] = not non_append
+        if non_append:
+            diagnostics["non_append_migrations"] = non_append
+
+    bundled = _bundled_data_paths(packaging_build_path)
     required_bundle = set(pg_paths)
-    required_bundle.add(PROVISION_REL)
+    required_bundle.add(PROVISION_REL.as_posix())
     missing_bundle = sorted(required_bundle - bundled)
     checks["pg_artifacts_are_bundled"] = not missing_bundle
     if missing_bundle:
         diagnostics["missing_bundle_paths"] = missing_bundle
 
-    collect_all = _collect_all_packages()
-    checks["psycopg_collected_in_bundle"] = "psycopg" in collect_all and "psycopg_binary" in collect_all
+    collect_all = _collect_all_packages(packaging_build_path)
+    checks["psycopg_collected_in_bundle"] = (
+        "psycopg" in collect_all and "psycopg_binary" in collect_all
+    )
 
-    ok = all(checks.values())
-    return {"ok": ok, "checks": checks, "diagnostics": diagnostics}
+    return {
+        "ok": all(checks.values()),
+        "checks": checks,
+        "diagnostics": diagnostics,
+    }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Usermanagement PostgreSQL migration gate")
-    parser.add_argument("--base-ref", required=True, help="Git ref for append-only/immutability checks")
+    parser = argparse.ArgumentParser(
+        description="Usermanagement PostgreSQL migration gate"
+    )
+    parser.add_argument(
+        "--base-ref",
+        required=True,
+        help="Git ref for append-only/immutability checks",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     result = evaluate_postgres_migration_gate(base_ref=args.base_ref)

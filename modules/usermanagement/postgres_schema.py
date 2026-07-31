@@ -179,6 +179,149 @@ def _table_names(conn: psycopg.Connection) -> set[str]:
     }
 
 
+def _schema_relations(conn: psycopg.Connection) -> list[tuple[object, ...]]:
+    return conn.execute(
+        """
+        SELECT rel.relname,
+               rel.relkind,
+               owner.rolname,
+               rel.relpersistence,
+               COALESCE((
+                   SELECT json_agg(rel_option.value ORDER BY rel_option.value)::text
+                   FROM unnest(COALESCE(rel.reloptions, ARRAY[]::text[])) rel_option(value)
+               ), ''),
+               CASE
+                   WHEN rel.relkind IN ('v', 'm') THEN pg_get_viewdef(rel.oid, true)
+                   ELSE ''
+               END,
+               COALESCE(pg_get_partkeydef(rel.oid), ''),
+               CASE
+                   WHEN rel.relispartition THEN pg_get_expr(rel.relpartbound, rel.oid, true)
+                   ELSE ''
+               END,
+               CASE
+                   WHEN rel.relkind = 'S' THEN format_type(seq.seqtypid, -1)
+                   ELSE ''
+               END,
+               seq.seqstart,
+               seq.seqincrement,
+               seq.seqmax,
+               seq.seqmin,
+               seq.seqcache,
+               seq.seqcycle,
+               foreign_server.srvname,
+               COALESCE((
+                   SELECT json_agg(ft_option.value ORDER BY ft_option.value)::text
+                   FROM unnest(
+                       COALESCE(foreign_table.ftoptions, ARRAY[]::text[])
+                   ) ft_option(value)
+               ), '')
+        FROM pg_class rel
+        JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+        JOIN pg_roles owner ON owner.oid = rel.relowner
+        LEFT JOIN pg_sequence seq ON seq.seqrelid = rel.oid
+        LEFT JOIN pg_foreign_table foreign_table ON foreign_table.ftrelid = rel.oid
+        LEFT JOIN pg_foreign_server foreign_server
+          ON foreign_server.oid = foreign_table.ftserver
+        WHERE ns.nspname = %s
+          AND rel.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+        ORDER BY rel.relname, rel.relkind
+        """,
+        (SCHEMA_NAME,),
+    ).fetchall()
+
+
+def _schema_functions(conn: psycopg.Connection) -> list[tuple[object, ...]]:
+    return conn.execute(
+        """
+        SELECT proc.proname,
+               pg_get_function_identity_arguments(proc.oid),
+               pg_get_function_result(proc.oid),
+               proc.prokind,
+               proc.provolatile,
+               proc.proparallel,
+               proc.prosecdef,
+               proc.proleakproof,
+               pg_get_functiondef(proc.oid)
+        FROM pg_proc proc
+        JOIN pg_namespace ns ON ns.oid = proc.pronamespace
+        WHERE ns.nspname = %s
+        ORDER BY proc.proname,
+                 pg_get_function_identity_arguments(proc.oid)
+        """,
+        (SCHEMA_NAME,),
+    ).fetchall()
+
+
+def _schema_types(conn: psycopg.Connection) -> list[tuple[object, ...]]:
+    return conn.execute(
+        """
+        SELECT typ.typname,
+               typ.typtype,
+               typ.typcategory,
+               typ.typispreferred,
+               CASE
+                   WHEN typ.typbasetype = 0 THEN NULL
+                   ELSE format_type(typ.typbasetype, typ.typtypmod)
+               END,
+               typ.typnotnull,
+               typ.typdefault,
+               collation_ns.nspname,
+               collation.collname,
+               COALESCE((
+                   SELECT json_agg(enum_value.enumlabel ORDER BY enum_value.enumsortorder)::text
+                   FROM pg_enum enum_value
+                   WHERE enum_value.enumtypid = typ.oid
+               ), ''),
+               COALESCE((
+                   SELECT json_agg(
+                       json_build_array(
+                           attribute.attname,
+                           format_type(attribute.atttypid, attribute.atttypmod),
+                           attribute.attnotnull
+                       ) ORDER BY attribute.attnum
+                   )::text
+                   FROM pg_attribute attribute
+                   WHERE attribute.attrelid = typ.typrelid
+                     AND attribute.attnum > 0
+                     AND NOT attribute.attisdropped
+               ), ''),
+               CASE
+                   WHEN range_contract.rngsubtype = 0 THEN NULL
+                   ELSE format_type(range_contract.rngsubtype, -1)
+               END,
+               operator_ns.nspname,
+               operator_class.opcname,
+               CASE
+                   WHEN range_contract.rngcanonical = 0 THEN NULL
+                   ELSE range_contract.rngcanonical::regprocedure::text
+               END,
+               CASE
+                   WHEN range_contract.rngsubdiff = 0 THEN NULL
+                   ELSE range_contract.rngsubdiff::regprocedure::text
+               END
+        FROM pg_type typ
+        JOIN pg_namespace ns ON ns.oid = typ.typnamespace
+        LEFT JOIN pg_class rel ON rel.oid = typ.typrelid
+        LEFT JOIN pg_collation collation ON collation.oid = typ.typcollation
+        LEFT JOIN pg_namespace collation_ns
+          ON collation_ns.oid = collation.collnamespace
+        LEFT JOIN pg_range range_contract
+          ON range_contract.rngtypid = typ.oid
+          OR range_contract.rngmultitypid = typ.oid
+        LEFT JOIN pg_opclass operator_class
+          ON operator_class.oid = range_contract.rngsubopc
+        LEFT JOIN pg_namespace operator_ns
+          ON operator_ns.oid = operator_class.opcnamespace
+        WHERE ns.nspname = %s
+          AND typ.typtype IN ('c', 'd', 'e', 'r', 'm')
+          AND (typ.typrelid = 0 OR rel.relkind = 'c')
+        ORDER BY typ.typname, typ.typtype
+        """,
+        (SCHEMA_NAME,),
+    ).fetchall()
+
+
 def _history_table_exists(conn: psycopg.Connection) -> bool:
     return MIGRATIONS_TABLE in _table_names(conn)
 
@@ -258,20 +401,25 @@ def _require_bootstrap_or_history(conn: psycopg.Connection, applied: tuple[Appli
         raise PostgresSchemaError(
             "bootstrap schema usermanagement must be owned by qmtool_migrator"
         )
-    tables = _table_names(conn)
-    if tables:
+    relations = _schema_relations(conn)
+    functions = _schema_functions(conn)
+    types = _schema_types(conn)
+    if relations or functions or types:
         raise PostgresSchemaError(
             "populated unversioned schema usermanagement refused; "
-            f"tables present: {sorted(tables)}"
+            f"relations={[(row[0], row[1]) for row in relations]}, "
+            f"functions={[(row[0], row[1]) for row in functions]}, "
+            f"types={[(row[0], row[1]) for row in types]}"
         )
 
 
 def _compute_schema_fingerprint(conn: psycopg.Connection) -> str:
-    tables = sorted(_table_names(conn))
     columns = conn.execute(
         """
         SELECT table_name, column_name, data_type, is_nullable,
-               column_default, ordinal_position
+               column_default, ordinal_position, udt_schema, udt_name,
+               is_identity, identity_generation, is_generated,
+               generation_expression
         FROM information_schema.columns
         WHERE table_schema = %s
         ORDER BY table_name, ordinal_position, column_name
@@ -280,17 +428,23 @@ def _compute_schema_fingerprint(conn: psycopg.Connection) -> str:
     ).fetchall()
     constraints = conn.execute(
         """
-        SELECT tc.table_name, tc.constraint_type, tc.constraint_name,
-               cc.check_clause, rc.delete_rule, rc.update_rule
-        FROM information_schema.table_constraints tc
-        LEFT JOIN information_schema.check_constraints cc
-          ON cc.constraint_schema = tc.constraint_schema
-         AND cc.constraint_name = tc.constraint_name
-        LEFT JOIN information_schema.referential_constraints rc
-          ON rc.constraint_schema = tc.constraint_schema
-         AND rc.constraint_name = tc.constraint_name
-        WHERE tc.table_schema = %s
-        ORDER BY tc.table_name, tc.constraint_type, tc.constraint_name
+        SELECT COALESCE(rel.relname, ''),
+               COALESCE(typ.typname, ''),
+               con.conname,
+               con.contype,
+               con.condeferrable,
+               con.condeferred,
+               con.convalidated,
+               pg_get_constraintdef(con.oid, true)
+        FROM pg_constraint con
+        JOIN pg_namespace ns ON ns.oid = con.connamespace
+        LEFT JOIN pg_class rel ON rel.oid = con.conrelid
+        LEFT JOIN pg_type typ ON typ.oid = con.contypid
+        WHERE ns.nspname = %s
+        ORDER BY rel.relname NULLS FIRST,
+                 typ.typname NULLS FIRST,
+                 con.conname,
+                 con.contype
         """,
         (SCHEMA_NAME,),
     ).fetchall()
@@ -303,8 +457,50 @@ def _compute_schema_fingerprint(conn: psycopg.Connection) -> str:
         """,
         (SCHEMA_NAME,),
     ).fetchall()
+    relations = _schema_relations(conn)
+    functions = _schema_functions(conn)
+    types = _schema_types(conn)
     payload = {
-        "tables": tables,
+        "relations": [
+            {
+                "name": name,
+                "kind": kind,
+                "owner": owner,
+                "persistence": persistence,
+                "options": options,
+                "view_definition": view_definition,
+                "partition_key": partition_key,
+                "partition_bound": partition_bound,
+                "sequence_type": sequence_type,
+                "sequence_start": sequence_start,
+                "sequence_increment": sequence_increment,
+                "sequence_max": sequence_max,
+                "sequence_min": sequence_min,
+                "sequence_cache": sequence_cache,
+                "sequence_cycle": sequence_cycle,
+                "foreign_server": foreign_server,
+                "foreign_options": foreign_options,
+            }
+            for (
+                name,
+                kind,
+                owner,
+                persistence,
+                options,
+                view_definition,
+                partition_key,
+                partition_bound,
+                sequence_type,
+                sequence_start,
+                sequence_increment,
+                sequence_max,
+                sequence_min,
+                sequence_cache,
+                sequence_cycle,
+                foreign_server,
+                foreign_options,
+            ) in relations
+        ],
         "columns": [
             {
                 "table": table,
@@ -313,27 +509,253 @@ def _compute_schema_fingerprint(conn: psycopg.Connection) -> str:
                 "nullable": nullable,
                 "default": default,
                 "position": position,
+                "udt_schema": udt_schema,
+                "udt_name": udt_name,
+                "identity": identity,
+                "identity_generation": identity_generation,
+                "generated": generated,
+                "generation_expression": generation_expression,
             }
-            for table, column, data_type, nullable, default, position in columns
+            for (
+                table,
+                column,
+                data_type,
+                nullable,
+                default,
+                position,
+                udt_schema,
+                udt_name,
+                identity,
+                identity_generation,
+                generated,
+                generation_expression,
+            ) in columns
         ],
         "constraints": [
             {
                 "table": table,
-                "type": ctype,
+                "domain": domain,
                 "name": name,
-                "check": check_clause,
-                "delete_rule": delete_rule,
-                "update_rule": update_rule,
+                "type": constraint_type,
+                "deferrable": deferrable,
+                "deferred": deferred,
+                "validated": validated,
+                "definition": definition,
             }
-            for table, ctype, name, check_clause, delete_rule, update_rule in constraints
+            for (
+                table,
+                domain,
+                name,
+                constraint_type,
+                deferrable,
+                deferred,
+                validated,
+                definition,
+            ) in constraints
         ],
         "indexes": [
             {"table": table, "name": name, "def": indexdef}
             for table, name, indexdef in indexes
         ],
+        "functions": [
+            {
+                "name": name,
+                "arguments": arguments,
+                "result": result,
+                "kind": kind,
+                "volatility": volatility,
+                "parallel": parallel,
+                "security_definer": security_definer,
+                "leakproof": leakproof,
+                "definition": definition,
+            }
+            for (
+                name,
+                arguments,
+                result,
+                kind,
+                volatility,
+                parallel,
+                security_definer,
+                leakproof,
+                definition,
+            ) in functions
+        ],
+        "types": [
+            {
+                "name": name,
+                "kind": kind,
+                "category": category,
+                "preferred": preferred,
+                "base_type": base_type,
+                "not_null": not_null,
+                "default": default,
+                "collation_schema": collation_schema,
+                "collation_name": collation_name,
+                "enum_values": enum_values,
+                "attributes": attributes,
+                "range_subtype": range_subtype,
+                "range_operator_schema": range_operator_schema,
+                "range_operator_class": range_operator_class,
+                "range_canonical": range_canonical,
+                "range_subdiff": range_subdiff,
+            }
+            for (
+                name,
+                kind,
+                category,
+                preferred,
+                base_type,
+                not_null,
+                default,
+                collation_schema,
+                collation_name,
+                enum_values,
+                attributes,
+                range_subtype,
+                range_operator_schema,
+                range_operator_class,
+                range_canonical,
+                range_subdiff,
+            ) in types
+        ],
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _query_privilege(
+    conn: psycopg.Connection,
+    query: str,
+    params: tuple[str, ...],
+) -> bool:
+    row = conn.execute(query, params).fetchone()
+    if row is None:
+        raise PostgresSchemaError("PostgreSQL privilege query returned no result")
+    return bool(row[0])
+
+
+def _validate_role_contract(conn: psycopg.Connection) -> None:
+    role_rows = conn.execute(
+        """
+        SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+               rolreplication, rolbypassrls
+        FROM pg_roles
+        WHERE rolname IN (%s, %s)
+        ORDER BY rolname
+        """,
+        (MIGRATOR_ROLE, RUNTIME_ROLE),
+    ).fetchall()
+    roles = {str(row[0]): row for row in role_rows}
+    missing_roles = {MIGRATOR_ROLE, RUNTIME_ROLE} - set(roles)
+    if missing_roles:
+        raise PostgresSchemaError(
+            f"missing PostgreSQL privilege roles: {sorted(missing_roles)}"
+        )
+    for role_name, row in roles.items():
+        if any(bool(value) for value in row[1:]):
+            raise PostgresSchemaError(
+                f"role {role_name} must be NOLOGIN without elevated attributes"
+            )
+
+    inherited_roles = conn.execute(
+        """
+        SELECT member_role.rolname, granted_role.rolname
+        FROM pg_auth_members membership
+        JOIN pg_roles member_role ON member_role.oid = membership.member
+        JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+        WHERE member_role.rolname IN (%s, %s)
+        ORDER BY member_role.rolname, granted_role.rolname
+        """,
+        (MIGRATOR_ROLE, RUNTIME_ROLE),
+    ).fetchall()
+    if inherited_roles:
+        raise PostgresSchemaError(
+            "qmtool privilege roles must not inherit other roles: "
+            f"{[(str(member), str(granted)) for member, granted in inherited_roles]}"
+        )
+
+    membership = conn.execute(
+        """
+        SELECT pg_has_role(%s, %s, 'MEMBER'),
+               pg_has_role(%s, %s, 'SET')
+        """,
+        (RUNTIME_ROLE, MIGRATOR_ROLE, RUNTIME_ROLE, MIGRATOR_ROLE),
+    ).fetchone()
+    if membership is None or bool(membership[0]) or bool(membership[1]):
+        raise PostgresSchemaError(
+            "qmtool_runtime must not inherit or SET ROLE to qmtool_migrator"
+        )
+
+    runtime_has_usage = _query_privilege(
+        conn,
+        "SELECT has_schema_privilege(%s, %s, %s)",
+        (RUNTIME_ROLE, SCHEMA_NAME, "USAGE"),
+    )
+    runtime_has_create = _query_privilege(
+        conn,
+        "SELECT has_schema_privilege(%s, %s, %s)",
+        (RUNTIME_ROLE, SCHEMA_NAME, "CREATE"),
+    )
+    if not runtime_has_usage or runtime_has_create:
+        raise PostgresSchemaError(
+            "qmtool_runtime must have schema USAGE and must not have schema CREATE"
+        )
+
+    public_schema_access = _query_privilege(
+        conn,
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_namespace ns
+            CROSS JOIN LATERAL aclexplode(
+                COALESCE(ns.nspacl, acldefault('n', ns.nspowner))
+            ) acl
+            WHERE ns.nspname = %s
+              AND acl.grantee = 0
+              AND acl.privilege_type IN ('USAGE', 'CREATE')
+        )
+        """,
+        (SCHEMA_NAME,),
+    )
+    if public_schema_access:
+        raise PostgresSchemaError(
+            "PUBLIC must not have USAGE or CREATE on schema usermanagement"
+        )
+
+    required_dml = ("SELECT", "INSERT", "UPDATE", "DELETE")
+    forbidden_table_privileges = ("TRUNCATE", "REFERENCES", "TRIGGER")
+    for table in ("users", "sessions"):
+        qualified = f"{SCHEMA_NAME}.{table}"
+        for privilege in required_dml:
+            if not _query_privilege(
+                conn,
+                "SELECT has_table_privilege(%s, %s, %s)",
+                (RUNTIME_ROLE, qualified, privilege),
+            ):
+                raise PostgresSchemaError(
+                    f"qmtool_runtime missing {privilege} on {qualified}"
+                )
+        for privilege in forbidden_table_privileges:
+            if _query_privilege(
+                conn,
+                "SELECT has_table_privilege(%s, %s, %s)",
+                (RUNTIME_ROLE, qualified, privilege),
+            ):
+                raise PostgresSchemaError(
+                    f"qmtool_runtime must not have {privilege} on {qualified}"
+                )
+
+    history = f"{SCHEMA_NAME}.{MIGRATIONS_TABLE}"
+    for privilege in required_dml + forbidden_table_privileges:
+        if _query_privilege(
+            conn,
+            "SELECT has_table_privilege(%s, %s, %s)",
+            (RUNTIME_ROLE, history, privilege),
+        ):
+            raise PostgresSchemaError(
+                f"qmtool_runtime must not have {privilege} on {history}"
+            )
 
 
 def _validate_schema_contracts(conn: psycopg.Connection) -> None:
@@ -412,6 +834,7 @@ def _validate_schema_contracts(conn: psycopg.Connection) -> None:
                 f"table {table} owner is {None if owner is None else owner[0]!r}, "
                 f"expected {MIGRATOR_ROLE}"
             )
+    _validate_role_contract(conn)
 
 
 def _activate_migrator_role(conn: psycopg.Connection) -> None:
