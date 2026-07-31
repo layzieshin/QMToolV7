@@ -34,12 +34,15 @@ PG-SQL und Provisioning sind dennoch im Produktionsbundle enthalten.
 
 - Keine Passwörter und keine LOGIN-Attribute in `provision_roles.sql`
 - Keine Superuser-/CreateDB-/CreateRole-/Replication-/BypassRLS-Rechte
+- Beide Rechterollen erben keine andere Rolle; `qmtool_runtime` ist insbesondere weder direkt noch transitiv Mitglied von `qmtool_migrator` und kann nicht per `SET ROLE` dorthin wechseln
 - Provisioning bricht bei befülltem Schema oder ungeeigneten bestehenden Rollen ab
 - Applicator: `SET ROLE qmtool_migrator` + Verifikation von `current_user`
+- Der Applicator prüft Rollenattribute, Mitgliedschaften, Owner und jede erlaubte beziehungsweise verbotene Privilegienart bei jedem Lauf erneut
 - Tabellen `users`, `sessions`, `_qm_schema_migrations` gehören dauerhaft `qmtool_migrator`
 - Runtime: explizite `SELECT/INSERT/UPDATE/DELETE` nur auf `users` und `sessions`
 - Kein `CREATE`, kein DDL, keine Rechte auf der Migrationstabelle, kein Wechsel auf die Migrator-Rolle
 - Keine pauschalen `ALTER DEFAULT PRIVILEGES` für zukünftige Tabellen
+- M4 muss zusätzlich die deployment-spezifische Runtime-LOGIN-Rolle prüfen; sie wird außerhalb von M3 provisioniert
 
 ## Schema-Festlegungen (0001)
 
@@ -58,8 +61,8 @@ PG-SQL und Provisioning sind dennoch im Produktionsbundle enthalten.
 1. Versionsnummern lückenlos und eindeutig ab 1; Namen eindeutig
 2. Historie ist exakter Präfix der registrierten Kette (Version, Name, Checksumme)
 3. SHA-256-Checksummen unveränderbar; unbekannte/neuere/umbenannte Schritte → Abbruch
-4. Schema ohne Historie nur als leeres, korrekt provisioniertes Bootstrap-Schema zulässig
-5. Deterministischer Schema-Fingerprint (Tabellen, Spalten, Typen, Nullability, Defaults, Constraints, FKs, Indizes)
+4. Schema ohne Historie nur als wirklich leeres, korrekt provisioniertes Bootstrap-Schema zulässig; auch Views, materialisierte Views, Sequenzen, Funktionen und benutzerdefinierte Typen zählen als befüllt
+5. Deterministischer Schema-Fingerprint mit vollständigen Constraint-Definitionen sowie stabilen, OID-freien Beschreibungen von Relationen, Funktionen und benutzerdefinierten Typen
 6. Fingerprint wird mit jeder Migration gespeichert und vor dem nächsten Lauf geprüft
 7. Verbindung mit `autocommit=True`; sessionweiter `pg_try_advisory_lock` (kein unbegrenztes Warten)
 8. Jede Migration in genau einem `conn.transaction()`: Script + Vertragsprüfung + Fingerprint + History-Insert
@@ -70,9 +73,12 @@ PG-SQL und Provisioning sind dennoch im Produktionsbundle enthalten.
 ## Tests und CI
 
 - Statisch ohne PG: Kette, SQL-Verträge, Secrets-Verbot, Gate-Discovery, Bundle-Collect
+- Das Git-Gate schlägt bei ungültiger Basis, Listing-Fehlern sowie gelöschten oder mutierten Basismigrationen fail-closed fehl; nur höhere neue Versionen dürfen angehängt werden
 - Live (`@pytest.mark.postgres`): echtes Provisioning, Login-Rollen nur für CI, Migrator-Pfad
 - Skip nur ohne `QMTOOL_PG_DSN`; mit `QMTOOL_PG_REQUIRED=1` ist Skip ein Fehler
-- CI-Job `postgres-usermanagement`: `fetch-depth: 0`, Gate gegen PR-Base, Timeout, Postgres 16
+- Windows-Matrix und CI-Job `postgres-usermanagement` führen statische Schema- und Git-Gate-Tests aus; der PG-Job ergänzt die Live-Tests gegen Postgres 16
+
+M3.1 ändert den Fingerprint-Algorithmus einmalig vor dem Produktivbetrieb. Vorhandene Entwicklungs-PG-Datenbanken werden deshalb bewusst neu aufgebaut und nicht heuristisch übernommen.
 
 ## Nicht-Ziele (M3)
 

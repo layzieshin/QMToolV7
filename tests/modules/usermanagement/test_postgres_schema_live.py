@@ -396,3 +396,103 @@ def test_migrator_can_apply_followup_migration(env: tuple[str, str, str], tmp_pa
             """
         ).fetchone()
         assert row is not None and int(row[0]) == 1
+
+
+def test_poisoned_runtime_membership_blocks_provision_and_migrate(
+    env: tuple[str, str, str],
+) -> None:
+    admin_dsn, migrator_dsn, _runtime_dsn = env
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute("GRANT qmtool_migrator TO qmtool_runtime")
+    try:
+        with pytest.raises(Exception, match="must not inherit|must not SET ROLE"):
+            pgs.provision_usermanagement_roles(admin_dsn)
+        with pytest.raises(pgs.PostgresSchemaError, match="must not inherit|must not SET ROLE"):
+            pgs.migrate_usermanagement_schema(migrator_dsn)
+        with psycopg.connect(admin_dsn) as admin:
+            tables = admin.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = 'usermanagement'
+                """
+            ).fetchone()
+            assert tables is not None and int(tables[0]) == 0
+    finally:
+        with psycopg.connect(admin_dsn, autocommit=True) as admin:
+            admin.execute("REVOKE qmtool_migrator FROM qmtool_runtime")
+
+
+def test_runtime_acl_drift_is_rejected(env: tuple[str, str, str]) -> None:
+    admin_dsn, migrator_dsn, _runtime_dsn = env
+    pgs.migrate_usermanagement_schema(migrator_dsn)
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute("GRANT CREATE ON SCHEMA usermanagement TO qmtool_runtime")
+    try:
+        with pytest.raises(pgs.PostgresSchemaError, match="schema USAGE|schema CREATE"):
+            pgs.migrate_usermanagement_schema(migrator_dsn)
+    finally:
+        with psycopg.connect(admin_dsn, autocommit=True) as admin:
+            admin.execute("REVOKE CREATE ON SCHEMA usermanagement FROM qmtool_runtime")
+
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute(
+            "GRANT SELECT ON usermanagement._qm_schema_migrations TO qmtool_runtime"
+        )
+    try:
+        with pytest.raises(pgs.PostgresSchemaError, match="must not have SELECT"):
+            pgs.migrate_usermanagement_schema(migrator_dsn)
+    finally:
+        with psycopg.connect(admin_dsn, autocommit=True) as admin:
+            admin.execute(
+                "REVOKE SELECT ON usermanagement._qm_schema_migrations FROM qmtool_runtime"
+            )
+
+
+def test_fk_definition_drift_is_rejected(env: tuple[str, str, str]) -> None:
+    _admin_dsn, migrator_dsn, _runtime_dsn = env
+    pgs.migrate_usermanagement_schema(migrator_dsn)
+    with psycopg.connect(migrator_dsn) as conn:
+        conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
+        conn.execute(
+            "ALTER TABLE usermanagement.sessions DROP CONSTRAINT sessions_user_id_fkey"
+        )
+        conn.execute(
+            """
+            ALTER TABLE usermanagement.sessions
+            ADD CONSTRAINT sessions_user_id_fkey
+            FOREIGN KEY (session_id) REFERENCES usermanagement.users (user_id)
+            ON DELETE RESTRICT
+            """
+        )
+        conn.commit()
+
+    with pytest.raises(pgs.PostgresSchemaError, match="fingerprint"):
+        pgs.migrate_usermanagement_schema(migrator_dsn)
+
+
+@pytest.mark.parametrize(
+    "ddl",
+    (
+        "CREATE VIEW usermanagement.orphan_view AS SELECT 1 AS value",
+        "CREATE MATERIALIZED VIEW usermanagement.orphan_materialized AS SELECT 1 AS value",
+        "CREATE SEQUENCE usermanagement.orphan_sequence",
+        """
+        CREATE FUNCTION usermanagement.orphan_function() RETURNS integer
+        LANGUAGE sql AS $$ SELECT 1 $$
+        """,
+        "CREATE TYPE usermanagement.orphan_type AS ENUM ('value')",
+    ),
+)
+def test_unversioned_non_table_objects_are_refused(
+    env: tuple[str, str, str],
+    ddl: str,
+) -> None:
+    admin_dsn, migrator_dsn, _runtime_dsn = env
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
+        admin.execute(ddl)
+        admin.execute("RESET ROLE")
+
+    with pytest.raises(pgs.PostgresSchemaError, match="populated unversioned"):
+        pgs.migrate_usermanagement_schema(migrator_dsn)

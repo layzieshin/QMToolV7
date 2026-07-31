@@ -319,8 +319,9 @@ Milestone 2 integriert in `main`; AP-027-Policy verstanden (`docs/DATABASE_EVOLU
 - `provision_roles.sql` **vor** `0001_initial` (NOLOGIN-Rollen, leeres Schema, kein Secret)
 - Migrationen unter `modules/usermanagement/postgres/migrations/`
 - History mit `schema_fingerprint`; Applicator mit `SET ROLE qmtool_migrator`
-- `scripts/postgres_migration_gate.py` (append-only, immutable, Bundle)
+- `scripts/postgres_migration_gate.py` (fail-closed Basisprüfung, append-only, immutable, Bundle)
 - Bundle: PG-SQL + `psycopg`/`psycopg_binary`; CI-Job mit echtem Provisioning
+- M3.1-Härtung vor M4: vollständiger Rollen-/ACL-Vertrag und OID-freier Fingerprint aller relevanten Schemaobjekte
 
 **Nicht-Ziele**
 
@@ -347,11 +348,13 @@ Milestone 2 integriert in `main`; AP-027-Policy verstanden (`docs/DATABASE_EVOLU
 4. Keine Klartextpasswörter/Klartexttokens; Provisioning ohne Passwörter.
 5. Fail-closed: Historien-Präfix, Fingerprint-Drift, `pg_try_advisory_lock`, echte Migrationstransaktion.
 6. Runtime: DML auf `users`/`sessions`, kein DDL, keine History-Änderung.
+7. Gate: ungültige Basis-Refs, Listing-Fehler, gelöschte oder mutierte Basismigrationen und nicht angehängte Versionen blockieren.
+8. Rollenvertrag: keine gefährlichen Mitgliedschaften; Runtime-Rechte werden einzeln bei jedem Lauf validiert.
 
 **Tests**
 
-- Statisch ohne PG: Kette, SQL-Verträge, Secrets-Verbot, Gate-Discovery, Bundle-Collect
-- Live mit PG: echtes Provisioning, Fresh Install, No-Op, Constraints, Drift/Lock/Rollback, Runtime-Rechte
+- Statisch ohne PG: Kette, SQL-Verträge, Secrets-Verbot, Scratch-Git-Gate, Bundle-Collect
+- Live mit PG: echtes Provisioning, Fresh Install, No-Op, Constraints, Objekt-/Fingerprint-Drift, Lock/Rollback, Rollenmitgliedschaften und Runtime-Rechte
 - SQLite-Evolution-Gates und Onedir-Build unverändert bzw. erweitert grün
 
 **Test-Gate**
@@ -362,6 +365,7 @@ git diff --check
 .\.venv\Scripts\python.exe -m pytest tests/modules -q
 .\.venv\Scripts\python.exe -m pytest tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/platform/test_database_migration_gate.py tests/interfaces/test_architecture_gates.py -q
 .\.venv\Scripts\python.exe scripts/postgres_migration_gate.py --base-ref origin/main --output build/postgres-migration-gate-output.json
+.\.venv\Scripts\python.exe scripts/postgres_migration_gate.py --base-ref invalid-ref --output build/postgres-migration-gate-negative.json
 .\.venv\Scripts\python.exe scripts/database_migration_gate.py --output build/database-migration-gate-output.json
 .\.venv\Scripts\python.exe scripts/golive_gate.py --output build/golive-gate-output.json
 .\.venv\Scripts\python.exe packaging/build_onedir.py
@@ -371,7 +375,7 @@ Keine produktiven storage/-Dateien mutieren
 
 **Abnahmekriterien**
 
-- Schema versioniert; Tabellen-Owner = `qmtool_migrator`; Runtime ohne DDL
+- Schema versioniert; Tabellen-Owner = `qmtool_migrator`; Runtime ohne DDL, History-Rechte oder Migrator-Mitgliedschaft
 - Foundation-Invarianten nicht gebrochen
 - PG-Live-Tests und Bundle-Prüfung in CI nicht übersprungen
 - Kein produktiver PG-Cutover vor M8
@@ -387,7 +391,7 @@ Keine produktiven storage/-Dateien mutieren
 
 **Übergabe**
 
-Versioniertes PG-Schema → Milestone 4.
+Versioniertes und durch M3.1 gehärtetes PG-Schema → Milestone 4.
 
 ---
 
@@ -399,7 +403,7 @@ UserRepository und SessionRepository auf PostgreSQL; Transaktionen, Fehlerbehand
 
 **Voraussetzungen**
 
-Milestone 3.
+Milestone 3 einschließlich M3.1 integriert. M4 prüft zusätzlich die deployment-spezifische Runtime-LOGIN-Rolle, die außerhalb von M3 provisioniert wird.
 
 **Scope**
 
