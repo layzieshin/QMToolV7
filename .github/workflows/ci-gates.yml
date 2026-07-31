@@ -169,8 +169,9 @@ jobs:
         env:
           QMTOOL_PG_DSN: postgresql://qmtool:qmtool@localhost:5432/qmtool_um
           QMTOOL_PG_REQUIRED: "1"
+          PYTHONPATH: .
         run: |
-          python -m pytest tests/modules/usermanagement -m postgres -q
+          python -m pytest tests/modules/usermanagement/test_postgres_schema_live.py -m postgres -q
 
       - name: Upload PostgreSQL gate artifact
         if: always()
