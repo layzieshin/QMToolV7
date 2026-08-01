@@ -336,15 +336,24 @@ def _fetch_applied(conn: psycopg.Connection) -> tuple[AppliedMigration, ...]:
         ORDER BY version
         """
     ).fetchall()
-    return tuple(
-        AppliedMigration(
-            version=int(version),
-            name=str(name),
-            checksum=str(checksum),
-            schema_fingerprint=str(fingerprint),
+    applied: list[AppliedMigration] = []
+    for row in rows:
+        if isinstance(row, dict):
+            version = row["version"]
+            name = row["name"]
+            checksum = row["checksum"]
+            fingerprint = row["schema_fingerprint"]
+        else:
+            version, name, checksum, fingerprint = row
+        applied.append(
+            AppliedMigration(
+                version=int(version),
+                name=str(name),
+                checksum=str(checksum),
+                schema_fingerprint=str(fingerprint),
+            )
         )
-        for version, name, checksum, fingerprint in rows
-    )
+    return tuple(applied)
 
 
 def _validate_history_prefix(
@@ -946,26 +955,30 @@ def migrate_usermanagement_schema(
 def assert_runtime_schema_ready(dsn: str, *, migrations_dir: Path | None = None) -> int:
     """Fail-closed readiness check for the runtime LOGIN (no migration apply).
 
-    Requires SELECT on the history table (migration 0002+) and that the highest
-    applied version equals the registered migration target.
+    Validates full history prefix (version/name/checksum), that the applied
+    tip matches the registered target, schema fingerprint equality, and table
+    / privilege contracts. Requires SELECT on the history table (migration 0002+).
     """
-    from .postgres_connection import runtime_connection
+    from .postgres_connection import runtime_connection_for_schema
 
     steps = discover_migrations(migrations_dir)
     target = steps[-1].version
-    with runtime_connection(dsn) as conn:
+    with runtime_connection_for_schema(dsn) as conn:
         if not _history_table_exists(conn):
             raise PostgresSchemaError("usermanagement schema history is missing")
-        row = conn.execute(
-            f"""
-            SELECT COALESCE(MAX(version), 0)
-            FROM {SCHEMA_NAME}.{MIGRATIONS_TABLE}
-            """
-        ).fetchone()
-        applied = int(row[0]) if row is not None else 0
-        if applied != target:
+        applied = _fetch_applied(conn)
+        if not applied:
+            raise PostgresSchemaError("usermanagement schema history is empty")
+        _validate_history_prefix(applied, steps)
+        if applied[-1].version != target:
             raise PostgresSchemaError(
-                f"usermanagement schema not ready: applied version {applied}, "
-                f"expected {target}"
+                f"usermanagement schema not ready: applied version "
+                f"{applied[-1].version}, expected {target}"
             )
-        return applied
+        current_fp = _compute_schema_fingerprint(conn)
+        if current_fp != applied[-1].schema_fingerprint:
+            raise PostgresSchemaError(
+                "schema fingerprint drift detected against last applied migration"
+            )
+        _validate_schema_contracts(conn, require_history_select=True)
+        return target

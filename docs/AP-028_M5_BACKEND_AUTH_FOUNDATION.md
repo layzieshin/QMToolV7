@@ -77,9 +77,15 @@ Der Bootstrap prueft vor dem Annehmen von Auth-Anfragen mindestens:
 
 - DSN ist vollstaendig vorhanden
 - Runtime-LOGIN erfuellt den M4-Rollenvertrag
-- Schema ist erreichbar: Lesen der Usermanagement-History-Tabelle und Abgleich,
-  dass die angewandte Schema-Version dem registrierten Migrationsziel entspricht
+- Schema ist erreichbar: History-Praefix (Version/Name/Checksumme),
+  Zielversion, Schema-Fingerprint und Tabellen-/Privilegienvertraege
   (kein Migrations-Apply mit Runtime-Rechten)
+- `seed_mode=hardened` (kein automatisches `admin/admin`)
+- mindestens ein Benutzer vorhanden, sonst einmaliger Bootstrap nur ueber
+  `QMTOOL_BOOTSTRAP_ADMIN_USERNAME` / `QMTOOL_BOOTSTRAP_ADMIN_PASSWORD`
+  (niemals `admin`/`admin`)
+- `QMTOOL_LICENSE_MODE` ist explizit gesetzt; ungueltige Nicht-Dev-Lizenzen
+  brechen den Start ab
 
 Der Backend-Host verwendet weiterhin `create_app(...)` als App-Factory. Tests
 koennen einen vorbereiteten Container injizieren; der Healthcheck bleibt ohne
@@ -238,6 +244,7 @@ und kein paralleler Usermanagement-Service entstehen.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/backend/test_auth_api.py -q
+.\.venv\Scripts\python.exe -m pytest tests/backend/test_auth_api_postgres_live.py -m postgres -q
 .\.venv\Scripts\python.exe -m pytest tests/interfaces/test_architecture_gates.py -q
 .\.venv\Scripts\python.exe -m pytest tests/modules/usermanagement -q
 .\.venv\Scripts\python.exe -m pytest tests/modules -q

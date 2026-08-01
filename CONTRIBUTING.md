@@ -31,6 +31,9 @@ Entry points (run from the project root):
 
 - Vorlage: [`.env.example`](.env.example) → lokale `.env` (gitignored) mit `QMTOOL_PG_PASSWORD`.
 - Host `192.168.0.4`, Port `5432`, DB `qmtool_test`, User `qmtool`.
+- Backend zusätzlich: `QMTOOL_LICENSE_MODE=dev` und bei leerer User-Tabelle
+  `QMTOOL_BOOTSTRAP_ADMIN_USERNAME` / `QMTOOL_BOOTSTRAP_ADMIN_PASSWORD`
+  (nicht `admin`/`admin`).
 - Details: [`docs/AP-028_M3_POSTGRES_SCHEMA.md`](docs/AP-028_M3_POSTGRES_SCHEMA.md) (Abschnitt „Lokaler Lab-Testserver“).
 
 ## Documentation map ("I want X -> read Y")

@@ -30,12 +30,22 @@ def _validate_runtime_identity(conn: psycopg.Connection) -> None:
     if row is None:
         raise PostgresRepositoryError("could not validate PostgreSQL runtime identity")
 
-    current_user = row["current_user"]
-    session_user = row["session_user"]
-    runtime_member = row["runtime_member"]
-    runtime_set = row["runtime_set"]
-    migrator_member = row["migrator_member"]
-    migrator_set = row["migrator_set"]
+    if isinstance(row, dict):
+        current_user = row["current_user"]
+        session_user = row["session_user"]
+        runtime_member = row["runtime_member"]
+        runtime_set = row["runtime_set"]
+        migrator_member = row["migrator_member"]
+        migrator_set = row["migrator_set"]
+    else:
+        (
+            current_user,
+            session_user,
+            runtime_member,
+            runtime_set,
+            migrator_member,
+            migrator_set,
+        ) = row
     if (
         current_user != session_user
         or not bool(runtime_member)
@@ -55,5 +65,15 @@ def runtime_connection(dsn: str) -> Iterator[psycopg.Connection]:
     if not str(dsn).strip():
         raise ValueError("PostgreSQL DSN is required")
     with psycopg.connect(str(dsn), row_factory=dict_row) as conn:
+        _validate_runtime_identity(conn)
+        yield conn
+
+
+@contextmanager
+def runtime_connection_for_schema(dsn: str) -> Iterator[psycopg.Connection]:
+    """Runtime LOGIN with default tuple rows for schema/history introspection."""
+    if not str(dsn).strip():
+        raise ValueError("PostgreSQL DSN is required")
+    with psycopg.connect(str(dsn)) as conn:
         _validate_runtime_identity(conn)
         yield conn

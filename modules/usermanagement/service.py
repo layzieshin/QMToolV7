@@ -185,6 +185,22 @@ class UserManagementService:
     def ensure_admin_credentials(self, username: str, password: str, role: str = "Admin") -> AuthenticatedUser:
         return self._admin_ops.ensure_admin_credentials(username, password, role)
 
+    def bootstrap_first_admin(self, username: str, password: str) -> AuthenticatedUser | None:
+        """Create the first Admin with must_change_password when no users exist.
+
+        Returns ``None`` when users already exist (idempotent no-op for operators).
+        """
+        if self.list_users():
+            return None
+        if self.repository is None:
+            raise RuntimeError("user repository is not configured")
+        return self.repository.ensure_initial_admin(
+            username,
+            password,
+            role="Admin",
+            must_change_password=True,
+        )
+
     # -- Legacy private methods kept for backward compat ---------------------
 
     def _save_session_user(self, user: AuthenticatedUser) -> None:

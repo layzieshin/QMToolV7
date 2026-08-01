@@ -181,8 +181,14 @@ def _ensure_dev_license(license_file: Path, keyring: PublicKeyring) -> None:
     license_file.write_text(json.dumps(signed, indent=2, ensure_ascii=True), encoding="utf-8")
 
 
-def build_platform_ports() -> RuntimeContainer:
-    """Register platform ports shared by the backend host (no modules yet)."""
+def build_platform_ports(*, fail_closed_license: bool = False) -> RuntimeContainer:
+    """Register platform ports shared by the backend host (no modules yet).
+
+    When ``fail_closed_license`` is true (backend host):
+    - ``QMTOOL_LICENSE_MODE`` is required (no implicit ``dev`` default)
+    - ``dev``/``auto`` still allow generating a local development license
+    - any other mode validates the license and aborts on failure
+    """
     container = RuntimeContainer()
     app_home = runtime_home()
     resources = resource_root()
@@ -196,7 +202,17 @@ def build_platform_ports() -> RuntimeContainer:
 
     keyring = PublicKeyring()
     license_file = resolve_home_path(app_home, "license/license.json")
-    license_mode = os.environ.get("QMTOOL_LICENSE_MODE", "dev").strip().lower()
+    raw_mode = os.environ.get("QMTOOL_LICENSE_MODE")
+    if fail_closed_license:
+        if raw_mode is None or not str(raw_mode).strip():
+            raise BackendBootstrapError(
+                "QMTOOL_LICENSE_MODE is required for the backend host "
+                "(set to 'dev' or 'auto' only for explicit local development)"
+            )
+        license_mode = str(raw_mode).strip().lower()
+    else:
+        license_mode = (raw_mode or "dev").strip().lower()
+
     if license_mode in ("dev", "auto"):
         _ensure_dev_license(license_file, keyring)
     _register_public_keys(keyring, license_mode=license_mode, app_home=app_home, resources=resources)
@@ -216,6 +232,8 @@ def build_platform_ports() -> RuntimeContainer:
             LicenseTypeError,
             LicenseMachineMismatchError,
         ) as exc:
+            if fail_closed_license:
+                raise BackendBootstrapError(f"backend license validation failed: {exc}") from exc
             logger.warning("platform", f"license not valid at startup (app continues): {exc}")
     license_guard = LicenseGuard(license_service)
 
@@ -233,7 +251,7 @@ def build_platform_ports() -> RuntimeContainer:
 def build_backend_container() -> RuntimeContainer:
     """Full backend composition: platform ports + Usermanagement over PostgreSQL."""
     dsn = resolve_usermanagement_postgres_dsn()
-    container = build_platform_ports()
+    container = build_platform_ports(fail_closed_license=True)
     container.register_port("usermanagement_postgres_dsn", dsn)
     wire_backend_usermanagement(container)
     return container

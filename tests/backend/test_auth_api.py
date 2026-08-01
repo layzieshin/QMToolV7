@@ -159,3 +159,18 @@ def test_dsn_resolution_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("src.backend.bootstrap._load_dotenv", lambda path=None: None)
     with pytest.raises(BackendBootstrapError, match="no SQLite fallback"):
         resolve_usermanagement_postgres_dsn()
+
+
+def test_backend_license_mode_defaults_are_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.backend.bootstrap import build_platform_ports
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.delenv("QMTOOL_LICENSE_MODE", raising=False)
+    with pytest.raises(BackendBootstrapError, match="QMTOOL_LICENSE_MODE"):
+        build_platform_ports(fail_closed_license=True)
+
+    monkeypatch.setenv("QMTOOL_LICENSE_MODE", "dev")
+    container = build_platform_ports(fail_closed_license=True)
+    assert container.has_port("license_service")
