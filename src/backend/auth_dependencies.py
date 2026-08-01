@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from modules.usermanagement import api as um_api
 from modules.usermanagement.api import (
+    AuditUnavailableError,
     ExpiredSessionError,
     InactiveUserError,
     InvalidSessionError,
@@ -33,6 +34,7 @@ _MAPPED_ERRORS = (
     um_api.UserExistsError,
     um_api.LastActiveAdminError,
     um_api.InvalidUserUpdateError,
+    AuditUnavailableError,
     InvalidSessionError,
     SessionNotFoundError,
     ExpiredSessionError,
@@ -70,6 +72,11 @@ def _unauthorized(message: str = "unauthorized") -> HTTPException:
 
 def map_auth_error(exc: Exception) -> HTTPException:
     """Map usermanagement auth/session/admin errors to stable HTTP errors."""
+    if isinstance(exc, AuditUnavailableError):
+        return HTTPException(
+            status_code=503,
+            detail={"error": "unavailable", "message": "audit evidence unavailable"},
+        )
     if isinstance(exc, PasswordChangeRequiredError):
         return HTTPException(
             status_code=409,

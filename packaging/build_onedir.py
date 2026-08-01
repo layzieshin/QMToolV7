@@ -47,6 +47,10 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
         "modules/usermanagement/postgres/migrations",
     ),
     (
+        "modules/usermanagement/postgres/migrations/0003_audit_evidence.sql",
+        "modules/usermanagement/postgres/migrations",
+    ),
+    (
         "modules/usermanagement/postgres/provision_roles.sql",
         "modules/usermanagement/postgres",
     ),

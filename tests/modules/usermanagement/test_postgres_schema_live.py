@@ -92,9 +92,9 @@ def test_provision_is_idempotent(env: tuple[str, str, str]) -> None:
 def test_fresh_install_owners_history_fingerprint_and_noop(env: tuple[str, str, str]) -> None:
     _admin_dsn, migrator_dsn, _runtime_dsn = env
     version = pgs.migrate_usermanagement_schema(migrator_dsn)
-    assert version == 2
+    assert version == 3
     again = pgs.migrate_usermanagement_schema(migrator_dsn)
-    assert again == 2
+    assert again == 3
     with psycopg.connect(migrator_dsn) as conn:
         conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
         rows = conn.execute(
@@ -104,14 +104,16 @@ def test_fresh_install_owners_history_fingerprint_and_noop(env: tuple[str, str, 
             ORDER BY version
             """
         ).fetchall()
-        assert len(rows) == 2
+        assert len(rows) == 3
         assert int(rows[0][0]) == 1
         assert rows[0][1] == "initial"
         assert int(rows[1][0]) == 2
         assert rows[1][1] == "grant_history_select"
+        assert int(rows[2][0]) == 3
+        assert rows[2][1] == "audit_evidence"
         assert len(rows[0][2]) == 64
         assert len(rows[0][3]) == 64
-        for table in ("users", "sessions", "_qm_schema_migrations"):
+        for table in ("users", "sessions", "audit_events", "_qm_schema_migrations"):
             owner = conn.execute(
                 "SELECT tableowner FROM pg_tables WHERE schemaname=%s AND tablename=%s",
                 ("usermanagement", table),
@@ -154,6 +156,39 @@ def test_runtime_dml_allowed_ddl_and_history_denied(env: tuple[str, str, str]) -
         runtime.rollback()
         with pytest.raises(Exception):
             runtime.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
+        runtime.rollback()
+        audit_id = str(uuid.uuid4())
+        runtime.execute(
+            """
+            INSERT INTO usermanagement.audit_events (
+                audit_id, event_type, occurred_at, result, source, client_type,
+                request_id, actor_kind
+            ) VALUES (
+                %s::uuid, 'auth.login.denied', now(), 'denied', 'backend', 'backend',
+                'schema-privilege-test', 'anonymous'
+            )
+            """,
+            (audit_id,),
+        )
+        runtime.commit()
+        with pytest.raises(Exception):
+            runtime.execute("SELECT audit_id FROM usermanagement.audit_events LIMIT 1")
+            runtime.commit()
+        runtime.rollback()
+        with pytest.raises(Exception):
+            runtime.execute(
+                "UPDATE usermanagement.audit_events SET result = 'failed' WHERE audit_id = %s::uuid",
+                (audit_id,),
+            )
+            runtime.commit()
+        runtime.rollback()
+        with pytest.raises(Exception):
+            runtime.execute(
+                "DELETE FROM usermanagement.audit_events WHERE audit_id = %s::uuid",
+                (audit_id,),
+            )
+            runtime.commit()
+        runtime.rollback()
 
 
 def test_constraints_username_session_time_token_active_fk(env: tuple[str, str, str]) -> None:
@@ -318,12 +353,16 @@ def test_failed_migration_rolls_back_completely(env: tuple[str, str, str], tmp_p
     pgs.migrate_usermanagement_schema(migrator_dsn)
     steps_dir = tmp_path / "migrations"
     steps_dir.mkdir()
-    for name in ("0001_initial.sql", "0002_grant_history_select.sql"):
+    for name in (
+        "0001_initial.sql",
+        "0002_grant_history_select.sql",
+        "0003_audit_evidence.sql",
+    ):
         (steps_dir / name).write_text(
             (pgs.MIGRATIONS_DIR / name).read_text(encoding="utf-8"),
             encoding="utf-8",
         )
-    (steps_dir / "0003_broken.sql").write_text(
+    (steps_dir / "0004_broken.sql").write_text(
         "CREATE TABLE usermanagement.partial_step (id int);\nSELECT 1/0;\n",
         encoding="utf-8",
     )
@@ -343,7 +382,7 @@ def test_failed_migration_rolls_back_completely(env: tuple[str, str, str], tmp_p
         count = conn.execute(
             "SELECT COUNT(*) FROM usermanagement._qm_schema_migrations"
         ).fetchone()
-        assert count is not None and int(count[0]) == 2
+        assert count is not None and int(count[0]) == 3
 
 
 def test_parallel_migration_lock_rejected(env: tuple[str, str, str]) -> None:
@@ -379,17 +418,21 @@ def test_migrator_can_apply_followup_migration(env: tuple[str, str, str], tmp_pa
     pgs.migrate_usermanagement_schema(migrator_dsn)
     steps_dir = tmp_path / "migrations"
     steps_dir.mkdir()
-    for name in ("0001_initial.sql", "0002_grant_history_select.sql"):
+    for name in (
+        "0001_initial.sql",
+        "0002_grant_history_select.sql",
+        "0003_audit_evidence.sql",
+    ):
         (steps_dir / name).write_text(
             (pgs.MIGRATIONS_DIR / name).read_text(encoding="utf-8"),
             encoding="utf-8",
         )
-    (steps_dir / "0003_add_note.sql").write_text(
+    (steps_dir / "0004_add_note.sql").write_text(
         "ALTER TABLE usermanagement.users ADD COLUMN m3_note text NULL;\n",
         encoding="utf-8",
     )
     version = pgs.migrate_usermanagement_schema(migrator_dsn, migrations_dir=steps_dir)
-    assert version == 3
+    assert version == 4
     with psycopg.connect(migrator_dsn) as conn:
         conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
         row = conn.execute(

@@ -7,7 +7,9 @@ External callers (CLI, GUI, backend, tests) MUST import only from this file.
 Forbidden from outside: service.py, sqlite_repository.py,
 password_crypto.py, password_policy.py, repository.py, session_store.py, auth_ops.py,
 user_admin_ops.py, wiring.py, session_ops.py, session_repository.py,
-memory_session_repository.py, session_token.py, postgres_schema.py
+memory_session_repository.py, session_token.py, postgres_schema.py,
+postgres_audit_repository.py, postgres_user_repository.py, postgres_session_repository.py,
+postgres_connection.py
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from .contracts import (
     UserContext,
 )
 from .errors import (
+    AuditUnavailableError,
     AuthenticationError,
     AuthorizationError,
     ExpiredSessionError,
@@ -58,14 +61,15 @@ __all__ = [
     "UserExistsError",
     "LastActiveAdminError",
     "InvalidUserUpdateError",
+    "AuditUnavailableError",
     "get_usermanagement_service",
     "bootstrap_admin",
     "self_register",
     "bootstrap_first_admin",
     "authenticate_user",
-    "create_backend_session",
+    "login_backend",
+    "logout_backend",
     "resolve_session",
-    "revoke_session",
     "revoke_all_own_sessions",
     "change_own_password",
     "create_user_as_admin",
@@ -134,10 +138,16 @@ def authenticate_user(container, username: str, password: str) -> AuthenticatedU
     return user
 
 
-def create_backend_session(container, user: AuthenticatedUser) -> IssuedSession:
-    """Issue an opaque backend session for an already authenticated user."""
+def login_backend(container, username: str, password: str, *, request_id: str) -> IssuedSession:
+    """Backend login: authenticate, issue opaque session, and write PG audit evidence."""
     svc = get_usermanagement_service(container)
-    return svc.create_session(user, client_type="backend")
+    return svc.login_backend(username, password, request_id=request_id)
+
+
+def logout_backend(container, *, raw_token: str, request_id: str) -> None:
+    """Backend logout: revoke presented session and write PG audit on first revoke."""
+    svc = get_usermanagement_service(container)
+    svc.logout_backend(raw_token=raw_token, request_id=request_id)
 
 
 def resolve_session(
@@ -154,12 +164,6 @@ def resolve_session(
         request_id=request_id,
         password_change_allowed=password_change_allowed,
     )
-
-
-def revoke_session(container, *, raw_token: str) -> SessionRecord:
-    """Revoke the session identified by the presented opaque token (idempotent)."""
-    svc = get_usermanagement_service(container)
-    return svc.revoke_session(raw_token=raw_token)
 
 
 def revoke_all_own_sessions(container, context: UserContext) -> list[SessionRecord]:

@@ -31,6 +31,7 @@ PROVISION_ROLES_PATH = POSTGRES_ROOT / "provision_roles.sql"
 _MIGRATION_NAME_RE = re.compile(r"^(\d{4})_([a-z0-9_]+)\.sql$")
 
 EXPECTED_TABLES = frozenset({"users", "sessions", MIGRATIONS_TABLE})
+EXPECTED_TABLES_WITH_AUDIT = EXPECTED_TABLES | frozenset({"audit_events"})
 EXPECTED_USERS_COLUMNS = frozenset(
     {
         "user_id",
@@ -65,6 +66,34 @@ EXPECTED_SESSIONS_COLUMNS = frozenset(
         "authentication_level",
     }
 )
+EXPECTED_AUDIT_EVENTS_COLUMNS = frozenset(
+    {
+        "audit_id",
+        "event_type",
+        "occurred_at",
+        "result",
+        "reason_code",
+        "source",
+        "client_type",
+        "request_id",
+        "actor_kind",
+        "actor_user_id",
+        "actor_session_id",
+        "system_actor",
+        "target_user_id",
+        "target_session_id",
+        "affected_session_count",
+        "changed_fields",
+        "role_before",
+        "role_after",
+        "is_qmb_before",
+        "is_qmb_after",
+        "is_active_before",
+        "is_active_after",
+        "must_change_password_before",
+        "must_change_password_after",
+    }
+)
 EXPECTED_HISTORY_COLUMNS = frozenset(
     {"version", "name", "checksum", "schema_fingerprint", "applied_at"}
 )
@@ -74,6 +103,15 @@ EXPECTED_CHECK_CONSTRAINTS = frozenset(
         "sessions_expires_after_created",
         "sessions_last_seen_after_created",
         "sessions_revoked_after_created",
+    }
+)
+EXPECTED_AUDIT_CHECK_CONSTRAINTS = frozenset(
+    {
+        "audit_events_actor_kind_known",
+        "audit_events_actor_form",
+        "audit_events_event_type_known",
+        "audit_events_result_known",
+        "audit_events_request_id_present",
     }
 )
 
@@ -648,6 +686,7 @@ def _validate_role_contract(
     conn: psycopg.Connection,
     *,
     require_history_select: bool = True,
+    require_audit_evidence: bool = True,
 ) -> None:
     role_rows = conn.execute(
         """
@@ -786,14 +825,61 @@ def _validate_role_contract(
                 f"qmtool_runtime must not have {privilege} on {history}"
             )
 
+    audit = f"{SCHEMA_NAME}.audit_events"
+    if require_audit_evidence:
+        if not _query_privilege(
+            conn,
+            "SELECT has_table_privilege(%s, %s, %s)",
+            (RUNTIME_ROLE, audit, "INSERT"),
+        ):
+            raise PostgresSchemaError(f"qmtool_runtime missing INSERT on {audit}")
+        for privilege in ("SELECT", "UPDATE", "DELETE") + forbidden_table_privileges:
+            if _query_privilege(
+                conn,
+                "SELECT has_table_privilege(%s, %s, %s)",
+                (RUNTIME_ROLE, audit, privilege),
+            ):
+                raise PostgresSchemaError(
+                    f"qmtool_runtime must not have {privilege} on {audit}"
+                )
+        public_audit_access = _query_privilege(
+            conn,
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_class cls
+                JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+                CROSS JOIN LATERAL aclexplode(
+                    COALESCE(cls.relacl, acldefault('r', cls.relowner))
+                ) acl
+                WHERE ns.nspname = %s
+                  AND cls.relname = %s
+                  AND acl.grantee = 0
+            )
+            """,
+            (SCHEMA_NAME, "audit_events"),
+        )
+        if public_audit_access:
+            raise PostgresSchemaError(
+                "PUBLIC must not have privileges on usermanagement.audit_events"
+            )
+    elif "audit_events" in _table_names(conn):
+        raise PostgresSchemaError(
+            "audit_events must not exist before migration version 3"
+        )
+
 
 def _validate_schema_contracts(
     conn: psycopg.Connection,
     *,
     require_history_select: bool = True,
+    require_audit_evidence: bool = True,
 ) -> None:
+    expected_tables = (
+        EXPECTED_TABLES_WITH_AUDIT if require_audit_evidence else EXPECTED_TABLES
+    )
     tables = _table_names(conn)
-    missing_tables = EXPECTED_TABLES - tables
+    missing_tables = expected_tables - tables
     if missing_tables:
         raise PostgresSchemaError(f"missing tables after migrate: {sorted(missing_tables)}")
 
@@ -816,12 +902,21 @@ def _validate_schema_contracts(
     missing_sessions = EXPECTED_SESSIONS_COLUMNS - columns_for("sessions")
     if missing_sessions:
         raise PostgresSchemaError(f"sessions missing columns: {sorted(missing_sessions)}")
+    if require_audit_evidence:
+        missing_audit = EXPECTED_AUDIT_EVENTS_COLUMNS - columns_for("audit_events")
+        if missing_audit:
+            raise PostgresSchemaError(
+                f"audit_events missing columns: {sorted(missing_audit)}"
+            )
     missing_history = EXPECTED_HISTORY_COLUMNS - columns_for(MIGRATIONS_TABLE)
     if missing_history:
         raise PostgresSchemaError(
             f"{MIGRATIONS_TABLE} missing columns: {sorted(missing_history)}"
         )
 
+    expected_checks = EXPECTED_CHECK_CONSTRAINTS
+    if require_audit_evidence:
+        expected_checks = expected_checks | EXPECTED_AUDIT_CHECK_CONSTRAINTS
     checks = {
         str(row[0])
         for row in conn.execute(
@@ -833,7 +928,7 @@ def _validate_schema_contracts(
             (SCHEMA_NAME,),
         ).fetchall()
     }
-    missing_checks = EXPECTED_CHECK_CONSTRAINTS - checks
+    missing_checks = expected_checks - checks
     if missing_checks:
         raise PostgresSchemaError(f"missing check constraints: {sorted(missing_checks)}")
 
@@ -853,7 +948,10 @@ def _validate_schema_contracts(
     if fk is None or int(fk[0]) < 1:
         raise PostgresSchemaError("sessions.user_id FK ON DELETE RESTRICT missing")
 
-    for table in ("users", "sessions", MIGRATIONS_TABLE):
+    owned_tables = ("users", "sessions", MIGRATIONS_TABLE)
+    if require_audit_evidence:
+        owned_tables = (*owned_tables, "audit_events")
+    for table in owned_tables:
         owner = conn.execute(
             """
             SELECT tableowner
@@ -867,7 +965,11 @@ def _validate_schema_contracts(
                 f"table {table} owner is {None if owner is None else owner[0]!r}, "
                 f"expected {MIGRATOR_ROLE}"
             )
-    _validate_role_contract(conn, require_history_select=require_history_select)
+    _validate_role_contract(
+        conn,
+        require_history_select=require_history_select,
+        require_audit_evidence=require_audit_evidence,
+    )
 
 
 def _activate_migrator_role(conn: psycopg.Connection) -> None:
@@ -920,6 +1022,7 @@ def migrate_usermanagement_schema(
                     _validate_schema_contracts(
                         conn,
                         require_history_select=step.version >= 2,
+                        require_audit_evidence=step.version >= 3,
                     )
                     fingerprint = _compute_schema_fingerprint(conn)
                     conn.execute(
@@ -946,6 +1049,7 @@ def migrate_usermanagement_schema(
             _validate_schema_contracts(
                 conn,
                 require_history_select=target >= 2,
+                require_audit_evidence=target >= 3,
             )
             return target
         finally:
@@ -980,5 +1084,9 @@ def assert_runtime_schema_ready(dsn: str, *, migrations_dir: Path | None = None)
             raise PostgresSchemaError(
                 "schema fingerprint drift detected against last applied migration"
             )
-        _validate_schema_contracts(conn, require_history_select=True)
+        _validate_schema_contracts(
+            conn,
+            require_history_select=True,
+            require_audit_evidence=target >= 3,
+        )
         return target

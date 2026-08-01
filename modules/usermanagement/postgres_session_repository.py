@@ -68,26 +68,7 @@ class PostgresSessionRepository(SessionRepository):
     def add(self, session: SessionRecord) -> None:
         try:
             with runtime_connection(self._dsn) as conn:
-                conn.execute(
-                    """
-                    INSERT INTO usermanagement.sessions (
-                        session_id, token_hash, user_id, created_at, last_seen_at,
-                        expires_at, client_type, authentication_level, revoked_at
-                    )
-                    VALUES (%s::uuid, %s, %s::uuid, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        session.session_id,
-                        session.token_hash,
-                        session.user_id,
-                        _as_utc(session.created_at),
-                        _as_utc(session.last_seen_at),
-                        _as_utc(session.expires_at),
-                        session.client_type,
-                        session.authentication_level,
-                        None if session.revoked_at is None else _as_utc(session.revoked_at),
-                    ),
-                )
+                self.add_on_connection(conn, session)
         except UniqueViolation as exc:
             raise ValueError("session_id or token_hash already exists") from exc
         except ForeignKeyViolation as exc:
@@ -95,16 +76,46 @@ class PostgresSessionRepository(SessionRepository):
         except CheckViolation as exc:
             raise ValueError("session violates PostgreSQL constraints") from exc
 
+    @staticmethod
+    def add_on_connection(conn: psycopg.Connection, session: SessionRecord) -> None:
+        conn.execute(
+            """
+            INSERT INTO usermanagement.sessions (
+                session_id, token_hash, user_id, created_at, last_seen_at,
+                expires_at, client_type, authentication_level, revoked_at
+            )
+            VALUES (%s::uuid, %s, %s::uuid, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                session.session_id,
+                session.token_hash,
+                session.user_id,
+                _as_utc(session.created_at),
+                _as_utc(session.last_seen_at),
+                _as_utc(session.expires_at),
+                session.client_type,
+                session.authentication_level,
+                None if session.revoked_at is None else _as_utc(session.revoked_at),
+            ),
+        )
+
     def get_by_token_hash(self, token_hash: str) -> SessionRecord | None:
         with runtime_connection(self._dsn) as conn:
-            row = conn.execute(
-                f"""
-                SELECT {_SESSION_COLUMNS}
-                FROM usermanagement.sessions
-                WHERE token_hash = %s
-                """,
-                (token_hash,),
-            ).fetchone()
+            return self.get_by_token_hash_on_connection(conn, token_hash)
+
+    @staticmethod
+    def get_by_token_hash_on_connection(
+        conn: psycopg.Connection,
+        token_hash: str,
+    ) -> SessionRecord | None:
+        row = conn.execute(
+            f"""
+            SELECT {_SESSION_COLUMNS}
+            FROM usermanagement.sessions
+            WHERE token_hash = %s
+            """,
+            (token_hash,),
+        ).fetchone()
         return None if row is None else _session_from_row(row)
 
     def get_by_session_id(self, session_id: str) -> SessionRecord | None:
@@ -144,19 +155,28 @@ class PostgresSessionRepository(SessionRepository):
     def revoke(self, session_id: str, revoked_at: datetime) -> SessionRecord | None:
         moment = _as_utc(revoked_at)
         with runtime_connection(self._dsn) as conn:
-            row = conn.execute(
-                f"""
-                UPDATE usermanagement.sessions
-                SET revoked_at = %s
-                WHERE session_id = %s::uuid
-                  AND revoked_at IS NULL
-                RETURNING {_SESSION_COLUMNS}
-                """,
-                (moment, session_id),
-            ).fetchone()
-            if row is not None:
-                return _session_from_row(row)
-            return self._get_on_connection(conn, session_id)
+            return self.revoke_on_connection(conn, session_id, moment)
+
+    @staticmethod
+    def revoke_on_connection(
+        conn: psycopg.Connection,
+        session_id: str,
+        revoked_at: datetime,
+    ) -> SessionRecord | None:
+        moment = _as_utc(revoked_at)
+        row = conn.execute(
+            f"""
+            UPDATE usermanagement.sessions
+            SET revoked_at = %s
+            WHERE session_id = %s::uuid
+              AND revoked_at IS NULL
+            RETURNING {_SESSION_COLUMNS}
+            """,
+            (moment, session_id),
+        ).fetchone()
+        if row is not None:
+            return _session_from_row(row)
+        return PostgresSessionRepository._get_on_connection(conn, session_id)
 
     def revoke_all_for_user(self, user_id: str, revoked_at: datetime) -> list[SessionRecord]:
         moment = _as_utc(revoked_at)

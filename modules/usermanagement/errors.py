@@ -64,3 +64,7 @@ class LastActiveAdminError(UsermanagementError):
 
 class InvalidUserUpdateError(UsermanagementError):
     """Admin access update payload is empty or otherwise invalid."""
+
+
+class AuditUnavailableError(UsermanagementError):
+    """Append-only audit evidence could not be written; fachliche TX must roll back."""

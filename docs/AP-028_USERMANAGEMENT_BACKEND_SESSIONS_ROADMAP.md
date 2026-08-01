@@ -635,41 +635,55 @@ Durchgesetzte Session-Wirkung → Milestone 7.
 
 Auth- und Usermanagement-Ereignisse auditierbar mit Actor/Target/Session/Request-Trennung.
 
+**Umsetzungsplan:** [`docs/AP-028_M7_AUDIT_EVIDENCE.md`](AP-028_M7_AUDIT_EVIDENCE.md)
+
 **Voraussetzungen**
 
 Milestones 5–6; Orientierung an AP-006 / AP-006A.
 
 **Scope**
 
-Mindestens auditierbare Ereignisse:
+Mindestens auditierbare Ereignisse (verbindlicher M7-Vertrag):
 
-- Login success/fail, Logout, Session create/revoke/expire, logout-all
-- User create/deactivate/reactivate, Rolle/`is_qmb` geändert, Passwort geändert / Wechsel erzwungen
+- `auth.login.succeeded` / `auth.login.denied`, `auth.logout.succeeded`,
+  `auth.logout_all.succeeded`, `auth.session.expired`
+- `user.created`, `user.access_changed`, `user.password_changed`
 
-Felder u. a.: `event_id`, `event_type`, `occurred_at` (UTC), `actor_user_id`, `actor_session_id`, `target_user_id`, `request_id`, `result`, `reason`, `source/client_type`.
+Keine separaten Events `session.create` / `session.revoke`: Login erzeugt Session,
+Logout/Logout-all widerruft.
+
+Felder u. a.: `audit_id`, `event_type`, `occurred_at` (UTC), `actor_user_id`,
+`actor_session_id`, `target_user_id`, `request_id`, `result`, `reason_code`,
+`source`/`client_type`. `request_id` ist für jeden M7-Eintrag nichtleer.
+Einzige Nachweisquelle: `usermanagement.audit_events`
+(nicht JSONL-`AuditLogger`, nicht Domain-`EventEnvelope` auf diesen PG-Pfaden).
 
 **Nicht-Ziele**
 
 - Elektronische Signatur
 - Documents-Evidence-Ketten-Upgrade
 - Freie Client-Vorgabe von Audit-Actor
+- Audit-UI/Export/GET, SQLite-Audit
 
 **Betroffene Dateien/Bausteine**
 
-- Usermanagement Event-/Audit-Integration (bestehende Domain-Events korrigieren: Actor ≠ Target)
-- Nutzung Platform-`audit_logger` wo Port bereits gefordert
-- Audit-Nachweistests
+- Migration `0003_audit_evidence.sql`, `PostgresAuditRepository.insert_on_connection`
+- Service-TX-Verdrahtung; `login_backend` / `logout_backend`
+- Backend Auth-Routen (`request_id` am Login; 503 bei Audit-Ausfall)
+- Audit-Nachweistests (static + PG-live, Lesen nur über Migrator-DSN)
 
 **Implementierungsaufgaben**
 
-1. Login-Fehlschläge intern differenziert, extern ohne User-Enumeration.
-2. Systemactor nur bei echten Systemaktionen (z. B. Session-Cleanup).
-3. Keine Passworthashes/Tokens in Logs.
+1. Login-Fehlschläge intern differenziert (`reason_code`), extern ohne User-Enumeration.
+2. Systemactor nur bei Session-Expiry (`qmtool.session-expiry`).
+3. Keine Passworthashes/Tokens/Usernames in Auditzeilen.
+4. Atomar mit Zustandsänderung; Audit-Fehler → Rollback + HTTP 503.
 
 **Tests**
 
-- Auditnachweistests für Erfolg/Fehler/Logout/Revoke
+- Auditnachweistests für Erfolg/Fehler/Logout/Revoke/Expiry/Admin
 - Actor/Target-Verwechslungs-Negativtests
+- INSERT-Recht entzogen → Fachänderung rollt zurück
 
 **Test-Gate**
 
@@ -683,10 +697,11 @@ Keine P0/P1 offen
 
 - Audit-Actor stammt aus belastbarer Session/Context-Quelle
 - Kein Owner-/Zieluser-/`system`-Fallback für interaktive Aktionen
+- Runtime kann Audit nicht lesen/ändern/löschen
 
 **Risiken**
 
-- Doppelte Event- und Auditlog-Semantik — AP-016/AP-006A beachten, Scope klein halten
+- Doppelte Event- und Auditlog-Semantik — bewusst: EventEnvelope auf M7-PG-Pfaden unterbunden
 
 **Eskalationskriterien**
 
