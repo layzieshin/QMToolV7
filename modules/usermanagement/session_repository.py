@@ -46,5 +46,14 @@ class SessionRepository(ABC):
         """Atomically revoke all sessions currently belonging to a user."""
 
     @abstractmethod
+    def revoke_other_sessions_for_user(
+        self,
+        user_id: str,
+        keep_session_id: str,
+        revoked_at: datetime,
+    ) -> list[SessionRecord]:
+        """Revoke all active sessions for a user except ``keep_session_id``."""
+
+    @abstractmethod
     def delete(self, session_id: str) -> None:
         """Remove a session record (optional hard delete; prefer revoke in ops)."""

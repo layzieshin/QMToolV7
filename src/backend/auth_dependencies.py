@@ -28,6 +28,11 @@ _MAPPED_ERRORS = (
     InactiveUserError,
     PasswordChangeRequiredError,
     um_api.WeakPasswordError,
+    um_api.AuthorizationError,
+    um_api.UserNotFoundError,
+    um_api.UserExistsError,
+    um_api.LastActiveAdminError,
+    um_api.InvalidUserUpdateError,
     InvalidSessionError,
     SessionNotFoundError,
     ExpiredSessionError,
@@ -64,7 +69,7 @@ def _unauthorized(message: str = "unauthorized") -> HTTPException:
 
 
 def map_auth_error(exc: Exception) -> HTTPException:
-    """Map usermanagement auth/session errors to stable HTTP errors."""
+    """Map usermanagement auth/session/admin errors to stable HTTP errors."""
     if isinstance(exc, PasswordChangeRequiredError):
         return HTTPException(
             status_code=409,
@@ -74,6 +79,31 @@ def map_auth_error(exc: Exception) -> HTTPException:
         return HTTPException(
             status_code=400,
             detail={"error": "weak_password", "message": "password does not meet policy"},
+        )
+    if isinstance(exc, um_api.InvalidUserUpdateError):
+        return HTTPException(
+            status_code=400,
+            detail={"error": "invalid_user_update", "message": "invalid user update"},
+        )
+    if isinstance(exc, um_api.AuthorizationError):
+        return HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "forbidden"},
+        )
+    if isinstance(exc, um_api.UserNotFoundError):
+        return HTTPException(
+            status_code=404,
+            detail={"error": "user_not_found", "message": "user not found"},
+        )
+    if isinstance(exc, um_api.UserExistsError):
+        return HTTPException(
+            status_code=409,
+            detail={"error": "user_exists", "message": "user already exists"},
+        )
+    if isinstance(exc, um_api.LastActiveAdminError):
+        return HTTPException(
+            status_code=409,
+            detail={"error": "last_active_admin", "message": "cannot remove the last active admin"},
         )
     return _unauthorized()
 
@@ -130,3 +160,15 @@ def require_user_context_password_change(
         request_id,
         password_change_allowed=True,
     )
+
+
+def require_admin_context(
+    context: Annotated[UserContext, Depends(require_user_context_normal)],
+) -> UserContext:
+    """Backend-side Admin gate; service layer re-checks independently."""
+    if "ADMIN" not in context.global_roles:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "forbidden"},
+        )
+    return context

@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
 
 from src.backend.auth_routes import router as auth_router
+from src.backend.user_admin_routes import router as user_admin_router
 
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -44,5 +45,6 @@ def create_app(container=None) -> FastAPI:
 
     if container is not None:
         app.include_router(auth_router)
+        app.include_router(user_admin_router)
 
     return app

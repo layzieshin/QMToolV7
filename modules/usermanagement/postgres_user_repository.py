@@ -8,9 +8,11 @@ import psycopg
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 
 from .contracts import AuthenticatedUser
+from .errors import LastActiveAdminError
 from .password_crypto import hash_password
 from .postgres_connection import runtime_connection
 from .repository import UserRepository
+from .role_policies import normalize_base_role
 
 
 _USER_COLUMNS = """
@@ -173,17 +175,25 @@ class PostgresUserRepository(UserRepository):
     def change_password(self, username: str, new_password: str) -> None:
         try:
             with runtime_connection(self._dsn) as conn:
-                row = conn.execute(
-                    """
-                    UPDATE usermanagement.users
-                    SET password_hash = %s, must_change_password = false, updated_at = %s
-                    WHERE lower(username) = lower(%s)
-                    RETURNING user_id
-                    """,
-                    (hash_password(new_password), _utc_now(), username),
-                ).fetchone()
+                self.change_password_on_connection(conn, username, new_password)
         except (CheckViolation, ForeignKeyViolation) as exc:
             raise ValueError("user violates PostgreSQL constraints") from exc
+
+    @staticmethod
+    def change_password_on_connection(
+        conn: psycopg.Connection,
+        username: str,
+        new_password: str,
+    ) -> None:
+        row = conn.execute(
+            """
+            UPDATE usermanagement.users
+            SET password_hash = %s, must_change_password = false, updated_at = %s
+            WHERE lower(username) = lower(%s)
+            RETURNING user_id
+            """,
+            (hash_password(new_password), _utc_now(), username),
+        ).fetchone()
         if row is None:
             raise KeyError(f"unknown user: {username}")
 
@@ -245,6 +255,34 @@ class PostgresUserRepository(UserRepository):
             if current is None:
                 raise KeyError(f"unknown user: {username}")
             next_active = bool(current["is_active"] if is_active is None else is_active)
+            was_active = bool(current["is_active"])
+            next_role = role if role is not None else current["role"]
+            if next_active:
+                next_deactivated_at = None
+            elif was_active and not next_active:
+                next_deactivated_at = _utc_now()
+            else:
+                next_deactivated_at = current["deactivated_at"]
+            if (
+                was_active
+                and normalize_base_role(str(current["role"])) == "ADMIN"
+                and (
+                    not next_active
+                    or normalize_base_role(str(next_role)) != "ADMIN"
+                )
+            ):
+                others = conn.execute(
+                    """
+                    SELECT COUNT(*) AS active_admins
+                    FROM usermanagement.users
+                    WHERE is_active = true
+                      AND upper(role) = 'ADMIN'
+                      AND user_id <> %s::uuid
+                    """,
+                    (current["user_id"],),
+                ).fetchone()
+                if others is None or int(others["active_admins"]) == 0:
+                    raise LastActiveAdminError("cannot remove the last active admin")
             row = conn.execute(
                 f"""
                 UPDATE usermanagement.users
@@ -253,7 +291,7 @@ class PostgresUserRepository(UserRepository):
                     organization_unit = %s,
                     role = %s,
                     is_active = %s,
-                    deactivated_at = CASE WHEN %s THEN NULL ELSE deactivated_at END,
+                    deactivated_at = %s,
                     is_qmb = %s,
                     updated_at = %s
                 WHERE user_id = %s::uuid
@@ -265,9 +303,9 @@ class PostgresUserRepository(UserRepository):
                     organization_unit
                     if organization_unit is not None
                     else current["organization_unit"],
-                    role if role is not None else current["role"],
+                    next_role,
                     next_active,
-                    next_active,
+                    next_deactivated_at,
                     bool(current["is_qmb"] if is_qmb is None else is_qmb),
                     _utc_now(),
                     current["user_id"],

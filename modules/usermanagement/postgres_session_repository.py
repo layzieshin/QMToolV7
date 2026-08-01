@@ -161,16 +161,61 @@ class PostgresSessionRepository(SessionRepository):
     def revoke_all_for_user(self, user_id: str, revoked_at: datetime) -> list[SessionRecord]:
         moment = _as_utc(revoked_at)
         with runtime_connection(self._dsn) as conn:
-            rows = conn.execute(
-                f"""
-                UPDATE usermanagement.sessions
-                SET revoked_at = %s
-                WHERE user_id = %s::uuid
-                  AND revoked_at IS NULL
-                RETURNING {_SESSION_COLUMNS}
-                """,
-                (moment, user_id),
-            ).fetchall()
+            return self.revoke_all_for_user_on_connection(conn, user_id, moment)
+
+    def revoke_other_sessions_for_user(
+        self,
+        user_id: str,
+        keep_session_id: str,
+        revoked_at: datetime,
+    ) -> list[SessionRecord]:
+        moment = _as_utc(revoked_at)
+        with runtime_connection(self._dsn) as conn:
+            return self.revoke_other_sessions_for_user_on_connection(
+                conn, user_id, keep_session_id, moment
+            )
+
+    @staticmethod
+    def revoke_all_for_user_on_connection(
+        conn: psycopg.Connection,
+        user_id: str,
+        revoked_at: datetime,
+    ) -> list[SessionRecord]:
+        moment = _as_utc(revoked_at)
+        rows = conn.execute(
+            f"""
+            UPDATE usermanagement.sessions
+            SET revoked_at = %s
+            WHERE user_id = %s::uuid
+              AND revoked_at IS NULL
+            RETURNING {_SESSION_COLUMNS}
+            """,
+            (moment, user_id),
+        ).fetchall()
+        return sorted(
+            (_session_from_row(row) for row in rows),
+            key=lambda session: (session.created_at, session.session_id),
+        )
+
+    @staticmethod
+    def revoke_other_sessions_for_user_on_connection(
+        conn: psycopg.Connection,
+        user_id: str,
+        keep_session_id: str,
+        revoked_at: datetime,
+    ) -> list[SessionRecord]:
+        moment = _as_utc(revoked_at)
+        rows = conn.execute(
+            f"""
+            UPDATE usermanagement.sessions
+            SET revoked_at = %s
+            WHERE user_id = %s::uuid
+              AND revoked_at IS NULL
+              AND session_id <> %s::uuid
+            RETURNING {_SESSION_COLUMNS}
+            """,
+            (moment, user_id, keep_session_id),
+        ).fetchall()
         return sorted(
             (_session_from_row(row) for row in rows),
             key=lambda session: (session.created_at, session.session_id),

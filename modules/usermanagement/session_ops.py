@@ -167,6 +167,20 @@ class SessionOps:
         moment = _as_utc(now or _utc_now())
         return self._sessions.revoke_all_for_user(user_id, moment)
 
+    def revoke_other_sessions_for_user(
+        self,
+        user_id: str,
+        keep_session_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> list[SessionRecord]:
+        if not user_id:
+            raise ValueError("user_id is required")
+        if not keep_session_id:
+            raise ValueError("keep_session_id is required")
+        moment = _as_utc(now or _utc_now())
+        return self._sessions.revoke_other_sessions_for_user(user_id, keep_session_id, moment)
+
     def _load_for_revoke(
         self,
         *,

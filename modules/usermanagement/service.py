@@ -1,18 +1,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from qm_platform.events.event_envelope import EventEnvelope
 
 from .auth_ops import AuthOps
 from .contracts import AuthenticatedUser, IssuedSession, UserContext
+from .errors import (
+    AuthorizationError,
+    InvalidSessionError,
+    InvalidUserUpdateError,
+    LastActiveAdminError,
+    UserNotFoundError,
+)
 from .password_policy import DEFAULT_PASSWORD_POLICY, PasswordPolicy, validate_password
+from .postgres_connection import runtime_connection
+from .postgres_session_repository import PostgresSessionRepository
+from .postgres_user_repository import PostgresUserRepository
 from .repository import UserRepository
+from .role_policies import normalize_base_role
 from .session_ops import SessionOps
 from .session_repository import SessionRepository
 from .session_store import SessionStore
 from .user_admin_ops import UserAdminOps
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _is_admin_user(user: AuthenticatedUser) -> bool:
+    return normalize_base_role(user.role) == "ADMIN"
+
+
+def _require_admin_actor(actor: UserContext) -> None:
+    if not actor.is_confirmed:
+        raise InvalidSessionError("user context is not server-confirmed")
+    if "ADMIN" not in actor.global_roles:
+        raise AuthorizationError("admin role required")
 
 
 @dataclass
@@ -49,8 +76,6 @@ class UserManagementService:
                 users=_ServiceUserByIdLookup(self),
             )
 
-    # -- Auth delegation -----------------------------------------------------
-
     def authenticate(self, username: str, password: str) -> AuthenticatedUser | None:
         return self._auth_ops.authenticate(username, password)
 
@@ -65,8 +90,6 @@ class UserManagementService:
 
     def all_passwords_hashed(self) -> bool:
         return self._auth_ops.all_passwords_hashed()
-
-    # -- Opaque server-side sessions (AP-028) --------------------------------
 
     def create_session(
         self,
@@ -112,18 +135,132 @@ class UserManagementService:
     def revoke_all_sessions_for_user(self, user_id: str, *, now=None):
         return self._require_session_ops().revoke_all_for_user(user_id, now=now)
 
+    def revoke_other_sessions_for_user(self, user_id: str, keep_session_id: str, *, now=None):
+        return self._require_session_ops().revoke_other_sessions_for_user(
+            user_id, keep_session_id, now=now
+        )
+
+    def revoke_all_own_sessions(self, context: UserContext, *, now=None):
+        if not context.is_confirmed:
+            raise InvalidSessionError("user context is not server-confirmed")
+        return self.revoke_all_sessions_for_user(context.user_id, now=now)
+
+    def change_own_password(self, context: UserContext, new_password: str, *, now=None) -> None:
+        """Change password, keep current session, revoke all other sessions (M6)."""
+        if not context.is_confirmed:
+            raise InvalidSessionError("user context is not server-confirmed")
+        cleaned = new_password.strip() if isinstance(new_password, str) else ""
+        validate_password(cleaned, self.password_policy)
+        moment = now or _utc_now()
+        user_repo = self.repository
+        session_repo = self.session_repository
+        if isinstance(user_repo, PostgresUserRepository) and isinstance(
+            session_repo, PostgresSessionRepository
+        ):
+            with runtime_connection(user_repo._dsn) as conn:
+                PostgresUserRepository.change_password_on_connection(
+                    conn, context.username, cleaned
+                )
+                PostgresSessionRepository.revoke_other_sessions_for_user_on_connection(
+                    conn,
+                    context.user_id,
+                    context.session_id,
+                    moment,
+                )
+            self._publish_event(
+                "domain.usermanagement.user.password_changed.v1",
+                {"username": context.username},
+                actor_user_id=context.user_id,
+            )
+            return
+        self._admin_ops.change_password(context.username, cleaned)
+        self.revoke_other_sessions_for_user(
+            context.user_id, context.session_id, now=moment
+        )
+
     def _require_session_ops(self) -> SessionOps:
         if self._session_ops is None:
             raise RuntimeError("opaque session repository is not configured")
         return self._session_ops
 
-    # -- Admin delegation ----------------------------------------------------
-
     def list_users(self) -> list[AuthenticatedUser]:
         return self._admin_ops.list_users()
 
-    def create_user(self, username: str, password: str, role: str) -> AuthenticatedUser:
-        return self._admin_ops.create_user(username, password, role)
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        role: str = "User",
+        *,
+        is_qmb: bool = False,
+        must_change_password: bool = False,
+    ) -> AuthenticatedUser:
+        return self._admin_ops.create_user(
+            username,
+            password,
+            role,
+            is_qmb=is_qmb,
+            must_change_password=must_change_password,
+        )
+
+    def create_user_as_admin(
+        self,
+        actor: UserContext,
+        username: str,
+        password: str,
+        *,
+        role: str = "User",
+        is_qmb: bool = False,
+        must_change_password: bool = True,
+    ) -> AuthenticatedUser:
+        _require_admin_actor(actor)
+        return self.create_user(
+            username,
+            password,
+            role,
+            is_qmb=is_qmb,
+            must_change_password=must_change_password,
+        )
+
+    def update_user_access_as_admin(
+        self,
+        actor: UserContext,
+        username: str,
+        *,
+        role: str | None = None,
+        is_qmb: bool | None = None,
+        is_active: bool | None = None,
+    ) -> AuthenticatedUser:
+        _require_admin_actor(actor)
+        if role is None and is_qmb is None and is_active is None:
+            raise InvalidUserUpdateError("at least one of role, is_qmb, is_active is required")
+        username = username.strip()
+        if not username:
+            raise InvalidUserUpdateError("username is required")
+        current = self._get_user_or_raise(username)
+        next_role = role if role is not None else current.role
+        next_active = bool(current.is_active if is_active is None else is_active)
+        self._assert_not_last_active_admin(
+            current,
+            next_role=next_role,
+            next_active=next_active,
+        )
+        becoming_inactive = current.is_active and not next_active
+        updated = self._admin_ops.update_user_admin_fields(
+            username,
+            department=None,
+            scope=None,
+            organization_unit=None,
+            role=role,
+            is_active=is_active,
+            is_qmb=is_qmb,
+        )
+        if becoming_inactive:
+            try:
+                self.revoke_all_sessions_for_user(updated.user_id)
+            except RuntimeError:
+                pass
+        return updated
 
     def update_user_profile(
         self,
@@ -160,7 +297,18 @@ class UserManagementService:
         )
 
     def set_user_active(self, username: str, is_active: bool) -> AuthenticatedUser:
-        return self._admin_ops.set_user_active(username, is_active)
+        current = self._get_user_or_raise(username)
+        next_role = current.role
+        next_active = bool(is_active)
+        self._assert_not_last_active_admin(current, next_role=next_role, next_active=next_active)
+        becoming_inactive = current.is_active and not next_active
+        updated = self._admin_ops.set_user_active(username, is_active)
+        if becoming_inactive:
+            try:
+                self.revoke_all_sessions_for_user(updated.user_id)
+            except RuntimeError:
+                pass
+        return updated
 
     def set_user_qmb(self, username: str, is_qmb: bool) -> AuthenticatedUser:
         return self._admin_ops.set_user_qmb(username, is_qmb)
@@ -189,10 +337,6 @@ class UserManagementService:
         return self._admin_ops.ensure_admin_credentials(username, password, role)
 
     def bootstrap_first_admin(self, username: str, password: str) -> AuthenticatedUser | None:
-        """Create the first Admin with must_change_password when no users exist.
-
-        Returns ``None`` when users already exist (idempotent no-op for operators).
-        """
         if self.list_users():
             return None
         if self.repository is None:
@@ -206,7 +350,37 @@ class UserManagementService:
             must_change_password=True,
         )
 
-    # -- Legacy private methods kept for backward compat ---------------------
+    def _get_user_or_raise(self, username: str) -> AuthenticatedUser:
+        if self.repository is not None:
+            user = self.repository.get_user(username)
+            if user is None:
+                raise UserNotFoundError(f"unknown user: {username}")
+            return user
+        for user in self.list_users():
+            if user.username == username:
+                return user
+        raise UserNotFoundError(f"unknown user: {username}")
+
+    def _assert_not_last_active_admin(
+        self,
+        current: AuthenticatedUser,
+        *,
+        next_role: str,
+        next_active: bool,
+    ) -> None:
+        if not _is_admin_user(current) or not current.is_active:
+            return
+        demoting = normalize_base_role(next_role) != "ADMIN"
+        deactivating = not next_active
+        if not demoting and not deactivating:
+            return
+        other_active_admins = [
+            user
+            for user in self.list_users()
+            if user.user_id != current.user_id and user.is_active and _is_admin_user(user)
+        ]
+        if not other_active_admins:
+            raise LastActiveAdminError("cannot remove the last active admin")
 
     def _save_session_user(self, user: AuthenticatedUser) -> None:
         self._session_store.save(user)

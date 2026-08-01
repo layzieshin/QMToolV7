@@ -70,6 +70,11 @@ USERMANAGEMENT_DATABASE_CONTRIBUTION = DatabaseContribution(
             name="initial",
             sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
         ),
+        DatabaseMigrationContribution(
+            version=2,
+            name="deactivated_at",
+            sql_path=Path(__file__).parent / "migrations" / "0002_deactivated_at.sql",
+        ),
     ),
     validation_queries=(
         DatabaseValidationContribution(

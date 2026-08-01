@@ -20,14 +20,19 @@ from .contracts import (
 )
 from .errors import (
     AuthenticationError,
+    AuthorizationError,
     ExpiredSessionError,
     InactiveUserError,
     InvalidSessionError,
+    InvalidUserUpdateError,
+    LastActiveAdminError,
     PasswordChangeRequiredError,
     RevokedSessionError,
     SessionError,
     SessionNotFoundError,
     UsermanagementError,
+    UserExistsError,
+    UserNotFoundError,
     WeakPasswordError,
 )
 from .role_policies import is_effective_qmb, normalize_base_role
@@ -48,6 +53,11 @@ __all__ = [
     "ExpiredSessionError",
     "RevokedSessionError",
     "WeakPasswordError",
+    "AuthorizationError",
+    "UserNotFoundError",
+    "UserExistsError",
+    "LastActiveAdminError",
+    "InvalidUserUpdateError",
     "get_usermanagement_service",
     "bootstrap_admin",
     "self_register",
@@ -56,7 +66,10 @@ __all__ = [
     "create_backend_session",
     "resolve_session",
     "revoke_session",
+    "revoke_all_own_sessions",
     "change_own_password",
+    "create_user_as_admin",
+    "update_user_access_as_admin",
     "ensure_postgres_schema_ready",
     "is_effective_qmb",
     "normalize_base_role",
@@ -149,15 +162,61 @@ def revoke_session(container, *, raw_token: str) -> SessionRecord:
     return svc.revoke_session(raw_token=raw_token)
 
 
-def change_own_password(container, context: UserContext, new_password: str) -> None:
-    """Change the password of the user identified by a confirmed context.
-
-    The current session remains valid (M5 policy). Revoking other sessions is M6.
-    """
-    if not context.is_confirmed:
-        raise InvalidSessionError("user context is not server-confirmed")
+def revoke_all_own_sessions(container, context: UserContext) -> list[SessionRecord]:
+    """Revoke all sessions belonging to the confirmed context user (logout-all)."""
     svc = get_usermanagement_service(container)
-    svc.change_password(context.username, new_password)
+    return svc.revoke_all_own_sessions(context)
+
+
+def change_own_password(container, context: UserContext, new_password: str) -> None:
+    """Change password for the confirmed context user.
+
+    Keeps the current session; revokes all other sessions of the same user (M6).
+    """
+    svc = get_usermanagement_service(container)
+    svc.change_own_password(context, new_password)
+
+
+def create_user_as_admin(
+    container,
+    actor: UserContext,
+    username: str,
+    password: str,
+    *,
+    role: str = "User",
+    is_qmb: bool = False,
+    must_change_password: bool = True,
+) -> AuthenticatedUser:
+    """Create a user; requires a confirmed Admin actor (service-enforced)."""
+    svc = get_usermanagement_service(container)
+    return svc.create_user_as_admin(
+        actor,
+        username,
+        password,
+        role=role,
+        is_qmb=is_qmb,
+        must_change_password=must_change_password,
+    )
+
+
+def update_user_access_as_admin(
+    container,
+    actor: UserContext,
+    username: str,
+    *,
+    role: str | None = None,
+    is_qmb: bool | None = None,
+    is_active: bool | None = None,
+) -> AuthenticatedUser:
+    """Patch role / is_qmb / is_active; requires a confirmed Admin actor."""
+    svc = get_usermanagement_service(container)
+    return svc.update_user_access_as_admin(
+        actor,
+        username,
+        role=role,
+        is_qmb=is_qmb,
+        is_active=is_active,
+    )
 
 
 def ensure_postgres_schema_ready(container) -> int:

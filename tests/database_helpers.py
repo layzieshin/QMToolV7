@@ -18,25 +18,48 @@ _INITIAL_MIGRATIONS = {
     "users": Path("modules/usermanagement/migrations/0001_initial.sql"),
 }
 
+_USERS_MIGRATIONS = (
+    MigrationStep(
+        version=1,
+        name="initial",
+        sql_path=Path("modules/usermanagement/migrations/0001_initial.sql"),
+    ),
+    MigrationStep(
+        version=2,
+        name="deactivated_at",
+        sql_path=Path("modules/usermanagement/migrations/0002_deactivated_at.sql"),
+    ),
+)
+
 
 def prepare_test_database(database_id: str, db_path: Path) -> Path:
-    migration_path = _INITIAL_MIGRATIONS[database_id].resolve()
     service = DatabaseEvolutionService(
         app_home=db_path.parent,
         backup_root=db_path.parent / ".database-backups",
     )
+    if database_id == "users":
+        migrations = tuple(
+            MigrationStep(
+                version=step.version,
+                name=step.name,
+                sql_path=step.sql_path.resolve(),
+            )
+            for step in _USERS_MIGRATIONS
+        )
+    else:
+        migrations = (
+            MigrationStep(
+                version=1,
+                name="initial",
+                sql_path=_INITIAL_MIGRATIONS[database_id].resolve(),
+            ),
+        )
     service.migrate(
         (
             DatabaseSpec(
                 database_id=database_id,
                 path=db_path,
-                migrations=(
-                    MigrationStep(
-                        version=1,
-                        name="initial",
-                        sql_path=migration_path,
-                    ),
-                ),
+                migrations=migrations,
             ),
         ),
         reason="test_setup",

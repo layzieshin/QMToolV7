@@ -129,9 +129,9 @@ def test_change_password_keeps_current_session(tmp_path: Path) -> None:
     assert me.status_code == 200
     assert me.json()["username"] == "admin"
 
-    # M5: other sessions are NOT revoked
+    # M6: other sessions ARE revoked; current session remains valid
     other_me = client.get("/auth/me", headers={"Authorization": f"Bearer {other_token}"})
-    assert other_me.status_code == 200
+    assert other_me.status_code == 401
 
     weak = client.post(
         "/auth/change-password",

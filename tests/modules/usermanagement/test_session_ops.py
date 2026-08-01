@@ -142,6 +142,7 @@ def test_session_repository_port_requires_list_for_user() -> None:
     assert "touch" in SessionRepository.__abstractmethods__
     assert "revoke" in SessionRepository.__abstractmethods__
     assert "revoke_all_for_user" in SessionRepository.__abstractmethods__
+    assert "revoke_other_sessions_for_user" in SessionRepository.__abstractmethods__
 
     class IncompleteRepository(SessionRepository):
         def add(self, session):  # type: ignore[override]
@@ -160,6 +161,9 @@ def test_session_repository_port_requires_list_for_user() -> None:
             return None
 
         def revoke_all_for_user(self, user_id, revoked_at):  # type: ignore[override]
+            return []
+
+        def revoke_other_sessions_for_user(self, user_id, keep_session_id, revoked_at):  # type: ignore[override]
             return []
 
         def delete(self, session_id):  # type: ignore[override]
@@ -205,6 +209,22 @@ def test_revoke_all_for_user_blocks_existing_sessions() -> None:
         ops.resolve_session(first.raw_token, request_id="r", now=_utc(hour=10, minute=6))
     with pytest.raises(RevokedSessionError):
         ops.resolve_session(second.raw_token, request_id="r", now=_utc(hour=10, minute=6))
+
+
+def test_revoke_other_sessions_keeps_current() -> None:
+    user = _user()
+    ops, _users, _repo = _ops(user)
+    keep = ops.create_session(user, client_type="cli", now=_utc())
+    other = ops.create_session(user, client_type="pyqt", now=_utc())
+    revoked = ops.revoke_other_sessions_for_user(
+        user.user_id, keep.session.session_id, now=_utc(hour=10, minute=5)
+    )
+    assert len(revoked) == 1
+    assert revoked[0].session_id == other.session.session_id
+    ctx = ops.resolve_session(keep.raw_token, request_id="r", now=_utc(hour=10, minute=6))
+    assert ctx.session_id == keep.session.session_id
+    with pytest.raises(RevokedSessionError):
+        ops.resolve_session(other.raw_token, request_id="r", now=_utc(hour=10, minute=6))
 
 
 @pytest.mark.parametrize("touch", [True, False])
