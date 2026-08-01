@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from qm_platform.runtime.container import RuntimeContainer
 
@@ -52,6 +54,29 @@ class SeedAdminOnlyTest(unittest.TestCase):
             u = users[0]
             self.assertTrue(u.must_change_password)
             self.assertTrue(service.authenticate("admin", "admin") is not None)
+
+    def test_production_forbids_admin_only_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            container = RuntimeContainer()
+            container.register_port("app_home", Path(tmp))
+            container.register_port(
+                "settings_service",
+                _SettingsServiceStub(
+                    {
+                        "users_db_path": "storage/platform/users.db",
+                        "seed_mode": "admin_only",
+                        "dev_mode": False,
+                    }
+                ),
+            )
+            container.register_port("event_bus", _EventBusStub())
+            prepare_test_database(
+                "users",
+                Path(tmp) / "storage" / "platform" / "users.db",
+            )
+            with mock.patch.dict(os.environ, {"QMTOOL_RUNTIME_PROFILE": "production"}):
+                with self.assertRaisesRegex(RuntimeError, "seed_mode='hardened'"):
+                    register_usermanagement_ports(container)
 
 
 if __name__ == "__main__":

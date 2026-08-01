@@ -91,7 +91,14 @@ Der Bootstrap prueft vor dem Annehmen von Auth-Anfragen mindestens:
   `QMTOOL_RUNTIME_PROFILE=production` verboten; ungueltige Nicht-Dev-
   Lizenzen brechen den Start ab
 - Passwortpolicy zentral im Usermanagement (Standard: min. 10 Zeichen,
-  keine Pflicht-Zeichenklassen; technische Untergrenze 8)
+  keine Pflicht-Zeichenklassen; technische Untergrenze 8). Leere und
+  reine Leerzeichen-Passwoerter werden dort als `WeakPasswordError`
+  abgelehnt; HTTP-Modelle setzen dafuer kein `min_length` und liefern
+  `400 weak_password` (nicht `422`/`500`).
+- Desktop-SQLite `seed_mode=admin_only` bzw. `legacy_defaults`+`dev_mode`
+  bleibt Legacy/Dev-Convenience und legt weiterhin `admin`/`admin` ohne
+  Policy-Pruefung an. Backend erzwingt `hardened`; unter
+  `QMTOOL_RUNTIME_PROFILE=production` ist nur `hardened` erlaubt.
 
 Der Backend-Host verwendet weiterhin `create_app(...)` als App-Factory. Tests
 koennen einen vorbereiteten Container injizieren; der Healthcheck bleibt ohne
@@ -178,6 +185,10 @@ Die M5-Passwortwechsel-Session-Policy ist Supervisor-freigegeben (2026-08-01):
 - `must_change_password` wird entfernt.
 - Das Widerrufen aller anderen Sessions des Users folgt erst in M6 und wird in
   M5 nicht vorweggenommen.
+
+Schwache Passwoerter (inkl. leer / nur Leerzeichen) werden mit
+`400 {"error":"weak_password",...}` beantwortet; die zentrale
+Usermanagement-Policy ist der alleinige Validierungsbesitzer.
 
 Diese Policy wird explizit getestet.
 

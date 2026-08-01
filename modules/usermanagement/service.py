@@ -197,10 +197,11 @@ class UserManagementService:
             return None
         if self.repository is None:
             raise RuntimeError("user repository is not configured")
-        validate_password(password, self.password_policy)
+        cleaned = password.strip() if isinstance(password, str) else ""
+        validate_password(cleaned, self.password_policy)
         return self.repository.ensure_initial_admin(
             username,
-            password,
+            cleaned,
             role="Admin",
             must_change_password=True,
         )

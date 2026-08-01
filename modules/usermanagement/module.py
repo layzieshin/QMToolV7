@@ -109,13 +109,20 @@ def register_usermanagement_ports(container) -> None:
     seed_mode = str(user_settings.get("seed_mode", "admin_only"))
     dev_mode = bool(user_settings.get("dev_mode", False))
     runtime_profile = os.environ.get("QMTOOL_RUNTIME_PROFILE", "").strip().lower()
-    if runtime_profile in ("prod", "production") and seed_mode not in ("hardened", "admin_only"):
-        raise RuntimeError("production profile requires usermanagement.seed_mode='hardened' or 'admin_only'")
+    if runtime_profile in ("prod", "production") and seed_mode != "hardened":
+        raise RuntimeError(
+            "production profile requires usermanagement.seed_mode='hardened' "
+            "(legacy admin/admin seed is not allowed)"
+        )
     if seed_mode == "hardened":
         pass
     elif seed_mode == "admin_only":
+        # Legacy/dev desktop convenience only: repository seed bypasses the
+        # password policy and creates admin/admin with must_change_password.
+        # Backend composition forces hardened; production forbids this mode.
         repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
     elif seed_mode == "legacy_defaults" and dev_mode:
+        # Explicit legacy/dev seed; same policy bypass as admin_only.
         repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
     password_policy = password_policy_from_mapping(user_settings.get("password_policy"))
     container.register_port(
