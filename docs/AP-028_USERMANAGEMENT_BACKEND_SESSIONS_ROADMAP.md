@@ -791,7 +791,8 @@ Migration-/Go-live-Gates main betroffen gruen
 
 **Übergabe**
 
-Prep abgeschlossen → Remapping-/Cutover-Folgepaket (vor M9-Abschlusscutover).
+Prep abgeschlossen → Remapping-/Cutover-Folgepaket bleibt **außerhalb AP-028**
+(separat freizugeben). M9 ist Legacy-Grenze und Scope-Abschluss, **kein** Cutover.
 
 ---
 
@@ -799,69 +800,78 @@ Prep abgeschlossen → Remapping-/Cutover-Folgepaket (vor M9-Abschlusscutover).
 
 **Ziel**
 
-`current_user.json` nur noch klarer Desktop-Übergang oder entfernt aus Backend-Pfad; öffentliche API stabil; Volltestlauf; Abschlussdokumentation.
+Backend-Authentifizierung klar von Desktop-`current_user.json` getrennt;
+öffentliche API stabil; Abschlussmatrix gegen Abschnitt D; AP-028-Scope abgeschlossen
+ohne produktiven Cutover.
+
+**Umsetzungsplan:** [`docs/AP-028_M9_LEGACY_SESSION_BOUNDARY.md`](AP-028_M9_LEGACY_SESSION_BOUNDARY.md)
 
 **Voraussetzungen**
 
-Milestone 8 Prep erfolgreich; produktiver Cutover nur nach freigegebenem Remapping-Folgepaket.
+Milestone 8 Prep in `main` (`0e25f9f`); produktiver Cutover nur nach freigegebenem
+Remapping-Folgepaket (nicht Teil von M9).
 
 **Scope**
 
-- Backend nutzt niemals lokale Sessiondatei als Wahrheit
-- Kennzeichnung/Abschaltung Legacy-Session für backend-migrierte Auth-Use-Cases
+- Backend nutzt niemals lokale Sessiondatei als Wahrheit (Architektur-Gate)
+- Inventar und Kennzeichnung Legacy-Session für Desktop/CLI
 - Abschlussmatrix gegen Abschnitt D
-- Dokumentation Status AP-028
+- Dokumentation Status AP-028 (scope-complete ≠ repo release-green)
 
 **Nicht-Ziele**
 
+- Produktiver PostgreSQL-Cutover / UUID-Remapping / Quermodul-Datenmigration
+- Entfernen von `SessionStore` oder Desktop-`get_current_user()`-Aufrufern
 - Vollständige PyQt-Multiuser-UX
 - Documents-Multiuser-MVP (folgt separat)
+- Fix des unabhängigen Training-CLI-Fehlers
 
 **Betroffene Dateien/Bausteine**
 
-- `session_store.py` Legacy-Grenze
-- `docs/AP-028_*` Abschlussstatus
-- Master-Roadmap Statusnachtrag (AP-028 erledigt / nächster Schwerpunkt Documents-MVP)
+- Architektur-Gate `tests/interfaces/test_architecture_gates.py`
+- `session_store.py` Docstring (Legacy-Kennzeichnung)
+- `docs/AP-028_M9_LEGACY_SESSION_BOUNDARY.md`
+- Roadmap- und Master-Statusnachtrag
 
 **Implementierungsaufgaben**
 
-1. Sicherstellen: keine Backend-Resolve-Pipeline liest JSON-Session.
-2. CLI/PyQt: Auth-Fachlogik nicht neu erfinden; Übergang dokumentieren.
-3. Gesamttestlauf laut Gates.
-4. Abschlussbericht mit Ausführungspfad und DoD.
+1. Backend-Scan-Gate: kein `session_store` / `current_user.json` / `get_current_user`.
+2. Auth-Pfad absichern: nur `um_api.resolve_session` und öffentliche Fassaden.
+3. Desktop-/CLI-Inventar dokumentieren (keine Migration).
+4. Abschnitt-D-Matrix; Roadmap/Master konsistent; Training-Fehler transparent.
 
 **Tests**
 
-- Alle neuen Unit-/Contract-/Repo-/Backend-/Migrations-/Audit-/Architektur-Tests
-- Verpflichtende Negativtests Abschnitt 16.2 der Übergabe
+- Erweiterte Backend-Architektur-Gates
+- Bestehende UM-/Backend-/M8-Tests unverändert grün
+- Kein Überspringen des Training-CLI-Fehlers
 
 **Test-Gate**
 
 ```text
-.\.venv\Scripts\python.exe -m pytest tests/platform -q
-.\.venv\Scripts\python.exe -m pytest tests/modules -q
-.\.venv\Scripts\python.exe -m pytest tests/interfaces -q
-.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -q
-Architektur-Gates grün
-Anwendbare Migration-/Go-live-Gates grün
-Keine offenen P0/P1
+M9-scoped Gates (Architektur, CLI-first, backend, usermanagement, docs consistency,
+Migration-/Go-live-Gates) grün
+Bekannter Training-CLI-Fehler dokumentiert, nicht „behoben“ durch Skip
 ```
 
 **Abnahmekriterien**
 
-- Gesamtabschlussdefinition (Abschnitt D) erfüllt oder Abweichungen supervisor-freigegeben dokumentiert
+- Abschnitt-D-Matrix vollständig; M8 nicht als produktiver Cutover dargestellt
+- AP-028 Scope complete; kein Claim „repo release-green“ bei rotem Training-CLI
 
 **Risiken**
 
-- Verfrühte Entfernung der Desktop-Session bricht lokale CLI/PyQt — Übergangspfad bewusst belassen bis Clients umgestellt sind
+- Verfrühte Entfernung der Desktop-Session bricht lokale CLI/PyQt — bewusst belassen
 
 **Eskalationskriterien**
 
-- Bedarf, Documents-MVP in denselben Milestone zu ziehen
+- Bedarf, Documents-MVP oder Cutover in denselben Milestone zu ziehen
+- Wunsch, Training-CLI in M9 zu „reparieren“
 
 **Übergabe**
 
-AP-028 abgeschlossen → Documents-Multiuser-MVP als nächstes separat freizugebendes Paket (Voraussetzung: bestätigter UserContext verfügbar).
+AP-028 Scope abgeschlossen → Documents-Multiuser-MVP als nächstes separat
+freizugebendes Paket. Remapping/Cutover und Training-CLI-Reparatur bleiben Folgepakete.
 
 ---
 

@@ -520,22 +520,54 @@ def test_backend_uses_only_usermanagement_public_api() -> None:
         "modules.usermanagement.sqlite_repository",
         "modules.usermanagement.postgres_",
         "modules.usermanagement.session_ops",
+        "modules.usermanagement.session_store",
         "modules.usermanagement.auth_ops",
         "modules.usermanagement.password_crypto",
         "modules.usermanagement.memory_session",
         "modules.usermanagement.repository",
         "modules.usermanagement.wiring",
         "modules.usermanagement.module",
+        "modules.usermanagement.cutover_",
+        "UserManagementService",
+        "SessionStore",
+        "current_user.json",
+        "get_current_user",
+        "sqlite3",
+        "import sqlite",
     )
     offenders: list[str] = []
-    for path in sorted((ROOT / "src" / "backend").rglob("*.py")):
+    backend_root = ROOT / "src" / "backend"
+    for path in sorted(backend_root.rglob("*.py")):
         content = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
         for marker in forbidden_markers:
             if marker in content:
-                offenders.append(f"{path.relative_to(ROOT).as_posix()} -> {marker}")
+                offenders.append(f"{rel} -> {marker}")
         if "from modules.usermanagement." in content and "modules.usermanagement.api" not in content:
-            # allow `from modules.usermanagement import api`
             if "from modules.usermanagement import api" not in content:
-                offenders.append(f"{path.relative_to(ROOT).as_posix()} -> non-api usermanagement import")
-    assert offenders == []
+                offenders.append(f"{rel} -> non-api usermanagement import")
+    assert offenders == [], offenders
+
+
+def test_backend_auth_path_uses_public_resolve_session() -> None:
+    """Backend auth resolve must call um_api.resolve_session; routes use public facades."""
+    deps = _read("src/backend/auth_dependencies.py")
+    assert "um_api.resolve_session(" in deps
+    assert "get_current_user" not in deps
+    assert "SessionStore" not in deps
+    assert "current_user.json" not in deps
+
+    routes = _read("src/backend/auth_routes.py")
+    assert "um_api.login_backend(" in routes
+    assert "um_api.logout_backend(" in routes
+    assert "um_api.change_own_password(" in routes
+    assert "um_api.revoke_all_own_sessions(" in routes
+    assert "get_current_user" not in routes
+    assert "SessionStore" not in routes
+
+    admin = _read("src/backend/user_admin_routes.py")
+    assert "um_api.create_user_as_admin(" in admin
+    assert "um_api.update_user_access_as_admin(" in admin
+    assert "get_current_user" not in admin
+    assert "SessionStore" not in admin
 

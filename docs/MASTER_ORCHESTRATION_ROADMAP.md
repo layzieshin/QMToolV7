@@ -26,8 +26,14 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
 - AP-025 Agent Guardrails und Repo-Konsistenz: erledigt (Governance/Docs/Gates; kein fachliches Produktverhalten).
 - AP-026 Documents Review-ablehnen Evidence Baseline: erledigt (Test-Gate fuer bestehenden Servicefluss; Produktverhalten unveraendert; Kettenstatus bleibt `ketten-eingeschraenkt`).
 - AP-027 Verbindliches Datenbank-Migrationsfundament: erledigt/gemergt in `main` (Commit-Grundlage `Establish AP-027 database migration foundation`); SQLite-Owner V1, forward-only Runner, Gates und Policy. PostgreSQL blieb bewusst ausserhalb AP-027.
-- AP-028 Backend-gestuetztes Usermanagement mit serverseitigen Sessions: freigegebener Schwerpunkt; M0–M7 in `main`, naechster Umsetzungs-Milestone M8 (Cutover-Prep only, `docs/AP-028_M8_CUTOVER_PREP.md`). Produktiver PG-Cutover und UUID-Remapping der Quermodule sind ein separates Folgepaket. Roadmap und Milestone-0-Prompt unter `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` und `docs/AP-028_MILESTONE_0_PROMPT.md`. Milestone 0 Ist-/Zielmatrix: `docs/AP-028_M0_STATE_MATRIX.md`. Umsetzung milestone-weise; kein Big-Bang.
-- Nach Abschluss AP-028: Documents-Multiuser-MVP als separat freizugebendes Arbeitspaket (setzt bestaetigten UserContext/Sessions voraus).
+- AP-028 Backend-gestuetztes Usermanagement mit serverseitigen Sessions: **Scope complete**
+  (M0–M9; M8 Cutover-Prep in `main` als `0e25f9f` / PR #17; M9 Legacy-Grenze
+  `docs/AP-028_M9_LEGACY_SESSION_BOUNDARY.md`). AP-028 scope-complete ist **nicht**
+  gleichbedeutend mit „Gesamtrepo release-green“ (bekannter unabhaengiger Fehler
+  `tests/e2e_cli/test_training_cli.py`). Produktiver PG-Cutover und UUID-Remapping
+  der Quermodule bleiben ein separates Folgepaket ausserhalb AP-028.
+- Naechster separat freizugebender Schwerpunkt nach AP-028: Documents-Multiuser-MVP
+  (setzt bestaetigten UserContext/Sessions voraus).
 
 ## Zielarchitektur
 ```mermaid
@@ -165,16 +171,20 @@ Konflikte markieren statt aendern:
 - Trainingsspezifikation enthaelt Detailarchitektur; fuer diese Roadmap nur Charter-/Priorisierungsebene nutzen.
 
 ## Naechste freigegebene Aktion
-AP-028 ist die naechste freigegebene Aktion (Usermanagement Backend Sessions).
+AP-028 ist im vereinbarten Scope abgeschlossen (M0–M9). Naechster separat
+freizugebender Schwerpunkt: Documents-Multiuser-MVP.
 
-Planungsartefakte:
+Planungsartefakte (AP-028, historisch/abgeschlossen):
 - `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md`
 - `docs/AP-028_MILESTONE_0_PROMPT.md`
-- `docs/AP-028_M0_STATE_MATRIX.md` (Milestone 0)
+- `docs/AP-028_M0_STATE_MATRIX.md`
+- `docs/AP-028_M8_CUTOVER_PREP.md`
+- `docs/AP-028_M9_LEGACY_SESSION_BOUNDARY.md`
 
-Umsetzung erfolgt streng milestone-weise (M0 Dokumentation → M1 Contracts → …
-→ M9 Legacy-Grenze). Jeder Milestone braucht sein Test-Gate, bevor der naechste
-beginnt. Documents-Multiuser-MVP bleibt danach separat freizugeben.
+Folgepakete ausserhalb AP-028 (nicht automatisch freigegeben):
+- UUID-Remapping + Quermodul-Datenmigration + produktiver UM-Cutover
+- Training-CLI-Reparatur (`TrainingAdminApi.create_category` /
+  `tests/e2e_cli/test_training_cli.py`)
 
 ## Nicht freigegeben
 - Boundary-Cleanups ausserhalb der in AP-028 explizit genannten Legacy-Grenzen
@@ -184,17 +194,19 @@ beginnt. Documents-Multiuser-MVP bleibt danach separat freizugeben.
 - Backend-Feature-Routen ausserhalb der AP-028 Auth-/Session-Endpunkte
 - PostgreSQL-Migration anderer Fachmodule
 - Fachliche Datenuebernahme / UUID-Remapping der Quermodule und produktiver UM-Cutover
-  (nicht M8; M8 ist Prep-only, siehe `docs/AP-028_M8_CUTOVER_PREP.md`)
+  (ausserhalb AP-028; M8 war Prep-only, siehe `docs/AP-028_M8_CUTOVER_PREP.md`)
+- Training-CLI-Reparatur (`tests/e2e_cli/test_training_cli.py`; unabhaengig von AP-028 M9)
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
-- Documents-Multiuser-MVP (erst nach AP-028, separate Freigabe)
+- Documents-Multiuser-MVP (nach AP-028, separate Freigabe)
 - Incident-Modul Cleanup Admin=QMB (bekannte Abweichung; ausserhalb AP-028)
 
-Im Rahmen von AP-028 freigegeben (milestone-weise):
+Im Rahmen von AP-028 freigegeben und milestone-weise umgesetzt (M0–M9):
 - Auth-Implementierung (serverseitige Sessions)
 - UserContext-Implementierung im Usermanagement-Scope
 - API-Erweiterungen von `modules/usermanagement/api.py` laut Milestone-Plan
 - Backend Auth-Routen (`/auth/*`) als Transport ohne Businesslogik
-- PostgreSQL fuer Schema `usermanagement` inkl. Cutover-Vorbereitung
+- PostgreSQL fuer Schema `usermanagement` inkl. Cutover-Vorbereitung (Prep-only)
+- Legacy-Grenze Backend vs. Desktop-`current_user.json` (M9)
 
 ## Hinweis zu AP-002
 Ergebnis von AP-002 ist nur ein Inventar und liegt vor.
