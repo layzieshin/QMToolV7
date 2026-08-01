@@ -23,6 +23,10 @@ def test_default_policy_rejects_short_password() -> None:
         validate_password("short", DEFAULT_PASSWORD_POLICY)
     with pytest.raises(WeakPasswordError):
         validate_password("123456789", DEFAULT_PASSWORD_POLICY)
+    with pytest.raises(WeakPasswordError):
+        validate_password("")
+    with pytest.raises(WeakPasswordError):
+        validate_password("   ")
 
 
 def test_technical_floor_rejects_unsafe_min_length() -> None:

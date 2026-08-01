@@ -45,9 +45,16 @@ def password_policy_from_mapping(raw: Mapping[str, Any] | None) -> PasswordPolic
 
 
 def validate_password(password: str, policy: PasswordPolicy | None = None) -> None:
-    """Raise ``WeakPasswordError`` when the password violates the policy."""
+    """Raise ``WeakPasswordError`` when the password violates the policy.
+
+    Empty strings and whitespace-only values are always rejected here so HTTP
+    and service paths share one owner for password-setting validation.
+    """
     active = policy or DEFAULT_PASSWORD_POLICY
-    value = password if isinstance(password, str) else ""
+    raw = password if isinstance(password, str) else ""
+    value = raw.strip()
+    if not value:
+        raise WeakPasswordError("password does not meet policy")
     if len(value) < active.min_length:
         raise WeakPasswordError("password does not meet policy")
     if active.require_letter and not any(ch.isalpha() for ch in value):

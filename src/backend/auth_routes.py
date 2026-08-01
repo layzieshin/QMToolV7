@@ -23,7 +23,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+    password: str
 
 
 class LoginResponse(BaseModel):
@@ -31,7 +31,8 @@ class LoginResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    new_password: str = Field(min_length=1)
+    # No min_length here — Usermanagement password policy owns validation.
+    new_password: str
 
 
 class MeResponse(BaseModel):

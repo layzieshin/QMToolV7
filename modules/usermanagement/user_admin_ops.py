@@ -33,12 +33,10 @@ class UserAdminOps:
 
     def create_user(self, username: str, password: str, role: str) -> AuthenticatedUser:
         username = username.strip()
-        password = password.strip()
+        password = password.strip() if isinstance(password, str) else ""
         role = role.strip()
         if not username:
             raise ValueError("username is required")
-        if not password:
-            raise ValueError("password is required")
         if role not in ("Admin", "QMB", "User"):
             raise ValueError("role must be one of: Admin, QMB, User")
         validate_password(password, self._password_policy)
@@ -179,11 +177,9 @@ class UserAdminOps:
         email: str | None = None,
     ) -> AuthenticatedUser:
         username = username.strip()
-        password = password.strip()
+        password = password.strip() if isinstance(password, str) else ""
         if not username:
             raise ValueError("username is required")
-        if not password:
-            raise ValueError("password is required")
         validate_password(password, self._password_policy)
         if self._repository is not None:
             user = self._repository.create_user(
@@ -219,11 +215,9 @@ class UserAdminOps:
 
     def change_password(self, username: str, new_password: str) -> None:
         username = username.strip()
-        new_password = new_password.strip()
+        new_password = new_password.strip() if isinstance(new_password, str) else ""
         if not username:
             raise ValueError("username is required")
-        if not new_password:
-            raise ValueError("new_password is required")
         validate_password(new_password, self._password_policy)
         if self._repository is not None:
             self._repository.change_password(username, new_password)
@@ -243,12 +237,10 @@ class UserAdminOps:
 
     def ensure_admin_credentials(self, username: str, password: str, role: str = "Admin") -> AuthenticatedUser:
         username = username.strip()
-        password = password.strip()
+        password = password.strip() if isinstance(password, str) else ""
         role = role.strip()
         if not username:
             raise ValueError("username is required")
-        if not password:
-            raise ValueError("password is required")
         if role not in ("Admin", "QMB", "User"):
             raise ValueError("role must be one of: Admin, QMB, User")
         existing = None

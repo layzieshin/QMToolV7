@@ -141,6 +141,22 @@ def test_change_password_keeps_current_session(tmp_path: Path) -> None:
     assert weak.status_code == 400
     assert weak.json()["detail"]["error"] == "weak_password"
 
+    empty = client.post(
+        "/auth/change-password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"new_password": ""},
+    )
+    assert empty.status_code == 400
+    assert empty.json()["detail"]["error"] == "weak_password"
+
+    spaces = client.post(
+        "/auth/change-password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"new_password": "   "},
+    )
+    assert spaces.status_code == 400
+    assert spaces.json()["detail"]["error"] == "weak_password"
+
     # password_change_allowed cannot be set by client fields
     spoof = client.post(
         "/auth/change-password",
