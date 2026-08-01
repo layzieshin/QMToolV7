@@ -41,6 +41,7 @@ storage/
 *.log
 *.db
 *.sqlite
+!tests/fixtures/database_migrations/**/*.db
 
 # OS
 .DS_Store
