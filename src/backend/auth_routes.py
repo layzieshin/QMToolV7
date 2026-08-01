@@ -63,11 +63,14 @@ def login(
     request: Request,
     request_id: Annotated[str, Depends(effective_request_id)],
 ) -> LoginResponse:
-    del request_id  # correlation is applied by middleware; login does not resolve a session
     container = get_container(request)
     try:
-        user = um_api.authenticate_user(container, body.username, body.password)
-        issued = um_api.create_backend_session(container, user)
+        issued = um_api.login_backend(
+            container,
+            body.username,
+            body.password,
+            request_id=request_id,
+        )
     except Exception as exc:
         if isinstance(
             exc,
@@ -75,6 +78,7 @@ def login(
                 um_api.AuthenticationError,
                 um_api.InactiveUserError,
                 um_api.WeakPasswordError,
+                um_api.AuditUnavailableError,
                 um_api.UsermanagementError,
             ),
         ):
@@ -92,10 +96,11 @@ def me(context: Annotated[UserContext, Depends(require_user_context_normal)]) ->
 def logout(
     request: Request,
     token: Annotated[str, Depends(extract_bearer_token)],
+    request_id: Annotated[str, Depends(effective_request_id)],
 ) -> Response:
     container = get_container(request)
     try:
-        um_api.revoke_session(container, raw_token=token)
+        um_api.logout_backend(container, raw_token=token, request_id=request_id)
     except Exception as exc:
         if isinstance(
             exc,
@@ -104,6 +109,7 @@ def logout(
                 um_api.SessionNotFoundError,
                 um_api.ExpiredSessionError,
                 um_api.RevokedSessionError,
+                um_api.AuditUnavailableError,
                 um_api.SessionError,
             ),
         ):

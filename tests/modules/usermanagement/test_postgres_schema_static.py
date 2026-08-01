@@ -53,12 +53,58 @@ def test_initial_sql_contains_required_schema_contracts() -> None:
 
 def test_history_select_grant_is_versioned_separately() -> None:
     steps = pgs.discover_migrations()
-    assert [step.name for step in steps] == ["initial", "grant_history_select"]
+    assert [step.name for step in steps] == [
+        "initial",
+        "grant_history_select",
+        "audit_evidence",
+    ]
     sql = (pgs.MIGRATIONS_DIR / "0002_grant_history_select.sql").read_text(encoding="utf-8").lower()
     assert "grant select on usermanagement._qm_schema_migrations to qmtool_runtime" in sql
     assert "insert" not in sql
     assert "update" not in sql
     assert "delete" not in sql
+
+
+def test_audit_evidence_sql_contains_required_contracts() -> None:
+    sql = (pgs.MIGRATIONS_DIR / "0003_audit_evidence.sql").read_text(encoding="utf-8").lower()
+    assert "create table usermanagement.audit_events" in sql
+    assert "audit_id" in sql
+    assert "reason_code" in sql
+    assert "actor_kind" in sql
+    assert "qmtool.session-expiry" in sql
+    assert "auth.session.expired" in sql
+    assert "audit_events_session_expired_uidx" in sql
+    assert "request_id text not null" in sql
+    assert "audit_events_request_id_present" in sql
+    assert "btrim(request_id) <> ''" in sql
+    assert " on conflict " not in sql
+    assert "returning " not in sql
+    assert "grant insert on table usermanagement.audit_events to qmtool_runtime" in sql
+    assert "revoke all on table usermanagement.audit_events from public" in sql
+    assert "grant select" not in sql
+    assert "grant update" not in sql
+    assert "grant delete" not in sql
+    assert "jsonb" not in sql
+    assert "username" not in sql
+    assert "password_hash" not in sql
+    assert "token_hash" not in sql
+    assert "raw_token" not in sql
+    assert "default gen_random_uuid" not in sql
+    for event_type in (
+        "auth.login.succeeded",
+        "auth.login.denied",
+        "auth.logout.succeeded",
+        "auth.logout_all.succeeded",
+        "auth.session.expired",
+        "user.created",
+        "user.access_changed",
+        "user.password_changed",
+    ):
+        assert event_type in sql
+    assert "audit_events" in pgs.EXPECTED_TABLES_WITH_AUDIT
+    assert "audit_id" in pgs.EXPECTED_AUDIT_EVENTS_COLUMNS
+    assert "audit_events_actor_form" in pgs.EXPECTED_AUDIT_CHECK_CONSTRAINTS
+    assert "audit_events_request_id_present" in pgs.EXPECTED_AUDIT_CHECK_CONSTRAINTS
 
 
 def test_provision_roles_bootstrap_contract() -> None:

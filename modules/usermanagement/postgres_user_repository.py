@@ -82,28 +82,57 @@ class PostgresUserRepository(UserRepository):
 
     def get_by_username(self, username: str) -> tuple[str, str, str] | None:
         with runtime_connection(self._dsn) as conn:
-            row = conn.execute(
-                f"""
-                SELECT user_id::text AS user_id, password_hash, role
-                FROM usermanagement.users
-                WHERE lower(username) = lower(%s)
-                """,
-                (username,),
-            ).fetchone()
+            return self.get_by_username_on_connection(conn, username)
+
+    @staticmethod
+    def get_by_username_on_connection(
+        conn: psycopg.Connection,
+        username: str,
+    ) -> tuple[str, str, str] | None:
+        row = conn.execute(
+            """
+            SELECT user_id::text AS user_id, password_hash, role
+            FROM usermanagement.users
+            WHERE lower(username) = lower(%s)
+            """,
+            (username,),
+        ).fetchone()
         if row is None:
             return None
         return str(row["user_id"]), str(row["password_hash"]), str(row["role"])
 
     def get_user(self, username: str) -> AuthenticatedUser | None:
         with runtime_connection(self._dsn) as conn:
-            row = conn.execute(
-                f"""
-                SELECT {_USER_COLUMNS}
-                FROM usermanagement.users
-                WHERE lower(username) = lower(%s)
-                """,
-                (username,),
-            ).fetchone()
+            return self.get_user_on_connection(conn, username)
+
+    @staticmethod
+    def get_user_on_connection(
+        conn: psycopg.Connection,
+        username: str,
+    ) -> AuthenticatedUser | None:
+        row = conn.execute(
+            f"""
+            SELECT {_USER_COLUMNS}
+            FROM usermanagement.users
+            WHERE lower(username) = lower(%s)
+            """,
+            (username,),
+        ).fetchone()
+        return None if row is None else _user_from_row(row)
+
+    @staticmethod
+    def get_user_by_id_on_connection(
+        conn: psycopg.Connection,
+        user_id: str,
+    ) -> AuthenticatedUser | None:
+        row = conn.execute(
+            f"""
+            SELECT {_USER_COLUMNS}
+            FROM usermanagement.users
+            WHERE user_id = %s::uuid
+            """,
+            (user_id,),
+        ).fetchone()
         return None if row is None else _user_from_row(row)
 
     def list_users(self) -> list[AuthenticatedUser]:
@@ -130,44 +159,71 @@ class PostgresUserRepository(UserRepository):
         last_name: str | None = None,
         email: str | None = None,
     ) -> AuthenticatedUser:
+        try:
+            with runtime_connection(self._dsn) as conn:
+                return self.create_user_on_connection(
+                    conn,
+                    username,
+                    password,
+                    role,
+                    is_active=is_active,
+                    is_qmb=is_qmb,
+                    must_change_password=must_change_password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                )
+        except UniqueViolation as exc:
+            raise ValueError("user already exists") from exc
+        except (CheckViolation, ForeignKeyViolation) as exc:
+            raise ValueError("user violates PostgreSQL constraints") from exc
+
+    @staticmethod
+    def create_user_on_connection(
+        conn: psycopg.Connection,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        is_active: bool = True,
+        is_qmb: bool = False,
+        must_change_password: bool = False,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        email: str | None = None,
+    ) -> AuthenticatedUser:
         resolved_first, resolved_last, resolved_display = _display_values(
             first_name, last_name, None
         )
         resolved_first = resolved_first or username
         resolved_display = resolved_display or username
         now = _utc_now()
-        try:
-            with runtime_connection(self._dsn) as conn:
-                row = conn.execute(
-                    f"""
-                    INSERT INTO usermanagement.users (
-                        user_id, username, password_hash, role, first_name, last_name,
-                        display_name, email, is_active, deactivated_at, is_qmb,
-                        must_change_password, created_at, updated_at
-                    )
-                    VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s, %s)
-                    RETURNING {_USER_COLUMNS}
-                    """,
-                    (
-                        str(uuid4()),
-                        username,
-                        hash_password(password),
-                        role,
-                        resolved_first,
-                        resolved_last,
-                        resolved_display,
-                        (email or "").strip() or None,
-                        bool(is_active),
-                        bool(is_qmb),
-                        bool(must_change_password),
-                        now,
-                        now,
-                    ),
-                ).fetchone()
-        except UniqueViolation as exc:
-            raise ValueError("user already exists") from exc
-        except (CheckViolation, ForeignKeyViolation) as exc:
-            raise ValueError("user violates PostgreSQL constraints") from exc
+        row = conn.execute(
+            f"""
+            INSERT INTO usermanagement.users (
+                user_id, username, password_hash, role, first_name, last_name,
+                display_name, email, is_active, deactivated_at, is_qmb,
+                must_change_password, created_at, updated_at
+            )
+            VALUES (%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s, %s)
+            RETURNING {_USER_COLUMNS}
+            """,
+            (
+                str(uuid4()),
+                username,
+                hash_password(password),
+                role,
+                resolved_first,
+                resolved_last,
+                resolved_display,
+                (email or "").strip() or None,
+                bool(is_active),
+                bool(is_qmb),
+                bool(must_change_password),
+                now,
+                now,
+            ),
+        ).fetchone()
         if row is None:
             raise RuntimeError("PostgreSQL user insert returned no row")
         return _user_from_row(row)
