@@ -31,7 +31,7 @@ jobs:
 
       - name: Run regression gates
         run: |
-          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/platform/test_database_migration_gate.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/usermanagement/test_postgres_schema_static.py tests/modules/usermanagement/test_postgres_migration_gate.py tests/modules/usermanagement/test_password_policy.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/modules/test_incident_management_boundary.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_database_commands.py tests/e2e_cli/test_users_and_settings_cli.py tests/interfaces/test_architecture_gates.py tests/interfaces/test_pyqt_navigation_smoke.py tests/backend/test_auth_api.py -q
+          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/platform/test_database_migration_gate.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/usermanagement/test_postgres_schema_static.py tests/modules/usermanagement/test_postgres_migration_gate.py tests/modules/usermanagement/test_password_policy.py tests/modules/usermanagement/test_m6_session_enforcement.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/modules/test_incident_management_boundary.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_database_commands.py tests/e2e_cli/test_users_and_settings_cli.py tests/interfaces/test_architecture_gates.py tests/interfaces/test_pyqt_navigation_smoke.py tests/backend/test_auth_api.py tests/backend/test_user_admin_api.py -q
 
       - name: Run database migration foundation gate
         run: |
@@ -174,7 +174,7 @@ jobs:
           python -m pytest tests/modules/usermanagement/test_postgres_schema_static.py tests/modules/usermanagement/test_postgres_migration_gate.py -q
           python -m pytest tests/modules/usermanagement/test_postgres_schema_live.py -m postgres -q
           python -m pytest tests/modules/usermanagement/test_postgres_repositories_live.py -m postgres -q
-          python -m pytest tests/backend/test_auth_api_postgres_live.py -m postgres -q
+          python -m pytest tests/backend/test_auth_api_postgres_live.py tests/backend/test_m6_postgres_live.py -m postgres -q
 
       - name: Upload PostgreSQL gate artifact
         if: always()

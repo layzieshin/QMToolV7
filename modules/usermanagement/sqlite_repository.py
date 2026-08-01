@@ -239,11 +239,25 @@ class SQLiteUserRepository(UserRepository):
         current = self.get_user(username)
         if current is None:
             raise KeyError(f"unknown user: {username}")
+        next_active = bool(current.is_active if is_active is None else is_active)
+        if next_active:
+            next_deactivated_at = None
+        elif current.is_active and not next_active:
+            next_deactivated_at = datetime.now(timezone.utc).isoformat()
+        else:
+            # Preserve existing stamp when already inactive.
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT deactivated_at FROM users WHERE username = ?",
+                    (username,),
+                ).fetchone()
+            next_deactivated_at = None if row is None else row["deactivated_at"]
         with self._connect() as conn:
             cur = conn.execute(
                 """
                 UPDATE users
-                SET department = ?, scope = ?, organization_unit = ?, role = ?, is_active = ?, is_qmb = ?, updated_at = ?
+                SET department = ?, scope = ?, organization_unit = ?, role = ?,
+                    is_active = ?, is_qmb = ?, deactivated_at = ?, updated_at = ?
                 WHERE username = ?
                 """,
                 (
@@ -251,8 +265,9 @@ class SQLiteUserRepository(UserRepository):
                     scope if scope is not None else current.scope,
                     organization_unit if organization_unit is not None else current.organization_unit,
                     role if role is not None else current.role,
-                    int(bool(is_active if is_active is not None else current.is_active)),
+                    int(bool(next_active)),
                     int(bool(is_qmb if is_qmb is not None else current.is_qmb)),
+                    next_deactivated_at,
                     datetime.now(timezone.utc).isoformat(),
                     username,
                 ),

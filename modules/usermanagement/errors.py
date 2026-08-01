@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Public auth/session error contracts for usermanagement (AP-028 Milestone 1)."""
+"""Public auth/session error contracts for usermanagement (AP-028 Milestone 1+)."""
 
 
 class UsermanagementError(RuntimeError):
@@ -44,3 +44,23 @@ class RevokedSessionError(SessionError):
 
 class WeakPasswordError(UsermanagementError):
     """Password does not meet the configured password policy."""
+
+
+class AuthorizationError(UsermanagementError):
+    """Caller lacks permission for the requested usermanagement action."""
+
+
+class UserNotFoundError(UsermanagementError):
+    """Target user does not exist."""
+
+
+class UserExistsError(UsermanagementError):
+    """Username is already taken."""
+
+
+class LastActiveAdminError(UsermanagementError):
+    """Operation would remove the last active Admin."""
+
+
+class InvalidUserUpdateError(UsermanagementError):
+    """Admin access update payload is empty or otherwise invalid."""

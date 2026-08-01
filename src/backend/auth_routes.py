@@ -112,6 +112,21 @@ def logout(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def logout_all(
+    request: Request,
+    context: Annotated[UserContext, Depends(require_user_context_normal)],
+) -> Response:
+    container = get_container(request)
+    try:
+        um_api.revoke_all_own_sessions(container, context)
+    except Exception as exc:
+        if isinstance(exc, um_api.UsermanagementError):
+            raise map_auth_error(exc) from exc
+        raise
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def change_password(
     body: ChangePasswordRequest,

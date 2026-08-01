@@ -31,7 +31,15 @@ class UserAdminOps:
             for username, (_password, role) in sorted(self._fallback_users.items())
         ]
 
-    def create_user(self, username: str, password: str, role: str) -> AuthenticatedUser:
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        *,
+        is_qmb: bool = False,
+        must_change_password: bool = False,
+    ) -> AuthenticatedUser:
         username = username.strip()
         password = password.strip() if isinstance(password, str) else ""
         role = role.strip()
@@ -41,12 +49,33 @@ class UserAdminOps:
             raise ValueError("role must be one of: Admin, QMB, User")
         validate_password(password, self._password_policy)
         if self._repository is not None:
-            user = self._repository.create_user(username, password, role)
+            try:
+                user = self._repository.create_user(
+                    username,
+                    password,
+                    role,
+                    is_qmb=bool(is_qmb),
+                    must_change_password=bool(must_change_password),
+                )
+            except ValueError as exc:
+                if "already exists" in str(exc).lower():
+                    from .errors import UserExistsError
+
+                    raise UserExistsError("user already exists") from exc
+                raise
         else:
             if username in self._fallback_users:
-                raise ValueError("user already exists")
+                from .errors import UserExistsError
+
+                raise UserExistsError("user already exists")
             self._fallback_users[username] = (password, role)
-            user = AuthenticatedUser(user_id=username, username=username, role=role)
+            user = AuthenticatedUser(
+                user_id=username,
+                username=username,
+                role=role,
+                is_qmb=bool(is_qmb),
+                must_change_password=bool(must_change_password),
+            )
         self._publish(
             "domain.usermanagement.user.created.v1",
             {"username": user.username, "role": user.role},
@@ -115,7 +144,9 @@ class UserAdminOps:
         if self._repository is None:
             existing = self._fallback_users.get(username)
             if existing is None:
-                raise KeyError(f"unknown user: {username}")
+                from .errors import UserNotFoundError
+
+                raise UserNotFoundError(f"unknown user: {username}")
             password, current_role = existing
             new_role = role or current_role
             self._fallback_users[username] = (password, new_role)
@@ -129,15 +160,20 @@ class UserAdminOps:
                 is_active=is_active if is_active is not None else True,
                 is_qmb=bool(is_qmb),
             )
-        return self._repository.update_user_admin_fields(
-            username,
-            department=department,
-            scope=scope,
-            organization_unit=organization_unit,
-            role=role,
-            is_active=is_active,
-            is_qmb=is_qmb,
-        )
+        try:
+            return self._repository.update_user_admin_fields(
+                username,
+                department=department,
+                scope=scope,
+                organization_unit=organization_unit,
+                role=role,
+                is_active=is_active,
+                is_qmb=is_qmb,
+            )
+        except KeyError as exc:
+            from .errors import UserNotFoundError
+
+            raise UserNotFoundError(str(exc)) from exc
 
     def set_user_active(self, username: str, is_active: bool) -> AuthenticatedUser:
         return self.update_user_admin_fields(

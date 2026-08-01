@@ -551,43 +551,52 @@ Funktionierende Auth-HTTP-Basis → Milestone 6.
 
 **Ziel**
 
-Deaktivierung, Rollen-/`is_qmb`-Änderung und Sessionwiderruf wirken spätestens beim nächsten Request; Logout-All falls im Scope.
+Deaktivierung, Rollen-/`is_qmb`-Änderung und Sessionwiderruf wirken spätestens beim nächsten Request; Logout-All und minimaler Admin-HTTP-Vertrag.
 
 **Voraussetzungen**
 
 Milestone 5.
 
+**Umsetzungsplan:** [`docs/AP-028_M6_SESSION_ENFORCEMENT.md`](AP-028_M6_SESSION_ENFORCEMENT.md)
+
 **Scope**
 
-- `set_user_active` / Deaktivierung blockiert bestehende Sessions bei Resolve
-- Bei neuer Deaktivierung: `deactivated_at` als echten UTC-Zeitpunkt setzen; bei Reaktivierung entfernen (`NULL`)
-- Rollen- und `is_qmb`-Änderungen ohne Session-Freeze
-- `POST /auth/logout-all` und/oder Session-Liste/Löschung falls ohne Überladung
-- Passwortwechsel: gemaess freigegebener M5-Policy bleibt die aktuelle Session
-  gueltig; in M6 Widerruf aller anderen Sessions des Users umsetzen und testen
+- `set_user_active` / Deaktivierung: `deactivated_at` UTC setzen, alle Sessions widerrufen; Resolve lehnt inaktive User ab
+- Bei Reaktivierung: `deactivated_at` entfernen (`NULL`); alte Sessions bleiben revoked
+- Rollen- und `is_qmb`-Änderungen ohne Session-Widerruf; Resolve lädt frische DB-Werte
+- `POST /auth/logout-all` widerruft alle Sessions inkl. aktueller
+- Passwortwechsel: aktuelle Session bleibt; andere Sessions werden widerrufen (PG atomar)
+- Minimaler Admin-HTTP: `POST /users`, `PATCH /users/{username}/access`
+- Letzter aktiver Admin darf nicht deaktiviert oder demoted werden
+- SQLite-Migration `0002` für `deactivated_at` (Desktop-Parität)
 
 **Nicht-Ziele**
 
-- Vollständige User-Admin-REST-Oberfläche aller CRUD-Routen (kann folgen, wenn Scope klein bleibt)
+- Vollständige User-Admin-REST-Oberfläche (GET/Liste/Reset/Session-Viewer)
 - Incident-Admin=QMB-Cleanup
+- M7-Audit, M8-Cutover
 
 **Betroffene Dateien/Bausteine**
 
 - Usermanagement Admin-/Auth-Ops und Session-Resolve
-- Backend Auth-Routen Erweiterung
-- Tests Negativpfade
+- Backend Auth- und User-Admin-Routen
+- SQLite users-Migration `0002`
+- Tests Negativpfade / PG-Live / CI
 
 **Implementierungsaufgaben**
 
-1. Deaktivierung → nächster Request abgelehnt.
-2. QMB-Flag/Rolle → nächster Request ohne alte Wirkung.
+1. Deaktivierung → Sessions widerrufen + nächster Request abgelehnt.
+2. QMB-Flag/Rolle → nächster Request ohne alte Wirkung (ohne Revoke).
 3. Logout-All widerruft alle Sessions des Users.
-4. Admin ≠ QMB in Resolve/`is_effective_qmb` absichern.
+4. Passwortwechsel widerruft Fremdsessions; aktuelle bleibt.
+5. Admin ≠ QMB in Resolve/`is_effective_qmb` absichern.
+6. Minimaler Admin-HTTP mit dualer Authz (Dependency + Service).
 
 **Tests**
 
 - Alle verpflichtenden Session-/Identitäts-Negativtests aus Übergabeabschnitt 16.2 soweit M6 betroffen
 - Passwortwechsel-Session-Policy-Tests
+- Last-Admin, Logout-All, Admin-HTTP-Fehlerverträge, SQLite V1→V2
 
 **Test-Gate**
 
@@ -595,12 +604,16 @@ Milestone 5.
 Neue Auth-/Session-Negativtests grün
 .\.venv\Scripts\python.exe -m pytest tests/modules -q
 Backend-Auth-Tests grün
+postgres-usermanagement CI grün
 ```
 
 **Abnahmekriterien**
 
 - Keine gültige Session für deaktivierte Benutzer
 - Rollenänderung ohne Re-Login wirksam (Resolve-Pfad)
+- Fremdsession nach Passwortwechsel ungültig; aktuelle Session gültig
+- Logout-all invalidiert den aktuellen Token
+- Letzter aktiver Admin: `409 last_active_admin`
 
 **Risiken**
 
@@ -608,7 +621,7 @@ Backend-Auth-Tests grün
 
 **Eskalationskriterien**
 
-- Unklare Passwortwechsel-Revoke-Policy (Abschnitt E)
+- Keine (Passwortwechsel- und Admin-HTTP-Policy entschieden, siehe Abschnitt E)
 
 **Übergabe**
 
@@ -900,24 +913,24 @@ Nur echte Restoffenheiten. Bereits entschieden und hier nicht erneut fraglich:
 
 ### Noch offen (vor oder während betroffener Milestones zu klären)
 
-1. **Passwortwechsel und bestehende Sessions** — **teilweise entschieden (2026-08-01):**
+1. **Passwortwechsel und bestehende Sessions** — **entschieden (2026-08-01 / M6):**
    - **M5:** aktuelle Session bleibt nach Passwortwechsel gueltig; andere Sessions
      werden in M5 nicht widerrufen (`docs/AP-028_M5_BACKEND_AUTH_FOUNDATION.md`).
-   - **M6:** Widerruf aller anderen Sessions des Users bei Passwortwechsel
-     (aktuelle Session darf behalten oder neu ausgestellt werden — in M6 festlegen).
+   - **M6:** Widerruf aller anderen Sessions des Users; aktuelle Session wird
+     behalten (kein Re-Issue). PostgreSQL: Passwortaenderung und Fremd-Widerruf
+     atomar (`docs/AP-028_M6_SESSION_ENFORCEMENT.md`).
 
 2. **user_id-Remapping bei Cutover**
    Heute oft `user_id == username`. Ziel UUID. Strategie für Referenzen in anderen Modulen (Documents, Training, Incident, Audit)?
    Eskalation zwingend vor Milestone-8-Cutover, sobald Quermodul-Referenzen betroffen sind.
 
 3. **must_change_password-Enforcement**
-   Nur Login blockieren außer change-password, oder jeden Request außer whitelisteten Auth-Endpunkten?
-   Empfehlung: alle Nicht-Auth-Fachaufrufe blockieren, bis geändert.
-   Festschreiben in M2/M5.
+   In M2/M5 umgesetzt: Resolve blockiert Nicht-Whitelist-Aufrufe, bis das
+   Passwort geaendert ist. In M6 nicht erneut geoeffnet.
 
-4. **Umfang User-Admin-HTTP**
-   Ob `GET/POST/PATCH /users` und activate/deactivate in AP-028 oder Folgepaket.
-   Empfehlung: Auth/Session zuerst (M5–M7); Admin-REST nur wenn Milestone-Größe es erlaubt, sonst eigenes kleines Folge-Milestone/AP.
+4. **Umfang User-Admin-HTTP** — **entschieden in M6:**
+   Minimalvertrag `POST /users` und `PATCH /users/{username}/access` in M6.
+   Kein GET/Liste/Reset/Session-Viewer (Folgepaket bei Bedarf).
 
 5. **PostgreSQL-Testinfrastruktur** — **entschieden in M3:** verbindlicher CI-Job
    `postgres-usermanagement` (`ubuntu-latest`, Service `postgres:16`, `QMTOOL_PG_REQUIRED=1`).

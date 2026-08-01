@@ -76,3 +76,21 @@ class InMemorySessionRepository(SessionRepository):
                 self._by_id[session_id] = revoked
                 revoked_sessions.append(revoked)
             return revoked_sessions
+
+    def revoke_other_sessions_for_user(
+        self,
+        user_id: str,
+        keep_session_id: str,
+        revoked_at: datetime,
+    ) -> list[SessionRecord]:
+        with self._lock:
+            revoked_sessions: list[SessionRecord] = []
+            for session_id, session in tuple(self._by_id.items()):
+                if session.user_id != user_id or session.revoked_at is not None:
+                    continue
+                if session_id == keep_session_id:
+                    continue
+                revoked = replace(session, revoked_at=revoked_at)
+                self._by_id[session_id] = revoked
+                revoked_sessions.append(revoked)
+            return revoked_sessions

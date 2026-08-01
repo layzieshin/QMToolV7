@@ -37,6 +37,7 @@ _COLLECT_ALL: list[str] = [
 _ADD_DATA_SEP = ";" if os.name == "nt" else ":"
 _BUNDLE_DATA: list[tuple[str, str]] = [
     ("modules/usermanagement/migrations/0001_initial.sql", "modules/usermanagement/migrations"),
+    ("modules/usermanagement/migrations/0002_deactivated_at.sql", "modules/usermanagement/migrations"),
     (
         "modules/usermanagement/postgres/migrations/0001_initial.sql",
         "modules/usermanagement/postgres/migrations",
