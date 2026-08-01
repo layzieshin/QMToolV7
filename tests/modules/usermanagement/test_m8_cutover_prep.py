@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import sqlite3
+from contextlib import nullcontext
 from pathlib import Path
 
 import psycopg
@@ -29,6 +30,7 @@ from modules.usermanagement.cutover_prep import (
 )
 from modules.usermanagement.cutover_reference_catalog import MODULE_DATABASES
 from modules.usermanagement.password_crypto import hash_password
+from qm_platform.persistence.database_evolution import DatabaseEvolutionService
 from qm_platform.runtime.container import RuntimeContainer
 from tests.database_helpers import prepare_test_database, user_repository
 from tests.modules.usermanagement.test_postgres_schema_live import (
@@ -42,6 +44,16 @@ from tests.modules.usermanagement.test_postgres_schema_live import (
 
 RESTORE_DB = "qmtool_um_restore_drill"
 WRONG_RESTORE_DB = "qmtool_um_wrong_restore_target"
+
+
+@pytest.fixture(autouse=True)
+def _portable_sqlite_fixture_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """M8 fixtures test schemas, not AP-027 OS-specific file-lock semantics."""
+    monkeypatch.setattr(
+        DatabaseEvolutionService,
+        "_migration_lock",
+        lambda self: nullcontext(),
+    )
 
 
 def _digest(path: Path) -> str:
