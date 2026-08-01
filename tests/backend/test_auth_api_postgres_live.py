@@ -52,6 +52,36 @@ def test_backend_wire_refuses_admin_admin_bootstrap(runtime_env, monkeypatch) ->
         wire_backend_usermanagement(container)
 
 
+def test_backend_wire_refuses_weak_bootstrap_password(runtime_env, monkeypatch) -> None:
+    _admin, _migrator, runtime_dsn = runtime_env
+    monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_USERNAME", "opsadmin")
+    monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_PASSWORD", "short")
+    container = build_platform_ports(fail_closed_license=True)
+    container.register_port("usermanagement_postgres_dsn", runtime_dsn)
+    with pytest.raises(BackendUsermanagementBootstrapError, match="password policy"):
+        wire_backend_usermanagement(container)
+
+
+def test_existing_users_ignore_bootstrap_env(runtime_env, monkeypatch) -> None:
+    _admin, _migrator, runtime_dsn = runtime_env
+    monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_USERNAME", "opsadmin")
+    monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_PASSWORD", "ops-secret-1")
+    container = build_platform_ports(fail_closed_license=True)
+    container.register_port("usermanagement_postgres_dsn", runtime_dsn)
+    wire_backend_usermanagement(container)
+
+    monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_USERNAME", "otheradmin")
+    monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_PASSWORD", "other-secret-1")
+    from qm_platform.runtime.backend_bootstrap import _ensure_users_or_bootstrap
+
+    _ensure_users_or_bootstrap(container)
+    service = container.get_port("usermanagement_service")
+    names = {user.username for user in service.list_users()}
+    assert names == {"opsadmin"}
+    assert service.authenticate("opsadmin", "ops-secret-1") is not None
+    assert service.authenticate("otheradmin", "other-secret-1") is None
+
+
 def test_backend_auth_http_over_postgres(runtime_env, monkeypatch) -> None:
     _admin, _migrator, runtime_dsn = runtime_env
     monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_USERNAME", "opsadmin")

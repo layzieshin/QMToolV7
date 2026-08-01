@@ -32,6 +32,12 @@ def _force_hardened_usermanagement_settings(container: RuntimeContainer) -> None
 
 
 def _ensure_users_or_bootstrap(container: RuntimeContainer) -> None:
+    """Empty user table + explicit bootstrap credentials => first admin.
+
+    If users already exist, bootstrap env vars are ignored. After data loss that
+    empties the table, the same credentials can recreate the first admin — that
+    is intentional without a separate one-shot marker.
+    """
     service = um_api.get_usermanagement_service(container)
     if service.list_users():
         return
@@ -41,14 +47,19 @@ def _ensure_users_or_bootstrap(container: RuntimeContainer) -> None:
     if not username or password == "":
         raise BackendUsermanagementBootstrapError(
             "backend has no users; set QMTOOL_BOOTSTRAP_ADMIN_USERNAME and "
-            "QMTOOL_BOOTSTRAP_ADMIN_PASSWORD for one-time first-admin bootstrap "
-            "(or provision a user before starting the backend)"
+            "QMTOOL_BOOTSTRAP_ADMIN_PASSWORD for first-admin bootstrap on an "
+            "empty user table (or provision a user before starting the backend)"
         )
     if username.lower() == "admin" and password == "admin":
         raise BackendUsermanagementBootstrapError(
             "refusing insecure bootstrap credentials admin/admin"
         )
-    created = um_api.bootstrap_first_admin(container, username, password)
+    try:
+        created = um_api.bootstrap_first_admin(container, username, password)
+    except um_api.WeakPasswordError as exc:
+        raise BackendUsermanagementBootstrapError(
+            "bootstrap password does not meet password policy"
+        ) from exc
     if created is None and not service.list_users():
         raise BackendUsermanagementBootstrapError("first-admin bootstrap produced no users")
 

@@ -5,7 +5,7 @@ External callers (CLI, GUI, backend, tests) MUST import only from this file.
 ``contracts`` and ``errors`` are implementation details unless re-exported here.
 
 Forbidden from outside: service.py, sqlite_repository.py,
-password_crypto.py, repository.py, session_store.py, auth_ops.py,
+password_crypto.py, password_policy.py, repository.py, session_store.py, auth_ops.py,
 user_admin_ops.py, wiring.py, session_ops.py, session_repository.py,
 memory_session_repository.py, session_token.py, postgres_schema.py
 """
@@ -28,6 +28,7 @@ from .errors import (
     SessionError,
     SessionNotFoundError,
     UsermanagementError,
+    WeakPasswordError,
 )
 from .role_policies import is_effective_qmb, normalize_base_role
 
@@ -46,6 +47,7 @@ __all__ = [
     "InvalidSessionError",
     "ExpiredSessionError",
     "RevokedSessionError",
+    "WeakPasswordError",
     "get_usermanagement_service",
     "bootstrap_admin",
     "self_register",

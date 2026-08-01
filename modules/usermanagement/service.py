@@ -7,6 +7,7 @@ from qm_platform.events.event_envelope import EventEnvelope
 
 from .auth_ops import AuthOps
 from .contracts import AuthenticatedUser, IssuedSession, UserContext
+from .password_policy import DEFAULT_PASSWORD_POLICY, PasswordPolicy, validate_password
 from .repository import UserRepository
 from .session_ops import SessionOps
 from .session_repository import SessionRepository
@@ -20,6 +21,7 @@ class UserManagementService:
     session_file: Path | None = None
     repository: UserRepository | None = None
     session_repository: SessionRepository | None = None
+    password_policy: PasswordPolicy = field(default_factory=lambda: DEFAULT_PASSWORD_POLICY)
     _users: dict[str, tuple[str, str]] = field(
         default_factory=lambda: {
             "admin": ("admin", "Admin"),
@@ -38,6 +40,7 @@ class UserManagementService:
             repository=self.repository,
             event_bus=self.event_bus,
             fallback_users=self._users,
+            password_policy=self.password_policy,
         )
         self._session_ops: SessionOps | None = None
         if self.session_repository is not None:
@@ -194,6 +197,7 @@ class UserManagementService:
             return None
         if self.repository is None:
             raise RuntimeError("user repository is not configured")
+        validate_password(password, self.password_policy)
         return self.repository.ensure_initial_admin(
             username,
             password,

@@ -45,15 +45,15 @@ class TrainingCliTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self._env = dict(os.environ)
         self._env["QMTOOL_HOME"] = str(Path(self._tmp.name) / "home")
-        init = run_cli("init", "--non-interactive", "--admin-password", "admin", env=self._env)
+        init = run_cli("init", "--non-interactive", "--admin-password", "adminpass01", env=self._env)
         assert init.returncode == 0, init.stderr + init.stdout
-        assert run_cli("login", "--username", "admin", "--password", "admin", env=self._env).returncode == 0
+        assert run_cli("login", "--username", "admin", "--password", "adminpass01", env=self._env).returncode == 0
         assert (
-            run_cli("users", "create", "--username", "user", "--password", "user", "--role", "User", env=self._env).returncode
+            run_cli("users", "create", "--username", "user", "--password", "userpass01", "--role", "User", env=self._env).returncode
             == 0
         )
         assert (
-            run_cli("users", "create", "--username", "qmb", "--password", "qmb", "--role", "QMB", env=self._env).returncode
+            run_cli("users", "create", "--username", "qmb", "--password", "qmbpass001", "--role", "QMB", env=self._env).returncode
             == 0
         )
         run_cli("logout", env=self._env)
@@ -68,7 +68,7 @@ class TrainingCliTest(unittest.TestCase):
 
     def test_training_flow_with_quiz_and_comments(self) -> None:
         doc_id = f"DOC-TR-{uuid.uuid4().hex[:8]}"
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         created = run_cli(
             "documents",
             "create-version",
@@ -159,7 +159,7 @@ class TrainingCliTest(unittest.TestCase):
             self.assertEqual(imported.returncode, 0, msg=imported.stderr + imported.stdout)
 
         run_cli("logout", env=self._env)
-        self._login("user", "user")
+        self._login("user", "userpass01")
         required = run_cli("training", "list-required", env=self._env)
         self.assertEqual(required.returncode, 0, msg=required.stderr + required.stdout)
         rows = json.loads(required.stdout.strip() or "[]")

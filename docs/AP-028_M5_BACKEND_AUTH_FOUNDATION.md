@@ -81,11 +81,17 @@ Der Bootstrap prueft vor dem Annehmen von Auth-Anfragen mindestens:
   Zielversion, Schema-Fingerprint und Tabellen-/Privilegienvertraege
   (kein Migrations-Apply mit Runtime-Rechten)
 - `seed_mode=hardened` (kein automatisches `admin/admin`)
-- mindestens ein Benutzer vorhanden, sonst einmaliger Bootstrap nur ueber
-  `QMTOOL_BOOTSTRAP_ADMIN_USERNAME` / `QMTOOL_BOOTSTRAP_ADMIN_PASSWORD`
-  (niemals `admin`/`admin`)
-- `QMTOOL_LICENSE_MODE` ist explizit gesetzt; ungueltige Nicht-Dev-Lizenzen
-  brechen den Start ab
+- leere User-Tabelle: Ersteinrichtung nur mit beiden Variablen
+  `QMTOOL_BOOTSTRAP_ADMIN_USERNAME` und `QMTOOL_BOOTSTRAP_ADMIN_PASSWORD`
+  (niemals `admin`/`admin`; Passwort unterliegt der zentralen Policy).
+  Sind bereits Benutzer vorhanden, werden Bootstrap-Variablen ignoriert.
+  Nach einem vollstaendigen User-Verlust ist derselbe Mechanismus erneut
+  anwendbar (kein separater One-Shot-Marker).
+- `QMTOOL_LICENSE_MODE` ist explizit gesetzt; `dev`/`auto` sind bei
+  `QMTOOL_RUNTIME_PROFILE=production` verboten; ungueltige Nicht-Dev-
+  Lizenzen brechen den Start ab
+- Passwortpolicy zentral im Usermanagement (Standard: min. 10 Zeichen,
+  keine Pflicht-Zeichenklassen; technische Untergrenze 8)
 
 Der Backend-Host verwendet weiterhin `create_app(...)` als App-Factory. Tests
 koennen einen vorbereiteten Container injizieren; der Healthcheck bleibt ohne

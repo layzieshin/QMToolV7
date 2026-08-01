@@ -4,6 +4,7 @@ from __future__ import annotations
 from qm_platform.events.event_envelope import EventEnvelope
 
 from .contracts import AuthenticatedUser
+from .password_policy import DEFAULT_PASSWORD_POLICY, PasswordPolicy, validate_password
 from .repository import UserRepository
 
 
@@ -15,10 +16,12 @@ class UserAdminOps:
         repository: UserRepository | None,
         event_bus: object | None = None,
         fallback_users: dict[str, tuple[str, str]] | None = None,
+        password_policy: PasswordPolicy | None = None,
     ) -> None:
         self._repository = repository
         self._event_bus = event_bus
         self._fallback_users = fallback_users or {}
+        self._password_policy = password_policy or DEFAULT_PASSWORD_POLICY
 
     def list_users(self) -> list[AuthenticatedUser]:
         if self._repository is not None:
@@ -38,6 +41,7 @@ class UserAdminOps:
             raise ValueError("password is required")
         if role not in ("Admin", "QMB", "User"):
             raise ValueError("role must be one of: Admin, QMB, User")
+        validate_password(password, self._password_policy)
         if self._repository is not None:
             user = self._repository.create_user(username, password, role)
         else:
@@ -180,6 +184,7 @@ class UserAdminOps:
             raise ValueError("username is required")
         if not password:
             raise ValueError("password is required")
+        validate_password(password, self._password_policy)
         if self._repository is not None:
             user = self._repository.create_user(
                 username,
@@ -219,6 +224,7 @@ class UserAdminOps:
             raise ValueError("username is required")
         if not new_password:
             raise ValueError("new_password is required")
+        validate_password(new_password, self._password_policy)
         if self._repository is not None:
             self._repository.change_password(username, new_password)
             user = self._repository.get_by_username(username)

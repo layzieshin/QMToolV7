@@ -13,6 +13,7 @@ from qm_platform.sdk.module_contract import (
 )
 
 from .service import UserManagementService
+from .password_policy import password_policy_from_mapping
 from .postgres_session_repository import PostgresSessionRepository
 from .postgres_user_repository import PostgresUserRepository
 from .sqlite_repository import SQLiteUserRepository
@@ -27,6 +28,17 @@ USERMANAGEMENT_SETTINGS_CONTRIBUTION = SettingsContribution(
             "users_db_path": {"type": "string"},
             "seed_mode": {"type": "string"},
             "dev_mode": {"type": "boolean"},
+            "password_policy": {
+                "type": "object",
+                "properties": {
+                    "min_length": {"type": "integer"},
+                    "require_letter": {"type": "boolean"},
+                    "require_digit": {"type": "boolean"},
+                    "require_uppercase": {"type": "boolean"},
+                    "require_special": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
         },
         "required": ["users_db_path", "seed_mode", "dev_mode"],
         "additionalProperties": False,
@@ -35,6 +47,13 @@ USERMANAGEMENT_SETTINGS_CONTRIBUTION = SettingsContribution(
         "users_db_path": "storage/platform/users.db",
         "seed_mode": "admin_only",
         "dev_mode": False,
+        "password_policy": {
+            "min_length": 10,
+            "require_letter": False,
+            "require_digit": False,
+            "require_uppercase": False,
+            "require_special": False,
+        },
     },
     scope="module_global",
     migrations=[],
@@ -98,6 +117,7 @@ def register_usermanagement_ports(container) -> None:
         repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
     elif seed_mode == "legacy_defaults" and dev_mode:
         repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
+    password_policy = password_policy_from_mapping(user_settings.get("password_policy"))
     container.register_port(
         "usermanagement_service",
         UserManagementService(
@@ -105,6 +125,7 @@ def register_usermanagement_ports(container) -> None:
             session_file=session_file,
             repository=repository,
             session_repository=session_repository,
+            password_policy=password_policy,
         ),
     )
 

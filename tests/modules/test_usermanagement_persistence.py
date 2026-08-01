@@ -42,15 +42,15 @@ class UserManagementPersistenceTest(unittest.TestCase):
                 db_path=root / "users.db",
             )
             service = UserManagementService(repository=repo)
-            created = service.create_user("alpha", "pw1", "User")
+            created = service.create_user("alpha", "password01", "User")
             self.assertEqual(created.username, "alpha")
 
             listed = service.list_users()
             self.assertTrue(any(row.username == "alpha" and row.role == "User" for row in listed))
 
-            service.change_password("alpha", "pw2")
-            self.assertIsNone(service.authenticate("alpha", "pw1"))
-            self.assertIsNotNone(service.authenticate("alpha", "pw2"))
+            service.change_password("alpha", "password02")
+            self.assertIsNone(service.authenticate("alpha", "password01"))
+            self.assertIsNotNone(service.authenticate("alpha", "password02"))
 
     def test_update_user_profile_persists_first_and_last_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,7 +59,7 @@ class UserManagementPersistenceTest(unittest.TestCase):
                 db_path=root / "users.db",
             )
             service = UserManagementService(repository=repo)
-            service.create_user("anna", "pw1", "User")
+            service.create_user("anna", "password01", "User")
 
             updated = service.update_user_profile(
                 "anna",

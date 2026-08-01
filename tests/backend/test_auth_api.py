@@ -121,7 +121,7 @@ def test_change_password_keeps_current_session(tmp_path: Path) -> None:
     changed = client.post(
         "/auth/change-password",
         headers={"Authorization": f"Bearer {token}"},
-        json={"new_password": "admin-new"},
+        json={"new_password": "admin-new1"},
     )
     assert changed.status_code == 204
 
@@ -133,17 +133,25 @@ def test_change_password_keeps_current_session(tmp_path: Path) -> None:
     other_me = client.get("/auth/me", headers={"Authorization": f"Bearer {other_token}"})
     assert other_me.status_code == 200
 
+    weak = client.post(
+        "/auth/change-password",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"new_password": "short"},
+    )
+    assert weak.status_code == 400
+    assert weak.json()["detail"]["error"] == "weak_password"
+
     # password_change_allowed cannot be set by client fields
     spoof = client.post(
         "/auth/change-password",
         headers={"Authorization": f"Bearer {token}"},
-        json={"new_password": "again", "username": "bob", "password_change_allowed": True},
+        json={"new_password": "againagain", "username": "bob", "password_change_allowed": True},
     )
     assert spoof.status_code == 204
     bob_login = client.post("/auth/login", json={"username": "bob", "password": "bob-secret"})
     assert bob_login.status_code == 200
     # admin password was changed again; bob unchanged
-    assert client.post("/auth/login", json={"username": "admin", "password": "again"}).status_code == 200
+    assert client.post("/auth/login", json={"username": "admin", "password": "againagain"}).status_code == 200
 
     # ensure body cannot target another user — bob password still original
     assert repository.get_by_username("bob") is not None
@@ -174,3 +182,7 @@ def test_backend_license_mode_defaults_are_fail_closed(
     monkeypatch.setenv("QMTOOL_LICENSE_MODE", "dev")
     container = build_platform_ports(fail_closed_license=True)
     assert container.has_port("license_service")
+
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    with pytest.raises(BackendBootstrapError, match="production"):
+        build_platform_ports(fail_closed_license=True)

@@ -40,3 +40,7 @@ class ExpiredSessionError(SessionError):
 
 class RevokedSessionError(SessionError):
     """Session exists but has been revoked."""
+
+
+class WeakPasswordError(UsermanagementError):
+    """Password does not meet the configured password policy."""

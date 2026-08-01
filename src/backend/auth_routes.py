@@ -73,6 +73,7 @@ def login(
             (
                 um_api.AuthenticationError,
                 um_api.InactiveUserError,
+                um_api.WeakPasswordError,
                 um_api.UsermanagementError,
             ),
         ):

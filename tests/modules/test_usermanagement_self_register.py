@@ -17,7 +17,7 @@ class UserManagementSelfRegisterTest(unittest.TestCase):
             service = UserManagementService(repository=repo)
             created = service.self_register(
                 "new_user",
-                "secret",
+                "secretpass1",
                 first_name="New",
                 last_name="User",
                 email="new@example.org",
@@ -25,7 +25,7 @@ class UserManagementSelfRegisterTest(unittest.TestCase):
             self.assertEqual("User", created.role)
             self.assertFalse(created.is_active)
             self.assertFalse(created.is_qmb)
-            self.assertIsNone(service.authenticate("new_user", "secret"))
+            self.assertIsNone(service.authenticate("new_user", "secretpass1"))
 
 
 if __name__ == "__main__":

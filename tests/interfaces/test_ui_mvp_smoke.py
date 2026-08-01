@@ -71,8 +71,8 @@ class UiMvpSmokeTest(unittest.TestCase):
         self._environment.start()
         self.controller = UiController()
         self.controller.login("admin", "admin")
-        self.controller.create_user("user", "user", "User")
-        self.controller.create_user("qmb", "qmb", "QMB")
+        self.controller.create_user("user", "userpass01", "User")
+        self.controller.create_user("qmb", "qmbpass001", "QMB")
         self.controller.logout()
 
     def tearDown(self) -> None:
@@ -100,12 +100,12 @@ class UiMvpSmokeTest(unittest.TestCase):
             state = self.controller.complete_editing(doc_id, 1, sign_request=edit_request)
             self.assertEqual(state.status, DocumentStatus.IN_REVIEW)
 
-            self.controller.login("user", "user")
+            self.controller.login("user", "userpass01")
             review_request = _build_sign_request(input_pdf, output_pdf, signature_png, signer_user="user", password="user")
             state = self.controller.review_accept(doc_id, 1, sign_request=review_request)
             self.assertEqual(state.status, DocumentStatus.IN_APPROVAL)
 
-            self.controller.login("qmb", "qmb")
+            self.controller.login("qmb", "qmbpass001")
             approve_request = _build_sign_request(input_pdf, output_pdf, signature_png, signer_user="qmb", password="qmb")
             state = self.controller.approval_accept(doc_id, 1, sign_request=approve_request)
             self.assertEqual(state.status, DocumentStatus.APPROVED)
@@ -113,7 +113,7 @@ class UiMvpSmokeTest(unittest.TestCase):
             self.assertEqual(state.status, DocumentStatus.ARCHIVED)
 
     def test_central_error_path_for_non_privileged_settings_write(self) -> None:
-        self.controller.login("user", "user")
+        self.controller.login("user", "userpass01")
         with self.assertRaises(RuntimeError):
             self.controller.set_settings("signature", {"require_password": False, "default_mode": "visual"})
 
