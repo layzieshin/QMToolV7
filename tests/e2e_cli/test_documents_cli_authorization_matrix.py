@@ -21,6 +21,12 @@ run_cli = _shared.run_cli
 
 
 class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
+    _PASSWORDS = {
+        "admin": "adminpass01",
+        "user": "userpass01",
+        "qmb": "qmbpass001",
+    }
+
     def setUp(self) -> None:
         self._run_id = uuid.uuid4().hex[:8]
         run_cli("logout")
@@ -32,6 +38,9 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
     def _login(username: str, password: str) -> None:
         result = run_cli("login", "--username", username, "--password", password)
         assert result.returncode == 0, result.stderr + result.stdout
+
+    def _login_actor(self, actor: str) -> None:
+        self._login(actor, self._PASSWORDS[actor])
 
     @staticmethod
     def _write_test_pdf(path: Path) -> None:
@@ -156,10 +165,10 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
 
     def test_workflow_start_matrix(self) -> None:
         cases = (
-            ("owner-user-allowed", "user", "user", "user", "owner path"),
-            ("non-owner-user-blocked", "admin", "admin", "user", "blocked"),
-            ("qmb-allowed", "admin", "admin", "qmb", "privileged path"),
-            ("admin-allowed", "user", "user", "admin", "privileged path"),
+            ("owner-user-allowed", "user", "userpass01", "user", "owner path"),
+            ("non-owner-user-blocked", "admin", "adminpass01", "user", "blocked"),
+            ("qmb-allowed", "admin", "adminpass01", "qmb", "privileged path"),
+            ("admin-allowed", "user", "userpass01", "admin", "privileged path"),
         )
 
         for suffix, creator, creator_pw, actor, _ in cases:
@@ -167,7 +176,7 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
                 doc_id = f"DOC-CLI-START-{suffix}"
                 doc_id = f"{doc_id}-{self._run_id}"
                 self._create_and_assign(doc_id, creator, creator_pw, editors="admin", reviewers="qmb", approvers="admin")
-                self._login(actor, actor)
+                self._login_actor(actor)
                 result = self._start_workflow(doc_id)
                 if suffix == "non-owner-user-blocked":
                     self.assertEqual(result.returncode, 6, msg=result.stderr + result.stdout)
@@ -179,8 +188,8 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
     def test_editing_complete_matrix(self) -> None:
         # owner USER allowed even if not assigned editor
         doc_id_owner = f"DOC-CLI-EDIT-owner-{self._run_id}"
-        self._create_and_assign(doc_id_owner, "user", "user", editors="admin", reviewers="qmb", approvers="admin")
-        self._login("user", "user")
+        self._create_and_assign(doc_id_owner, "user", "userpass01", editors="admin", reviewers="qmb", approvers="admin")
+        self._login("user", "userpass01")
         self.assertEqual(self._start_workflow(doc_id_owner).returncode, 0)
         owner_result = self._complete_editing_signed(doc_id_owner, "user")
         self.assertEqual(owner_result.returncode, 0, msg=owner_result.stderr + owner_result.stdout)
@@ -188,40 +197,40 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
 
         # non participant USER blocked
         doc_id_blocked = f"DOC-CLI-EDIT-blocked-{self._run_id}"
-        self._create_and_assign(doc_id_blocked, "admin", "admin", editors="admin", reviewers="qmb", approvers="admin")
-        self._login("admin", "admin")
+        self._create_and_assign(doc_id_blocked, "admin", "adminpass01", editors="admin", reviewers="qmb", approvers="admin")
+        self._login("admin", "adminpass01")
         self.assertEqual(self._start_workflow(doc_id_blocked).returncode, 0)
-        self._login("user", "user")
+        self._login("user", "userpass01")
         blocked = self._complete_editing_signed(doc_id_blocked, "user")
         self.assertEqual(blocked.returncode, 6, msg=blocked.stderr + blocked.stdout)
         self.assertIn("only assigned editors, owner, QMB, or ADMIN", blocked.stdout)
 
         # QMB allowed
         doc_id_qmb = f"DOC-CLI-EDIT-qmb-{self._run_id}"
-        self._create_and_assign(doc_id_qmb, "admin", "admin", editors="admin", reviewers="qmb", approvers="admin")
-        self._login("admin", "admin")
+        self._create_and_assign(doc_id_qmb, "admin", "adminpass01", editors="admin", reviewers="qmb", approvers="admin")
+        self._login("admin", "adminpass01")
         self.assertEqual(self._start_workflow(doc_id_qmb).returncode, 0)
-        self._login("qmb", "qmb")
+        self._login("qmb", "qmbpass001")
         qmb_result = self._complete_editing_signed(doc_id_qmb, "qmb")
         self.assertEqual(qmb_result.returncode, 0, msg=qmb_result.stderr + qmb_result.stdout)
 
         # ADMIN allowed even when not owner and not assigned editor
         doc_id_admin = f"DOC-CLI-EDIT-admin-{self._run_id}"
-        self._create_and_assign(doc_id_admin, "user", "user", editors="user", reviewers="qmb", approvers="admin")
-        self._login("user", "user")
+        self._create_and_assign(doc_id_admin, "user", "userpass01", editors="user", reviewers="qmb", approvers="admin")
+        self._login("user", "userpass01")
         self.assertEqual(self._start_workflow(doc_id_admin).returncode, 0)
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         admin_result = self._complete_editing_signed(doc_id_admin, "admin")
         self.assertEqual(admin_result.returncode, 0, msg=admin_result.stderr + admin_result.stdout)
 
     def test_qmb_phase_lock_matrix_for_assign_roles(self) -> None:
         doc_id = f"DOC-CLI-QMB-LOCKS-{self._run_id}"
-        self._create_and_assign(doc_id, "admin", "admin", editors="admin", reviewers="qmb", approvers="admin")
-        self._login("admin", "admin")
+        self._create_and_assign(doc_id, "admin", "adminpass01", editors="admin", reviewers="qmb", approvers="admin")
+        self._login("admin", "adminpass01")
         self.assertEqual(self._start_workflow(doc_id).returncode, 0)
         self.assertEqual(self._complete_editing_signed(doc_id, "admin").returncode, 0)
 
-        self._login("qmb", "qmb")
+        self._login("qmb", "qmbpass001")
         editors_locked = run_cli(
             "documents",
             "assign-roles",

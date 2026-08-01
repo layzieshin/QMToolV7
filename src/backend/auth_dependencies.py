@@ -27,6 +27,7 @@ _MAPPED_ERRORS = (
     um_api.AuthenticationError,
     InactiveUserError,
     PasswordChangeRequiredError,
+    um_api.WeakPasswordError,
     InvalidSessionError,
     SessionNotFoundError,
     ExpiredSessionError,
@@ -68,6 +69,11 @@ def map_auth_error(exc: Exception) -> HTTPException:
         return HTTPException(
             status_code=409,
             detail={"error": "password_change_required", "message": "password change required"},
+        )
+    if isinstance(exc, um_api.WeakPasswordError):
+        return HTTPException(
+            status_code=400,
+            detail={"error": "weak_password", "message": "password does not meet policy"},
         )
     return _unauthorized()
 

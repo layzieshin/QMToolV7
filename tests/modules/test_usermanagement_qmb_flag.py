@@ -16,7 +16,7 @@ class UserManagementQmbFlagTest(unittest.TestCase):
                 db_path=Path(tmp) / "users.db",
             )
             service = UserManagementService(repository=repo)
-            service.create_user("alpha", "pw", "User")
+            service.create_user("alpha", "password01", "User")
             before = next(u for u in service.list_users() if u.username == "alpha")
             self.assertFalse(is_effective_qmb(before))
             updated = service.set_user_qmb("alpha", True)

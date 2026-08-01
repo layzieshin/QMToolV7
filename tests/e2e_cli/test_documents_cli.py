@@ -102,7 +102,7 @@ class DocumentsCliTest(unittest.TestCase):
             )
 
     def test_pool_list_by_status_defaults_to_planned(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-PLANNED"
         result = run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         self.assertEqual(result.returncode, 0, msg=result.stderr + result.stdout)
@@ -113,7 +113,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertTrue(any(row["document_id"] == doc_id and row["status"] == "PLANNED" for row in payload))
 
     def test_workflow_moves_to_approved_with_required_sign_steps(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-APPROVED"
         run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         run_cli(
@@ -167,11 +167,11 @@ class DocumentsCliTest(unittest.TestCase):
             )
             self.assertEqual(edit_result.returncode, 0, msg=edit_result.stderr + edit_result.stdout)
 
-            self._login("user", "user")
+            self._login("user", "userpass01")
             review_result = self._review_accept_signed(doc_id, "user")
             self.assertEqual(review_result.returncode, 0, msg=review_result.stderr + review_result.stdout)
 
-            self._login("qmb", "qmb")
+            self._login("qmb", "qmbpass001")
             approval_result = run_cli(
                 "documents",
                 "approval-accept",
@@ -201,7 +201,7 @@ class DocumentsCliTest(unittest.TestCase):
             self.assertIn('"status": "APPROVED"', approval_result.stdout)
 
     def test_intake_commands_register_artifacts(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             pdf_path = root / "existing.pdf"
@@ -246,7 +246,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertIn("login required", result.stdout.lower())
 
     def test_non_participant_role_is_blocked_in_review(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-BLOCK"
         run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         run_cli(
@@ -297,13 +297,13 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-dry-run",
             )
 
-        self._login("qmb", "qmb")
+        self._login("qmb", "qmbpass001")
         blocked = self._review_accept_signed(doc_id, "qmb")
         self.assertEqual(blocked.returncode, 6)
         self.assertIn("not assigned as reviewer", blocked.stdout)
 
     def test_registry_entry_exposes_active_version(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-REGISTRY"
         run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         run_cli(
@@ -355,9 +355,9 @@ class DocumentsCliTest(unittest.TestCase):
             )
             self.assertEqual(done.returncode, 0, msg=done.stderr + done.stdout)
 
-        self._login("user", "user")
+        self._login("user", "userpass01")
         self.assertEqual(self._review_accept_signed(doc_id, "user").returncode, 0)
-        self._login("qmb", "qmb")
+        self._login("qmb", "qmbpass001")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             input_pdf = root / "input.pdf"
@@ -401,7 +401,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertEqual(payload.get("register_state"), "VALID")
 
     def test_owner_cannot_reassign_roles_after_first_signature(self) -> None:
-        self._login("user", "user")
+        self._login("user", "userpass01")
         doc_id = "DOC-E2E-OWNER-LOCK"
         run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         run_cli(
@@ -471,7 +471,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertIn("owner cannot update roles after first edit signature", blocked.stdout)
 
     def test_metadata_and_header_commands(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-META"
         created = run_cli(
             "documents",
@@ -523,7 +523,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertEqual(meta_payload.get("control_class"), "CONTROLLED")
         self.assertEqual(meta_payload.get("custom_fields", {}).get("topic"), "sterility")
 
-        self._login("user", "user")
+        self._login("user", "userpass01")
         blocked_header = run_cli(
             "documents",
             "header-set",
@@ -535,7 +535,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertEqual(blocked_header.returncode, 6)
         self.assertIn("only qmb or admin", blocked_header.stdout.lower())
 
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         blocked_custom = run_cli(
             "documents",
             "metadata-set",
@@ -550,7 +550,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertIn("custom fields must not override steering fields", blocked_custom.stdout.lower())
 
     def test_workflow_start_blocks_profile_control_class_mismatch(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-MISMATCH"
         created = run_cli(
             "documents",
@@ -595,7 +595,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertIn("does not match document control_class", blocked.stdout)
 
     def test_header_set_blocks_doc_type_and_control_class_mutation(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-HEADER-IMMUTABLE"
         created = run_cli(
             "documents",
@@ -636,7 +636,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertIn("control_class cannot be changed", blocked_class.stdout.lower())
 
     def test_header_set_blocks_workflow_profile_control_class_mismatch(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-HEADER-PROFILE-MISMATCH"
         created = run_cli(
             "documents",
@@ -665,7 +665,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertIn("does not match document control_class", blocked.stdout)
 
     def test_metadata_set_blocks_validity_update_before_approval(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-META-DATES"
         created = run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         self.assertEqual(created.returncode, 0, msg=created.stderr + created.stdout)
@@ -683,7 +683,7 @@ class DocumentsCliTest(unittest.TestCase):
         self.assertIn("validity dates can only be updated", blocked.stdout.lower())
 
     def test_change_request_export_writes_json_and_csv(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-CR-EXPORT"
         created = run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         self.assertEqual(created.returncode, 0, msg=created.stderr + created.stdout)
@@ -743,7 +743,7 @@ class DocumentsCliTest(unittest.TestCase):
             self.assertIn("AA-200,VA-100", csv_text)
 
     def test_annual_extend_accepts_reason_duration_and_outcome(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         doc_id = "DOC-E2E-ANNUAL-EXT"
         run_cli("documents", "create-version", "--document-id", doc_id, "--version", "1")
         run_cli(
@@ -795,10 +795,10 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-dry-run",
             )
             self.assertEqual(edit_result.returncode, 0, msg=edit_result.stderr + edit_result.stdout)
-            self._login("user", "user")
+            self._login("user", "userpass01")
             review_result = self._review_accept_signed(doc_id, "user")
             self.assertEqual(review_result.returncode, 0, msg=review_result.stderr + review_result.stdout)
-            self._login("qmb", "qmb")
+            self._login("qmb", "qmbpass001")
             approval_result = run_cli(
                 "documents",
                 "approval-accept",

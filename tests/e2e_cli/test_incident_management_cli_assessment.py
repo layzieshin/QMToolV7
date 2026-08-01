@@ -24,11 +24,11 @@ class IncidentManagementCliAssessmentTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self._env = dict(os.environ)
         self._env["QMTOOL_HOME"] = str(Path(self._tmp.name) / "home")
-        assert run_cli("init", "--non-interactive", "--admin-password", "admin", env=self._env).returncode == 0
-        assert run_cli("login", "--username", "admin", "--password", "admin", env=self._env).returncode == 0
-        assert run_cli("users", "create", "--username", "qmb", "--password", "qmb", "--role", "QMB", env=self._env).returncode == 0
+        assert run_cli("init", "--non-interactive", "--admin-password", "adminpass01", env=self._env).returncode == 0
+        assert run_cli("login", "--username", "admin", "--password", "adminpass01", env=self._env).returncode == 0
+        assert run_cli("users", "create", "--username", "qmb", "--password", "qmbpass001", "--role", "QMB", env=self._env).returncode == 0
         run_cli("logout", env=self._env)
-        assert run_cli("login", "--username", "qmb", "--password", "qmb", env=self._env).returncode == 0
+        assert run_cli("login", "--username", "qmb", "--password", "qmbpass001", env=self._env).returncode == 0
 
     def tearDown(self) -> None:
         run_cli("logout", env=self._env)

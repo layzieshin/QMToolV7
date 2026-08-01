@@ -25,7 +25,7 @@ class UsersAndSettingsCliTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self._env = dict(os.environ)
         self._env["QMTOOL_HOME"] = str(Path(self._tmp.name) / "home")
-        init = run_cli("init", "--non-interactive", "--admin-password", "admin", env=self._env)
+        init = run_cli("init", "--non-interactive", "--admin-password", "adminpass01", env=self._env)
         assert init.returncode == 0, init.stderr + init.stdout
         run_cli("logout", env=self._env)
 
@@ -38,14 +38,14 @@ class UsersAndSettingsCliTest(unittest.TestCase):
         assert result.returncode == 0, result.stderr + result.stdout
 
     def test_initial_admin_login_works(self) -> None:
-        result = run_cli("login", "--username", "admin", "--password", "admin", env=self._env)
+        result = run_cli("login", "--username", "admin", "--password", "adminpass01", env=self._env)
         self.assertEqual(result.returncode, 0, msg=result.stderr + result.stdout)
         self.assertIn("authenticated", result.stdout.lower())
 
     def test_users_cli_create_and_list(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         username = f"u_{uuid.uuid4().hex[:10]}"
-        created = run_cli("users", "create", "--username", username, "--password", "pw123", "--role", "User", env=self._env)
+        created = run_cli("users", "create", "--username", username, "--password", "password01", "--role", "User", env=self._env)
         self.assertEqual(created.returncode, 0, msg=created.stderr + created.stdout)
         payload = json.loads(created.stdout.strip() or "{}")
         self.assertEqual(payload.get("username"), username)
@@ -57,7 +57,7 @@ class UsersAndSettingsCliTest(unittest.TestCase):
         self.assertTrue(any(row.get("username") == username for row in rows))
 
     def test_settings_cli_list_get_set(self) -> None:
-        self._login("admin", "admin")
+        self._login("admin", "adminpass01")
         listed = run_cli("settings", "list-modules", env=self._env)
         self.assertEqual(listed.returncode, 0, msg=listed.stderr + listed.stdout)
         modules = json.loads(listed.stdout.strip() or "[]")

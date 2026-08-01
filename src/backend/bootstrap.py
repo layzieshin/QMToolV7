@@ -210,6 +210,12 @@ def build_platform_ports(*, fail_closed_license: bool = False) -> RuntimeContain
                 "(set to 'dev' or 'auto' only for explicit local development)"
             )
         license_mode = str(raw_mode).strip().lower()
+        runtime_profile = os.environ.get("QMTOOL_RUNTIME_PROFILE", "").strip().lower()
+        if runtime_profile in ("prod", "production") and license_mode in ("dev", "auto"):
+            raise BackendBootstrapError(
+                "QMTOOL_LICENSE_MODE=dev|auto is not allowed when "
+                "QMTOOL_RUNTIME_PROFILE is production"
+            )
     else:
         license_mode = (raw_mode or "dev").strip().lower()
 

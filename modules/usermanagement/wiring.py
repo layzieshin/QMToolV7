@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from .service import UserManagementService
+from .password_policy import password_policy_from_mapping
 from .sqlite_repository import SQLiteUserRepository
 
 
@@ -29,12 +30,14 @@ def register_usermanagement_ports(container) -> None:
         repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
     elif seed_mode == "legacy_defaults" and dev_mode:
         repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
+    password_policy = password_policy_from_mapping(user_settings.get("password_policy"))
     container.register_port(
         "usermanagement_service",
         UserManagementService(
             event_bus=container.get_port("event_bus"),
             session_file=app_home / "storage/platform/session/current_user.json",
             repository=repository,
+            password_policy=password_policy,
         ),
     )
 

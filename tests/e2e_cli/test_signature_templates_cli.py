@@ -47,7 +47,7 @@ class SignatureTemplatesCliTest(unittest.TestCase):
             root = Path(tmp)
             env = dict(os.environ)
             env["QMTOOL_HOME"] = str(root / "home")
-            init = run_cli("init", "--non-interactive", "--admin-password", "admin", env=env)
+            init = run_cli("init", "--non-interactive", "--admin-password", "adminpass01", env=env)
             self.assertEqual(init.returncode, 0, msg=init.stderr + init.stdout)
             gif_path = root / "sig.gif"
             Image.new("RGBA", (32, 16), (0, 0, 0, 255)).save(gif_path, format="GIF")
@@ -149,7 +149,7 @@ class SignatureTemplatesCliTest(unittest.TestCase):
                 "--input",
                 str(gif_path),
                 "--password",
-                "admin",
+                "adminpass01",
                 env=env,
             )
             self.assertEqual(imported_replace_ok.returncode, 0, msg=imported_replace_ok.stderr + imported_replace_ok.stdout)
@@ -168,7 +168,7 @@ class SignatureTemplatesCliTest(unittest.TestCase):
                 "--signer-user",
                 "admin",
                 "--password",
-                "admin",
+                "adminpass01",
                 "--dry-run",
                 env=env,
             )

@@ -20,7 +20,7 @@ def _ensure() -> dict[str, str]:
     env = dict(os.environ)
     env["QMTOOL_HOME"] = str(Path(_TMP.name) / "home")
     init = subprocess.run(
-        [sys.executable, "-m", "interfaces.cli.main", "init", "--non-interactive", "--admin-password", "admin"],
+        [sys.executable, "-m", "interfaces.cli.main", "init", "--non-interactive", "--admin-password", "adminpass01"],
         text=True,
         capture_output=True,
         check=False,
@@ -28,7 +28,7 @@ def _ensure() -> dict[str, str]:
     )
     assert init.returncode == 0, init.stderr + init.stdout
     login = subprocess.run(
-        [sys.executable, "-m", "interfaces.cli.main", "login", "--username", "admin", "--password", "admin"],
+        [sys.executable, "-m", "interfaces.cli.main", "login", "--username", "admin", "--password", "adminpass01"],
         text=True,
         capture_output=True,
         check=False,
@@ -36,9 +36,9 @@ def _ensure() -> dict[str, str]:
     )
     assert login.returncode == 0, login.stderr + login.stdout
     for username, password, role in (
-        ("user", "user", "User"),
-        ("qmb", "qmb", "QMB"),
-        ("editor-1", "editor-1", "User"),
+        ("user", "userpass01", "User"),
+        ("qmb", "qmbpass001", "QMB"),
+        ("editor-1", "editorpass1", "User"),
     ):
         r = subprocess.run(
             [

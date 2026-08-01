@@ -28,7 +28,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self._env = dict(os.environ)
         self._env["QMTOOL_HOME"] = str(Path(self._tmp.name) / "home")
-        init = run_cli("init", "--non-interactive", "--admin-password", "admin", env=self._env)
+        init = run_cli("init", "--non-interactive", "--admin-password", "adminpass01", env=self._env)
         assert init.returncode == 0, init.stderr + init.stdout
 
     def tearDown(self) -> None:
@@ -67,7 +67,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
         self.assertIn("platform health", result.stdout)
 
     def test_login_success_with_default_admin(self) -> None:
-        result = run_cli("login", "--username", "admin", "--password", "admin", env=self._env)
+        result = run_cli("login", "--username", "admin", "--password", "adminpass01", env=self._env)
         self.assertEqual(result.returncode, 0)
         self.assertIn("authenticated", result.stdout)
 
@@ -100,7 +100,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
                 "--signer-user",
                 "admin",
                 "--password",
-                "admin",
+                "adminpass01",
                 "--dry-run",
                 env=self._env,
             )
@@ -136,7 +136,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
                 "--signer-user",
                 "admin",
                 "--password",
-                "admin",
+                "adminpass01",
                 "--name-text",
                 "Admin User",
                 "--date-text",
@@ -232,7 +232,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
                     "init",
                     "--non-interactive",
                     "--admin-password",
-                    "admin",
+                    "adminpass01",
                 ],
                 text=True,
                 capture_output=True,
@@ -298,7 +298,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
                     "init",
                     "--non-interactive",
                     "--admin-password",
-                    "admin",
+                    "adminpass01",
                 ],
                 text=True,
                 capture_output=True,
@@ -332,7 +332,7 @@ class StartupAndGuardsCliTest(unittest.TestCase):
                     "init",
                     "--non-interactive",
                     "--admin-password",
-                    "admin",
+                    "adminpass01",
                 ],
                 text=True,
                 capture_output=True,
