@@ -144,3 +144,52 @@ def test_postgres_concurrent_last_admin_guard(runtime_env) -> None:
     assert admin is not None
     assert admin.is_active is True
     assert admin.role == "Admin"
+
+
+def test_postgres_concurrent_mutual_admin_demotion_keeps_one_admin(runtime_env) -> None:
+    """Two active admins must not both succeed at removing each other."""
+    _admin, _migrator, runtime_dsn = runtime_env
+    client, service = _wired_client(runtime_dsn)
+    token_a = client.post(
+        "/auth/login", json={"username": "opsadmin", "password": "ops-secret-1"}
+    ).json()["token"]
+    client.post(
+        "/auth/change-password",
+        headers={"Authorization": f"Bearer {token_a}"},
+        json={"new_password": "ops-secret-2"},
+    )
+    created = client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token_a}"},
+        json={
+            "username": "opsadmin2",
+            "password": "ops-secret-3",
+            "role": "Admin",
+            "must_change_password": False,
+        },
+    )
+    assert created.status_code == 201
+    token_b = client.post(
+        "/auth/login", json={"username": "opsadmin2", "password": "ops-secret-3"}
+    ).json()["token"]
+
+    def _demote(actor_token: str, target: str) -> int:
+        return client.patch(
+            f"/users/{target}/access",
+            headers={"Authorization": f"Bearer {actor_token}"},
+            json={"role": "User"},
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(_demote, token_a, "opsadmin2"),
+            pool.submit(_demote, token_b, "opsadmin"),
+        ]
+        results = [future.result() for future in futures]
+    assert sorted(results) == [200, 409]
+    active_admins = [
+        user
+        for user in service.list_users()
+        if user.is_active and user.role == "Admin"
+    ]
+    assert len(active_admins) == 1

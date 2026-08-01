@@ -54,6 +54,15 @@ Widerruf aller anderen Sessions. Die aktuelle Session bleibt gueltig.
 
 - Deaktivierung (aktiv → inaktiv): `deactivated_at` = UTC-Jetzt; alle Sessions
   des Users werden widerrufen.
+- Im PostgreSQL-Pfad laufen Aktivstatus-Schreiben, `deactivated_at` und
+  vollstaendiger Session-Widerruf in **einer** Transaktion. Schlaegt der
+  Widerruf fehl, wird der gesamte Vorgang zurueckgerollt.
+- Der Last-Admin-Schutz sperrt unter PostgreSQL die Menge aller aktiven
+  Admins (`FOR UPDATE`), nicht nur den Zieluser, damit parallele
+  Gegenseitig-Demotions nicht alle Admins entfernen koennen.
+- Desktop-/CLI-Pfade (`update_user_admin_fields`, `set_user_active`) nutzen
+  denselben Service-Use-Case fuer Last-Admin und Deaktivierungs-Widerruf;
+  die HTTP-Admin-Actor-Pruefung bleibt zusaetzlich auf `/users`.
 - Reaktivierung: `deactivated_at = NULL`; alte Sessions werden nicht
   wiederbelebt; neuer Login erforderlich.
 - Rollen- und `is_qmb`-Aenderungen widerrufen keine Sessions. Der naechste

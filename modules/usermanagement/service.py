@@ -234,19 +234,7 @@ class UserManagementService:
         _require_admin_actor(actor)
         if role is None and is_qmb is None and is_active is None:
             raise InvalidUserUpdateError("at least one of role, is_qmb, is_active is required")
-        username = username.strip()
-        if not username:
-            raise InvalidUserUpdateError("username is required")
-        current = self._get_user_or_raise(username)
-        next_role = role if role is not None else current.role
-        next_active = bool(current.is_active if is_active is None else is_active)
-        self._assert_not_last_active_admin(
-            current,
-            next_role=next_role,
-            next_active=next_active,
-        )
-        becoming_inactive = current.is_active and not next_active
-        updated = self._admin_ops.update_user_admin_fields(
+        return self._apply_user_access_change(
             username,
             department=None,
             scope=None,
@@ -255,12 +243,6 @@ class UserManagementService:
             is_active=is_active,
             is_qmb=is_qmb,
         )
-        if becoming_inactive:
-            try:
-                self.revoke_all_sessions_for_user(updated.user_id)
-            except RuntimeError:
-                pass
-        return updated
 
     def update_user_profile(
         self,
@@ -286,7 +268,8 @@ class UserManagementService:
         is_active: bool | None,
         is_qmb: bool | None = None,
     ) -> AuthenticatedUser:
-        return self._admin_ops.update_user_admin_fields(
+        """Desktop/CLI access updates share last-admin and deactivate+revoke rules."""
+        return self._apply_user_access_change(
             username,
             department=department,
             scope=scope,
@@ -297,17 +280,74 @@ class UserManagementService:
         )
 
     def set_user_active(self, username: str, is_active: bool) -> AuthenticatedUser:
+        return self._apply_user_access_change(
+            username,
+            department=None,
+            scope=None,
+            organization_unit=None,
+            role=None,
+            is_active=is_active,
+            is_qmb=None,
+        )
+
+    def _apply_user_access_change(
+        self,
+        username: str,
+        *,
+        department: str | None,
+        scope: str | None,
+        organization_unit: str | None,
+        role: str | None,
+        is_active: bool | None,
+        is_qmb: bool | None,
+    ) -> AuthenticatedUser:
+        username = username.strip()
+        if not username:
+            raise InvalidUserUpdateError("username is required")
         current = self._get_user_or_raise(username)
-        next_role = current.role
-        next_active = bool(is_active)
-        self._assert_not_last_active_admin(current, next_role=next_role, next_active=next_active)
+        next_role = role if role is not None else current.role
+        next_active = bool(current.is_active if is_active is None else is_active)
+        self._assert_not_last_active_admin(
+            current,
+            next_role=next_role,
+            next_active=next_active,
+        )
         becoming_inactive = current.is_active and not next_active
-        updated = self._admin_ops.set_user_active(username, is_active)
-        if becoming_inactive:
-            try:
-                self.revoke_all_sessions_for_user(updated.user_id)
-            except RuntimeError:
-                pass
+        user_repo = self.repository
+        session_repo = self.session_repository
+        if isinstance(user_repo, PostgresUserRepository):
+            with runtime_connection(user_repo._dsn) as conn:
+                updated = PostgresUserRepository.update_user_admin_fields_on_connection(
+                    conn,
+                    username,
+                    department=department,
+                    scope=scope,
+                    organization_unit=organization_unit,
+                    role=role,
+                    is_active=is_active,
+                    is_qmb=is_qmb,
+                )
+                if becoming_inactive:
+                    if not isinstance(session_repo, PostgresSessionRepository):
+                        raise RuntimeError(
+                            "opaque session repository is required to deactivate PostgreSQL users"
+                        )
+                    PostgresSessionRepository.revoke_all_for_user_on_connection(
+                        conn, updated.user_id, _utc_now()
+                    )
+            return updated
+
+        updated = self._admin_ops.update_user_admin_fields(
+            username,
+            department=department,
+            scope=scope,
+            organization_unit=organization_unit,
+            role=role,
+            is_active=is_active,
+            is_qmb=is_qmb,
+        )
+        if becoming_inactive and self._session_ops is not None:
+            self.revoke_all_sessions_for_user(updated.user_id)
         return updated
 
     def set_user_qmb(self, username: str, is_qmb: bool) -> AuthenticatedUser:

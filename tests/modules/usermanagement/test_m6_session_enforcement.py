@@ -115,6 +115,16 @@ def test_last_active_admin_cannot_be_demoted_or_deactivated(tmp_path: Path) -> N
     )
     with pytest.raises(LastActiveAdminError):
         service.update_user_access_as_admin(ctx, "admin", role="User")
+    with pytest.raises(LastActiveAdminError):
+        service.update_user_admin_fields(
+            "admin",
+            department=None,
+            scope=None,
+            organization_unit=None,
+            role="User",
+            is_active=None,
+            is_qmb=None,
+        )
 
 
 def test_second_admin_allows_demotion(tmp_path: Path) -> None:
@@ -197,6 +207,26 @@ def test_sqlite_v1_to_v2_migration_preserves_users(tmp_path: Path) -> None:
     assert row["username"] == "legacy"
     assert row["deactivated_at"] is None
     assert "deactivated_at" in cols
+
+
+def test_desktop_update_user_admin_fields_revokes_on_deactivate(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    bob = service.authenticate("bob", "bobsecret12")
+    assert bob is not None
+    issued = service.create_session(bob, client_type="a")
+    updated = service.update_user_admin_fields(
+        "bob",
+        department="QA",
+        scope=None,
+        organization_unit=None,
+        role=None,
+        is_active=False,
+        is_qmb=None,
+    )
+    assert updated.is_active is False
+    assert updated.department == "QA"
+    with pytest.raises(RevokedSessionError):
+        service.resolve_session(issued.raw_token, request_id="r")
 
 
 def test_create_user_duplicate_raises(tmp_path: Path) -> None:

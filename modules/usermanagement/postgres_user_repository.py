@@ -243,74 +243,108 @@ class PostgresUserRepository(UserRepository):
         is_qmb: bool | None,
     ) -> AuthenticatedUser:
         with runtime_connection(self._dsn) as conn:
-            current = conn.execute(
-                f"""
-                SELECT {_USER_COLUMNS}
+            return self.update_user_admin_fields_on_connection(
+                conn,
+                username,
+                department=department,
+                scope=scope,
+                organization_unit=organization_unit,
+                role=role,
+                is_active=is_active,
+                is_qmb=is_qmb,
+            )
+
+    @staticmethod
+    def update_user_admin_fields_on_connection(
+        conn: psycopg.Connection,
+        username: str,
+        *,
+        department: str | None,
+        scope: str | None,
+        organization_unit: str | None,
+        role: str | None,
+        is_active: bool | None,
+        is_qmb: bool | None,
+    ) -> AuthenticatedUser:
+        # Serialize any last-admin decisions across concurrent demotions/deactivations.
+        conn.execute(
+            """
+            SELECT user_id
+            FROM usermanagement.users
+            WHERE is_active = true
+              AND upper(role) = 'ADMIN'
+            ORDER BY user_id
+            FOR UPDATE
+            """
+        )
+        current = conn.execute(
+            f"""
+            SELECT {_USER_COLUMNS}
+            FROM usermanagement.users
+            WHERE lower(username) = lower(%s)
+            FOR UPDATE
+            """,
+            (username,),
+        ).fetchone()
+        if current is None:
+            raise KeyError(f"unknown user: {username}")
+        next_active = bool(current["is_active"] if is_active is None else is_active)
+        was_active = bool(current["is_active"])
+        next_role = role if role is not None else current["role"]
+        if next_active:
+            next_deactivated_at = None
+        elif was_active and not next_active:
+            next_deactivated_at = _utc_now()
+        else:
+            next_deactivated_at = current["deactivated_at"]
+        if (
+            was_active
+            and normalize_base_role(str(current["role"])) == "ADMIN"
+            and (
+                not next_active
+                or normalize_base_role(str(next_role)) != "ADMIN"
+            )
+        ):
+            others = conn.execute(
+                """
+                SELECT COUNT(*) AS active_admins
                 FROM usermanagement.users
-                WHERE lower(username) = lower(%s)
-                FOR UPDATE
+                WHERE is_active = true
+                  AND upper(role) = 'ADMIN'
+                  AND user_id <> %s::uuid
                 """,
-                (username,),
+                (current["user_id"],),
             ).fetchone()
-            if current is None:
-                raise KeyError(f"unknown user: {username}")
-            next_active = bool(current["is_active"] if is_active is None else is_active)
-            was_active = bool(current["is_active"])
-            next_role = role if role is not None else current["role"]
-            if next_active:
-                next_deactivated_at = None
-            elif was_active and not next_active:
-                next_deactivated_at = _utc_now()
-            else:
-                next_deactivated_at = current["deactivated_at"]
-            if (
-                was_active
-                and normalize_base_role(str(current["role"])) == "ADMIN"
-                and (
-                    not next_active
-                    or normalize_base_role(str(next_role)) != "ADMIN"
-                )
-            ):
-                others = conn.execute(
-                    """
-                    SELECT COUNT(*) AS active_admins
-                    FROM usermanagement.users
-                    WHERE is_active = true
-                      AND upper(role) = 'ADMIN'
-                      AND user_id <> %s::uuid
-                    """,
-                    (current["user_id"],),
-                ).fetchone()
-                if others is None or int(others["active_admins"]) == 0:
-                    raise LastActiveAdminError("cannot remove the last active admin")
-            row = conn.execute(
-                f"""
-                UPDATE usermanagement.users
-                SET department = %s,
-                    scope = %s,
-                    organization_unit = %s,
-                    role = %s,
-                    is_active = %s,
-                    deactivated_at = %s,
-                    is_qmb = %s,
-                    updated_at = %s
-                WHERE user_id = %s::uuid
-                RETURNING {_USER_COLUMNS}
-                """,
-                (
-                    department if department is not None else current["department"],
-                    scope if scope is not None else current["scope"],
-                    organization_unit
-                    if organization_unit is not None
-                    else current["organization_unit"],
-                    next_role,
-                    next_active,
-                    next_deactivated_at,
-                    bool(current["is_qmb"] if is_qmb is None else is_qmb),
-                    _utc_now(),
-                    current["user_id"],
-                ),
-            ).fetchone()
+            if others is None or int(others["active_admins"]) == 0:
+                raise LastActiveAdminError("cannot remove the last active admin")
+        row = conn.execute(
+            f"""
+            UPDATE usermanagement.users
+            SET department = %s,
+                scope = %s,
+                organization_unit = %s,
+                role = %s,
+                is_active = %s,
+                deactivated_at = %s,
+                is_qmb = %s,
+                updated_at = %s
+            WHERE user_id = %s::uuid
+            RETURNING {_USER_COLUMNS}
+            """,
+            (
+                department if department is not None else current["department"],
+                scope if scope is not None else current["scope"],
+                organization_unit
+                if organization_unit is not None
+                else current["organization_unit"],
+                next_role,
+                next_active,
+                next_deactivated_at,
+                bool(current["is_qmb"] if is_qmb is None else is_qmb),
+                _utc_now(),
+                current["user_id"],
+            ),
+        ).fetchone()
         if row is None:
             raise RuntimeError("PostgreSQL user update returned no row")
         return _user_from_row(row)
