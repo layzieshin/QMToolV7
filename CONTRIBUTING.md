@@ -27,6 +27,12 @@ Entry points (run from the project root):
 | Tests | `.\.venv\Scripts\python.exe -m pytest` |
 | Production build | `.\.venv\Scripts\python.exe packaging/build_onedir.py` |
 
+### Lokaler PostgreSQL-Labserver (AP-028)
+
+- Vorlage: [`.env.example`](.env.example) → lokale `.env` (gitignored) mit `QMTOOL_PG_PASSWORD`.
+- Host `192.168.0.4`, Port `5432`, DB `qmtool_test`, User `qmtool`.
+- Details: [`docs/AP-028_M3_POSTGRES_SCHEMA.md`](docs/AP-028_M3_POSTGRES_SCHEMA.md) (Abschnitt „Lokaler Lab-Testserver“).
+
 ## Documentation map ("I want X -> read Y")
 
 Priority and conflict resolution: [`docs/DOCS_CANONICAL_INDEX.md`](docs/DOCS_CANONICAL_INDEX.md) (P0 overrules P1/P2).

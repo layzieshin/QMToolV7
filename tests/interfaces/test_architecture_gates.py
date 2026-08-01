@@ -512,3 +512,30 @@ def test_documents_sections_extracted() -> None:
     assert "def _build_detail_drawer(" not in content
     assert "def _build_metadata_tab(" not in content
 
+
+def test_backend_uses_only_usermanagement_public_api() -> None:
+    """src/backend may import modules.usermanagement.api only — no internals."""
+    forbidden_markers = (
+        "modules.usermanagement.service",
+        "modules.usermanagement.sqlite_repository",
+        "modules.usermanagement.postgres_",
+        "modules.usermanagement.session_ops",
+        "modules.usermanagement.auth_ops",
+        "modules.usermanagement.password_crypto",
+        "modules.usermanagement.memory_session",
+        "modules.usermanagement.repository",
+        "modules.usermanagement.wiring",
+        "modules.usermanagement.module",
+    )
+    offenders: list[str] = []
+    for path in sorted((ROOT / "src" / "backend").rglob("*.py")):
+        content = path.read_text(encoding="utf-8")
+        for marker in forbidden_markers:
+            if marker in content:
+                offenders.append(f"{path.relative_to(ROOT).as_posix()} -> {marker}")
+        if "from modules.usermanagement." in content and "modules.usermanagement.api" not in content:
+            # allow `from modules.usermanagement import api`
+            if "from modules.usermanagement import api" not in content:
+                offenders.append(f"{path.relative_to(ROOT).as_posix()} -> non-api usermanagement import")
+    assert offenders == []
+

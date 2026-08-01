@@ -110,6 +110,9 @@ def test_resolve_rejects_missing_invalid_expired_revoked_and_inactive() -> None:
     ops.revoke_session(raw_token=issued2.raw_token, now=_utc(hour=10, minute=5))
     with pytest.raises(RevokedSessionError):
         ops.resolve_session(issued2.raw_token, request_id="r", now=_utc(hour=10, minute=6))
+    # Idempotent revoke of already-revoked token (M5 logout contract)
+    again = ops.revoke_session(raw_token=issued2.raw_token, now=_utc(hour=10, minute=7))
+    assert again.revoked_at is not None
 
     issued3 = ops.create_session(user, client_type="test", now=_utc())
     users.put(_user(is_active=False))

@@ -51,6 +51,16 @@ def test_initial_sql_contains_required_schema_contracts() -> None:
     assert all("_qm_schema_migrations" not in line for line in grant_lines)
 
 
+def test_history_select_grant_is_versioned_separately() -> None:
+    steps = pgs.discover_migrations()
+    assert [step.name for step in steps] == ["initial", "grant_history_select"]
+    sql = (pgs.MIGRATIONS_DIR / "0002_grant_history_select.sql").read_text(encoding="utf-8").lower()
+    assert "grant select on usermanagement._qm_schema_migrations to qmtool_runtime" in sql
+    assert "insert" not in sql
+    assert "update" not in sql
+    assert "delete" not in sql
+
+
 def test_provision_roles_bootstrap_contract() -> None:
     text = pgs.PROVISION_ROLES_PATH.read_text(encoding="utf-8")
     assert "qmtool_migrator" in text

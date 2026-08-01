@@ -92,22 +92,25 @@ def test_provision_is_idempotent(env: tuple[str, str, str]) -> None:
 def test_fresh_install_owners_history_fingerprint_and_noop(env: tuple[str, str, str]) -> None:
     _admin_dsn, migrator_dsn, _runtime_dsn = env
     version = pgs.migrate_usermanagement_schema(migrator_dsn)
-    assert version == 1
+    assert version == 2
     again = pgs.migrate_usermanagement_schema(migrator_dsn)
-    assert again == 1
+    assert again == 2
     with psycopg.connect(migrator_dsn) as conn:
         conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
-        row = conn.execute(
+        rows = conn.execute(
             """
             SELECT version, name, checksum, schema_fingerprint
             FROM usermanagement._qm_schema_migrations
+            ORDER BY version
             """
-        ).fetchone()
-        assert row is not None
-        assert int(row[0]) == 1
-        assert row[1] == "initial"
-        assert len(row[2]) == 64
-        assert len(row[3]) == 64
+        ).fetchall()
+        assert len(rows) == 2
+        assert int(rows[0][0]) == 1
+        assert rows[0][1] == "initial"
+        assert int(rows[1][0]) == 2
+        assert rows[1][1] == "grant_history_select"
+        assert len(rows[0][2]) == 64
+        assert len(rows[0][3]) == 64
         for table in ("users", "sessions", "_qm_schema_migrations"):
             owner = conn.execute(
                 "SELECT tableowner FROM pg_tables WHERE schemaname=%s AND tablename=%s",
@@ -315,11 +318,12 @@ def test_failed_migration_rolls_back_completely(env: tuple[str, str, str], tmp_p
     pgs.migrate_usermanagement_schema(migrator_dsn)
     steps_dir = tmp_path / "migrations"
     steps_dir.mkdir()
-    (steps_dir / "0001_initial.sql").write_text(
-        (pgs.MIGRATIONS_DIR / "0001_initial.sql").read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    (steps_dir / "0002_broken.sql").write_text(
+    for name in ("0001_initial.sql", "0002_grant_history_select.sql"):
+        (steps_dir / name).write_text(
+            (pgs.MIGRATIONS_DIR / name).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    (steps_dir / "0003_broken.sql").write_text(
         "CREATE TABLE usermanagement.partial_step (id int);\nSELECT 1/0;\n",
         encoding="utf-8",
     )
@@ -339,7 +343,7 @@ def test_failed_migration_rolls_back_completely(env: tuple[str, str, str], tmp_p
         count = conn.execute(
             "SELECT COUNT(*) FROM usermanagement._qm_schema_migrations"
         ).fetchone()
-        assert count is not None and int(count[0]) == 1
+        assert count is not None and int(count[0]) == 2
 
 
 def test_parallel_migration_lock_rejected(env: tuple[str, str, str]) -> None:
@@ -375,16 +379,17 @@ def test_migrator_can_apply_followup_migration(env: tuple[str, str, str], tmp_pa
     pgs.migrate_usermanagement_schema(migrator_dsn)
     steps_dir = tmp_path / "migrations"
     steps_dir.mkdir()
-    (steps_dir / "0001_initial.sql").write_text(
-        (pgs.MIGRATIONS_DIR / "0001_initial.sql").read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    (steps_dir / "0002_add_note.sql").write_text(
+    for name in ("0001_initial.sql", "0002_grant_history_select.sql"):
+        (steps_dir / name).write_text(
+            (pgs.MIGRATIONS_DIR / name).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    (steps_dir / "0003_add_note.sql").write_text(
         "ALTER TABLE usermanagement.users ADD COLUMN m3_note text NULL;\n",
         encoding="utf-8",
     )
     version = pgs.migrate_usermanagement_schema(migrator_dsn, migrations_dir=steps_dir)
-    assert version == 2
+    assert version == 3
     with psycopg.connect(migrator_dsn) as conn:
         conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
         row = conn.execute(
@@ -437,15 +442,28 @@ def test_runtime_acl_drift_is_rejected(env: tuple[str, str, str]) -> None:
 
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
         admin.execute(
-            "GRANT SELECT ON usermanagement._qm_schema_migrations TO qmtool_runtime"
+            "GRANT INSERT ON usermanagement._qm_schema_migrations TO qmtool_runtime"
         )
     try:
-        with pytest.raises(pgs.PostgresSchemaError, match="must not have SELECT"):
+        with pytest.raises(pgs.PostgresSchemaError, match="must not have INSERT"):
             pgs.migrate_usermanagement_schema(migrator_dsn)
     finally:
         with psycopg.connect(admin_dsn, autocommit=True) as admin:
             admin.execute(
-                "REVOKE SELECT ON usermanagement._qm_schema_migrations FROM qmtool_runtime"
+                "REVOKE INSERT ON usermanagement._qm_schema_migrations FROM qmtool_runtime"
+            )
+
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute(
+            "REVOKE SELECT ON usermanagement._qm_schema_migrations FROM qmtool_runtime"
+        )
+    try:
+        with pytest.raises(pgs.PostgresSchemaError, match="missing SELECT"):
+            pgs.migrate_usermanagement_schema(migrator_dsn)
+    finally:
+        with psycopg.connect(admin_dsn, autocommit=True) as admin:
+            admin.execute(
+                "GRANT SELECT ON usermanagement._qm_schema_migrations TO qmtool_runtime"
             )
 
 

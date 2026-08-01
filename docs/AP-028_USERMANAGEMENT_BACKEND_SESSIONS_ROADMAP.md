@@ -472,6 +472,8 @@ Persistente Repositories → Milestone 5.
 
 Auth-HTTP-Endpunkte und Sessionauflösung im Backend-Host; Runtime-Anbindung; UserContext-Erzeugung; Request-ID.
 
+**Umsetzungsplan:** [`docs/AP-028_M5_BACKEND_AUTH_FOUNDATION.md`](AP-028_M5_BACKEND_AUTH_FOUNDATION.md)
+
 **Voraussetzungen**
 
 Milestones 1–4.
@@ -561,7 +563,8 @@ Milestone 5.
 - Bei neuer Deaktivierung: `deactivated_at` als echten UTC-Zeitpunkt setzen; bei Reaktivierung entfernen (`NULL`)
 - Rollen- und `is_qmb`-Änderungen ohne Session-Freeze
 - `POST /auth/logout-all` und/oder Session-Liste/Löschung falls ohne Überladung
-- Passwortwechselwirkung gemäß Abschnitt E (wenn entschieden; sonst explizite Default-Policy dokumentieren und testen)
+- Passwortwechsel: gemaess freigegebener M5-Policy bleibt die aktuelle Session
+  gueltig; in M6 Widerruf aller anderen Sessions des Users umsetzen und testen
 
 **Nicht-Ziele**
 
@@ -897,10 +900,11 @@ Nur echte Restoffenheiten. Bereits entschieden und hier nicht erneut fraglich:
 
 ### Noch offen (vor oder während betroffener Milestones zu klären)
 
-1. **Passwortwechsel und bestehende Sessions**
-   Widerruf aller Sessions bei Passwortänderung vs. nur aktuelle vs. Behalten bis Ablauf?
-   Empfehlung: alle Sessions des Users widerrufen (außer ggf. die Session, in der geändert wurde, neu ausstellen).
-   Eskalation spätestens in Milestone 6, falls abweichend gewünscht.
+1. **Passwortwechsel und bestehende Sessions** — **teilweise entschieden (2026-08-01):**
+   - **M5:** aktuelle Session bleibt nach Passwortwechsel gueltig; andere Sessions
+     werden in M5 nicht widerrufen (`docs/AP-028_M5_BACKEND_AUTH_FOUNDATION.md`).
+   - **M6:** Widerruf aller anderen Sessions des Users bei Passwortwechsel
+     (aktuelle Session darf behalten oder neu ausgestellt werden — in M6 festlegen).
 
 2. **user_id-Remapping bei Cutover**
    Heute oft `user_id == username`. Ziel UUID. Strategie für Referenzen in anderen Modulen (Documents, Training, Incident, Audit)?

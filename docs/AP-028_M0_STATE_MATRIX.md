@@ -174,7 +174,7 @@ gültige Session
 
 Nicht in M0 entschieden — Empfehlungen unverändert übernehmen (außer Punkt 5, in M3 entschieden):
 
-1. **Passwortwechsel → Session-Widerruf-Policy** (Empfehlung: alle Sessions widerrufen; aktuelle neu ausstellen) — spätestens M6
+1. **Passwortwechsel → Session-Widerruf-Policy** — **teilweise entschieden (2026-08-01):** M5 behaelt die aktuelle Session; Widerruf der uebrigen Sessions in M6
 2. **user_id-Remapping** username→UUID und Quermodul-Referenzen — vor M8-Cutover eskalieren falls Impact
 3. **must_change_password-Enforcement** (Empfehlung: alle Nicht-Auth-Fachaufrufe blockieren) — M2/M5 festschreiben
 4. **User-Admin-HTTP-Umfang** in AP-028 vs. Folgepaket — Auth zuerst
