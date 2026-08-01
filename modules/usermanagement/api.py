@@ -49,6 +49,7 @@ __all__ = [
     "get_usermanagement_service",
     "bootstrap_admin",
     "self_register",
+    "bootstrap_first_admin",
     "authenticate_user",
     "create_backend_session",
     "resolve_session",
@@ -94,6 +95,15 @@ def self_register(
         last_name=last_name,
         email=email,
     )
+
+
+def bootstrap_first_admin(container, username: str, password: str):
+    """Create the first admin only when the user store is empty.
+
+    Sets ``must_change_password=True``. Returns ``None`` when users already exist.
+    """
+    svc = get_usermanagement_service(container)
+    return svc.bootstrap_first_admin(username, password)
 
 
 def authenticate_user(container, username: str, password: str) -> AuthenticatedUser:
