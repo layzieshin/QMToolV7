@@ -149,9 +149,15 @@ class SessionOps:
         now: datetime | None = None,
     ) -> SessionRecord:
         session = self._load_for_revoke(session_id=session_id, raw_token=raw_token)
+        if session.revoked_at is not None:
+            # Idempotent logout: already-revoked but known token succeeds.
+            return session
         moment = _as_utc(now or _utc_now())
         revoked = self._sessions.revoke(session.session_id, moment)
         if revoked is None:
+            current = self._sessions.get_by_session_id(session.session_id)
+            if current is not None and current.revoked_at is not None:
+                return current
             raise SessionNotFoundError("session not found")
         return revoked
 

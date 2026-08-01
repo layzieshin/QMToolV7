@@ -31,6 +31,9 @@ packaging/_pyi_build/
 
 # Runtime data / secrets
 storage/
+.env
+.env.*
+!.env.example
 *.pem
 !qm_platform/licensing/keys/*_public.pem
 *.key

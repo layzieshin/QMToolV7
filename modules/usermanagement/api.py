@@ -49,6 +49,12 @@ __all__ = [
     "get_usermanagement_service",
     "bootstrap_admin",
     "self_register",
+    "authenticate_user",
+    "create_backend_session",
+    "resolve_session",
+    "revoke_session",
+    "change_own_password",
+    "ensure_postgres_schema_ready",
     "is_effective_qmb",
     "normalize_base_role",
 ]
@@ -88,3 +94,66 @@ def self_register(
         last_name=last_name,
         email=email,
     )
+
+
+def authenticate_user(container, username: str, password: str) -> AuthenticatedUser:
+    """Authenticate credentials. Raises ``AuthenticationError`` on failure.
+
+    Invalid credentials and inactive users are both reported as authentication
+    failures so callers cannot distinguish them.
+    """
+    svc = get_usermanagement_service(container)
+    user = svc.authenticate(username, password)
+    if user is None:
+        raise AuthenticationError("invalid credentials")
+    return user
+
+
+def create_backend_session(container, user: AuthenticatedUser) -> IssuedSession:
+    """Issue an opaque backend session for an already authenticated user."""
+    svc = get_usermanagement_service(container)
+    return svc.create_session(user, client_type="backend")
+
+
+def resolve_session(
+    container,
+    raw_token: str | None,
+    *,
+    request_id: str,
+    password_change_allowed: bool = False,
+) -> UserContext:
+    """Resolve a Bearer token into a confirmed ``UserContext``."""
+    svc = get_usermanagement_service(container)
+    return svc.resolve_session(
+        raw_token,
+        request_id=request_id,
+        password_change_allowed=password_change_allowed,
+    )
+
+
+def revoke_session(container, *, raw_token: str) -> SessionRecord:
+    """Revoke the session identified by the presented opaque token (idempotent)."""
+    svc = get_usermanagement_service(container)
+    return svc.revoke_session(raw_token=raw_token)
+
+
+def change_own_password(container, context: UserContext, new_password: str) -> None:
+    """Change the password of the user identified by a confirmed context.
+
+    The current session remains valid (M5 policy). Revoking other sessions is M6.
+    """
+    if not context.is_confirmed:
+        raise InvalidSessionError("user context is not server-confirmed")
+    svc = get_usermanagement_service(container)
+    svc.change_password(context.username, new_password)
+
+
+def ensure_postgres_schema_ready(container) -> int:
+    """Verify the Usermanagement PostgreSQL schema matches the registered target.
+
+    Uses the runtime DSN only; never applies migrations.
+    """
+    from .postgres_schema import assert_runtime_schema_ready
+
+    dsn = container.get_port("usermanagement_postgres_dsn")
+    return assert_runtime_schema_ready(str(dsn))

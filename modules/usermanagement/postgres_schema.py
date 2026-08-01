@@ -635,7 +635,11 @@ def _query_privilege(
     return bool(row[0])
 
 
-def _validate_role_contract(conn: psycopg.Connection) -> None:
+def _validate_role_contract(
+    conn: psycopg.Connection,
+    *,
+    require_history_select: bool = True,
+) -> None:
     role_rows = conn.execute(
         """
         SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
@@ -747,7 +751,23 @@ def _validate_role_contract(conn: psycopg.Connection) -> None:
                 )
 
     history = f"{SCHEMA_NAME}.{MIGRATIONS_TABLE}"
-    for privilege in required_dml + forbidden_table_privileges:
+    if require_history_select:
+        if not _query_privilege(
+            conn,
+            "SELECT has_table_privilege(%s, %s, %s)",
+            (RUNTIME_ROLE, history, "SELECT"),
+        ):
+            raise PostgresSchemaError(f"qmtool_runtime missing SELECT on {history}")
+    else:
+        if _query_privilege(
+            conn,
+            "SELECT has_table_privilege(%s, %s, %s)",
+            (RUNTIME_ROLE, history, "SELECT"),
+        ):
+            raise PostgresSchemaError(
+                f"qmtool_runtime must not have SELECT on {history}"
+            )
+    for privilege in ("INSERT", "UPDATE", "DELETE") + forbidden_table_privileges:
         if _query_privilege(
             conn,
             "SELECT has_table_privilege(%s, %s, %s)",
@@ -758,7 +778,11 @@ def _validate_role_contract(conn: psycopg.Connection) -> None:
             )
 
 
-def _validate_schema_contracts(conn: psycopg.Connection) -> None:
+def _validate_schema_contracts(
+    conn: psycopg.Connection,
+    *,
+    require_history_select: bool = True,
+) -> None:
     tables = _table_names(conn)
     missing_tables = EXPECTED_TABLES - tables
     if missing_tables:
@@ -834,7 +858,7 @@ def _validate_schema_contracts(conn: psycopg.Connection) -> None:
                 f"table {table} owner is {None if owner is None else owner[0]!r}, "
                 f"expected {MIGRATOR_ROLE}"
             )
-    _validate_role_contract(conn)
+    _validate_role_contract(conn, require_history_select=require_history_select)
 
 
 def _activate_migrator_role(conn: psycopg.Connection) -> None:
@@ -884,7 +908,10 @@ def migrate_usermanagement_schema(
                 script = step.sql_path.read_text(encoding="utf-8")
                 with conn.transaction():
                     _execute_script(conn, script)
-                    _validate_schema_contracts(conn)
+                    _validate_schema_contracts(
+                        conn,
+                        require_history_select=step.version >= 2,
+                    )
                     fingerprint = _compute_schema_fingerprint(conn)
                     conn.execute(
                         f"""
@@ -907,7 +934,38 @@ def migrate_usermanagement_schema(
                 raise PostgresSchemaError(
                     "schema fingerprint mismatch after migration commit"
                 )
-            _validate_schema_contracts(conn)
+            _validate_schema_contracts(
+                conn,
+                require_history_select=target >= 2,
+            )
             return target
         finally:
             conn.execute("SELECT pg_advisory_unlock(%s)", (ADVISORY_LOCK_KEY,))
+
+
+def assert_runtime_schema_ready(dsn: str, *, migrations_dir: Path | None = None) -> int:
+    """Fail-closed readiness check for the runtime LOGIN (no migration apply).
+
+    Requires SELECT on the history table (migration 0002+) and that the highest
+    applied version equals the registered migration target.
+    """
+    from .postgres_connection import runtime_connection
+
+    steps = discover_migrations(migrations_dir)
+    target = steps[-1].version
+    with runtime_connection(dsn) as conn:
+        if not _history_table_exists(conn):
+            raise PostgresSchemaError("usermanagement schema history is missing")
+        row = conn.execute(
+            f"""
+            SELECT COALESCE(MAX(version), 0)
+            FROM {SCHEMA_NAME}.{MIGRATIONS_TABLE}
+            """
+        ).fetchone()
+        applied = int(row[0]) if row is not None else 0
+        if applied != target:
+            raise PostgresSchemaError(
+                f"usermanagement schema not ready: applied version {applied}, "
+                f"expected {target}"
+            )
+        return applied

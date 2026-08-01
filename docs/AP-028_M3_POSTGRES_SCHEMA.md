@@ -30,7 +30,7 @@ PG-SQL und Provisioning sind dennoch im Produktionsbundle enthalten.
 | Rolle | Art | Zweck |
 | --- | --- | --- |
 | `qmtool_migrator` | NOLOGIN-Rechterolle | Schema-/Tabellen-Owner, DDL |
-| `qmtool_runtime` | NOLOGIN-Rechterolle | DML nur auf `users` und `sessions` |
+| `qmtool_runtime` | NOLOGIN-Rechterolle | DML auf `users`/`sessions`; SELECT auf History (M5 Ready-Check) |
 
 - Keine Passwörter und keine LOGIN-Attribute in `provision_roles.sql`
 - Keine Superuser-/CreateDB-/CreateRole-/Replication-/BypassRLS-Rechte
@@ -39,8 +39,9 @@ PG-SQL und Provisioning sind dennoch im Produktionsbundle enthalten.
 - Applicator: `SET ROLE qmtool_migrator` + Verifikation von `current_user`
 - Der Applicator prüft Rollenattribute, Mitgliedschaften, Owner und jede erlaubte beziehungsweise verbotene Privilegienart bei jedem Lauf erneut
 - Tabellen `users`, `sessions`, `_qm_schema_migrations` gehören dauerhaft `qmtool_migrator`
-- Runtime: explizite `SELECT/INSERT/UPDATE/DELETE` nur auf `users` und `sessions`
-- Kein `CREATE`, kein DDL, keine Rechte auf der Migrationstabelle, kein Wechsel auf die Migrator-Rolle
+- Runtime: explizite `SELECT/INSERT/UPDATE/DELETE` auf `users` und `sessions`
+- Runtime: ab Migration `0002` zusätzlich `SELECT` auf `_qm_schema_migrations` (kein INSERT/UPDATE/DELETE)
+- Kein `CREATE`, kein DDL, kein Wechsel auf die Migrator-Rolle
 - Keine pauschalen `ALTER DEFAULT PRIVILEGES` für zukünftige Tabellen
 - M4 muss zusätzlich die deployment-spezifische Runtime-LOGIN-Rolle prüfen; sie wird außerhalb von M3 provisioniert
 
@@ -77,6 +78,26 @@ PG-SQL und Provisioning sind dennoch im Produktionsbundle enthalten.
 - Live (`@pytest.mark.postgres`): echtes Provisioning, Login-Rollen nur für CI, Migrator-Pfad
 - Skip nur ohne `QMTOOL_PG_DSN`; mit `QMTOOL_PG_REQUIRED=1` ist Skip ein Fehler
 - Windows-Matrix und CI-Job `postgres-usermanagement` führen statische Schema- und Git-Gate-Tests aus; der PG-Job ergänzt die Live-Tests gegen Postgres 16
+
+## Lokaler Lab-Testserver
+
+Nicht-geheime Verbindungsdaten (Passwort nur in lokaler `.env`, siehe `.env.example`):
+
+| Feld | Wert |
+| --- | --- |
+| Host | `192.168.0.4` |
+| Port | `5432` |
+| Datenbank | `qmtool_test` |
+| Benutzer | `qmtool` |
+| Passwort | aus lokaler `.env` (`QMTOOL_PG_PASSWORD`) |
+
+`tests/conftest.py` lädt `.env` und setzt bei Bedarf `QMTOOL_PG_DSN` aus den Teilen.
+Live-Tests:
+
+```powershell
+# Nach Ausfüllen von QMTOOL_PG_PASSWORD in .env
+.\.venv\Scripts\python.exe -m pytest tests/modules/usermanagement/test_postgres_schema_live.py -m postgres -q
+```
 
 M3.1 ändert den Fingerprint-Algorithmus einmalig vor dem Produktivbetrieb. Vorhandene Entwicklungs-PG-Datenbanken werden deshalb bewusst neu aufgebaut und nicht heuristisch übernommen.
 
