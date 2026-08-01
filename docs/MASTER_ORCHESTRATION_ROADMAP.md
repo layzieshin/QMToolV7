@@ -26,7 +26,7 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
 - AP-025 Agent Guardrails und Repo-Konsistenz: erledigt (Governance/Docs/Gates; kein fachliches Produktverhalten).
 - AP-026 Documents Review-ablehnen Evidence Baseline: erledigt (Test-Gate fuer bestehenden Servicefluss; Produktverhalten unveraendert; Kettenstatus bleibt `ketten-eingeschraenkt`).
 - AP-027 Verbindliches Datenbank-Migrationsfundament: erledigt/gemergt in `main` (Commit-Grundlage `Establish AP-027 database migration foundation`); SQLite-Owner V1, forward-only Runner, Gates und Policy. PostgreSQL blieb bewusst ausserhalb AP-027.
-- AP-028 Backend-gestuetztes Usermanagement mit serverseitigen Sessions: freigegebener Schwerpunkt; M0–M6 in `main`, naechster Umsetzungs-Milestone M7 (Auditnachweis, `docs/AP-028_M7_AUDIT_EVIDENCE.md`). Roadmap und Milestone-0-Prompt unter `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` und `docs/AP-028_MILESTONE_0_PROMPT.md`. Milestone 0 Ist-/Zielmatrix: `docs/AP-028_M0_STATE_MATRIX.md`. Umsetzung milestone-weise; kein Big-Bang.
+- AP-028 Backend-gestuetztes Usermanagement mit serverseitigen Sessions: freigegebener Schwerpunkt; M0–M7 in `main`, naechster Umsetzungs-Milestone M8 (Cutover-Prep only, `docs/AP-028_M8_CUTOVER_PREP.md`). Produktiver PG-Cutover und UUID-Remapping der Quermodule sind ein separates Folgepaket. Roadmap und Milestone-0-Prompt unter `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` und `docs/AP-028_MILESTONE_0_PROMPT.md`. Milestone 0 Ist-/Zielmatrix: `docs/AP-028_M0_STATE_MATRIX.md`. Umsetzung milestone-weise; kein Big-Bang.
 - Nach Abschluss AP-028: Documents-Multiuser-MVP als separat freizugebendes Arbeitspaket (setzt bestaetigten UserContext/Sessions voraus).
 
 ## Zielarchitektur
@@ -70,7 +70,9 @@ Offene Zielentscheidungen:
 - zentrale Artefaktablage
 - Mehrmandantenfaehigkeit, Lizenzpruefung, Exportanforderungen
 - Befugnisse/Kompetenzen jenseits globaler Basisrollen/`is_qmb`
-- Restpunkte in `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` Abschnitt E (u. a. user_id-Remapping beim Cutover; Passwortwechsel- und Admin-HTTP-Policy in M6 entschieden)
+- Restpunkte in `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` Abschnitt E
+  (user_id-Remapping: separates Folgepaket vor Cutover, M8 Prep-only; Passwortwechsel-
+  und Admin-HTTP-Policy in M6 entschieden)
 
 ## MVP-Priorisierung
 Zuerst stabilisieren:
@@ -181,7 +183,8 @@ beginnt. Documents-Multiuser-MVP bleibt danach separat freizugeben.
 - Event-/Auditlog-Schemaaenderungen ausserhalb Usermanagement-Auth-Audit (AP-028 M7)
 - Backend-Feature-Routen ausserhalb der AP-028 Auth-/Session-Endpunkte
 - PostgreSQL-Migration anderer Fachmodule
-- Fachliche Datenuebernahme oder Artefaktmigration ausserhalb Usermanagement-Cutover (AP-028 M8)
+- Fachliche Datenuebernahme / UUID-Remapping der Quermodule und produktiver UM-Cutover
+  (nicht M8; M8 ist Prep-only, siehe `docs/AP-028_M8_CUTOVER_PREP.md`)
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
 - Documents-Multiuser-MVP (erst nach AP-028, separate Freigabe)
 - Incident-Modul Cleanup Admin=QMB (bekannte Abweichung; ausserhalb AP-028)

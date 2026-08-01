@@ -9,9 +9,12 @@ password_crypto.py, password_policy.py, repository.py, session_store.py, auth_op
 user_admin_ops.py, wiring.py, session_ops.py, session_repository.py,
 memory_session_repository.py, session_token.py, postgres_schema.py,
 postgres_audit_repository.py, postgres_user_repository.py, postgres_session_repository.py,
-postgres_connection.py
+postgres_connection.py, cutover_prep.py, cutover_drill.py, cutover_reference_catalog.py
 """
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Mapping
 
 from .contracts import (
     AuthenticatedUser,
@@ -20,6 +23,7 @@ from .contracts import (
     SystemExecutionContext,
     UserContext,
 )
+from .cutover_prep import CutoverPrepResult, prepare_postgres_cutover as _prepare_postgres_cutover
 from .errors import (
     AuditUnavailableError,
     AuthenticationError,
@@ -46,6 +50,7 @@ __all__ = [
     "SystemExecutionContext",
     "SessionRecord",
     "IssuedSession",
+    "CutoverPrepResult",
     "UsermanagementError",
     "AuthenticationError",
     "InactiveUserError",
@@ -75,6 +80,7 @@ __all__ = [
     "create_user_as_admin",
     "update_user_access_as_admin",
     "ensure_postgres_schema_ready",
+    "prepare_postgres_cutover",
     "is_effective_qmb",
     "normalize_base_role",
 ]
@@ -232,3 +238,30 @@ def ensure_postgres_schema_ready(container) -> int:
 
     dsn = container.get_port("usermanagement_postgres_dsn")
     return assert_runtime_schema_ready(str(dsn))
+
+
+def prepare_postgres_cutover(
+    container,
+    *,
+    sqlite_users_path: Path | str,
+    cross_module_db_paths: Mapping[str, Path | str],
+    postgres_migrator_dsn: str,
+    report_dir: Path | str,
+    drill_restore_dsn: str = "",
+    drill_work_dir: Path | str | None = None,
+) -> CutoverPrepResult:
+    """AP-028 M8 prep-only inventar/validation. Never imports or switches runtime.
+
+    ``container`` is accepted for API consistency; the use-case is path/DSN driven
+    and performs no writes against the runtime DSN. The backup/restore drill is
+    executed by the controlled use-case (not a hand-written evidence file).
+    """
+    del container  # reserved for future logging/ports; prep is path-driven
+    return _prepare_postgres_cutover(
+        sqlite_users_path=sqlite_users_path,
+        cross_module_db_paths=cross_module_db_paths,
+        postgres_migrator_dsn=postgres_migrator_dsn,
+        report_dir=report_dir,
+        drill_restore_dsn=drill_restore_dsn,
+        drill_work_dir=drill_work_dir,
+    )

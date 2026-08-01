@@ -717,71 +717,81 @@ Auditfähig → Milestone 8.
 
 **Ziel**
 
-Reproduzierbare Datenübernahme SQLite/`users.db` (+ Analyse JSON-Session) nach PostgreSQL; Validierung; Backup/Restore; kein Dual-Write.
+Inventar, Validierung, Bericht und Backup-/Restore-Drill fuer den spaeteren
+Usermanagement-Cutover. **Kein** produktiver Umschalt auf PostgreSQL in M8.
+
+**Umsetzungsplan:** [`docs/AP-028_M8_CUTOVER_PREP.md`](AP-028_M8_CUTOVER_PREP.md)
 
 **Voraussetzungen**
 
-Milestones 3–7; Backup/Restore-Gates der Foundation.
+Milestones 3–7; Backup/Restore-Gates der Foundation (SQLite) bleiben bestehen.
+PG-Drill ist zusaetzlicher M8-Nachweis.
 
 **Scope**
 
-- Inventar Altbestand
-- Übernahmeskript/Use-Case: User-IDs, Rollen, Aktivstatus, Passwort-Hashes erhalten
-- Validierungsreport
-- Wartungs-/Cutover-Schritt dokumentiert
-- Altbestand nur als gesicherte Quelle
+- Inventar SQLite-`users.db` (read-only)
+- Quermodul-Referenzkatalog und Inventur (Documents/Training/Incident/Signature)
+- Validierungsreport unter `build/`
+- PostgreSQL-Betriebsbereitschaft (Migration/Fingerprint/Rollen/leere Tabellen) read-only
+- `pg_dump`/`pg_restore`-Drill auf separater Validierungs-DB + Nachweisartefakt
+- Oeffentliche Wartungs-API `prepare_postgres_cutover` (Status nie `cutover_ready`)
 
 **Nicht-Ziele**
 
 - Gleichzeitiges Schreiben in SQLite und PostgreSQL
-- Migration anderer Module
+- PostgreSQL-User-Import / UUID-Remapping
+- Migration anderer Module / Quermodul-Datenaenderung
 - Hard-Delete historischer User
+- Produktive Umschaltung („PostgreSQL alleinige Quelle“)
 
 **Betroffene Dateien/Bausteine**
 
-- Migrations-/Cutover-Werkzeuge unter dokumentiertem Owner (Modul oder `scripts/`, ohne Parallelwahrheit)
+- `modules/usermanagement/cutover_prep.py`, `cutover_reference_catalog.py`, `api.py`
+- Optional duennes CLI `scripts/prepare_postgres_cutover.py`
 - Gate-Outputs unter `build/`
-- Doku Cutover-Runbook in `docs/` (schlank, AP-028-bezogen)
+- Doku `docs/AP-028_M8_CUTOVER_PREP.md`
 
 **Implementierungsaufgaben**
 
-1. Mapping alter `user_id`(=username) → stabile UUID-Strategie explizit entscheiden und dokumentieren (wenn noch offen → Eskalation).
-2. Case-insensitive Username-Kollisionen gegen PG-Index `UNIQUE (lower(username))` vor Import validieren und auflösen.
-3. Hash-Übernahme ohne Re-Hash-Verlust.
-4. Sessions: Alt-JSON nicht als PG-Sessions importieren (kein Fake-Token); Nutzer müssen neu einloggen nach Cutover.
-5. Backup/Restore-Drill für Usermanagement-PG.
+1. Abschnitt E #2: Remapping als **separates Folgepaket** dokumentieren (nicht in M8).
+2. Case-insensitive Username-Kollisionen und Hash-Formate in der SQLite-Quelle melden.
+3. Sessions/`current_user.json` nicht als PG-Sessions behandeln (kein Import).
+4. Backup/Restore-Drill fuer Usermanagement-PG auf Validierungs-DB.
 
 **Tests**
 
-- Datenübernahme-Validierungstests
-- Backup/Restore grün
-- Keine Klartextgeheimnisse im Ziel
+- Katalog-vs-Schema-Gate
+- Bytegleiche SQLite-Quelle nach Prep
+- Blocker bei nichtleeren Quermodul-Refs / fehlendem Drill / nichtleerem PG-Ziel
+- Keine Secrets im Report
 
 **Test-Gate**
 
 ```text
-Cutover-Validierungstests grün
-Backup/Restore-Drill grün
-Migration-/Go-live-Gates soweit betroffen grün
+M8 Prep-Tests gruen
+Katalog-Gate gruen
+Migration-/Go-live-Gates main betroffen gruen
 ```
 
 **Abnahmekriterien**
 
-- Reproduzierbare Übernahme
-- PostgreSQL ist nach Cutover einzige Wahrheit für Usermanagement
+- Prep-Status nur `invalid_source` | `blocked` | `ready_for_remapping`
+- `ready_for_remapping` bedeutet: Inventar+Validierung+PG-Readiness+Drill ok und
+  Quermodule ohne User-Refs — **nicht** Cutover-Freigabe
+- Produktiver Cutover bleibt bis zum Remapping-Folgepaket ausgeschlossen
 
 **Risiken**
 
-- Referenzbruch in anderen Modulen bei user_id-Änderung → muss vor Cutover geklärt/eskaliert werden
+- Scheinbare Cutover-Bereitschaft — bewusst durch fehlendes `cutover_ready` und
+  Blocker bei jeder Quermodul-Referenz verhindert
 
 **Eskalationskriterien**
 
-- Möglicher Datenverlust oder irreversible Migration ohne validierten Restore
-- user_id-Remapping mit Quermodul-Impact
+- Wunsch nach produktivem Cutover ohne Quermodul-Remapping → ablehnen / Folgepaket
 
 **Übergabe**
 
-Cutover-bereit → Milestone 9.
+Prep abgeschlossen → Remapping-/Cutover-Folgepaket (vor M9-Abschlusscutover).
 
 ---
 
@@ -793,7 +803,7 @@ Cutover-bereit → Milestone 9.
 
 **Voraussetzungen**
 
-Milestone 8 erfolgreich (oder Cutover technisch freigegeben und getestet).
+Milestone 8 Prep erfolgreich; produktiver Cutover nur nach freigegebenem Remapping-Folgepaket.
 
 **Scope**
 
@@ -935,9 +945,11 @@ Nur echte Restoffenheiten. Bereits entschieden und hier nicht erneut fraglich:
      behalten (kein Re-Issue). PostgreSQL: Passwortaenderung und Fremd-Widerruf
      atomar (`docs/AP-028_M6_SESSION_ENFORCEMENT.md`).
 
-2. **user_id-Remapping bei Cutover**
-   Heute oft `user_id == username`. Ziel UUID. Strategie für Referenzen in anderen Modulen (Documents, Training, Incident, Audit)?
-   Eskalation zwingend vor Milestone-8-Cutover, sobald Quermodul-Referenzen betroffen sind.
+2. **user_id-Remapping bei Cutover** — **entschieden (2026-08-01 / M8 Prep-only):**
+   M8 importiert nicht und schaltet nicht um. UUID-Mapping sowie Migration der
+   Quermodul-Referenzen (Documents, Training, Incident, Signature) sind ein
+   **separates freigegebenes Folgepaket** vor jedem produktiven Cutover
+   (docs/AP-028_M8_CUTOVER_PREP.md).
 
 3. **must_change_password-Enforcement**
    In M2/M5 umgesetzt: Resolve blockiert Nicht-Whitelist-Aufrufe, bis das
