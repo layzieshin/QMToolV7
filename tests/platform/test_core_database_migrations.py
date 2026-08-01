@@ -62,10 +62,16 @@ def test_all_six_databases_build_from_empty_and_wire_after_preflight(
     assert all(status.ok for status in service.statuses(specs))
     for spec in specs:
         with closing(sqlite3.connect(spec.path)) as conn:
-            assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
-            assert conn.execute(
-                "SELECT version, name FROM _qm_schema_migrations"
-            ).fetchall() == [(1, "initial")]
+            if spec.database_id == "users":
+                assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+                assert conn.execute(
+                    "SELECT version, name FROM _qm_schema_migrations ORDER BY version"
+                ).fetchall() == [(1, "initial"), (2, "deactivated_at")]
+            else:
+                assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+                assert conn.execute(
+                    "SELECT version, name FROM _qm_schema_migrations"
+                ).fetchall() == [(1, "initial")]
     lifecycle.wire_all()
 
 

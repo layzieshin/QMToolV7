@@ -45,6 +45,12 @@
       "name": "initial",
       "path": "modules/usermanagement/migrations/0001_initial.sql",
       "sha256": "1135f268f37d9a93146b7665bf94d61e30fe2dac677ef165dab06aaf71c05906"
+    },
+    {
+      "version": 2,
+      "name": "deactivated_at",
+      "path": "modules/usermanagement/migrations/0002_deactivated_at.sql",
+      "sha256": "796478a9f415ff01438ee718ab986028b2b17b88fe6f5511b37358ec5d0d0040"
     }
   ]
 }
