@@ -1,8 +1,8 @@
 """Legacy desktop current-user persistence (SRP split B3).
 
-AP-028: This JSON file store is a local Desktop/Legacy session source only.
-It must not be used as backend multiuser session truth. Opaque server-side
-sessions live in ``session_ops`` / ``SessionRepository``.
+Desktop-/Legacy-Sessionquelle; niemals Backend-Authentifizierungswahrheit.
+AP-028: Opaque server-side sessions live in ``session_ops`` / ``SessionRepository``.
+This JSON file store must not be used as backend multiuser session truth.
 """
 from __future__ import annotations
 
