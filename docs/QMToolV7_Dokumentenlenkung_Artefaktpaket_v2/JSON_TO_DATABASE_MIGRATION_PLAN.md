@@ -47,21 +47,28 @@ Die Pakete sind aufeinander aufbauend, aber nicht pauschal freigegeben. Die Docu
 
 **Ziel:** Neue mutable fachliche JSON-Dateien und neue unregistrierte `*_json`-Spalten verhindern.
 
-**Betroffene Dateien:** `tests/interfaces/test_architecture_gates.py`, `scripts/database_migration_gate.py` oder ein vorhandener passender Gate-Owner, `docs/MODULE_INTEGRATION_POLICY.md` nur bei freigegebener P0-Aenderung.
+**Betroffene Dateien:** `scripts/json_persistence_gate.py` (einzige ausfuehrbare Allowlist), `scripts/database_migration_gate.py` (Check `no_unregistered_json_persistence`), `tests/interfaces/test_json_persistence_gate.py`, `.github/workflows/ci-gates.yml`. Keine P0-Aenderung an `MODULE_INTEGRATION_POLICY.md`.
 
 **Tabellen/Migrationen:** Keine.
 
-**Kompatibilitaet:** Allowlist der in der Inventur akzeptierten Dateien/Spalten. Das Gate bewertet neue Funde, nicht bestehende pauschal rot.
+**Kompatibilitaet:** Allowlist der in der Inventur akzeptierten Dateien/Spalten (J00-IDs). Das Gate bewertet neue Funde (inkl. gestagt/untracked), nicht bestehende pauschal rot.
 
 **Import/Dual-Read/Dual-Write:** Nicht anwendbar.
 
-**Tests:** Negativfixture fuer neue Domain-JSON-Datei, neue JSON-Beziehungsspalte und unversionierte Snapshotspalte; Positivtests fuer Migration Manifest, Export und Anchor.
+**Tests:** Negativfixture fuer neue Domain-JSON-/JSONL-Datei, neue JSON-Beziehungsspalte und unversionierte Snapshotspalte; Positivtests fuer Migration Manifest, Anchor und Legacy-Snapshot; gestagte und untracked Negativfaelle; Migration-Gate-Rotfall.
 
 **Rollback:** Gate-Commit zuruecknehmen.
 
-**Abnahme:** Ein neuer Fund braucht Kategorie, Owner und ADR-konforme Begruendung.
+**Abnahme:** Ein neuer Fund braucht Kategorie, Owner und ADR-konforme Begruendung sowie Allowlist-Eintrag im Script.
 
 **Alte JSON-Struktur entfernen:** Nie in J01.
+
+### J01-Status (2026-08-03)
+
+- Ausfuehrbare Allowlist-Owner: `scripts/json_persistence_gate.py` (Dokumente spiegeln nur).
+- Repo-Modus: HEAD + Index (`git ls-files --cached`) + untracked; Scratch-Modus mit `source_files`; kein Git-Fallback.
+- Runtime-/Fachlogik unveraendert; J02+ nicht gestartet.
+- **Supervisor-Freigabe: ausstehend**
 
 ## J02: Settings-Persistenz trennen
 

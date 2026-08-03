@@ -23,6 +23,7 @@ from qm_platform.persistence import (
     MigrationStep,
 )
 from qm_platform.runtime.bootstrap import core_module_contracts
+from scripts.json_persistence_gate import evaluate_json_persistence_gate
 
 
 MANIFEST_PATH = ROOT / "qm_platform" / "persistence" / "migration_manifest.json"
@@ -243,6 +244,20 @@ def evaluate_database_migration_gate(
             status.ok for status in service.statuses(specs)
         )
         checks["second_migration_run_is_noop"] = second["backup_id"] is None
+
+        json_gate = evaluate_json_persistence_gate(
+            ROOT,
+            mode="repo",
+            base_ref=base_ref or "HEAD",
+        )
+        checks["no_unregistered_json_persistence"] = bool(
+            json_gate.get("checks", {}).get("no_unregistered_json_persistence")
+        ) and bool(json_gate.get("ok"))
+        if not checks["no_unregistered_json_persistence"]:
+            diagnostics["json_persistence"] = {
+                "findings": json_gate.get("findings", []),
+                "diagnostics": json_gate.get("diagnostics", {}),
+            }
 
     ok = all(checks.values())
     return {
