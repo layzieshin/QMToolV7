@@ -155,6 +155,15 @@ Aktive Grundlagen:
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
 - `docs/INCIDENT_MANAGEMENT_ARCHITECTURE_CONTRACT.md`
 
+JSON-Persistenz-Baseline (Artefaktpaket Dokumentenlenkung v2, nur Dokumentation):
+- `docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/` inkl. Inventar, offene Fragen,
+  ADR, Zielpersistenzmodell und Migrationsplan (`JSON_TO_DATABASE_MIGRATION_PLAN.md`).
+- **J00** etabliert ausschliesslich diese Baseline; Runtime bleibt unveraendert.
+- **J01 und alle weiteren J-Pakete** brauchen jeweils separate Freigaben und sind
+  hier nicht freigegeben.
+- **J03–J06** muessen in den Documents-Umbau integriert werden; kein paralleler
+  Persistenzumbau neben dem Documents-Sollmodell.
+
 Historische oder zu klaerende Artefakte:
 - `docs/SRP_REFACTOR_ROADMAP.md`: P2/History, spaeter archivieren vorschlagen.
 - `docs/TRACK_B_SRP_PREP.md`: P2/History, spaeter archivieren vorschlagen.
@@ -199,6 +208,8 @@ Folgepakete ausserhalb AP-028 (nicht automatisch freigegeben):
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
 - Documents-Multiuser-MVP (nach AP-028, separate Freigabe)
 - Incident-Modul Cleanup Admin=QMB (bekannte Abweichung; ausserhalb AP-028)
+- JSON→DB-Folgepakete J01–J10 (Schutzgates, Settings-DB, Documents-/Incident-/Training-
+  Persistenzumbauten); J00 ist nur Baseline und gibt diese Pakete nicht frei
 
 Im Rahmen von AP-028 freigegeben und milestone-weise umgesetzt (M0–M9):
 - Auth-Implementierung (serverseitige Sessions)

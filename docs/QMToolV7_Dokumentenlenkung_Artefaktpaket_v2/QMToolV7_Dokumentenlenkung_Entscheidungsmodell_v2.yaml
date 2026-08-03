@@ -1,0 +1,132 @@
+meta:
+  project: QMToolV7
+  module: documents
+  stand: 2026-08-03
+  strategy: incremental_refactor
+  greenfield_rewrite: false
+
+statuses:
+  fixed: [DRAFT, IN_REVIEW, IN_APPROVAL, APPROVED, PUBLISHED, EXPIRED, ARCHIVED, ANNULLED]
+  legacy_mapping:
+    PLANNED: DocumentPlan
+    IN_PROGRESS: DRAFT
+
+core_invariants:
+  - maximum_one_current_published_version_per_document
+  - maximum_one_open_successor_version_per_document
+  - maximum_one_active_workflow_instance_per_version
+  - approved_is_not_public
+  - only_current_valid_published_is_exposed
+  - rejection_always_returns_to_draft
+  - annulled_is_terminal_and_immutable
+  - profile_changes_do_not_mutate_running_instances
+
+events:
+  catalog: QMToolV7_Dokumentenlenkung_Eventkatalog.md
+  every_successful_workflow_or_status_transition_emits_event: true
+  version: 2
+  task_routing_payload_required_when_action_becomes_due: true
+  required_context:
+    - event_id
+    - actor_user_id
+    - correlation_id
+    - causation_id
+    - document_id
+    - version_record_id
+    - from_status
+    - to_status
+    - transition_id
+    - workflow_instance_id
+    - submission_round_id
+  task_routing_fields:
+    - required_action
+    - target_user_ids
+    - target_pool
+    - decision_policy
+    - due_at
+  publish_before_commit: false
+  missing_consumer_blocks_business_action: false
+  legacy_dual_publish_allowed: true
+  current_bus:
+    synchronous: true
+    durable: false
+    replay: false
+  dashboard:
+    state_based_readmodel_remains_authoritative: true
+    later_event_projection_optional: true
+  later_option:
+    transactional_outbox: true
+
+comments:
+  preserve_existing_system: true
+  word:
+    sync_service_preserved: true
+    source_comment_key_idempotency: true
+    source_author_is_not_audit_actor: true
+    missing_source_comment_auto_deleted: false
+  pdf:
+    page_reference_preserved: true
+    anchor_json_preserved: true
+    artifact_reference_required: true
+  statuses: [ACTIVE, RESOLVED, INACTIVE]
+  status_history_preserved: true
+  add_relations:
+    - workflow_instance_id
+    - submission_round_id
+    - artifact_id
+  survive_rejection_archive_annulment: true
+  blocker_rules: deferred
+
+use_cases:
+  core_catalog_count: 50
+  candidate_catalog: QMToolV7_Dokumentenlenkung_Use_Case_Kandidaten.md
+  candidate_count: 211
+  candidates_are_implementation_scope: false
+  explicit_selection_required: true
+
+edge_cases:
+  catalog: QMToolV7_Dokumentenlenkung_Edge_Cases.md
+  count: 96
+  derive_tests_for_selected_mutating_use_cases: true
+  minimum_classes:
+    - wrong_status
+    - missing_module_permission
+    - missing_workflow_assignment
+    - four_eyes_violation
+    - missing_input_or_artifact
+    - concurrency_conflict
+    - transaction_rollback
+    - event_contract
+    - audit_content
+    - migration_ambiguity
+
+workflow:
+  arbitrary_custom_stages: false
+  fixed_states: [DRAFT, IN_REVIEW, IN_APPROVAL, APPROVED]
+  profile_configures_transitions: true
+  decision_policies: [ONE_OF_POOL, ALL_ASSIGNED]
+  rejection_target: DRAFT
+  start_is_atomic: true
+  multiple_sequential_instances_per_version: true
+  maximum_active_instances_per_version: 1
+
+publication:
+  explicit: true
+  workflow_ends_at: APPROVED
+  only_published_is_public: true
+  requires_current_validity: true
+  supersede_previous_published_atomically: true
+
+validity:
+  default_interval: P2Y
+  configurable: true
+  maximum_extensions: 3
+  automatic_expiry_status: EXPIRED
+  successful_extension_from_expired: PUBLISHED
+
+audit:
+  all_business_relevant_changes_and_decisions: true
+  comments_and_comment_status_changes: true
+  controlled_prints_and_recall: true
+  denied_access_attempts: true
+  normal_reads: false
