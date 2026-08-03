@@ -7,6 +7,7 @@ from urllib.parse import quote_plus
 
 _ROOT = Path(__file__).resolve().parents[1]
 _ENV_PATH = _ROOT / ".env"
+_PYTEST_BUILD_DIR = _ROOT / "build"
 
 
 def _load_dotenv(path: Path) -> None:
@@ -42,5 +43,6 @@ def _ensure_pg_dsn() -> None:
     )
 
 
+_PYTEST_BUILD_DIR.mkdir(parents=True, exist_ok=True)
 _load_dotenv(_ENV_PATH)
 _ensure_pg_dsn()
