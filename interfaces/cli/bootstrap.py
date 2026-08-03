@@ -33,7 +33,6 @@ from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_home
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 
 
 def _prod_public_key_path(resources: Path) -> Path:
@@ -128,7 +127,7 @@ def build_container() -> RuntimeContainer:
     logger = LoggerService(resolve_home_path(app_home, "storage/platform/logs/platform.log"))
     audit = AuditLogger(resolve_home_path(app_home, "storage/platform/logs/audit.log"))
     events = EventBus()
-    settings = SettingsService(SettingsRegistry(), SettingsStore(resolve_home_path(app_home, "storage/platform/settings.json")))
+    settings = SettingsService(SettingsRegistry())
 
     keyring = PublicKeyring()
     license_file = resolve_home_path(app_home, "license/license.json")
@@ -171,11 +170,12 @@ def build_container() -> RuntimeContainer:
         state_file=resolve_home_path(app_home, "storage/platform/backups/logs/_state.json"),
         audit_logger=audit,
     )
-    threshold_days = int(settings.get_module_settings("documents").get("logs_backup_reminder_days", 30))
+    # Backup reminder threshold is settings-dependent; attach after DB settings cutover
+    # via register_core_modules / activate. Default 30 until then.
     container.register_port("log_backup_service", backup_service)
     container.register_port(
         "backup_reminder_service",
-        BackupReminderService(backup_service, threshold_days=threshold_days),
+        BackupReminderService(backup_service, threshold_days=30),
     )
     container.register_port("event_bus", events)
     container.register_port("settings_service", settings)

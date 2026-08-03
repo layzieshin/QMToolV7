@@ -258,23 +258,50 @@ class StartupAndGuardsCliTest(unittest.TestCase):
     def test_doctor_blocks_production_profile_with_legacy_seed_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            settings_path = home / "storage" / "platform" / "settings.json"
-            settings_path.parent.mkdir(parents=True, exist_ok=True)
-            settings_path.write_text(
-                json.dumps(
-                    {
-                        "usermanagement": {
-                            "users_db_path": "storage/platform/users.db",
-                            "seed_mode": "legacy_defaults",
-                            "dev_mode": True,
-                        }
-                    },
-                    ensure_ascii=True,
-                ),
-                encoding="utf-8",
-            )
             env = dict(os.environ)
             env["QMTOOL_HOME"] = str(home)
+            init_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "interfaces.cli.main",
+                    "init",
+                    "--non-interactive",
+                    "--admin-password",
+                    "adminpass01",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(init_result.returncode, 0, msg=init_result.stderr + init_result.stdout)
+            mutate = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR\n"
+                        "from qm_platform.runtime import bootstrap as runtime_bootstrap\n"
+                        "from interfaces.cli.bootstrap import build_container\n"
+                        "container = build_container()\n"
+                        "lifecycle = runtime_bootstrap.prepare_core_modules(container)\n"
+                        "runtime_bootstrap.activate_core_modules(container, lifecycle)\n"
+                        "settings = container.get_port('settings_service')\n"
+                        "settings.set_module_settings(\n"
+                        "    'usermanagement',\n"
+                        "    {'seed_mode': 'legacy_defaults', 'dev_mode': True},\n"
+                        "    actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,\n"
+                        "    acknowledge_governance_change=True,\n"
+                        ")\n"
+                    ),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(mutate.returncode, 0, msg=mutate.stderr + mutate.stdout)
             env["QMTOOL_RUNTIME_PROFILE"] = "production"
             doctor = subprocess.run(
                 [sys.executable, "-m", "interfaces.cli.main", "doctor"],
@@ -341,10 +368,34 @@ class StartupAndGuardsCliTest(unittest.TestCase):
             )
             self.assertEqual(init_result.returncode, 0, msg=init_result.stderr + init_result.stdout)
 
-            settings_path = home / "storage" / "platform" / "settings.json"
-            settings = json.loads(settings_path.read_text(encoding="utf-8"))
-            settings["usermanagement"]["seed_mode"] = "legacy_defaults"
-            settings_path.write_text(json.dumps(settings, ensure_ascii=True), encoding="utf-8")
+            mutate = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from pathlib import Path\n"
+                        "from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR\n"
+                        "from qm_platform.settings.persistence_bootstrap import attach_settings_persistence\n"
+                        "from qm_platform.runtime import bootstrap as runtime_bootstrap\n"
+                        "from interfaces.cli.bootstrap import build_container\n"
+                        "container = build_container()\n"
+                        "lifecycle = runtime_bootstrap.prepare_core_modules(container)\n"
+                        "runtime_bootstrap.activate_core_modules(container, lifecycle)\n"
+                        "settings = container.get_port('settings_service')\n"
+                        "settings.set_module_settings(\n"
+                        "    'usermanagement',\n"
+                        "    {'seed_mode': 'legacy_defaults', 'dev_mode': True},\n"
+                        "    actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,\n"
+                        "    acknowledge_governance_change=True,\n"
+                        ")\n"
+                    ),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(mutate.returncode, 0, msg=mutate.stderr + mutate.stdout)
 
             doctor = subprocess.run(
                 [sys.executable, "-m", "interfaces.cli.main", "doctor", "--strict"],

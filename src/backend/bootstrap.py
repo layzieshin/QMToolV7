@@ -35,7 +35,6 @@ from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_home
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 
 _ROOT = Path(__file__).resolve().parents[2]
 _ENV_PATH = _ROOT / ".env"
@@ -195,10 +194,7 @@ def build_platform_ports(*, fail_closed_license: bool = False) -> RuntimeContain
     logger = LoggerService(resolve_home_path(app_home, "storage/platform/logs/platform.log"))
     audit = AuditLogger(resolve_home_path(app_home, "storage/platform/logs/audit.log"))
     events = EventBus()
-    settings = SettingsService(
-        SettingsRegistry(),
-        SettingsStore(resolve_home_path(app_home, "storage/platform/settings.json")),
-    )
+    settings = SettingsService(SettingsRegistry())
 
     keyring = PublicKeyring()
     license_file = resolve_home_path(app_home, "license/license.json")

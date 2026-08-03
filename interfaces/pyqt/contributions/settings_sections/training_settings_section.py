@@ -97,13 +97,25 @@ class TrainingSettingsWidget(QWidget):
     def _save(self) -> None:
         try:
             self._require_privileged()
-            payload = self._settings.get_module_settings("training")
-            payload["questions_per_quiz"] = int(self._questions.value())
-            payload["min_correct_answers"] = int(min(self._min_correct.value(), self._questions.value()))
-            payload["retry_cooldown_seconds"] = int(self._cooldown.value())
-            payload["shuffle_answers"] = bool(self._shuffle.isChecked())
-            payload["force_reread_on_fail"] = bool(self._reread.isChecked())
-            self._settings.set_module_settings("training", payload, acknowledge_governance_change=False)
+            # Bucket-B technical keys only (no bootstrap paths, no residual policies).
+            payload = {
+                "questions_per_quiz": int(self._questions.value()),
+                "min_correct_answers": int(min(self._min_correct.value(), self._questions.value())),
+                "retry_cooldown_seconds": int(self._cooldown.value()),
+                "shuffle_answers": bool(self._shuffle.isChecked()),
+                "force_reread_on_fail": bool(self._reread.isChecked()),
+            }
+            from interfaces.settings_actor import resolve_confirmed_settings_actor
+
+            actor = resolve_confirmed_settings_actor(
+                self._container, request_id="pyqt-training-settings"
+            )
+            self._settings.set_module_settings(
+                "training",
+                payload,
+                actor=actor,
+                acknowledge_governance_change=False,
+            )
             self._out.setPlainText("Schulungseinstellungen gespeichert.")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Schulungseinstellungen", str(exc))

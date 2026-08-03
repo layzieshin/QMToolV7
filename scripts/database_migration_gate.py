@@ -23,6 +23,9 @@ from qm_platform.persistence import (
     MigrationStep,
 )
 from qm_platform.runtime.bootstrap import core_module_contracts
+from qm_platform.persistence.platform_settings_contribution import (
+    PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
+)
 from scripts.json_persistence_gate import evaluate_json_persistence_gate
 
 
@@ -49,26 +52,29 @@ def _sha256_bytes(content: bytes) -> str:
 
 def _registered_specs(root: Path) -> tuple[DatabaseSpec, ...]:
     specs = []
+    contributions = []
     for contract in core_module_contracts():
-        for contribution in contract.database_contributions:
-            specs.append(
-                DatabaseSpec(
-                    database_id=contribution.database_id,
-                    path=root / f"{contribution.database_id}.db",
-                    migrations=tuple(
-                        MigrationStep(
-                            version=item.version,
-                            name=item.name,
-                            sql_path=item.sql_path.resolve(),
-                        )
-                        for item in contribution.migrations
-                    ),
-                    validation_queries=tuple(
-                        DataValidationQuery(name=item.name, sql=item.sql)
-                        for item in contribution.validation_queries
-                    ),
-                )
+        contributions.extend(contract.database_contributions)
+    contributions.append(PLATFORM_SETTINGS_DATABASE_CONTRIBUTION)
+    for contribution in contributions:
+        specs.append(
+            DatabaseSpec(
+                database_id=contribution.database_id,
+                path=root / f"{contribution.database_id}.db",
+                migrations=tuple(
+                    MigrationStep(
+                        version=item.version,
+                        name=item.name,
+                        sql_path=item.sql_path.resolve(),
+                    )
+                    for item in contribution.migrations
+                ),
+                validation_queries=tuple(
+                    DataValidationQuery(name=item.name, sql=item.sql)
+                    for item in contribution.validation_queries
+                ),
             )
+        )
     return tuple(sorted(specs, key=lambda item: item.database_id))
 
 
@@ -207,6 +213,9 @@ def evaluate_database_migration_gate(
         discovered_paths = {
             path.relative_to(ROOT).as_posix()
             for path in ROOT.glob("modules/*/migrations/*.sql")
+        } | {
+            path.relative_to(ROOT).as_posix()
+            for path in ROOT.glob("qm_platform/**/migrations/*.sql")
         }
         checks["manifest_matches_registered_migrations"] = manifest_ok
         checks["all_migration_files_are_registered"] = (

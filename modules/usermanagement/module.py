@@ -103,9 +103,9 @@ def register_usermanagement_ports(container) -> None:
         session_repository = PostgresSessionRepository(str(postgres_dsn))
         session_file = None
     else:
-        users_db_path = Path(user_settings.get("users_db_path", "storage/platform/users.db"))
-        if not users_db_path.is_absolute():
-            users_db_path = app_home / users_db_path
+        from qm_platform.persistence.path_resolver import resolve_bootstrap_absolute_path
+
+        users_db_path = resolve_bootstrap_absolute_path(app_home, "usermanagement", "users_db_path")
         repository = SQLiteUserRepository(
             db_path=users_db_path,
         )

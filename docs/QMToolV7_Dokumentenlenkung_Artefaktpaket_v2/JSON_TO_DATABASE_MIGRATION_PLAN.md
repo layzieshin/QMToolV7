@@ -73,30 +73,62 @@ Die Pakete sind aufeinander aufbauend, aber nicht pauschal freigegeben. Die Docu
 ## J02: Settings-Persistenz trennen
 
 **Ziel:** `settings.json` von gemischter Runtime-Wahrheit zu einem kontrollierten Importbestand machen.
+**Status:** freigegeben zur Umsetzung (OQ-04 entschieden); Supervisor-Abnahme nach Implementierung ausstehend.
+**Basis:** `origin/main` @ `71a7b43`.
 
-**Betroffene Dateien:** `qm_platform/settings/*`, Runtime-/CLI- und Backend-Bootstrap, Settings-CLI/PyQt, Modul-Settings-Contributions, neue Plattformmigration und Tests.
+**Betroffene Dateien:** `qm_platform/settings/*`, Runtime-/CLI- und Backend-Bootstrap, Settings-CLI/PyQt, Modul-Settings-Contributions, neue Plattformmigration, Backup/Restore, J01-Gate und Tests.
 
-**Neue Tabellen/Migrationen:** Plattform-DB mit `platform_settings` und `platform_setting_revisions`; technische Migration nach AP-027-Regeln.
+**Neue Tabellen/Migrationen:** Plattform-DB `platform_settings` (7. AP-027-DB) mit Tabellen `platform_settings` und `platform_setting_revisions`; nur `module_global`; technische Migration nach AP-027-Regeln. Residualarchiv zusaetzlich im Backup-Satz.
+
+**Schluesselpartition (maschinell vollstaendig als `(module_id, setting_key)`):**
+
+- Bucket A (Bootstrap): Pfade und Startparameter — Env/Defaults/Pfadresolver, nie `platform_settings`.
+- Bucket B (technisch): Import in `platform_settings`, mutierbar, schema-validiert.
+- Bucket C (Fachpolicy): Residual-JSON Allowlist, read-only, Owner + Folgepaket; nicht in `platform_settings`.
+
+**Bootstrap-Reihenfolge (verbindlich):**
+
+1. `app_home` und Env/Defaults bestimmen
+2. Modul- und Plattform-Contributions registrieren
+3. alle sieben `DatabaseSpec`s ohne `SettingsService` erzeugen
+4. sieben Datenbanken migrieren
+5. DB-basierten `SettingsService` oeffnen; Residualarchiv laden und SHA-256 pruefen; Overlap DB ∩ Residual fail-closed
+6. erst danach Module und settingsabhaengige Plattformdienste verdrahten
+
+Pfadleser in Modul-Wiring duerfen nicht weiter indirekt auf `settings.json` zugreifen.
 
 **Uebergangskompatibilitaet:**
 
-1. Dry-run klassifiziert alle vorhandenen Keys in Bootstrap, technische Settings oder Fachpolicy.
-2. Bootstrapwerte werden in explizite Env-/Default-Aufloesung ueberfuehrt.
-3. Uebrige zulaessige Settings werden einmalig importiert.
-4. `SettingsService` liest danach ausschliesslich die DB und liefert weiterhin denselben oeffentlichen Dict-Vertrag.
-5. Die JSON-Datei bleibt waehrend eines Abnahmelaufs unveraendert, wird aber nicht mehr beschrieben.
+1. Dry-run klassifiziert alle Keys gegen Schema ∪ Defaults ∪ Callers ∪ Fixtures; unknown blockiert.
+2. Bucket A → Bootstrap-Pfadresolver.
+3. Bucket B einmalig schema-validiert importieren; Cutover ist journalisiert (`settings_cutover_journal.json`) und nach Abbruch resumierbar (kein stilles Skip bei vorhandenem Residual ohne Abschluss).
+4. Lese-Vertrag: Bucket B aus `platform_settings`; Bucket C **ausschliesslich** aus Residual-JSON (nie Contribution-Defaults zur Laufzeit). Frischinstallation ohne Legacy-`settings.json` seedet Residual einmalig aus Contribution-Defaults und verankert den SHA-256 in `platform_settings_integrity`. Fehlendes Residual bei deklarierten C-Keys → fail-closed (`residual_archive_missing`). Oeffentlicher Dict-Vertrag: `B-defaults ⊕ B-DB ⊕ C-residual`.
+5. Quell-`settings.json` wird byteidentisch archiviert und nicht mehr beschrieben.
+6. Residualarchiv ist Bestandteil jedes Plattform-Backups (Manifest + SHA-256); Restore stellt es byte-exact wieder her. Laufzeit-Verankerung des Residual-Hash liegt in der DB (`platform_settings_integrity.residual_archive_sha256`), nicht in der Sidecar-Datei allein.
 
-**Import:** Key, Typ und Modul gegen `SettingsContribution.schema` validieren; unbekannte Keys blockieren mit Report. Governance-kritische Werte werden als Revision 1 mit Migrationsactor markiert.
+**Import:** Key/Typ/Modul gegen `SettingsContribution.schema` validieren; unbekannte Keys blockieren mit Report. Governance-kritische B-Werte erhalten Revision 1 mit Actor `migration:j02-settings-import`.
 
-**Dual-Read/Dual-Write:** Kein Dual-Write. Ein zeitlich begrenzter Vergleichslauf darf DB-Ergebnis gegen die read-only JSON-Quelle pruefen; die Runtime-Wahrheit ist nach erfolgreicher Migration nur die DB.
+**Actors (kein stiller Fallback):**
 
-**Tests:** Verlustfreie Key-/Typuebernahme, unbekannte Keys, defekte JSON-Datei bytegleich unveraendert, konkurrierende Updates, User-/Modulscope, Audit kritischer Settings, Backup/Restore.
+- Benutzeraenderung: bestaetigter `UserContext` nur via `issue_user_context` (`_server_confirmed`); CLI/PyQt-Schreibpfade muessen ihn ueber `resolve_session` liefern. Objekte mit blossem `is_confirmed=True` sind ungueltig.
+- Import: `migration:j02-settings-import`.
+- Backend-Haertung/Bootstrap: `system:backend_bootstrap`.
+- Der Legacy-Zustand `get_current_user()` / `current_user.json` darf **nicht** stillschweigend als Actor verwendet werden. Fehlt ein bestaetigter `UserContext` am Schreibpfad → fail-closed.
+- J02 fuehrt keine lokale SQLite-Session ein. Klassische Desktop-/CLI-Runtimes bleiben fuer Settings-Schreibvorgaenge voruebergehend read-only. Der spaetere Desktoptransport bleibt J09 zugeordnet und nutzt denselben autoritativen PostgreSQL-Sessionpfad wie das Backend.
 
-**Rollback:** Voller Plattform-Backup-Satz plus vorherige Anwendung.
+**`set_module_settings`-Semantik:** `values` ist die vollstaendige Bucket-B-Payload (Replace). Bucket-A → `bootstrap_setting_immutable`; Bucket-C → `residual_policy_readonly`; unknown → `unknown_setting_key`; fehlende Pflichtwerte → `missing_required_setting`. Kein stilles Strippen.
 
-**Abnahme:** Alle Module starten mit identischen effektiven Settings; JSON und DB stimmen im Vergleichsreport ueberein; fachliche Policykeys sind als Restblocker ausgewiesen.
+**Oeffentlicher Vertragswechsel Incident:** `IncidentManagementApi.set_module_settings` / Service erfordern ab J02 den Keyword-Parameter `actor` (bestaetigter `UserContext` oder System-/Migrationsactor). Aufrufe ohne `actor` sind ungueltig (`TypeError`). Bucket-C-Payloads bleiben auch mit Actor fail-closed (`residual_policy_readonly`).
 
-**Alte JSON-Struktur entfernen:** Erst nach mindestens einem erfolgreichen Neustart-, Backup-/Restore- und Multi-Process-Test. Fachpolicykeys erst in ihren Owner-Paketen.
+**Dual-Read/Dual-Write:** Kein Dual-Write. Vergleichslauf gegen Residualarchiv erlaubt. Kein allgemeiner JSON-Fallback.
+
+**Tests:** Klassifikations-Vollstaendigkeit; Verlustfreie B-Uebernahme; unknown/A/C-Writes; Overlap; Residual-Hashdrift gegen DB-Anker; Cutover-Resume nach Injiziertem Fehler zwischen Modulimporten; 7-DB-Backup inkl. Residualarchiv; Actor ohne Legacy-/Forged-Fallback; J01 Residual-Reader Positiv- und Writer-Negativtests; Incident-`actor`-Vertragswechsel.
+
+**Rollback:** Voller Backup-Satz (7 DBs + Residualarchiv) plus vorherige Anwendung.
+
+**Abnahme:** Effektive Settings konsistent; Vergleichsreport gruen; Bucket-C als Restblocker; kein produktiver Writer auf `settings.json`; keine zweite Sessionpersistenz oder lokale Tokenwahrheit.
+
+**Alte JSON-Struktur entfernen:** Residual-Reader/Allowlist erst nach letztem Owner-Paket (nicht in J02). Fachpolicykeys erst in ihren Owner-Paketen.
 
 ## J03: Documents-Workflowprofile versionieren
 

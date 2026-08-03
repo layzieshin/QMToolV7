@@ -1,6 +1,7 @@
 """HTTP auth API contracts for AP-028 M5."""
 from __future__ import annotations
 
+from qm_platform.settings.testing import build_settings_service_for_tests
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,6 @@ from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 from src.backend.api import create_app
 from src.backend.bootstrap import BackendBootstrapError, resolve_usermanagement_postgres_dsn
 from tests.database_helpers import user_repository as SQLiteUserRepository
@@ -28,7 +28,7 @@ def _build_test_container(tmp_path: Path) -> tuple[RuntimeContainer, object, Use
     container.register_port("event_bus", events)
     container.register_port(
         "settings_service",
-        SettingsService(SettingsRegistry(), SettingsStore(tmp_path / "settings.json")),
+        build_settings_service_for_tests(tmp_path),
     )
     container.register_port("app_home", tmp_path)
     container.register_port("resource_root", tmp_path)

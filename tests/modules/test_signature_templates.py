@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from qm_platform.settings.testing import build_settings_service_for_tests
+from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR
 from contextlib import closing
 from datetime import datetime
 import importlib.util
@@ -12,15 +14,12 @@ from PIL import Image
 
 from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
 from modules.signature.errors import PasswordRequiredError
+from modules.signature.module import SIGNATURE_SETTINGS_CONTRIBUTION
 from modules.signature.secure_store import EncryptedSignatureBlobStore
 from modules.signature.service import SignatureServiceV2
 from tests.database_helpers import signature_repository as SQLiteSignatureRepository
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
-from qm_platform.sdk.module_contract import SettingsContribution
-from qm_platform.settings.settings_registry import SettingsRegistry
-from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 
 
 def _create_pdf(path: Path) -> None:
@@ -51,21 +50,13 @@ class SignatureTemplatesTest(unittest.TestCase):
             input_pdf = root / "in.pdf"
             _create_pdf(input_pdf)
 
-            settings = SettingsService(SettingsRegistry(), SettingsStore(root / "settings.json"))
-            settings.registry.register(
-                SettingsContribution(
-                    module_id="signature",
-                    schema_version=1,
-                    schema={"type": "object"},
-                    defaults={"require_password": True, "default_mode": "visual"},
-                    scope="module_global",
-                    migrations=[],
-                )
-            )
+            settings = build_settings_service_for_tests(root)
+            settings.registry.register(SIGNATURE_SETTINGS_CONTRIBUTION)
             settings.set_module_settings(
                 "signature",
                 {"require_password": True, "default_mode": "visual"},
                 acknowledge_governance_change=True,
+                actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,
             )
             repository = SQLiteSignatureRepository(
                 db_path=root / "templates.db",
@@ -110,21 +101,13 @@ class SignatureTemplatesTest(unittest.TestCase):
             root = Path(tmp)
             gif_path = root / "sig.gif"
             Image.new("RGBA", (32, 16), (0, 0, 0, 255)).save(gif_path, format="GIF")
-            settings = SettingsService(SettingsRegistry(), SettingsStore(root / "settings.json"))
-            settings.registry.register(
-                SettingsContribution(
-                    module_id="signature",
-                    schema_version=1,
-                    schema={"type": "object"},
-                    defaults={"require_password": True, "default_mode": "visual"},
-                    scope="module_global",
-                    migrations=[],
-                )
-            )
+            settings = build_settings_service_for_tests(root)
+            settings.registry.register(SIGNATURE_SETTINGS_CONTRIBUTION)
             settings.set_module_settings(
                 "signature",
                 {"require_password": True, "default_mode": "visual"},
                 acknowledge_governance_change=True,
+                actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,
             )
             repository = SQLiteSignatureRepository(
                 db_path=root / "templates.db",

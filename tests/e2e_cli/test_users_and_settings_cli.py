@@ -56,7 +56,7 @@ class UsersAndSettingsCliTest(unittest.TestCase):
         rows = json.loads(listed.stdout.strip() or "[]")
         self.assertTrue(any(row.get("username") == username for row in rows))
 
-    def test_settings_cli_list_get_set(self) -> None:
+    def test_settings_cli_list_get_and_set_requires_confirmed_session(self) -> None:
         self._login("admin", "adminpass01")
         listed = run_cli("settings", "list-modules", env=self._env)
         self.assertEqual(listed.returncode, 0, msg=listed.stderr + listed.stdout)
@@ -70,19 +70,8 @@ class UsersAndSettingsCliTest(unittest.TestCase):
         documents_settings = json.loads(got.stdout.strip() or "{}")
         self.assertIn("default_profile_id", documents_settings)
 
-        updated = run_cli(
-            "settings",
-            "set",
-            "--module",
-            "signature",
-            "--values-json",
-            json.dumps({"require_password": False, "default_mode": "visual"}),
-            env=self._env,
-        )
-        self.assertNotEqual(updated.returncode, 0, msg="governance_critical update should require explicit acknowledge flag")
-        self.assertIn("governance_critical", (updated.stdout + updated.stderr))
-
-        updated = run_cli(
+        # Desktop legacy login must not invent a settings actor.
+        blocked = run_cli(
             "settings",
             "set",
             "--module",
@@ -92,21 +81,8 @@ class UsersAndSettingsCliTest(unittest.TestCase):
             "--acknowledge-governance-change",
             env=self._env,
         )
-        self.assertEqual(updated.returncode, 0, msg=updated.stderr + updated.stdout)
-        saved = json.loads(updated.stdout.strip() or "{}")
-        self.assertEqual(saved.get("require_password"), False)
-        # Restore default to avoid affecting global CLI behavior tests.
-        restored = run_cli(
-            "settings",
-            "set",
-            "--module",
-            "signature",
-            "--values-json",
-            json.dumps({"require_password": True, "default_mode": "visual"}),
-            "--acknowledge-governance-change",
-            env=self._env,
-        )
-        self.assertEqual(restored.returncode, 0, msg=restored.stderr + restored.stdout)
+        self.assertNotEqual(blocked.returncode, 0, msg=blocked.stderr + blocked.stdout)
+        self.assertIn("settings_actor_required", (blocked.stdout + blocked.stderr))
 
 
 if __name__ == "__main__":

@@ -3,6 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from qm_platform.persistence.path_resolver import (
+    resolve_bootstrap_absolute_path,
+    resolve_bootstrap_relative_path,
+)
+
 from .docx_to_pdf import convert_docx_to_pdf
 from .api import DocumentsArtifactsApi, DocumentsCommentsApi, DocumentsPoolApi, DocumentsReadApi, DocumentsWorkflowApi
 from .profile_store import WorkflowProfileStoreJSON
@@ -15,30 +20,20 @@ def register_documents_ports(container) -> None:
     app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
     resource_root = container.get_port("resource_root") if container.has_port("resource_root") else app_home
 
-    def _resolve_config_path(raw: str) -> Path:
-        path = Path(raw)
-        if path.is_absolute():
-            return path
-        return app_home / path
-
-    def _resolve_profile_path(raw: str) -> Path:
-        preferred = _resolve_config_path(raw)
+    def _resolve_profile_path() -> Path:
+        raw = resolve_bootstrap_relative_path("documents", "profiles_file")
+        preferred = resolve_bootstrap_absolute_path(app_home, "documents", "profiles_file")
         if preferred.exists():
             return preferred
         bundled = resource_root / raw
         return bundled if bundled.exists() else preferred
 
-    settings_service = container.get_port("settings_service")
-    docs_settings = settings_service.get_module_settings("documents")
+    artifacts_root = resolve_bootstrap_absolute_path(app_home, "documents", "artifacts_root")
     repository = SQLiteDocumentsRepository(
-        db_path=_resolve_config_path(docs_settings.get("documents_db_path", "storage/documents/documents.db")),
+        db_path=resolve_bootstrap_absolute_path(app_home, "documents", "documents_db_path"),
     )
-    profile_store = WorkflowProfileStoreJSON(
-        _resolve_profile_path(docs_settings.get("profiles_file", "modules/documents/workflow_profiles.json"))
-    )
-    storage_port = FileSystemDocumentsStorage(
-        _resolve_config_path(docs_settings.get("artifacts_root", "storage/documents/artifacts"))
-    )
+    profile_store = WorkflowProfileStoreJSON(_resolve_profile_path())
+    storage_port = FileSystemDocumentsStorage(artifacts_root)
     service = DocumentsService(
         event_bus=container.get_port("event_bus"),
         repository=repository,
@@ -56,10 +51,9 @@ def register_documents_ports(container) -> None:
         DocumentsArtifactsApi(
             service,
             app_home=app_home,
-            artifacts_root=_resolve_config_path(docs_settings.get("artifacts_root", "storage/documents/artifacts")),
+            artifacts_root=artifacts_root,
         ),
     )
     container.register_port("documents_read_api", DocumentsReadApi(service))
     container.register_port("documents_comments_api", DocumentsCommentsApi(service))
     container.register_port("documents_workflow_api", DocumentsWorkflowApi(service))
-

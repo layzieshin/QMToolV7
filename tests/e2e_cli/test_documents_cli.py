@@ -67,7 +67,13 @@ class DocumentsCliTest(unittest.TestCase):
         path.write_bytes(b"dotx-binary-content")
 
     @staticmethod
-    def _review_accept_signed(doc_id: str, signer_password: str) -> subprocess.CompletedProcess[str]:
+    def _review_accept_signed(doc_id: str, signer_user: str) -> subprocess.CompletedProcess[str]:
+        passwords = {
+            "admin": "adminpass01",
+            "user": "userpass01",
+            "qmb": "qmbpass001",
+        }
+        signer_password = passwords.get(signer_user, signer_user)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             input_pdf = root / "input.pdf"
@@ -162,7 +168,7 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                "admin",
+                "adminpass01",
                 "--sign-dry-run",
             )
             self.assertEqual(edit_result.returncode, 0, msg=edit_result.stderr + edit_result.stdout)
@@ -194,7 +200,7 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                "qmb",
+                "qmbpass001",
                 "--sign-dry-run",
             )
             self.assertEqual(approval_result.returncode, 0, msg=approval_result.stderr + approval_result.stdout)
@@ -293,7 +299,7 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                "admin",
+                "adminpass01",
                 "--sign-dry-run",
             )
 
@@ -350,7 +356,7 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                "admin",
+                "adminpass01",
                 "--sign-dry-run",
             )
             self.assertEqual(done.returncode, 0, msg=done.stderr + done.stdout)
@@ -388,7 +394,7 @@ class DocumentsCliTest(unittest.TestCase):
                     "--sign-width",
                     "120",
                     "--signer-password",
-                    "qmb",
+                    "qmbpass001",
                     "--sign-dry-run",
                 ).returncode,
                 0,
@@ -448,7 +454,7 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                "user",
+                "userpass01",
                 "--sign-dry-run",
             )
             self.assertEqual(done.returncode, 0, msg=done.stderr + done.stdout)
@@ -791,7 +797,7 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                "admin",
+                "adminpass01",
                 "--sign-dry-run",
             )
             self.assertEqual(edit_result.returncode, 0, msg=edit_result.stderr + edit_result.stdout)
@@ -821,7 +827,7 @@ class DocumentsCliTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                "qmb",
+                "qmbpass001",
                 "--sign-dry-run",
             )
             self.assertEqual(approval_result.returncode, 0, msg=approval_result.stderr + approval_result.stdout)

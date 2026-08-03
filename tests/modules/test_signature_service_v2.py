@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from qm_platform.settings.testing import build_settings_service_for_tests
+from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR
 import tempfile
 import unittest
 import importlib.util
@@ -14,13 +16,10 @@ from modules.signature.errors import (
     InvalidPlacementError,
     PasswordRequiredError,
 )
+from modules.signature.module import SIGNATURE_SETTINGS_CONTRIBUTION
 from modules.signature.service import SignatureServiceV2
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
-from qm_platform.sdk.module_contract import SettingsContribution
-from qm_platform.settings.settings_registry import SettingsRegistry
-from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 
 
 def _create_pdf(path: Path) -> None:
@@ -71,21 +70,13 @@ class SignatureServiceV2Test(unittest.TestCase):
         _create_pdf(self.input_pdf)
         _create_signature_png(self.signature_png)
 
-        self.settings_service = SettingsService(SettingsRegistry(), SettingsStore(root / "settings.json"))
-        self.settings_service.registry.register(
-            SettingsContribution(
-                module_id="signature",
-                schema_version=1,
-                schema={"type": "object"},
-                defaults={"require_password": True, "default_mode": "visual"},
-                scope="module_global",
-                migrations=[],
-            )
-        )
+        self.settings_service = build_settings_service_for_tests(root)
+        self.settings_service.registry.register(SIGNATURE_SETTINGS_CONTRIBUTION)
         self.settings_service.set_module_settings(
             "signature",
             {"require_password": True, "default_mode": "visual"},
             acknowledge_governance_change=True,
+            actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,
         )
         self.logger = LoggerService(root / "logs.jsonl")
         self.audit = AuditLogger(root / "audit.jsonl")
@@ -189,4 +180,3 @@ class SignatureServiceV2Test(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

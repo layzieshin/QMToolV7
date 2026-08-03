@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from qm_platform.settings.testing import build_settings_service_for_tests
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +11,6 @@ from qm_platform.runtime.lifecycle import LifecycleManager
 from qm_platform.sdk.module_contract import ModuleContract, SettingsContribution
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 
 
 def _noop(_: object) -> None:
@@ -58,7 +58,7 @@ class RuntimeEnforcementTest(unittest.TestCase):
     def test_settings_contribution_registered_from_contract(self) -> None:
         container = RuntimeContainer()
         with tempfile.TemporaryDirectory() as tmp:
-            container.register_port("settings_service", SettingsService(SettingsRegistry(), SettingsStore(Path(tmp) / "s.json")))
+            container.register_port("settings_service", build_settings_service_for_tests(Path(tmp)))
             lifecycle = LifecycleManager(container)
             contribution = SettingsContribution(
                 module_id="m_settings",

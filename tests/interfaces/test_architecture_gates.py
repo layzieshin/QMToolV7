@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 from interfaces.pyqt.registry import catalog
@@ -570,4 +571,35 @@ def test_backend_auth_path_uses_public_resolve_session() -> None:
     assert "um_api.update_user_access_as_admin(" in admin
     assert "get_current_user" not in admin
     assert "SessionStore" not in admin
+
+
+def test_desktop_usermanagement_has_no_parallel_opaque_session_persistence() -> None:
+    """Desktop legacy state must not grow a second authoritative session store."""
+    from modules.usermanagement.module import USERMANAGEMENT_DATABASE_CONTRIBUTION
+
+    migrations = USERMANAGEMENT_DATABASE_CONTRIBUTION.migrations
+    assert [(item.version, item.name) for item in migrations] == [
+        (1, "initial"),
+        (2, "deactivated_at"),
+    ]
+
+    forbidden_paths = (
+        "modules/usermanagement/sqlite_session_repository.py",
+        "modules/usermanagement/migrations/0003_sessions.sql",
+        "tests/fixtures/database_migrations/users/v0002.db",
+    )
+    assert [path for path in forbidden_paths if (ROOT / path).exists()] == []
+
+    for migration in sorted((ROOT / "modules/usermanagement/migrations").glob("*.sql")):
+        assert "CREATE TABLE SESSIONS" not in migration.read_text(encoding="utf-8").upper()
+
+    module_source = _read("modules/usermanagement/module.py")
+    assert "SqliteSessionRepository" not in module_source
+    assert "session_repository = None" in module_source
+
+    local_session_migration = "modules/usermanagement/migrations/0003_sessions.sql"
+    assert local_session_migration not in _read("packaging/build_onedir.py")
+    manifest = json.loads(_read("qm_platform/persistence/migration_manifest.json"))
+    assert [item["version"] for item in manifest["users"]] == [1, 2]
+    assert all(item["path"] != local_session_migration for item in manifest["users"])
 

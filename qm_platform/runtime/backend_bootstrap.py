@@ -20,14 +20,49 @@ class BackendUsermanagementBootstrapError(RuntimeError):
 
 
 def _force_hardened_usermanagement_settings(container: RuntimeContainer) -> None:
+    from pathlib import Path
+
+    from qm_platform.persistence.database_evolution import (
+        DatabaseEvolutionService,
+        DatabaseSpec,
+        MigrationStep,
+    )
+    from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
+    from qm_platform.persistence.platform_settings_contribution import (
+        PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
+    )
+    from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR
+    from qm_platform.settings.persistence_bootstrap import attach_settings_persistence
+
+    app_home = Path(container.get_port("app_home"))
+    contrib = PLATFORM_SETTINGS_DATABASE_CONTRIBUTION
+    evolution = DatabaseEvolutionService(app_home=app_home)
+    evolution.migrate(
+        (
+            DatabaseSpec(
+                database_id=contrib.database_id,
+                path=resolve_platform_settings_db_path(app_home),
+                migrations=tuple(
+                    MigrationStep(
+                        version=item.version,
+                        name=item.name,
+                        sql_path=item.sql_path,
+                    )
+                    for item in contrib.migrations
+                ),
+            ),
+        ),
+        reason="backend_platform_settings",
+    )
+    attach_settings_persistence(container, app_home=app_home)
+
     settings = container.get_port("settings_service")
-    cfg = dict(settings.get_module_settings("usermanagement"))
-    cfg["seed_mode"] = "hardened"
-    cfg["dev_mode"] = False
     settings.set_module_settings(
         "usermanagement",
-        cfg,
+        {"seed_mode": "hardened", "dev_mode": False},
+        actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,
         acknowledge_governance_change=True,
+        reason="backend_bootstrap_hardened",
     )
 
 

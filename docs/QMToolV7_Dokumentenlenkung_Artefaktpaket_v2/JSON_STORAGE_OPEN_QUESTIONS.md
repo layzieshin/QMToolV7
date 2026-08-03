@@ -55,17 +55,27 @@
 
 ## OQ-04: Physischer Owner und Engine der Settings-Datenbank
 
-**Sachverhalt:** Der Zielvertrag trennt Bootstrap, technische Settings und Fachpolicies. Offen ist, ob die allgemeinen Settings im fruehen Betrieb in einer backend-eigenen SQLite-Plattform-DB oder direkt in PostgreSQL liegen sollen. Clients duerfen die Datei keinesfalls gemeinsam oeffnen.
+**Status:** entschieden (2026-08-03), freigegeben fuer J02.
 
-**Zu entscheiden:**
+**Sachverhalt:** Der Zielvertrag trennt Bootstrap, technische Settings und Fachpolicies. Offen war, ob die allgemeinen Settings im fruehen Betrieb in einer backend-eigenen SQLite-Plattform-DB oder direkt in PostgreSQL liegen sollen. Clients duerfen die Datei keinesfalls gemeinsam oeffnen.
 
-- backend-owned SQLite als frueher Zielstand oder PostgreSQL als sofortiger Zielstand;
-- ob benutzerspezifische Settings bereits im ersten Paket benoetigt werden;
-- Backup-/Restore-Zuschnitt gemeinsam mit oder getrennt von den sechs AP-027-Datenbanken.
+**Entscheidung:**
 
-**Empfehlung:** Backend-owned SQLite fuer den fruehen MVP, solange nur ein Backend-Owner schreibt; gleiche Port-/Migrationsvertraege so halten, dass ein spaeterer PG-Adapter kein zweiter fachlicher Pfad wird.
+1. Engine und Owner: J02 verwendet eine **backend-owned SQLite**-Datenbank. Mehrere Clients greifen niemals direkt auf diese SQLite-Datei zu. `SettingsService` und seine Vertraege bleiben speicherunabhaengig, damit spaeter ein PostgreSQL-Adapter denselben fachlichen Pfad implementiert. Kein zweiter Settings-Service und kein paralleler fachlicher Pfad.
+2. Scope: J02 unterstuetzt ausschliesslich den bestehenden Scope **`module_global`**. User- oder `user_module`-spezifische Settings sind nicht Teil von J02. Vorbereitende Tabellen oder APIs fuer noch nicht benoetigte User-Scopes werden nicht eingefuehrt.
+3. Backup und Restore: Die Settings-Datenbank wird als **siebte Datenbank** in den gemeinsamen AP-027-Backup-, Restore-, Preflight- und Integritaetsvertrag aufgenommen. Kein separater Backup-Satz und kein unabhaengiger Migrationsmechanismus.
 
-**Blockiert:** J02-Implementierungsplan und konkrete Migration Contribution.
+**Residual-Variante A (mitentschieden fuer J02):**
+
+- Nur technische Schluessel (Bucket B) werden nach `platform_settings` migriert.
+- Bootstrap-Schluessel (Bucket A) werden ausschliesslich ueber Env, feste Defaults oder bestehende Bootstrap-Vertraege aufgeloest.
+- Fachliche Policy-Schluessel (Bucket C) werden nicht in `platform_settings` importiert; bis zum jeweiligen Owner-Paket ausschliesslich aus Residual-JSON (Allowlist, read-only).
+- Kein Dual-Write, kein allgemeiner JSON-Fallback, keine heuristische Schluesselzuordnung.
+- Derselbe Schluessel darf nie gleichzeitig in DB und Residual liegen (Overlap fail-closed).
+- Residualarchiv ist Bestandteil jedes Plattform-Backup-Satzes (Manifest + SHA-256); Start und Restore pruefen die Pruefsumme.
+- Residual-Reader und Allowlist sind zeitlich begrenzt und kein dauerhafter Kompatibilitaetspfad.
+
+**Blockiert nicht mehr:** J02-Implementierungsplan und konkrete Migration Contribution.
 **Blockiert nicht:** Modul-eigene fachliche Tabellen.
 
 ## OQ-05: Aufbewahrungs- und Exportvertrag fuer autoritatives Audit
@@ -153,3 +163,4 @@
 - Fehlende Consumer blockieren keine erfolgreiche Fachaktion.
 - Documents besitzt im Ziel keine eigenen Sichtbarkeits-/Trainingsverteiler; Training entscheidet nach Publikation.
 - Keine neue fachliche JSON-Datei, kein Greenfield-Modul und kein Big-Bang-Umbau.
+- **OQ-04:** backend-owned SQLite Settings-DB als 7. AP-027-DB; nur `module_global`; Residual-Variante A fuer Bucket-C-Policies (siehe OQ-04).

@@ -81,12 +81,19 @@ class IncidentManagementReportsTest(unittest.TestCase):
         self.assertGreater(register.size_bytes, 0)
 
     def test_case_report_pdf_artifact_template_and_timeline(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("qmb", "QMB"))
-        api = container.get_port("incident_management_api")
-        api.set_module_settings(
-            {"report_templates": {"case": "case_v2", "register": "default", "management_review": "default"}},
-            acknowledge_governance_change=True,
+        container, _ = build_incident_test_container(
+            user=_FakeUser("qmb", "QMB"),
+            residual_policy={
+                "incident_management": {
+                    "report_templates": {
+                        "case": "case_v2",
+                        "register": "default",
+                        "management_review": "default",
+                    }
+                }
+            },
         )
+        api = container.get_port("incident_management_api")
         case = api.submit_incident(_submission(title="Case PDF"))
         report = api.generate_incident_report(case.incident_id)
 

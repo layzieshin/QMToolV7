@@ -5,10 +5,12 @@ import json
 
 from modules.documents.contracts import SystemRole
 from qm_platform.runtime import bootstrap as runtime_bootstrap
+from qm_platform.settings.errors import SettingsDomainError
 from qm_platform.settings.settings_service import SettingsService
 from modules.usermanagement.api import is_effective_qmb
 
 from interfaces.cli.bootstrap import build_container
+from interfaces.settings_actor import resolve_confirmed_settings_actor
 
 
 def cmd_settings(args: argparse.Namespace) -> int:
@@ -46,14 +48,19 @@ def cmd_settings(args: argparse.Namespace) -> int:
             if not isinstance(values, dict):
                 print("BLOCKED: --values-json must be a JSON object")
                 return 6
+            actor = resolve_confirmed_settings_actor(container, request_id="cli-settings")
             settings_service.set_module_settings(
                 args.module,
                 values,
+                actor=actor,
                 acknowledge_governance_change=bool(args.acknowledge_governance_change),
             )
             persisted = settings_service.get_module_settings(args.module)
             print(json.dumps(persisted, ensure_ascii=True))
             return 0
+    except SettingsDomainError as exc:
+        print(f"BLOCKED: {exc.code}: {exc}")
+        return 6
     except (ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"BLOCKED: {exc}")
         return 6
@@ -61,4 +68,3 @@ def cmd_settings(args: argparse.Namespace) -> int:
         print(f"FAILED: {exc}")
         return 7
     return 1
-

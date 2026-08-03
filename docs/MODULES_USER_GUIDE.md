@@ -225,13 +225,21 @@ Central settings read/write and UI-based orchestration of module features.
   - `.\.venv\Scripts\python.exe -m interfaces.cli.main settings list-modules`
 - Read module settings:
   - `.\.venv\Scripts\python.exe -m interfaces.cli.main settings get --module documents`
-- Write module settings (QMB/Admin):
-  - `.\.venv\Scripts\python.exe -m interfaces.cli.main settings set --module signature --values-json "{\"require_password\": true, \"default_mode\": \"visual\"}"`
+- Legacy CLI/PyQt settings access is temporarily read-only:
+  - `login` / `current_user.json` is not a valid actor for a settings write.
+  - Writes remain fail-closed until the separately approved desktop/backend
+    session transport supplies the authoritative PostgreSQL session context.
+  - Setting `QMTOOL_SESSION_TOKEN` alone does not add that transport to a legacy
+    desktop runtime; the token must be resolvable in the current runtime.
 - Start UI:
   - `.\.venv\Scripts\python.exe -m interfaces.gui.main`
 
 ### Frequent issues
 
+- `BLOCKED: settings_actor_required`:
+  - The current runtime cannot resolve an authoritative backend session. Read
+    operations remain available; use the future desktop/backend settings transport
+    for writes after its separate release.
 - `BLOCKED: only QMB or ADMIN may set settings`:
   - Active user lacks rights to persist settings.
 - Network path executable blocked (Windows):

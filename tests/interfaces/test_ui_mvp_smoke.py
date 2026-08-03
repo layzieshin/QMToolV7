@@ -101,12 +101,16 @@ class UiMvpSmokeTest(unittest.TestCase):
             self.assertEqual(state.status, DocumentStatus.IN_REVIEW)
 
             self.controller.login("user", "userpass01")
-            review_request = _build_sign_request(input_pdf, output_pdf, signature_png, signer_user="user", password="user")
+            review_request = _build_sign_request(
+                input_pdf, output_pdf, signature_png, signer_user="user", password="userpass01"
+            )
             state = self.controller.review_accept(doc_id, 1, sign_request=review_request)
             self.assertEqual(state.status, DocumentStatus.IN_APPROVAL)
 
             self.controller.login("qmb", "qmbpass001")
-            approve_request = _build_sign_request(input_pdf, output_pdf, signature_png, signer_user="qmb", password="qmb")
+            approve_request = _build_sign_request(
+                input_pdf, output_pdf, signature_png, signer_user="qmb", password="qmbpass001"
+            )
             state = self.controller.approval_accept(doc_id, 1, sign_request=approve_request)
             self.assertEqual(state.status, DocumentStatus.APPROVED)
             state = self.controller.archive(doc_id, 1)
@@ -118,18 +122,21 @@ class UiMvpSmokeTest(unittest.TestCase):
             self.controller.set_settings("signature", {"require_password": False, "default_mode": "visual"})
 
     def test_governance_critical_settings_require_ack_in_gui(self) -> None:
+        from qm_platform.settings.errors import SettingsActorRequiredError
+
         self.controller.login("admin", "admin")
-        with self.assertRaises(ValueError):
+        # Legacy Tk GUI has no confirmed backend session; settings writes stay fail-closed.
+        with self.assertRaises(SettingsActorRequiredError):
             self.controller.set_settings("signature", {"require_password": False, "default_mode": "visual"})
-        updated = self.controller.set_settings(
-            "signature",
-            {
-                "require_password": False,
-                "default_mode": "visual",
-                "_acknowledge_governance_change": True,
-            },
-        )
-        self.assertEqual(updated.get("require_password"), False)
+        with self.assertRaises(SettingsActorRequiredError):
+            self.controller.set_settings(
+                "signature",
+                {
+                    "require_password": False,
+                    "default_mode": "visual",
+                    "_acknowledge_governance_change": True,
+                },
+            )
 
     def test_ui_entry_smoke_flag_runs_headless(self) -> None:
         result = subprocess.run(

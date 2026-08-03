@@ -306,8 +306,8 @@ class DatabaseEvolutionService:
                     "databases": [asdict(status) for status in refreshed],
                 }
 
-            backup = self.create_backup(specs=pending_specs, reason=reason)
-            self._write_journal(backup=backup, specs=pending_specs)
+            backup = self.create_backup(specs=specs, reason=reason)
+            self._write_journal(backup=backup, specs=specs)
             try:
                 for spec in pending_specs:
                     self._migrate_one(spec)
@@ -319,7 +319,7 @@ class DatabaseEvolutionService:
                         + "; ".join(f"{item.database_id}: {item.state}" for item in failed)
                     )
             except Exception:
-                self._restore_backup(backup.backup_id, specs=pending_specs)
+                self._restore_backup(backup.backup_id, specs=specs)
                 raise
             finally:
                 self._journal_path.unlink(missing_ok=True)
@@ -375,11 +375,21 @@ class DatabaseEvolutionService:
                         "user_version": self._user_version(target),
                     }
                 )
+            residual_entry = self._backup_residual_archive(final_dir)
+            if residual_entry["present"] and not any(
+                entry.get("database_id") == "platform_settings"
+                and bool(entry.get("present"))
+                for entry in entries
+            ):
+                raise DatabaseEvolutionError(
+                    "residual archive backup requires platform_settings database"
+                )
             manifest = {
                 "backup_id": backup_id,
                 "created_at": created_at.isoformat(),
                 "reason": reason,
                 "databases": entries,
+                "residual_archive": residual_entry,
             }
             (final_dir / "manifest.json").write_text(
                 json.dumps(manifest, ensure_ascii=True, indent=2),
@@ -695,7 +705,13 @@ class DatabaseEvolutionService:
             for spec in specs
         }
         seen_ids: set[str] = set()
-        for entry in payload.get("databases", []):
+        backup_database_files: dict[str, Path | None] = {}
+        databases = payload.get("databases")
+        if not isinstance(databases, list):
+            raise DatabaseEvolutionError("backup manifest databases must be a list")
+        for entry in databases:
+            if not isinstance(entry, dict):
+                raise DatabaseEvolutionError("backup database entry must be an object")
             database_id = str(entry["database_id"])
             if database_id in seen_ids:
                 raise DatabaseEvolutionError(
@@ -708,6 +724,7 @@ class DatabaseEvolutionService:
                     f"backup target mismatch for {database_id}"
                 )
             if not bool(entry.get("present")):
+                backup_database_files[database_id] = None
                 continue
             backup_file = backup_dir / "databases" / str(entry["filename"])
             expected_hash = str(entry["sha256"])
@@ -722,6 +739,136 @@ class DatabaseEvolutionService:
             if self._integrity(backup_file) != "ok":
                 raise DatabaseEvolutionError(
                     f"backup integrity failed for {entry['database_id']}"
+                )
+            backup_database_files[database_id] = backup_file
+        expected_ids = set(configured)
+        if seen_ids != expected_ids:
+            missing = sorted(expected_ids - seen_ids)
+            unexpected = sorted(seen_ids - expected_ids)
+            raise DatabaseEvolutionError(
+                "backup manifest database set mismatch"
+                + (f"; missing={missing}" if missing else "")
+                + (f"; unexpected={unexpected}" if unexpected else "")
+            )
+        from qm_platform.settings.residual_store import RESIDUAL_ARCHIVE_REL
+        from qm_platform.settings.sqlite_settings_repository import SqliteSettingsRepository
+
+        residual = payload.get("residual_archive")
+        if not isinstance(residual, dict):
+            raise DatabaseEvolutionError(
+                "backup residual_archive metadata missing or invalid"
+            )
+        required_common = {
+            "present",
+            "relative_path",
+            "cutover_status",
+            "db_hash_anchor",
+        }
+        missing_common = sorted(required_common - set(residual))
+        if missing_common:
+            raise DatabaseEvolutionError(
+                "backup residual_archive metadata incomplete: "
+                + ", ".join(missing_common)
+            )
+        if type(residual["present"]) is not bool:
+            raise DatabaseEvolutionError("backup residual present must be boolean")
+        if residual["relative_path"] != RESIDUAL_ARCHIVE_REL:
+            raise DatabaseEvolutionError("backup residual relative_path mismatch")
+        if not residual["present"] and (
+            residual["db_hash_anchor"] is not None
+            or residual["cutover_status"] is not None
+        ):
+            raise DatabaseEvolutionError(
+                "backup residual absent but cutover/hash metadata indicates completed cutover"
+            )
+
+        db_cutover_status: str | None = None
+        db_hash_anchor: str | None = None
+        settings_backup = backup_database_files.get("platform_settings")
+        if settings_backup is not None:
+            try:
+                with self._connect_readonly(settings_backup) as conn:
+                    rows = conn.execute(
+                        """
+                        SELECT integrity_key, integrity_value
+                        FROM platform_settings_integrity
+                        WHERE integrity_key IN (?, ?)
+                        """,
+                        (
+                            SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS,
+                            SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256,
+                        ),
+                    ).fetchall()
+            except sqlite3.Error as exc:
+                raise DatabaseEvolutionError(
+                    "backup platform settings integrity metadata unavailable"
+                ) from exc
+            integrity = {str(key): str(value) for key, value in rows}
+            db_cutover_status = integrity.get(
+                SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS
+            )
+            db_hash_anchor = integrity.get(
+                SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256
+            )
+        if residual["cutover_status"] != db_cutover_status:
+            raise DatabaseEvolutionError(
+                "backup residual cutover_status does not match platform settings database"
+            )
+        if residual["db_hash_anchor"] != db_hash_anchor:
+            raise DatabaseEvolutionError(
+                "backup residual db_hash_anchor does not match platform settings database"
+            )
+
+        if residual["present"]:
+            required_present = {
+                "filename",
+                "hash_filename",
+                "size_bytes",
+                "sha256",
+                "sidecar_sha256",
+            }
+            missing_present = sorted(required_present - set(residual))
+            if missing_present:
+                raise DatabaseEvolutionError(
+                    "backup residual_archive metadata incomplete: "
+                    + ", ".join(missing_present)
+                )
+            if settings_backup is None:
+                raise DatabaseEvolutionError(
+                    "backup residual archive requires platform_settings database"
+                )
+            if residual["filename"] != "settings.json":
+                raise DatabaseEvolutionError("backup residual filename mismatch")
+            if residual["hash_filename"] != "settings.json.sha256":
+                raise DatabaseEvolutionError("backup residual sidecar filename mismatch")
+            residual_file = backup_dir / "residual" / "settings.json"
+            expected_hash = str(residual["sha256"] or "")
+            if not residual_file.is_file():
+                raise DatabaseEvolutionError("backup residual archive file missing")
+            if self._sha256_file(residual_file) != expected_hash:
+                raise DatabaseEvolutionError("backup residual archive checksum mismatch")
+            if residual_file.stat().st_size != residual["size_bytes"]:
+                raise DatabaseEvolutionError("backup residual archive size mismatch")
+            sidecar = backup_dir / "residual" / "settings.json.sha256"
+            if not sidecar.is_file():
+                raise DatabaseEvolutionError("backup residual sidecar missing")
+            expected_sidecar_hash = str(residual["sidecar_sha256"] or "")
+            if self._sha256_file(sidecar) != expected_sidecar_hash:
+                raise DatabaseEvolutionError("backup residual sidecar checksum mismatch")
+            if sidecar.read_text(encoding="utf-8") != f"{expected_hash}  settings.json\n":
+                raise DatabaseEvolutionError("backup residual sidecar content mismatch")
+            if residual["cutover_status"] != "completed":
+                raise DatabaseEvolutionError(
+                    "backup residual present but cutover_status is not completed"
+                )
+            db_anchor = residual["db_hash_anchor"]
+            if db_anchor is None or str(db_anchor).strip() == "":
+                raise DatabaseEvolutionError(
+                    "backup residual present but db_hash_anchor is missing"
+                )
+            if str(db_anchor) != expected_hash:
+                raise DatabaseEvolutionError(
+                    "backup residual db_hash_anchor does not match archive sha256"
                 )
         return backup_dir, payload
 
@@ -745,6 +892,7 @@ class DatabaseEvolutionService:
             temp_target = source_path.with_name(f".{source_path.name}.restore-{uuid.uuid4().hex}")
             shutil.copy2(backup_file, temp_target)
             os.replace(temp_target, source_path)
+        self._restore_residual_archive(backup_dir, payload)
 
     @contextmanager
     def _migration_lock(self) -> Iterator[None]:
@@ -779,6 +927,121 @@ class DatabaseEvolutionService:
                 msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
             finally:
                 lock_file.close()
+
+    def _backup_residual_archive(self, backup_dir: Path) -> dict[str, object]:
+        from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
+        from qm_platform.settings.residual_store import (
+            RESIDUAL_ARCHIVE_REL,
+            ResidualSettingsStore,
+        )
+        from qm_platform.settings.sqlite_settings_repository import SqliteSettingsRepository
+
+        residual = ResidualSettingsStore.under_app_home(self._app_home)
+        repo = SqliteSettingsRepository(resolve_platform_settings_db_path(self._app_home))
+        cutover_status = repo.get_integrity(SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS)
+        db_hash = repo.get_integrity(SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256)
+        if not residual.exists():
+            if cutover_status is not None or db_hash is not None:
+                raise DatabaseEvolutionError(
+                    "residual archive missing while platform settings integrity metadata exists"
+                )
+            return {
+                "present": False,
+                "relative_path": RESIDUAL_ARCHIVE_REL,
+                "cutover_status": cutover_status,
+                "db_hash_anchor": db_hash,
+            }
+        digest = residual.sha256()
+        if cutover_status != "completed":
+            raise DatabaseEvolutionError(
+                "residual archive exists without completed cutover metadata"
+            )
+        if db_hash != digest:
+            raise DatabaseEvolutionError(
+                "residual archive does not match platform settings hash anchor"
+            )
+        if not residual.hash_path.is_file():
+            raise DatabaseEvolutionError("residual archive sidecar missing")
+        if residual.hash_path.read_text(encoding="utf-8") != f"{digest}  settings.json\n":
+            raise DatabaseEvolutionError("residual archive sidecar content mismatch")
+        residual_dir = backup_dir / "residual"
+        residual_dir.mkdir(parents=True, exist_ok=True)
+        target = residual_dir / "settings.json"
+        shutil.copy2(residual.archive_path, target)
+        hash_target = residual_dir / "settings.json.sha256"
+        hash_target.write_text(
+            f"{digest}  settings.json\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        return {
+            "present": True,
+            "relative_path": RESIDUAL_ARCHIVE_REL,
+            "filename": "settings.json",
+            "hash_filename": "settings.json.sha256",
+            "size_bytes": target.stat().st_size,
+            "sha256": digest,
+            "sidecar_sha256": self._sha256_file(hash_target),
+            "cutover_status": cutover_status,
+            "db_hash_anchor": db_hash,
+        }
+
+    def _restore_residual_archive(
+        self,
+        backup_dir: Path,
+        payload: dict[str, object],
+    ) -> None:
+        from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
+        from qm_platform.settings.residual_store import ResidualSettingsStore
+        from qm_platform.settings.sqlite_settings_repository import SqliteSettingsRepository
+
+        residual_meta = payload.get("residual_archive")
+        live = ResidualSettingsStore.under_app_home(self._app_home)
+        if not isinstance(residual_meta, dict) or not bool(residual_meta.get("present")):
+            live.archive_path.unlink(missing_ok=True)
+            live.hash_path.unlink(missing_ok=True)
+            return
+        backup_file = backup_dir / "residual" / str(
+            residual_meta.get("filename", "settings.json")
+        )
+        hash_name = str(residual_meta.get("hash_filename", "settings.json.sha256"))
+        hash_file = backup_dir / "residual" / hash_name
+        live.archive_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_archive = live.archive_path.with_name(
+            f".{live.archive_path.name}.restore-{uuid.uuid4().hex}"
+        )
+        shutil.copy2(backup_file, temp_archive)
+        os.replace(temp_archive, live.archive_path)
+        if hash_file.is_file():
+            temp_hash = live.hash_path.with_name(
+                f".{live.hash_path.name}.restore-{uuid.uuid4().hex}"
+            )
+            shutil.copy2(hash_file, temp_hash)
+            os.replace(temp_hash, live.hash_path)
+        else:
+            digest = self._sha256_file(live.archive_path)
+            live.hash_path.write_text(
+                f"{digest}  settings.json\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+        repo = SqliteSettingsRepository(resolve_platform_settings_db_path(self._app_home))
+        expected = repo.get_integrity(SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256)
+        cutover_status = repo.get_integrity(
+            SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS
+        )
+        if not expected or expected != residual_meta.get("db_hash_anchor"):
+            raise DatabaseEvolutionError(
+                "restored residual archive does not match DB hash anchor"
+            )
+        if cutover_status != "completed":
+            raise DatabaseEvolutionError(
+                "restored residual archive has no completed cutover marker"
+            )
+        anchored = ResidualSettingsStore.under_app_home(
+            self._app_home, expected_sha256=expected
+        )
+        anchored.verify()
 
     @staticmethod
     def _validate_spec(spec: DatabaseSpec) -> None:

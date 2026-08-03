@@ -163,9 +163,15 @@ class UiController:
             raise RuntimeError("only QMB or ADMIN may set settings")
         payload = dict(values)
         acknowledge = bool(payload.pop("_acknowledge_governance_change", False))
+        from interfaces.settings_actor import resolve_confirmed_settings_actor
+
+        actor = resolve_confirmed_settings_actor(
+            self.container, request_id="legacy-gui-settings"
+        )
         self.settings_service.set_module_settings(
             module_id,
             payload,
+            actor=actor,
             acknowledge_governance_change=acknowledge,
         )
         return self.settings_service.get_module_settings(module_id)

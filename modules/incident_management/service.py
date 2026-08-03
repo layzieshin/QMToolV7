@@ -449,6 +449,7 @@ class IncidentManagementService:
         self,
         values: dict,
         *,
+        actor: object,
         acknowledge_governance_change: bool = False,
     ) -> dict:
         if self._settings_service is None:
@@ -463,6 +464,7 @@ class IncidentManagementService:
         setter(
             "incident_management",
             values,
+            actor=actor,
             acknowledge_governance_change=acknowledge_governance_change,
         )
         return self._settings()

@@ -292,6 +292,7 @@ Policy:
 - `operational` changes are allowed for `ADMIN`/`QMB` with traceability.
 - `development` values must remain explicitly non-production.
 - CLI enforcement: `settings set` requires `--acknowledge-governance-change` when any `governance_critical` key is changed.
+- CLI/PyQt settings writes require a confirmed context resolved through the authoritative PostgreSQL session path. Legacy desktop compositions have no opaque-session repository and are intentionally read-only; `QMTOOL_SESSION_TOKEN` or the `session_token` port is only useful in a runtime that can resolve it through that path.
 - Technical key mapping source: `qm_platform/settings/governance_critical_keys.py`.
 
 ### CLI adapters
@@ -313,7 +314,7 @@ Policy:
     - `training admin-*`
   - `settings list-modules`
   - `settings get --module ...`
-  - `settings set --module ... --values-json ...`
+  - `settings set --module ... --values-json ...` (fail-closed in the legacy desktop runtime; a later transport package connects it to the authoritative backend session; governance keys still need `--acknowledge-governance-change`)
   - Documents metadata/register:
     - `documents header-get`
     - `documents header-set`

@@ -1,20 +1,19 @@
 from __future__ import annotations
 
+from qm_platform.settings.testing import build_settings_service_for_tests
+from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR
 import tempfile
 import unittest
 import importlib.util
 from pathlib import Path
 
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
+from modules.signature.module import SIGNATURE_SETTINGS_CONTRIBUTION
 from modules.signature.service import SignatureServiceV2
 from modules.usermanagement.service import UserManagementService
 from qm_platform.events.event_bus import EventBus
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
-from qm_platform.sdk.module_contract import SettingsContribution
-from qm_platform.settings.settings_registry import SettingsRegistry
-from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 
 
 def _create_pdf(path: Path) -> None:
@@ -60,21 +59,13 @@ class ModuleEventsTest(unittest.TestCase):
             bus.subscribe("domain.signature.sign.requested.v1", lambda e: events.append(e.name))
             bus.subscribe("domain.signature.sign.dry_run.v1", lambda e: events.append(e.name))
 
-            settings = SettingsService(SettingsRegistry(), SettingsStore(root / "settings.json"))
-            settings.registry.register(
-                SettingsContribution(
-                    module_id="signature",
-                    schema_version=1,
-                    schema={"type": "object"},
-                    defaults={"require_password": False, "default_mode": "visual"},
-                    scope="module_global",
-                    migrations=[],
-                )
-            )
+            settings = build_settings_service_for_tests(root)
+            settings.registry.register(SIGNATURE_SETTINGS_CONTRIBUTION)
             settings.set_module_settings(
                 "signature",
                 {"require_password": False, "default_mode": "visual"},
                 acknowledge_governance_change=True,
+                actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,
             )
             svc = SignatureServiceV2(
                 settings_service=settings,
@@ -99,4 +90,3 @@ class ModuleEventsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

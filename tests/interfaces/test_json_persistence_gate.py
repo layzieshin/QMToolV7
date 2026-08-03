@@ -229,7 +229,7 @@ def test_storage_exact_literal_allowed_dynamic_rejected() -> None:
         ROOT,
         mode="scratch",
         source_files={
-            "modules/demo/ok.py": 'path = "storage/platform/settings.json"\n',
+            "qm_platform/settings/residual_store.py": 'path = "storage/platform/settings_residual_archive/settings.json"\n',
         },
     )
     assert not any(

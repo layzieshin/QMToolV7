@@ -247,10 +247,21 @@ def cmd_incident(args: argparse.Namespace) -> int:
             print(json.dumps(api.get_module_settings(), ensure_ascii=True))
             return 0
         if cmd == "settings-set":
-            settings = api.set_module_settings(
-                {args.key: args.value},
-                acknowledge_governance_change=bool(args.acknowledge_governance_change),
-            )
+            from interfaces.settings_actor import resolve_confirmed_settings_actor
+            from qm_platform.settings.errors import SettingsDomainError
+
+            try:
+                actor = resolve_confirmed_settings_actor(
+                    container, request_id="cli-incident-settings"
+                )
+                settings = api.set_module_settings(
+                    {args.key: args.value},
+                    actor=actor,
+                    acknowledge_governance_change=bool(args.acknowledge_governance_change),
+                )
+            except SettingsDomainError as exc:
+                print(f"BLOCKED: {exc.code}: {exc}")
+                return 6
             print(json.dumps(settings, ensure_ascii=True))
             return 0
         if cmd == "similar-list":
