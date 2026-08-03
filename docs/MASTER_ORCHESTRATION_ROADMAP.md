@@ -159,7 +159,9 @@ JSON-Persistenz-Baseline (Artefaktpaket Dokumentenlenkung v2, nur Dokumentation)
 - `docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/` inkl. Inventar, offene Fragen,
   ADR, Zielpersistenzmodell und Migrationsplan (`JSON_TO_DATABASE_MIGRATION_PLAN.md`).
 - **J00** etabliert ausschliesslich diese Baseline; Runtime bleibt unveraendert.
-- **J01 und alle weiteren J-Pakete** brauchen jeweils separate Freigaben und sind
+- **J01** (Schutzgate) implementiert Allowlist-Checks in `scripts/json_persistence_gate.py`
+  und CI; **Supervisor-Freigabe ausstehend**. J01 aendert keine Runtime-Fachlogik.
+- **J02 und alle weiteren J-Pakete** brauchen jeweils separate Freigaben und sind
   hier nicht freigegeben.
 - **J03–J06** muessen in den Documents-Umbau integriert werden; kein paralleler
   Persistenzumbau neben dem Documents-Sollmodell.
@@ -208,8 +210,10 @@ Folgepakete ausserhalb AP-028 (nicht automatisch freigegeben):
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
 - Documents-Multiuser-MVP (nach AP-028, separate Freigabe)
 - Incident-Modul Cleanup Admin=QMB (bekannte Abweichung; ausserhalb AP-028)
-- JSON→DB-Folgepakete J01–J10 (Schutzgates, Settings-DB, Documents-/Incident-/Training-
-  Persistenzumbauten); J00 ist nur Baseline und gibt diese Pakete nicht frei
+- JSON→DB-Folgepakete J02–J10 (Settings-DB, Documents-/Incident-/Training-
+  Persistenzumbauten); J00 ist Baseline, J01 ist nur Schutzgate und gibt J02+ nicht frei
+- J01-Schutzgate-Merge erst nach Supervisor-Freigabe (Allowlist-Owner =
+  `scripts/json_persistence_gate.py`)
 
 Im Rahmen von AP-028 freigegeben und milestone-weise umgesetzt (M0–M9):
 - Auth-Implementierung (serverseitige Sessions)
