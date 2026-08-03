@@ -51,6 +51,8 @@ and expected when required by the Git workflow rule.
 - Python: `3.14.x` (`pyproject.toml` `requires-python = ">=3.14,<3.15"`).
 - Use the workspace venv explicitly: `.\.venv\Scripts\python.exe`.
 - Tests: `.\.venv\Scripts\python.exe -m pytest`.
+  Pytest uses `build/pytest-basetemp` by default via `pytest.ini`; a `WinError 5`
+  under global Windows `%TEMP%` is an environment problem, not a product failure.
 - No configured linter/typechecker (no ruff/flake8/mypy/pre-commit) — do not invent lint/typecheck steps.
 
 ## Architecture essentials
