@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 from modules.documents.module import create_documents_module_contract
 from modules.incident_management.module import create_incident_management_module_contract
@@ -119,17 +120,30 @@ def configure_database_evolution(
     return service, specs
 
 
+def capture_database_preflight_statuses(
+    container: RuntimeContainer,
+    service: DatabaseEvolutionService,
+    specs: tuple[DatabaseSpec, ...],
+) -> MappingProxyType:
+    """Register immutable pre-migrate DatabaseStatus map for module wiring.
+
+    Platform-only helper: no module-specific classification or Documents imports.
+    Must run before migrate so freshly created DB files are not misread later.
+    """
+    from qm_platform.persistence.database_evolution import DATABASE_PREFLIGHT_STATUSES_PORT
+
+    preflight = {status.database_id: status for status in service.statuses(specs)}
+    mapping = MappingProxyType(preflight)
+    container.register_port(DATABASE_PREFLIGHT_STATUSES_PORT, mapping)
+    return mapping
+
+
 def activate_core_modules(
     container: RuntimeContainer,
     lifecycle: LifecycleManager,
 ) -> None:
     service, specs = configure_database_evolution(container, lifecycle)
-    from types import MappingProxyType
-
-    from qm_platform.persistence.database_evolution import DATABASE_PREFLIGHT_STATUSES_PORT
-
-    preflight = {status.database_id: status for status in service.statuses(specs)}
-    container.register_port(DATABASE_PREFLIGHT_STATUSES_PORT, MappingProxyType(preflight))
+    capture_database_preflight_statuses(container, service, specs)
     service.migrate(specs, reason="runtime_preflight")
     from qm_platform.settings.persistence_bootstrap import (
         attach_settings_persistence,

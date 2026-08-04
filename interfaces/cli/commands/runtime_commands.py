@@ -137,6 +137,11 @@ def cmd_doctor(*, strict: bool = False) -> int:
         container,
         lifecycle,
     )
+    runtime_bootstrap.capture_database_preflight_statuses(
+        container,
+        database_service,
+        database_specs,
+    )
     from qm_platform.settings.persistence_bootstrap import attach_settings_persistence
 
     try:
