@@ -911,20 +911,33 @@ class DatabaseEvolutionService:
             raise DatabaseEvolutionError(
                 "another database migration is running"
             ) from exc
+        locked = False
         try:
             try:
-                import msvcrt
+                if os.name == "nt":
+                    import msvcrt
 
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
             except OSError as exc:
                 raise DatabaseEvolutionError("another database migration is running") from exc
             yield
         finally:
             try:
-                import msvcrt
+                if locked:
+                    if os.name == "nt":
+                        import msvcrt
 
-                lock_file.seek(0)
-                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                        lock_file.seek(0)
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
             finally:
                 lock_file.close()
 
