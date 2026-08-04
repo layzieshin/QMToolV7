@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from qm_platform.licensing.licensed_proxy import LicensedPortProxy
+from qm_platform.persistence.path_resolver import resolve_bootstrap_absolute_path
 
 from .api import IncidentManagementApi
 from .service import IncidentManagementService
@@ -12,10 +13,9 @@ from .storage import IncidentArtifactStorage
 def register_incident_management_ports(container) -> None:
     app_home = container.get_port("app_home")
     settings_service = container.get_port("settings_service")
-    cfg = settings_service.get_module_settings("incident_management")
 
-    db_path = app_home / cfg.get("incident_db_path", "storage/incident_management/incidents.db")
-    artifacts_root = app_home / cfg.get("artifacts_root", "storage/incident_management/artifacts")
+    db_path = resolve_bootstrap_absolute_path(app_home, "incident_management", "incident_db_path")
+    artifacts_root = resolve_bootstrap_absolute_path(app_home, "incident_management", "artifacts_root")
 
     repo = SQLiteIncidentRepository(db_path=db_path)
     storage = IncidentArtifactStorage(artifacts_root)

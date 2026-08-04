@@ -218,15 +218,22 @@ class SignatureSettingsWidget(QWidget):
             if not self._is_admin:
                 raise RuntimeError("Nur Admins dürfen globale Signatur-Einstellungen ändern.")
             self._require_privileged()
+            # Bucket B only — bootstrap paths are not SettingsService-writable.
             payload = {
                 "require_password": self._require_password.isChecked(),
                 "default_mode": self._default_mode.currentText(),
-                "dry_run_enabled": self._dry_run_on.isChecked(),
-                "templates_db_path": self._templates_db.text().strip(),
-                "assets_root": self._assets_root.text().strip(),
-                "master_key_path": self._master_key.text().strip(),
             }
-            self._settings.set_module_settings("signature", payload, acknowledge_governance_change=True)
+            from interfaces.settings_actor import resolve_confirmed_settings_actor
+
+            actor = resolve_confirmed_settings_actor(
+                self._container, request_id="pyqt-signature-settings"
+            )
+            self._settings.set_module_settings(
+                "signature",
+                payload,
+                actor=actor,
+                acknowledge_governance_change=True,
+            )
             self._append("SIGNATUR_SETTINGS_GESPEICHERT", payload)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Signatur-Einstellungen", str(exc))

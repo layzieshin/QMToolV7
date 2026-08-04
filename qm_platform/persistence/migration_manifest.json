@@ -52,5 +52,19 @@
       "path": "modules/usermanagement/migrations/0002_deactivated_at.sql",
       "sha256": "796478a9f415ff01438ee718ab986028b2b17b88fe6f5511b37358ec5d0d0040"
     }
+  ],
+  "platform_settings": [
+    {
+      "version": 1,
+      "name": "platform_settings",
+      "path": "qm_platform/persistence/migrations/0001_platform_settings.sql",
+      "sha256": "4f3b08176816c665c9456f07dd5117d6a55751e54dc493208b26db323b5cb954"
+    },
+    {
+      "version": 2,
+      "name": "platform_settings_integrity",
+      "path": "qm_platform/persistence/migrations/0002_platform_settings_integrity.sql",
+      "sha256": "4395e22153e42ceb84af84118138156630b1596615df598970830dbee345c9e1"
+    }
   ]
 }

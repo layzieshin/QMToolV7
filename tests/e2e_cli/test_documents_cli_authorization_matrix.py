@@ -94,7 +94,7 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
         return run_cli("documents", "workflow-start", "--document-id", doc_id, "--version", "1", "--profile-id", "long_release")
 
     @staticmethod
-    def _complete_editing_signed(doc_id: str, signer_password: str) -> subprocess.CompletedProcess[str]:
+    def _complete_editing_signed(doc_id: str, signer_user: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             input_pdf = root / "input.pdf"
@@ -124,12 +124,12 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                signer_password,
+                DocumentsCliAuthorizationMatrixTest._PASSWORDS[signer_user],
                 "--sign-dry-run",
             )
 
     @staticmethod
-    def _review_accept_signed(doc_id: str, signer_password: str) -> subprocess.CompletedProcess[str]:
+    def _review_accept_signed(doc_id: str, signer_user: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             input_pdf = root / "input.pdf"
@@ -159,7 +159,7 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
                 "--sign-width",
                 "120",
                 "--signer-password",
-                signer_password,
+                DocumentsCliAuthorizationMatrixTest._PASSWORDS[signer_user],
                 "--sign-dry-run",
             )
 

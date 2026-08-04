@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from qm_platform.settings.testing import build_settings_service_for_tests
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,6 @@ from qm_platform.runtime.lifecycle import LifecycleManager
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 
 
 class _LicenseAllowAll:
@@ -31,7 +31,7 @@ class DocumentsModulePortsTest(unittest.TestCase):
             container.register_port("event_bus", EventBus())
             container.register_port(
                 "settings_service",
-                SettingsService(SettingsRegistry(), SettingsStore(root / "settings.json")),
+                build_settings_service_for_tests(root),
             )
             container.register_port("license_service", _LicenseAllowAll())
             container.register_port("app_home", root)

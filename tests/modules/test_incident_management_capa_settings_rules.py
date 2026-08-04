@@ -7,6 +7,17 @@ from modules.incident_management.contracts import IncidentAssessmentInput, Incid
 from tests.modules.incident_management_test_support import _FakeUser, build_incident_test_container, switch_incident_user
 
 
+_DISABLED_CAPA_RULES = {
+    "critical": False,
+    "repeated": False,
+    "patient_safety": False,
+    "system_risk": False,
+    "formal_deviation": False,
+    "result_correctness": False,
+    "escalation": False,
+}
+
+
 class IncidentCapaRulesFromSettingsTest(unittest.TestCase):
     def _assess_patient_safety(self, api, *, patient_safety: bool):
         case = api.submit_incident(
@@ -32,62 +43,35 @@ class IncidentCapaRulesFromSettingsTest(unittest.TestCase):
         )
 
     def test_patient_safety_rule_via_assess(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("qmb", "QMB"))
-        api = container.get_port("incident_management_api")
-        api.set_module_settings(
-            {
-                "capa_required_rules": {
-                    "critical": False,
-                    "repeated": False,
-                    "patient_safety": True,
-                    "system_risk": False,
-                    "formal_deviation": False,
-                    "result_correctness": False,
-                    "escalation": False,
-                }
-            },
-            acknowledge_governance_change=True,
+        rules = dict(_DISABLED_CAPA_RULES)
+        rules["patient_safety"] = True
+        container, _ = build_incident_test_container(
+            user=_FakeUser("qmb", "QMB"),
+            residual_policy={"incident_management": {"capa_required_rules": rules}},
         )
+        api = container.get_port("incident_management_api")
         assessed = self._assess_patient_safety(api, patient_safety=True)
         self.assertTrue(assessed.capa_required)
 
     def test_patient_safety_disabled_via_assess(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("qmb", "QMB"))
-        api = container.get_port("incident_management_api")
-        api.set_module_settings(
-            {
-                "capa_required_rules": {
-                    "critical": False,
-                    "repeated": False,
-                    "patient_safety": False,
-                    "system_risk": False,
-                    "formal_deviation": False,
-                    "result_correctness": False,
-                    "escalation": False,
-                }
+        container, _ = build_incident_test_container(
+            user=_FakeUser("qmb", "QMB"),
+            residual_policy={
+                "incident_management": {"capa_required_rules": dict(_DISABLED_CAPA_RULES)}
             },
-            acknowledge_governance_change=True,
         )
+        api = container.get_port("incident_management_api")
         assessed = self._assess_patient_safety(api, patient_safety=True)
         self.assertFalse(assessed.capa_required)
 
     def test_critical_rule_disabled_via_api_settings(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("admin", "Admin"))
-        api = container.get_port("incident_management_api")
-        api.set_module_settings(
-            {
-                "capa_required_rules": {
-                    "critical": False,
-                    "repeated": False,
-                    "patient_safety": False,
-                    "system_risk": False,
-                    "formal_deviation": False,
-                    "result_correctness": False,
-                    "escalation": False,
-                }
+        container, _ = build_incident_test_container(
+            user=_FakeUser("admin", "Admin"),
+            residual_policy={
+                "incident_management": {"capa_required_rules": dict(_DISABLED_CAPA_RULES)}
             },
-            acknowledge_governance_change=True,
         )
+        api = container.get_port("incident_management_api")
         switch_incident_user(container, _FakeUser("qmb", "QMB"))
         case = api.submit_incident(
             IncidentSubmission(

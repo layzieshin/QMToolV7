@@ -54,8 +54,14 @@ class SettingsSection(BaseIncidentArea):
             self.show_info(self, "Speichern", "JSON muss ein Objekt sein.")
             return
         try:
+            from interfaces.settings_actor import resolve_confirmed_settings_actor
+
+            actor = resolve_confirmed_settings_actor(
+                self._container, request_id="pyqt-incident-settings"
+            )
             saved = self._api().set_module_settings(
                 values,
+                actor=actor,
                 acknowledge_governance_change=self._governance_ack.isChecked(),
             )
         except Exception as exc:  # noqa: BLE001

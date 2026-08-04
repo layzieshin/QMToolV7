@@ -26,11 +26,12 @@ from .user_tag_service import UserTagService
 
 
 def register_training_ports(container) -> None:
+    from qm_platform.persistence.path_resolver import resolve_bootstrap_absolute_path
+
     settings_service = container.get_port("settings_service")
     app_home = container.get_port("app_home")
-    cfg = settings_service.get_module_settings("training")
 
-    db_path = app_home / cfg.get("training_db_path", "storage/training/training.db")
+    db_path = resolve_bootstrap_absolute_path(app_home, "training", "training_db_path")
 
     # --- Repositories ---
     tag_repo = TrainingTagRepository(db_path)
@@ -41,8 +42,8 @@ def register_training_ports(container) -> None:
     report_repo = TrainingReportRepository(db_path)
 
     secure_store = EncryptedTrainingBlobStore(
-        root=app_home / cfg.get("quiz_blob_root", "storage/training/quiz_blobs"),
-        key_file=app_home / cfg.get("quiz_master_key_path", "storage/platform/training_quiz_master.key"),
+        root=resolve_bootstrap_absolute_path(app_home, "training", "quiz_blob_root"),
+        key_file=resolve_bootstrap_absolute_path(app_home, "training", "quiz_master_key_path"),
     )
 
     event_bus = container.get_port("event_bus")

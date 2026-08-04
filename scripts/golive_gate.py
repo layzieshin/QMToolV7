@@ -12,8 +12,6 @@ if str(ROOT) not in sys.path:
 
 from qm_platform.sdk.module_contract import SettingsContribution
 from qm_platform.settings.settings_registry import SettingsRegistry
-from qm_platform.settings.settings_service import SettingsService
-from qm_platform.settings.settings_store import SettingsStore
 from scripts.migration_gates_documents import evaluate_gates, evaluate_registry_drift
 from scripts.database_migration_gate import evaluate_database_migration_gate
 
@@ -25,21 +23,45 @@ def _has_text(path: Path, needle: str) -> bool:
 
 
 def _governance_guard_enforced() -> bool:
-    registry = SettingsRegistry()
-    registry.register(
-        SettingsContribution(
-            module_id="usermanagement",
-            schema_version=1,
-            schema={"type": "object"},
-            defaults={"seed_mode": "legacy_defaults"},
-            scope="module_global",
-            migrations=[],
-        )
+    from datetime import datetime, timezone
+
+    from modules.usermanagement.contracts import issue_user_context
+    from qm_platform.settings.testing import build_settings_service_for_tests
+
+    contribution = SettingsContribution(
+        module_id="usermanagement",
+        schema_version=1,
+        schema={
+            "type": "object",
+            "properties": {
+                "seed_mode": {"type": "string"},
+                "dev_mode": {"type": "boolean"},
+            },
+            "required": ["seed_mode", "dev_mode"],
+            "additionalProperties": False,
+        },
+        defaults={"seed_mode": "legacy_defaults", "dev_mode": False},
+        scope="module_global",
+        migrations=[],
     )
     with tempfile.TemporaryDirectory() as tmp:
-        service = SettingsService(registry=registry, store=SettingsStore(Path(tmp) / "settings.json"))
+        service = build_settings_service_for_tests(Path(tmp))
+        service.registry.register(contribution)
+        actor = issue_user_context(
+            user_id="u1",
+            session_id="s1",
+            request_id="r1",
+            username="admin",
+            global_roles=["Admin"],
+            is_qmb=False,
+            authenticated_at=datetime.now(timezone.utc),
+        )
         try:
-            service.set_module_settings("usermanagement", {"seed_mode": "hardened"})
+            service.set_module_settings(
+                "usermanagement",
+                {"seed_mode": "hardened", "dev_mode": False},
+                actor=actor,
+            )
         except ValueError:
             return True
         return False

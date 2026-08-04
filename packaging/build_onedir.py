@@ -63,6 +63,14 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
         "modules/incident_management/migrations/0001_initial.sql",
         "modules/incident_management/migrations",
     ),
+    (
+        "qm_platform/persistence/migrations/0001_platform_settings.sql",
+        "qm_platform/persistence/migrations",
+    ),
+    (
+        "qm_platform/persistence/migrations/0002_platform_settings_integrity.sql",
+        "qm_platform/persistence/migrations",
+    ),
     ("interfaces/pyqt/shell/styles.qss", "interfaces/pyqt/shell"),
     ("qm_platform/licensing/keys/prod_ed25519_public.pem", "qm_platform/licensing/keys"),
 ]

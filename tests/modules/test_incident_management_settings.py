@@ -5,13 +5,18 @@ from datetime import UTC, datetime, timedelta
 
 from modules.incident_management.contracts import (
     ActionType,
+    CapaStatus,
     IncidentAssessmentInput,
     IncidentClassification,
     IncidentSubmission,
     ModuleInternalRole,
     ValidationError,
 )
-from tests.modules.incident_management_test_support import _FakeUser, build_incident_test_container, switch_incident_user
+from tests.modules.incident_management_test_support import (
+    _FakeUser,
+    build_incident_test_container,
+    switch_incident_user,
+)
 
 
 class IncidentManagementSettingsTest(unittest.TestCase):
@@ -24,21 +29,22 @@ class IncidentManagementSettingsTest(unittest.TestCase):
         self.assertNotIn("leadership_role_assignments", settings)
 
     def test_standard_deadlines_default_action_due_at(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("qmb", "QMB"))
-        api = container.get_port("incident_management_api")
-        api.set_module_settings(
-            {
-                "standard_deadlines": {
-                    "assessment_days": 5,
-                    "action_days": 30,
-                    "immediate_action_days": 3,
-                    "corrective_action_days": 14,
-                    "preventive_action_days": 21,
-                    "qmb_review_days": 5,
+        container, _ = build_incident_test_container(
+            user=_FakeUser("qmb", "QMB"),
+            residual_policy={
+                "incident_management": {
+                    "standard_deadlines": {
+                        "assessment_days": 5,
+                        "action_days": 30,
+                        "immediate_action_days": 3,
+                        "corrective_action_days": 14,
+                        "preventive_action_days": 21,
+                        "qmb_review_days": 5,
+                    }
                 }
             },
-            acknowledge_governance_change=True,
         )
+        api = container.get_port("incident_management_api")
         case = api.submit_incident(
             IncidentSubmission(
                 title="Deadline",
@@ -100,9 +106,11 @@ class IncidentManagementSettingsTest(unittest.TestCase):
         self.assertEqual(action.due_at, explicit)
 
     def test_effectiveness_delay_from_settings(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("qmb", "QMB"))
+        container, _ = build_incident_test_container(
+            user=_FakeUser("qmb", "QMB"),
+            residual_policy={"incident_management": {"effectiveness_delay": 10}},
+        )
         api = container.get_port("incident_management_api")
-        api.set_module_settings({"effectiveness_delay": 10}, acknowledge_governance_change=True)
         case = api.submit_incident(
             IncidentSubmission(
                 title="Eff",
@@ -135,12 +143,19 @@ class IncidentManagementSettingsTest(unittest.TestCase):
         self.assertLessEqual(delta, timedelta(days=10, hours=1))
 
     def test_report_templates_affect_report_result(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("qmb", "QMB"))
-        api = container.get_port("incident_management_api")
-        api.set_module_settings(
-            {"report_templates": {"case": "case_v2", "register": "default", "management_review": "default"}},
-            acknowledge_governance_change=True,
+        container, _ = build_incident_test_container(
+            user=_FakeUser("qmb", "QMB"),
+            residual_policy={
+                "incident_management": {
+                    "report_templates": {
+                        "case": "case_v2",
+                        "register": "default",
+                        "management_review": "default",
+                    }
+                }
+            },
         )
+        api = container.get_port("incident_management_api")
         case = api.submit_incident(
             IncidentSubmission(
                 title="Report",
@@ -153,11 +168,13 @@ class IncidentManagementSettingsTest(unittest.TestCase):
         self.assertEqual(report.report_template_id, "case_v2")
 
     def test_categories_validation_from_settings(self) -> None:
-        container, _ = build_incident_test_container(user=_FakeUser("u1", "User"))
+        container, _ = build_incident_test_container(
+            user=_FakeUser("u1", "User"),
+            residual_policy={
+                "incident_management": {"categories": ["Prozess", "Gerät"]}
+            },
+        )
         api = container.get_port("incident_management_api")
-        switch_incident_user(container, _FakeUser("admin", "Admin"))
-        api.set_module_settings({"categories": ["Prozess", "Gerät"]})
-        switch_incident_user(container, _FakeUser("u1", "User"))
         with self.assertRaises(ValidationError):
             api.submit_incident(
                 IncidentSubmission(
@@ -175,9 +192,6 @@ class IncidentManagementSettingsTest(unittest.TestCase):
         rows = api.list_module_roles(ModuleInternalRole.LEITUNG)
         self.assertEqual(assignment.role_name, ModuleInternalRole.LEITUNG)
         self.assertTrue(any(r.user_id == "lead-user" for r in rows))
-
-
-from modules.incident_management.contracts import CapaStatus  # noqa: E402
 
 
 if __name__ == "__main__":

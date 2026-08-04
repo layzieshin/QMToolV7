@@ -92,8 +92,16 @@ class ModuleSettingsWidget(QWidget):
             payload = json.loads(self._editor.toPlainText().strip() or "{}")
             if not isinstance(payload, dict):
                 raise RuntimeError("Einstellungs-Payload muss ein JSON-Objekt sein")
+            from interfaces.settings_actor import resolve_confirmed_settings_actor
+
+            actor = resolve_confirmed_settings_actor(
+                self._container, request_id="pyqt-module-settings"
+            )
             self._svc.set_module_settings(
-                module_id, payload, acknowledge_governance_change=self._ack.isChecked(),
+                module_id,
+                payload,
+                actor=actor,
+                acknowledge_governance_change=self._ack.isChecked(),
             )
             persisted = self._svc.get_module_settings(module_id)
             self._editor.setPlainText(json.dumps(persisted, indent=2, ensure_ascii=True))

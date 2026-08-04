@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from qm_platform.persistence.path_resolver import resolve_bootstrap_absolute_path
+
 from .service import UserManagementService
 from .password_policy import password_policy_from_mapping
 from .sqlite_repository import SQLiteUserRepository
@@ -13,9 +15,7 @@ def register_usermanagement_ports(container) -> None:
     app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
     settings_service = container.get_port("settings_service")
     user_settings = settings_service.get_module_settings("usermanagement")
-    users_db_path = Path(user_settings.get("users_db_path", "storage/platform/users.db"))
-    if not users_db_path.is_absolute():
-        users_db_path = app_home / users_db_path
+    users_db_path = resolve_bootstrap_absolute_path(app_home, "usermanagement", "users_db_path")
     repository = SQLiteUserRepository(
         db_path=users_db_path,
     )
@@ -44,4 +44,3 @@ def register_usermanagement_ports(container) -> None:
             password_policy=password_policy,
         ),
     )
-

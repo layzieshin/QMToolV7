@@ -46,6 +46,10 @@ ALLOWED_JSON_COLUMNS: frozenset[str] = frozenset(
         "training_quiz_attempts.answers_json",  # J39
         "training_comments.anchor_json",  # J40
         "training_audit_log.details_json",  # J41
+        # J02 TARGET platform settings typed JSON cells (module_global only)
+        "platform_settings.value_json",
+        "platform_setting_revisions.old_value_json",
+        "platform_setting_revisions.new_value_json",
     }
 )
 
@@ -59,7 +63,6 @@ LEGACY_UNVERSIONED_SNAPSHOT_COLUMNS: frozenset[str] = frozenset(
 # Exact storage/*.json(l) path literals allowed in production sources (J04–J12)
 ALLOWED_STORAGE_WRITE_PATHS: frozenset[str] = frozenset(
     {
-        "storage/platform/settings.json",  # J04–J06
         "storage/platform/session/current_user.json",  # J07
         "storage/platform/database-migration-journal.json",  # J08
         "storage/platform/backups/logs/_state.json",  # J10
@@ -70,6 +73,22 @@ ALLOWED_STORAGE_WRITE_PATHS: frozenset[str] = frozenset(
 # Not a storage/** wildcard: only these production files may write this basename.
 ALLOWED_STORAGE_BASENAME_WRITES_BY_FILE: dict[str, frozenset[str]] = {
     "qm_platform/persistence/database_evolution.py": frozenset({"manifest.json"}),
+}
+
+# Exact storage path literals allowed only in named cutover/import owners (read + archive).
+ALLOWED_STORAGE_EXACT_PATHS_BY_FILE: dict[str, frozenset[str]] = {
+    "qm_platform/settings/settings_cutover.py": frozenset(
+        {
+            "storage/platform/settings.json",
+            "storage/platform/settings_cutover_journal.json",
+        }
+    ),
+    "qm_platform/settings/residual_store.py": frozenset(
+        {
+            "storage/platform/settings_residual_archive/settings.json",
+            "storage/platform/settings_residual_archive/settings.json.sha256",
+        }
+    ),
 }
 
 DOMAIN_SCAN_ROOTS = ("modules/", "qm_platform/", "license/")
@@ -727,6 +746,8 @@ def _check_storage_writes(
         for target, kind in writes:
             if kind == "exact":
                 if target in ALLOWED_STORAGE_WRITE_PATHS:
+                    continue
+                if target in ALLOWED_STORAGE_EXACT_PATHS_BY_FILE.get(path, frozenset()):
                     continue
                 state.findings.append(
                     Finding(

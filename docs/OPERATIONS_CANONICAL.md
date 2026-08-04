@@ -30,7 +30,7 @@ This is the single operational starting point for daily work, release checks, an
 
 ## Release Gate Checklist (Blocking)
 
-- Database status reports all six databases as `current` with integrity `ok`.
+- Database status reports all seven databases as `current` with integrity `ok`.
 - `scripts/database_migration_gate.py` is green and its JSON evidence is attached.
 - Pre/post migration data-quality report attached.
 - No increase in `doc_type=OTHER`.

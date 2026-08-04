@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from qm_platform.persistence.path_resolver import resolve_bootstrap_absolute_path
+
 from .api import RegistryApi
 from .projection_api import RegistryProjectionApi
 from .service import RegistryService
@@ -11,13 +13,8 @@ from .sqlite_repository import SQLiteRegistryRepository
 
 def register_registry_ports(container) -> None:
     app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
-    settings_service = container.get_port("settings_service")
-    cfg = settings_service.get_module_settings("registry")
-    db_path = Path(cfg.get("registry_db_path", "storage/documents/registry.db"))
-    if not db_path.is_absolute():
-        db_path = app_home / db_path
     repository = SQLiteRegistryRepository(
-        db_path=db_path,
+        db_path=resolve_bootstrap_absolute_path(app_home, "registry", "registry_db_path"),
     )
     service = RegistryService(repository)
     container.register_port("registry_service", service)
@@ -30,4 +27,3 @@ def register_registry_ports(container) -> None:
             logger=container.get_port("logger"),
         ),
     )
-

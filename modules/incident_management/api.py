@@ -193,8 +193,21 @@ class IncidentManagementApi:
     def get_module_settings(self) -> dict:
         return self._service.get_module_settings()
 
-    def set_module_settings(self, values: dict, *, acknowledge_governance_change: bool = False) -> dict:
+    def set_module_settings(
+        self,
+        values: dict,
+        *,
+        actor: object,
+        acknowledge_governance_change: bool = False,
+    ) -> dict:
+        """Persist module settings (J02 contract change).
+
+        ``actor`` is required: a confirmed ``UserContext`` from ``issue_user_context`` /
+        ``resolve_session``, or an explicit system/migration actor string. Bucket-C keys
+        remain read-only via the settings service.
+        """
         return self._service.set_module_settings(
             values,
+            actor=actor,
             acknowledge_governance_change=acknowledge_governance_change,
         )

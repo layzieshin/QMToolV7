@@ -16,7 +16,6 @@ from ..persistence.database_evolution import (
     DatabaseSpec,
     MigrationStep,
 )
-from ..runtime.paths import resolve_home_path
 from ..sdk.module_contract import ModuleContract
 from ..settings.settings_service import SettingsService
 from .container import RuntimeContainer
@@ -70,39 +69,41 @@ def core_database_specs(
     container: RuntimeContainer,
     lifecycle: LifecycleManager,
 ) -> tuple[DatabaseSpec, ...]:
+    """Build all AP-027 specs from bootstrap path resolution — never SettingsService."""
+    from qm_platform.persistence.path_resolver import resolve_database_absolute_path
+    from qm_platform.persistence.platform_settings_contribution import (
+        PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
+    )
+
     app_home = Path(container.get_port("app_home"))
-    settings: SettingsService = container.get_port("settings_service")
-    specs: list[DatabaseSpec] = []
+    contributions = []
     for contract in lifecycle.contracts():
-        module_settings = settings.get_module_settings(contract.module_id)
-        for contribution in contract.database_contributions:
-            raw_path = str(
-                module_settings.get(
-                    contribution.setting_key,
-                    contribution.default_path,
-                )
+        contributions.extend(contract.database_contributions)
+    contributions.append(PLATFORM_SETTINGS_DATABASE_CONTRIBUTION)
+
+    specs: list[DatabaseSpec] = []
+    for contribution in contributions:
+        specs.append(
+            DatabaseSpec(
+                database_id=contribution.database_id,
+                path=resolve_database_absolute_path(app_home, contribution),
+                migrations=tuple(
+                    MigrationStep(
+                        version=migration.version,
+                        name=migration.name,
+                        sql_path=migration.sql_path,
+                    )
+                    for migration in contribution.migrations
+                ),
+                validation_queries=tuple(
+                    DataValidationQuery(
+                        name=query.name,
+                        sql=query.sql,
+                    )
+                    for query in contribution.validation_queries
+                ),
             )
-            specs.append(
-                DatabaseSpec(
-                    database_id=contribution.database_id,
-                    path=resolve_home_path(app_home, raw_path),
-                    migrations=tuple(
-                        MigrationStep(
-                            version=migration.version,
-                            name=migration.name,
-                            sql_path=migration.sql_path,
-                        )
-                        for migration in contribution.migrations
-                    ),
-                    validation_queries=tuple(
-                        DataValidationQuery(
-                            name=query.name,
-                            sql=query.sql,
-                        )
-                        for query in contribution.validation_queries
-                    ),
-                )
-            )
+        )
     return tuple(sorted(specs, key=lambda spec: spec.database_id))
 
 
@@ -124,5 +125,12 @@ def activate_core_modules(
 ) -> None:
     service, specs = configure_database_evolution(container, lifecycle)
     service.migrate(specs, reason="runtime_preflight")
+    from qm_platform.settings.persistence_bootstrap import (
+        attach_settings_persistence,
+        refresh_backup_reminder_from_settings,
+    )
+
+    attach_settings_persistence(container)
+    refresh_backup_reminder_from_settings(container)
     lifecycle.wire_all()
 

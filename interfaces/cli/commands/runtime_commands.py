@@ -6,8 +6,15 @@ from pathlib import Path
 from getpass import getpass
 
 from qm_platform.licensing.license_status import build_license_diagnostics
+from qm_platform.persistence.path_resolver import (
+    bootstrap_path_env_key,
+    resolve_bootstrap_absolute_path,
+    resolve_platform_settings_db_path,
+)
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.runtime.paths import path_writable, resolve_home_path, runtime_home
+from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR
+from qm_platform.settings.residual_store import RESIDUAL_ARCHIVE_REL
 from qm_platform.settings.settings_service import SettingsService
 
 from interfaces.cli.bootstrap import build_container
@@ -35,6 +42,10 @@ def _resolve_runtime_paths(app_home: Path) -> dict[str, str]:
         "logs_dir": "storage/platform/logs",
         "license_file": "license/license.json",
     }
+
+
+def _set_bootstrap_path_env(module_id: str, setting_key: str, value: str) -> None:
+    os.environ[bootstrap_path_env_key(module_id, setting_key)] = value
 
 
 def _seed_admin_credentials(container, username: str, password: str) -> None:
@@ -79,22 +90,20 @@ def cmd_init(args) -> int:
 
         container = build_container()
         lifecycle = runtime_bootstrap.prepare_core_modules(container)
-        settings_service: SettingsService = container.get_port("settings_service")
-        user_cfg = settings_service.get_module_settings("usermanagement")
-        user_cfg["users_db_path"] = users_db_path
-        user_cfg["seed_mode"] = "hardened"
-        settings_service.set_module_settings("usermanagement", user_cfg, acknowledge_governance_change=True)
-
-        docs_cfg = settings_service.get_module_settings("documents")
-        docs_cfg["documents_db_path"] = documents_db_path
-        docs_cfg["artifacts_root"] = artifacts_root
-        settings_service.set_module_settings("documents", docs_cfg, acknowledge_governance_change=True)
-
-        reg_cfg = settings_service.get_module_settings("registry")
-        reg_cfg["registry_db_path"] = registry_db_path
-        settings_service.set_module_settings("registry", reg_cfg, acknowledge_governance_change=True)
+        _set_bootstrap_path_env("usermanagement", "users_db_path", users_db_path)
+        _set_bootstrap_path_env("documents", "documents_db_path", documents_db_path)
+        _set_bootstrap_path_env("documents", "artifacts_root", artifacts_root)
+        _set_bootstrap_path_env("registry", "registry_db_path", registry_db_path)
 
         runtime_bootstrap.activate_core_modules(container, lifecycle)
+        settings_service: SettingsService = container.get_port("settings_service")
+        settings_service.set_module_settings(
+            "usermanagement",
+            {"seed_mode": "hardened", "dev_mode": False},
+            actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,
+            acknowledge_governance_change=True,
+            reason="cli_init",
+        )
         lifecycle.start()
         _seed_admin_credentials(container, admin_username, admin_password)
         print(
@@ -128,6 +137,14 @@ def cmd_doctor(*, strict: bool = False) -> int:
         container,
         lifecycle,
     )
+    from qm_platform.settings.persistence_bootstrap import attach_settings_persistence
+
+    try:
+        database_service.migrate(database_specs, reason="doctor")
+        attach_settings_persistence(container)
+    except Exception as exc:  # noqa: BLE001
+        print(f"BLOCKED: {exc}")
+        return 8
     database_statuses = database_service.statuses(database_specs)
     databases_current = all(status.ok for status in database_statuses)
     if databases_current:
@@ -141,22 +158,28 @@ def cmd_doctor(*, strict: bool = False) -> int:
         else None
     )
     user_cfg = settings_service.get_module_settings("usermanagement")
-    docs_cfg = settings_service.get_module_settings("documents")
-    reg_cfg = settings_service.get_module_settings("registry")
     checks = {}
     checks["database:no_interrupted_migration"] = (
         not database_service.has_interrupted_migration
     )
     paths = {
-        "users_db": resolve_home_path(app_home, user_cfg.get("users_db_path", "storage/platform/users.db")),
-        "documents_db": resolve_home_path(app_home, docs_cfg.get("documents_db_path", "storage/documents/documents.db")),
-        "artifacts_root": resolve_home_path(app_home, docs_cfg.get("artifacts_root", "storage/documents/artifacts")),
-        "registry_db": resolve_home_path(app_home, reg_cfg.get("registry_db_path", "storage/documents/registry.db")),
-        "settings_file": resolve_home_path(app_home, "storage/platform/settings.json"),
+        "users_db": resolve_bootstrap_absolute_path(app_home, "usermanagement", "users_db_path"),
+        "documents_db": resolve_bootstrap_absolute_path(app_home, "documents", "documents_db_path"),
+        "artifacts_root": resolve_bootstrap_absolute_path(app_home, "documents", "artifacts_root"),
+        "registry_db": resolve_bootstrap_absolute_path(app_home, "registry", "registry_db_path"),
+        "platform_settings_db": resolve_platform_settings_db_path(app_home),
+        "settings_residual_archive": resolve_home_path(app_home, RESIDUAL_ARCHIVE_REL),
         "license_file": resolve_home_path(app_home, "license/license.json"),
     }
     for key, path in paths.items():
-        checks[f"path:{key}:exists_or_parent"] = bool(path.exists() or path.parent.exists())
+        if key == "settings_residual_archive":
+            # Optional until legacy cutover; require only that storage/platform exists.
+            platform_root = resolve_home_path(app_home, "storage/platform")
+            checks[f"path:{key}:exists_or_parent"] = bool(
+                path.exists() or path.parent.exists() or platform_root.exists()
+            )
+        else:
+            checks[f"path:{key}:exists_or_parent"] = bool(path.exists() or path.parent.exists())
         checks[f"path:{key}:writable"] = path_writable(path)
     checks["license:readable"] = paths["license_file"].exists()
     license_service = container.get_port("license_service")
