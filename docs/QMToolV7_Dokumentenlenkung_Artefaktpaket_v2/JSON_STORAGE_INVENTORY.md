@@ -68,6 +68,7 @@ Kategorien:
 | J41 | `training_audit_log.details_json` | Training | Aktionsspezifische Auditdetails | Reports/Admin | Training-Services append-only | D | fachlicher Nachweis | unveraenderlich | ja | selten | Actor/Fachobjekt | Eventtyp nicht schema-versioniert; relevante IDs nur im Blob moeglich | **JSON-Spalte innerhalb der DB** in autoritativem Auditdatensatz | Kernbezugsspalten ergaenzen; Payload pro Action versionieren; Training-Fachpaket abwarten. |
 | J42 | Settings-/Workflowprofil-Editoren und CLI-Argumente mit JSON-Text | Interfaces | Transportdarstellung fuer Settings, Custom Fields und Antworten | CLI/PyQt | Benutzer, Adapter | G | Austauschformat | nicht selbst persistent | nein | nein | jeweilige API | Rohes JSON in UI beguenstigt untypisierte Eingaben; Persistenzrisiko liegt beim Owner | **JSON als Austauschformat beibehalten**, wo eine strukturierte UI noch fehlt | Adapter duerfen nur oeffentliche APIs aufrufen; nach relationaler Migration typisierte Commands/Controls bevorzugen. |
 | J43 | `.vscode/extensions.json`, `.vscode/settings.json` | Entwicklungsumgebung | Editor-Empfehlung, lokaler Interpreter und IDE-Startverhalten | VS Code | Entwickler/IDE | A | technisch | mutable durch Entwickler | nein | nein | lokaler Workspace | Nicht produktiv; kann persoenliche IDE-Praeferenzen mit Projektregeln vermischen | **JSON-Datei beibehalten** als optionale Entwicklungsumgebung, nicht als Runtime-Konfiguration | Keine Migration; aus Produkt-/Packagingpfaden ausgeschlossen halten. |
+| J44 | `workflow_profile_imports.report_json` | Documents | Technischer Import-/Evidenzreport je Seed- oder Legacy-Importlauf (Profilzeilen, Hashes, Klassifikation, Blockgruende) | Profilstore/Admin-Diagnose | Bootstrap-/Upgrade-Import (`WorkflowProfileRelationalStore.import_seed`) | F | technisch | nach Importlauf unveraenderlich (Importzeile append-only) | ja | selten | Importlauf, Quelldatei, Profilcodes | Flexibles Report-JSON ohne Schema-Versionsfeld; kein fachlicher Zustand | **JSON-Spalte innerhalb der DB** als technische Evidenz neben relationalen Importmetadaten | Keine Normalisierung noetig; Allowlist und Gate absichern; Inhalt bleibt Nachweis, nicht Runtime-Wahrheit fuer Profile. |
 
 ## Nicht als eigene JSON-Persistenz bewertet
 
@@ -134,7 +135,7 @@ Get-ChildItem -Recurse -Include *.json,*.jsonl -File |
 |---|---|
 | J43 | `.vscode/*.json` sind in `.gitignore` und im Clean-Tree abwesend; optionaler IDE-Pfad, keine Runtime |
 
-Alle uebrigen aktiven Fundstellen der Suche sind den Inventar-IDs **J01–J43** oder einer dokumentierten Abgrenzung zugeordnet. J00 bleibt damit nicht blockiert.
+Alle uebrigen aktiven Fundstellen der Suche sind den Inventar-IDs **J01–J44** oder einer dokumentierten Abgrenzung zugeordnet. J00 bleibt damit nicht blockiert.
 
 Offene Zielentscheidungen in der Matrix verweisen explizit auf `JSON_STORAGE_OPEN_QUESTIONS.md`: J29/J31 → OQ-02, J39 → OQ-07.
 

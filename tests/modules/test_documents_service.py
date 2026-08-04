@@ -14,6 +14,9 @@ from modules.documents.contracts import (
 )
 from modules.documents.errors import InvalidTransitionError, PermissionDeniedError, SignatureTransitionError, ValidationError
 from modules.documents.service import DocumentsService
+from tests.database_helpers import make_documents_service_with_profiles
+from pathlib import Path
+import tempfile
 from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
 from modules.documents.storage import FileSystemDocumentsStorage
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
@@ -36,7 +39,7 @@ class _NoOutputSignatureApi:
 class DocumentsServiceTest(unittest.TestCase):
     def test_long_release_profile_enforces_four_eyes(self) -> None:
         signature_api = _FakeSignatureApi()
-        service = DocumentsService(signature_api=signature_api)
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=signature_api)[0]
         state = service.create_document_version("DOC-1", 1)
         state = service.assign_workflow_roles(
             state,
@@ -56,33 +59,87 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(len(signature_api.calls), 3)
 
     def test_custom_profile_can_disable_four_eyes(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
-        state = service.create_document_version("DOC-2", 1)
+        from datetime import datetime, timezone
+
+        from modules.documents.contracts import DocumentType
+        from modules.usermanagement.contracts import issue_user_context
+
+        service = make_documents_service_with_profiles(
+            Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db",
+            signature_api=_FakeSignatureApi(),
+        )[0]
+        qmb = issue_user_context(
+            user_id="qmb-id",
+            session_id="qmb-session",
+            request_id="qmb-request",
+            username="qmb",
+            global_roles=("QMB",),
+            is_qmb=True,
+            authenticated_at=datetime.now(timezone.utc),
+        )
+        service.create_workflow_profile_definition(
+            {
+                "profile_code": "custom_fast",
+                "label": "Custom Fast Path",
+                "control_class": "CONTROLLED",
+                "requires_editors": True,
+                "requires_reviewers": True,
+                "requires_approvers": True,
+                "allows_content_changes": True,
+                "release_evidence_mode": "WORKFLOW",
+                "transitions": [
+                    {
+                        "transition_no": 1,
+                        "from_status": "DRAFT",
+                        "to_status": "IN_REVIEW",
+                        "required_role": "EDITOR",
+                        "decision_policy": "ONE_OF_POOL",
+                        "signature_required": False,
+                        "four_eyes_required": False,
+                    },
+                    {
+                        "transition_no": 2,
+                        "from_status": "IN_REVIEW",
+                        "to_status": "IN_APPROVAL",
+                        "required_role": "REVIEWER",
+                        "decision_policy": "ONE_OF_POOL",
+                        "signature_required": False,
+                        "four_eyes_required": False,
+                    },
+                    {
+                        "transition_no": 3,
+                        "from_status": "IN_APPROVAL",
+                        "to_status": "APPROVED",
+                        "required_role": "APPROVER",
+                        "decision_policy": "ONE_OF_POOL",
+                        "signature_required": False,
+                        "four_eyes_required": False,
+                    },
+                ],
+            },
+            actor=qmb,
+            change_reason="custom four-eyes off",
+        )
+        state = service.create_document_version(
+            "DOC-2",
+            1,
+            doc_type=DocumentType.OTHER,
+            workflow_profile_id="custom_fast",
+        )
         state = service.assign_workflow_roles(
             state,
             editors={"editor-1"},
             reviewers={"alice"},
             approvers={"alice"},
         )
-        profile = WorkflowProfile(
-            profile_id="custom_fast",
-            label="Custom Fast Path",
-            phases=(
-                DocumentStatus.IN_PROGRESS,
-                DocumentStatus.IN_REVIEW,
-                DocumentStatus.IN_APPROVAL,
-                DocumentStatus.APPROVED,
-            ),
-            four_eyes_required=False,
-        )
-        state = service.start_workflow(state, profile)
+        state = service.start_workflow(state)
         state = service.complete_editing(state)
         state = service.accept_review(state, "alice")
         state = service.accept_approval(state, "alice")
         self.assertEqual(state.status, DocumentStatus.APPROVED)
 
     def test_reject_requires_text_or_template(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-3", 1)
         state = service.assign_workflow_roles(
             state,
@@ -102,7 +159,7 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(state.status, DocumentStatus.IN_PROGRESS)
 
     def test_archive_approved_requires_qmb_or_admin(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-4", 1)
         state = service.assign_workflow_roles(
             state,
@@ -122,7 +179,7 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(state.valid_until, state.archived_at)
 
     def test_annual_extension_limited_to_three_per_version(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-5", 1)
         state = service.assign_workflow_roles(
             state,
@@ -176,7 +233,7 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(state_after_limit.extension_count, 3)
 
     def test_pool_query_lists_documents_by_status(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         planned = service.create_document_version("DOC-PLAN", 1)
         approved = service.create_document_version("DOC-APP", 1)
         approved = service.assign_workflow_roles(
@@ -196,7 +253,7 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual([(d.document_id, d.version) for d in approved_entries], [("DOC-APP", 1)])
 
     def test_signature_required_transition_fails_without_request(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-SIG", 1)
         state = service.assign_workflow_roles(
             state,
@@ -210,7 +267,7 @@ class DocumentsServiceTest(unittest.TestCase):
 
     def test_review_accept_requires_signature_for_long_release(self) -> None:
         """accept_review ohne sign_request muss für long_release fehlschlagen."""
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-SIG2", 1)
         state = service.assign_workflow_roles(
             state,
@@ -224,13 +281,13 @@ class DocumentsServiceTest(unittest.TestCase):
             service.accept_review(state, "rev-1")  # kein sign_request → ValidationError
 
     def test_workflow_start_requires_all_role_sets(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-ROLE", 1)
         with self.assertRaises(ValidationError):
             service.start_workflow(state, WorkflowProfile.long_release_path())
 
     def test_owner_cannot_change_roles_after_first_edit_signature(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-OWNER", 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(
             state,
@@ -263,7 +320,7 @@ class DocumentsServiceTest(unittest.TestCase):
             )
 
     def test_qmb_can_only_change_roles_of_open_phases(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-QMB", 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(
             state,
@@ -294,7 +351,7 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(updated.assignments.approvers, frozenset({"approver-2"}))
 
     def test_add_change_request_persists_structured_entry(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-CR", 1, owner_user_id="owner-1")
         state = service.add_change_request(
             state,
@@ -310,7 +367,24 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(requests[0]["impact_refs"], ["AA-210", "VA-100"])
 
     def test_training_read_flow_uses_version_lookup_without_attribute_error(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        root = Path(tempfile.mkdtemp(prefix="qmtool-docs-t-"))
+        storage = FileSystemDocumentsStorage(root / "artifacts")
+
+        class _WritingSignatureApi:
+            def sign_with_fixed_position(self, request: object) -> object:
+                output_pdf = getattr(request, "output_pdf", None)
+                if isinstance(output_pdf, Path):
+                    output_pdf.parent.mkdir(parents=True, exist_ok=True)
+                    output_pdf.write_bytes(b"%PDF-1.4\n%signed\n")
+                return request
+
+        service = make_documents_service_with_profiles(
+            root / "documents.db",
+            signature_api=_WritingSignatureApi(),
+            storage_port=storage,
+        )[0]
+        pdf = root / "source.pdf"
+        pdf.write_bytes(b"%PDF-1.4\nsource\n")
         state = service.create_document_version("DOC-READ", 1)
         state = service.assign_workflow_roles(
             state,
@@ -319,9 +393,25 @@ class DocumentsServiceTest(unittest.TestCase):
             approvers={"app-1"},
         )
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
-        state = service.complete_editing(state, sign_request={"step": "edit_complete"})
-        state = service.accept_review(state, "rev-1", sign_request={"step": "review_accept"})
-        state = service.accept_approval(state, "app-1", sign_request={"step": "approve"})
+
+        def _sign(step: str) -> SignRequest:
+            return SignRequest(
+                input_pdf=pdf,
+                output_pdf=root / f"{step}.pdf",
+                signature_png=None,
+                placement=SignaturePlacementInput(page_index=0, x=10.0, y=10.0, target_width=100.0),
+                layout=LabelLayoutInput(show_signature=False, show_name=True, show_date=True),
+                overwrite_output=True,
+                dry_run=False,
+                sign_mode="visual",
+                signer_user="editor-1",
+                password="pw",
+                reason=step,
+            )
+
+        state = service.complete_editing(state, sign_request=_sign("edit"))
+        state = service.accept_review(state, "rev-1", sign_request=_sign("review"))
+        state = service.accept_approval(state, "app-1", sign_request=_sign("approve"))
 
         session = service.open_released_document_for_training("user-1", "DOC-READ", 1)
         receipt = service.confirm_released_document_read("user-1", "DOC-READ", 1, source="test")
@@ -330,7 +420,7 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(receipt.document_id, "DOC-READ")
 
     def test_annual_extension_keeps_release_date_and_tracks_actor(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-EXT-ACTOR", 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(
             state,
@@ -361,7 +451,7 @@ class DocumentsServiceTest(unittest.TestCase):
         self.assertEqual(state.last_extended_by, "qmb-1")
 
     def test_extension_blocks_new_version_required_outcome(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-EXT-BLOCK", 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
@@ -379,7 +469,7 @@ class DocumentsServiceTest(unittest.TestCase):
             )
 
     def test_metadata_update_blocks_approved_validity_date_changes(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-APP-META", 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
         state = service.start_workflow(state, WorkflowProfile.long_release_path())
@@ -399,7 +489,7 @@ class DocumentsServiceTest(unittest.TestCase):
             root = Path(tmp)
             repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             storage = FileSystemDocumentsStorage(root / "artifacts")
-            service = DocumentsService(repository=repo, storage_port=storage, signature_api=_NoOutputSignatureApi())
+            service = make_documents_service_with_profiles(root / "documents.db", storage_port=storage, signature_api=_NoOutputSignatureApi())[0]
             state = service.create_document_version("DOC-NO-SIGNED", 1)
             state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
             state = service.start_workflow(state, WorkflowProfile.long_release_path())

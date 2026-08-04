@@ -229,9 +229,10 @@ class DocumentsWorkflowActionsMixin:
             user, role = self._current_user_role()
             state = self._state_from_selection()
             users = self._um.list_users()
+            # Profile is bound at document creation; wizard collects assignments only.
             wizard = WorkflowStartWizard(
-                self._profile.text().strip() or state.workflow_profile_id,
-                profile_ids=self._available_profiles_for_control_class(state.control_class),
+                state.workflow_profile_id,
+                profile_ids=[state.workflow_profile_id] if state.workflow_profile_id else None,
                 available_user_ids=[u.user_id for u in users],
                 current_editors=set(state.assignments.editors),
                 current_reviewers=set(state.assignments.reviewers),
@@ -241,7 +242,6 @@ class DocumentsWorkflowActionsMixin:
             if wizard.exec() != QDialog.DialogCode.Accepted:
                 return
             cfg = wizard.payload()
-            profile = self._wf.get_profile(cfg.profile_id)
             desired_editors = cfg.editors if cfg.editors else set(state.assignments.editors)
             desired_reviewers = cfg.reviewers if cfg.reviewers else set(state.assignments.reviewers)
             desired_approvers = cfg.approvers if cfg.approvers else set(state.assignments.approvers)
@@ -259,7 +259,11 @@ class DocumentsWorkflowActionsMixin:
                     actor_role=role,
                 )
                 self._append("ROLLEN_GESPEICHERT", state)
-            payload = self._wf.start_workflow(state, profile, actor_user_id=user.user_id, actor_role=role)
+            payload = self._wf.start_workflow(
+                state,
+                actor_user_id=user.user_id,
+                actor_role=role,
+            )
             self._append("WORKFLOW_GESTARTET", payload)
             self._reload_table()
         except Exception as exc:  # noqa: BLE001

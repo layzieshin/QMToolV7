@@ -184,7 +184,6 @@ class DocumentsWorkflowWidget(
             on_refresh=self._reload_table,
             on_advanced_filter=self._open_advanced_filter,
             on_apply_filter=self._reload_table,
-            on_profile_manager=self._open_workflow_profile_manager,
         )
         self._workflow_actions = build_workflow_action_bar(
             on_new=self._new_import,

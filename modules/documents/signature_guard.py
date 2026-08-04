@@ -104,7 +104,7 @@ def _resolve_signature_input_pdf(
     transition_key = transition.strip().upper()
     if transition_key in {"IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED"}:
         priority = [ArtifactType.SIGNED_PDF]
-    elif transition_key == "IN_PROGRESS->IN_REVIEW":
+    elif transition_key in {"IN_PROGRESS->IN_REVIEW", "IN_PROGRESS->IN_APPROVAL", "IN_PROGRESS->APPROVED"}:
         priority = [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF]
     else:
         priority = [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF, ArtifactType.RELEASED_PDF]

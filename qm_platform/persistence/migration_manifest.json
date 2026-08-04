@@ -5,6 +5,12 @@
       "name": "initial",
       "path": "modules/documents/migrations/0001_initial.sql",
       "sha256": "29c1844d7f49ef8218fe549ec8fb842d5b9f50485da5615aa25c33339c426286"
+    },
+    {
+      "version": 2,
+      "name": "workflow_profiles",
+      "path": "modules/documents/migrations/0002_workflow_profiles.sql",
+      "sha256": "dd5f189604c4ad2aa74b228bfe6b08357f9f423d0b96ae7cd34297d05085ec8a"
     }
   ],
   "incidents": [

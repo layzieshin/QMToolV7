@@ -41,6 +41,7 @@ class WorkflowStartWizard(QDialog):
         if current_profile and self._profile.findText(current_profile) < 0:
             self._profile.addItem(current_profile)
         self._profile.setCurrentText(current_profile or "long_release")
+        self._profile.setEnabled(False)
         self._four_eyes = QCheckBox("4-Augen-Prinzip aktiv")
         self._editors = CheckableMultiSelectCombo()
         self._reviewers = CheckableMultiSelectCombo()

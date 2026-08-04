@@ -12,9 +12,12 @@ from pathlib import Path
 
 class MigrationGatesDocumentsScriptTest(unittest.TestCase):
     def _prepare_db(self, db_path: Path) -> None:
-        schema = Path("modules/documents/migrations/0001_initial.sql").read_text(encoding="utf-8")
         with closing(sqlite3.connect(db_path)) as conn:
-            conn.executescript(schema)
+            for migration in (
+                Path("modules/documents/migrations/0001_initial.sql"),
+                Path("modules/documents/migrations/0002_workflow_profiles.sql"),
+            ):
+                conn.executescript(migration.read_text(encoding="utf-8"))
             conn.commit()
 
     def _prepare_registry_db(self, db_path: Path) -> None:
@@ -34,8 +37,6 @@ class MigrationGatesDocumentsScriptTest(unittest.TestCase):
             "scripts/migration_gates_documents.py",
             "--documents-db-path",
             str(db_path),
-            "--profiles-path",
-            "modules/documents/workflow_profiles.json",
         ]
         if registry_db_path is not None:
             cmd.extend(["--registry-db-path", str(registry_db_path)])
@@ -48,6 +49,24 @@ class MigrationGatesDocumentsScriptTest(unittest.TestCase):
             db_path = Path(tmp) / "documents.db"
             self._prepare_db(db_path)
             with closing(sqlite3.connect(db_path)) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO workflow_profile_definitions (
+                        profile_code, label, control_class, is_active, active_version,
+                        created_at, created_by, updated_at, updated_by
+                    ) VALUES ('long_release', 'Long release path', 'CONTROLLED', 1, 1, datetime('now'), 'seed', datetime('now'), 'seed')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO workflow_profile_versions (
+                        profile_version_id, profile_code, version_no, source_kind, change_reason, definition_hash,
+                        effective_from, release_evidence_mode, four_eyes_required, requires_editors,
+                        requires_reviewers, requires_approvers, allows_content_changes,
+                        created_at, created_by
+                    ) VALUES ('pv-long-release-1', 'long_release', 1, 'SEED', 'seed', 'h', datetime('now'), 'WORKFLOW', 1, 1, 1, 1, 1, datetime('now'), 'seed')
+                    """
+                )
                 conn.execute(
                     """
                     INSERT INTO document_headers (
@@ -115,6 +134,14 @@ class MigrationGatesDocumentsScriptTest(unittest.TestCase):
             with closing(sqlite3.connect(db_path)) as conn:
                 conn.execute(
                     """
+                    INSERT INTO workflow_profile_definitions (
+                        profile_code, label, control_class, is_active, active_version,
+                        created_at, created_by, updated_at, updated_by
+                    ) VALUES ('long_release', 'Long release path', 'CONTROLLED', 1, 1, datetime('now'), 'seed', datetime('now'), 'seed')
+                    """
+                )
+                conn.execute(
+                    """
                     INSERT INTO document_headers (
                         document_id, doc_type, control_class, workflow_profile_id, register_binding, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
@@ -135,6 +162,24 @@ class MigrationGatesDocumentsScriptTest(unittest.TestCase):
             self._prepare_db(docs_db)
             self._prepare_registry_db(reg_db)
             with closing(sqlite3.connect(docs_db)) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO workflow_profile_definitions (
+                        profile_code, label, control_class, is_active, active_version,
+                        created_at, created_by, updated_at, updated_by
+                    ) VALUES ('long_release', 'Long release path', 'CONTROLLED', 1, 1, datetime('now'), 'seed', datetime('now'), 'seed')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO workflow_profile_versions (
+                        profile_version_id, profile_code, version_no, source_kind, change_reason, definition_hash,
+                        effective_from, release_evidence_mode, four_eyes_required, requires_editors,
+                        requires_reviewers, requires_approvers, allows_content_changes,
+                        created_at, created_by
+                    ) VALUES ('pv-long-release-1', 'long_release', 1, 'SEED', 'seed', 'h', datetime('now'), 'WORKFLOW', 1, 1, 1, 1, 1, datetime('now'), 'seed')
+                    """
+                )
                 conn.execute(
                     """
                     INSERT INTO document_headers (

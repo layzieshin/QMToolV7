@@ -13,7 +13,6 @@ from .contracts import (
 )
 from .service import DocumentsService
 from .sqlite_repository import SQLiteDocumentsRepository
-from .profile_store import WorkflowProfileStoreJSON
 
 __all__ = [
     "DocumentsPoolApi",
@@ -30,6 +29,5 @@ __all__ = [
     "WorkflowProfile",
     "control_class_for",
     "SQLiteDocumentsRepository",
-    "WorkflowProfileStoreJSON",
 ]
 

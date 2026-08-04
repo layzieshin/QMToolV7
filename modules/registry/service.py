@@ -76,7 +76,7 @@ class RegistryService:
             return RegisterState.VALID, True
         if status == "IN_REVIEW":
             return RegisterState.IN_REVIEW, True
-        if status == "IN_PROGRESS":
+        if status in ("IN_PROGRESS", "DRAFT"):
             return RegisterState.IN_PROGRESS, True
         if status == "ARCHIVED":
             return RegisterState.ARCHIVED, False

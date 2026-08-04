@@ -38,6 +38,7 @@ ALLOWED_JSON_COLUMNS: frozenset[str] = frozenset(
         "document_versions.custom_fields_json",  # J29–J31
         "document_artifacts.metadata_json",  # J32
         "document_workflow_comments.anchor_json",  # J33
+        "workflow_profile_imports.report_json",  # J44 — J03 import evidence report
         "incidents.labels_json",  # J34
         "incident_timeline.details_json",  # J35
         "incident_artifacts.metadata_json",  # J36

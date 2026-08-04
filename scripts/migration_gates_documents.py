@@ -24,16 +24,15 @@ def _expected_registry_state(status: str | None) -> tuple[str, bool]:
     return ("INVALID", True)
 
 
-def _load_profiles(path: Path) -> dict[str, str]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    profiles = data.get("profiles", [])
-    mapping: dict[str, str] = {}
-    for row in profiles:
-        profile_id = str(row.get("profile_id", "")).strip()
-        control_class = str(row.get("control_class", "")).strip()
-        if profile_id and control_class:
-            mapping[profile_id] = control_class
-    return mapping
+def _load_profile_mapping(conn: sqlite3.Connection) -> dict[str, str]:
+    rows = conn.execute(
+        """
+        SELECT profile_code, control_class
+        FROM workflow_profile_definitions
+        WHERE is_active = 1
+        """
+    ).fetchall()
+    return {str(profile_code): str(control_class) for profile_code, control_class in rows}
 
 
 def _count_invalid_headers(conn: sqlite3.Connection, profile_mapping: dict[str, str]) -> int:
@@ -87,11 +86,10 @@ def _count_invalid_versions(conn: sqlite3.Connection, profile_mapping: dict[str,
 def evaluate_gates(
     *,
     documents_db_path: Path,
-    profiles_path: Path,
     baseline_other_count: int | None,
 ) -> dict[str, object]:
-    profile_mapping = _load_profiles(profiles_path)
     with closing(sqlite3.connect(documents_db_path)) as conn:
+        profile_mapping = _load_profile_mapping(conn)
         other_count = int(
             conn.execute(
                 "SELECT COUNT(*) FROM document_headers WHERE doc_type = 'OTHER'"
@@ -107,9 +105,9 @@ def evaluate_gates(
     return {
         "ok": ok,
         "documents_db_path": str(documents_db_path),
-        "profiles_path": str(profiles_path),
         "metrics": {
             "doc_type_other_count": other_count,
+            "active_profile_definitions": len(profile_mapping),
             "invalid_header_combinations": invalid_headers,
             "invalid_version_combinations": invalid_versions,
             "invalid_total": invalid_total,
@@ -215,7 +213,6 @@ def evaluate_registry_drift(*, documents_db_path: Path, registry_db_path: Path) 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Documents migration gate checks")
     parser.add_argument("--documents-db-path", required=True)
-    parser.add_argument("--profiles-path", default="modules/documents/workflow_profiles.json")
     parser.add_argument(
         "--registry-db-path",
         help="Optional registry DB path to run drift checks from architecture contract",
@@ -229,7 +226,6 @@ def main() -> int:
 
     payload = evaluate_gates(
         documents_db_path=Path(args.documents_db_path),
-        profiles_path=Path(args.profiles_path),
         baseline_other_count=args.baseline_other_count,
     )
     if args.registry_db_path:

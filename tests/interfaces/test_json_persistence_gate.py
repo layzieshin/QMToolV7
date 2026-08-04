@@ -22,6 +22,16 @@ def test_repo_mode_is_green_on_current_tree() -> None:
     assert payload["checks"]["no_unregistered_json_persistence"] is True
 
 
+def test_workflow_profile_imports_report_json_is_allowlisted() -> None:
+    key = "workflow_profile_imports.report_json"
+    assert key in ALLOWED_JSON_COLUMNS
+    payload = evaluate_json_persistence_gate(ROOT, mode="repo", base_ref="HEAD")
+    assert key in payload["diagnostics"]["existing_allowed_columns"]
+    assert not any(
+        f["kind"] == "unregistered_json_column" and f["path"] == key for f in payload["findings"]
+    )
+
+
 def test_allowlist_entries_are_not_dead() -> None:
     payload = evaluate_json_persistence_gate(ROOT, mode="repo", base_ref="HEAD")
     kinds = {item["kind"] for item in payload["findings"]}

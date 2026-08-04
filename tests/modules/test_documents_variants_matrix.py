@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 
 import unittest
 
@@ -13,6 +14,8 @@ from modules.documents.contracts import (
 )
 from modules.documents.errors import PermissionDeniedError, ValidationError
 from modules.documents.service import DocumentsService
+from tests.database_helpers import make_documents_service_with_profiles
+import tempfile
 
 
 class _FakeSignatureApi:
@@ -20,9 +23,15 @@ class _FakeSignatureApi:
         return request
 
 
+def _service():
+    root = Path(tempfile.mkdtemp(prefix="qmtool-docs-var-"))
+    service, _ = make_documents_service_with_profiles(root / "documents.db", signature_api=_FakeSignatureApi())
+    return service
+
+
 class DocumentsVariantsMatrixTest(unittest.TestCase):
     def _state_for_profile(self, profile: WorkflowProfile, *, document_id: str):
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = _service()
         state = service.create_document_version(document_id, 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(
             state,
@@ -53,7 +62,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
                 updated = service.abort_workflow(candidate, actor_user_id="owner-1", actor_role=SystemRole.USER)
                 self.assertEqual(updated.status, DocumentStatus.PLANNED)
 
-    def test_reject_paths_return_to_in_progress(self) -> None:
+    def test_reject_paths_return_to_draft(self) -> None:
         profile = WorkflowProfile.long_release_path()
         service, state = self._state_for_profile(profile, document_id="DOC-REJECT-MATRIX")
         state = service.complete_editing(state, sign_request={"step": "edit_complete"})
@@ -106,38 +115,89 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
         self.assertEqual(same_state.extension_count, 3)
 
     def test_four_eyes_combination_matrix(self) -> None:
-        four_eyes_profile = WorkflowProfile.long_release_path()
-        no_four_eyes_profile = WorkflowProfile(
-            profile_id="no_four_eyes",
-            label="No Four Eyes",
-            phases=(
-                DocumentStatus.IN_PROGRESS,
-                DocumentStatus.IN_REVIEW,
-                DocumentStatus.IN_APPROVAL,
-                DocumentStatus.APPROVED,
-            ),
-            four_eyes_required=False,
-            signature_required_transitions=("IN_PROGRESS->IN_REVIEW", "IN_APPROVAL->APPROVED"),
+        from datetime import datetime, timezone
+
+        from modules.usermanagement.contracts import issue_user_context
+
+        qmb = issue_user_context(
+            user_id="qmb-id",
+            session_id="qmb-session",
+            request_id="qmb-request",
+            username="qmb",
+            global_roles=("QMB",),
+            is_qmb=True,
+            authenticated_at=datetime.now(timezone.utc),
         )
         cases = (
-            (four_eyes_profile, True),
-            (no_four_eyes_profile, False),
+            ("long_release", True, DocumentType.VA, None),
+            ("no_four_eyes", False, DocumentType.OTHER, "no_four_eyes"),
         )
 
-        for profile, must_block in cases:
-            with self.subTest(profile=profile.profile_id):
-                service = DocumentsService(signature_api=_FakeSignatureApi())
-                state = service.create_document_version(f"DOC-4E-{profile.profile_id}", 1, owner_user_id="owner-1")
+        for profile_id, must_block, doc_type, create_code in cases:
+            with self.subTest(profile=profile_id):
+                service = _service()
+                if create_code is not None:
+                    service.create_workflow_profile_definition(
+                        {
+                            "profile_code": create_code,
+                            "label": "No Four Eyes",
+                            "control_class": "CONTROLLED",
+                            "requires_editors": True,
+                            "requires_reviewers": True,
+                            "requires_approvers": True,
+                            "allows_content_changes": True,
+                            "release_evidence_mode": "WORKFLOW",
+                            "transitions": [
+                                {
+                                    "transition_no": 1,
+                                    "from_status": "DRAFT",
+                                    "to_status": "IN_REVIEW",
+                                    "required_role": "EDITOR",
+                                    "decision_policy": "ONE_OF_POOL",
+                                    "signature_required": True,
+                                    "four_eyes_required": False,
+                                },
+                                {
+                                    "transition_no": 2,
+                                    "from_status": "IN_REVIEW",
+                                    "to_status": "IN_APPROVAL",
+                                    "required_role": "REVIEWER",
+                                    "decision_policy": "ONE_OF_POOL",
+                                    "signature_required": False,
+                                    "four_eyes_required": False,
+                                },
+                                {
+                                    "transition_no": 3,
+                                    "from_status": "IN_APPROVAL",
+                                    "to_status": "APPROVED",
+                                    "required_role": "APPROVER",
+                                    "decision_policy": "ONE_OF_POOL",
+                                    "signature_required": True,
+                                    "four_eyes_required": False,
+                                },
+                            ],
+                        },
+                        actor=qmb,
+                        change_reason="four eyes matrix fixture",
+                    )
+                state = service.create_document_version(
+                    f"DOC-4E-{profile_id}",
+                    1,
+                    owner_user_id="owner-1",
+                    doc_type=doc_type,
+                    workflow_profile_id=profile_id if create_code else None,
+                )
                 state = service.assign_workflow_roles(
                     state,
                     editors={"editor-1"},
                     reviewers={"alice"},
                     approvers={"alice"},
                 )
-                state = service.start_workflow(state, profile, actor_user_id="owner-1", actor_role=SystemRole.USER)
+                state = service.start_workflow(state, actor_user_id="owner-1", actor_role=SystemRole.USER)
                 state = service.complete_editing(state, sign_request={"step": "edit_complete"})
-                # sign_request nur nötig wenn IN_REVIEW->IN_APPROVAL im Profil konfiguriert ist
-                review_sign = {"step": "review_accept"} if "IN_REVIEW->IN_APPROVAL" in profile.signature_required_transitions else None
+                review_sign = {"step": "review_accept"}
+                if profile_id == "no_four_eyes":
+                    review_sign = None
                 state = service.accept_review(state, "alice", sign_request=review_sign)
                 if must_block:
                     with self.assertRaises(PermissionDeniedError):
@@ -147,7 +207,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
                     self.assertEqual(approved.status, DocumentStatus.APPROVED)
 
     def test_invalid_control_class_profile_combination_is_blocked(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = _service()
         state = service.create_document_version(
             "DOC-COMB-1",
             1,
@@ -201,26 +261,25 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
         )
         valid_cases = [
             (DocumentType.VA, ControlClass.CONTROLLED, WorkflowProfile.long_release_path()),
-            (DocumentType.AA, ControlClass.CONTROLLED_SHORT, controlled_short),
+            (DocumentType.AA, ControlClass.CONTROLLED, WorkflowProfile.long_release_path()),
             (DocumentType.EXT, ControlClass.EXTERNAL, external),
-            (DocumentType.OTHER, ControlClass.RECORD, record),
+            (DocumentType.OTHER, ControlClass.CONTROLLED, WorkflowProfile.long_release_path()),
         ]
         invalid_cases = [
             (DocumentType.VA, ControlClass.CONTROLLED, external),
             (DocumentType.EXT, ControlClass.EXTERNAL, WorkflowProfile.long_release_path()),
-            (DocumentType.AA, ControlClass.CONTROLLED_SHORT, record),
+            (DocumentType.AA, ControlClass.CONTROLLED, record),
         ]
 
         for idx, (doc_type, control_class, profile) in enumerate(valid_cases, start=1):
             with self.subTest(case=f"valid-{idx}"):
-                service = DocumentsService(signature_api=_FakeSignatureApi())
+                service = _service()
                 state = service.create_document_version(
                     f"DOC-MATRIX-VALID-{idx}",
                     1,
                     owner_user_id="owner-1",
                     doc_type=doc_type,
                     control_class=control_class,
-                    workflow_profile_id=profile.profile_id,
                 )
                 state = service.assign_workflow_roles(
                     state,
@@ -240,14 +299,13 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
 
         for idx, (doc_type, control_class, profile) in enumerate(invalid_cases, start=1):
             with self.subTest(case=f"invalid-{idx}"):
-                service = DocumentsService(signature_api=_FakeSignatureApi())
+                service = _service()
                 state = service.create_document_version(
                     f"DOC-MATRIX-INVALID-{idx}",
                     1,
                     owner_user_id="owner-1",
                     doc_type=doc_type,
                     control_class=control_class,
-                    workflow_profile_id=profile.profile_id,
                 )
                 state = service.assign_workflow_roles(
                     state,
@@ -266,7 +324,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
                     )
 
     def test_metadata_custom_field_prefix_is_blocked(self) -> None:
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = _service()
         state = service.create_document_version("DOC-META-GUARD", 1, owner_user_id="owner-1")
         with self.assertRaises(ValidationError):
             service.update_version_metadata(

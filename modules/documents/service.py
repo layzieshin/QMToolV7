@@ -46,10 +46,14 @@ from .contracts import (
     control_class_for,
 )
 from .errors import InvalidTransitionError, PermissionDeniedError, ValidationError
-from .profile_store import WorkflowProfileStoreJSON
 from .readmodel_use_cases import DocumentsReadmodelUseCases
 from .repository import DocumentsRepository
 from .storage import DocumentsStoragePort
+from .workflow_profile_store import (
+    WorkflowProfileRelationalStore,
+    WorkflowProfileTransitionDefinition,
+    WorkflowProfileVersionDefinition,
+)
 from .workflow_use_cases import DocumentsWorkflowUseCases
 
 
@@ -66,7 +70,7 @@ class DocumentsService:
         self,
         event_bus: object | None = None,
         repository: DocumentsRepository | None = None,
-        profile_store: WorkflowProfileStoreJSON | None = None,
+        profile_store: object | None = None,
         signature_api: object | None = None,
         storage_port: DocumentsStoragePort | None = None,
         registry_projection_api: object | None = None,
@@ -346,7 +350,7 @@ class DocumentsService:
         description: str | None = None,
         doc_type: DocumentType = DocumentType.OTHER,
         control_class: ControlClass | None = None,
-        workflow_profile_id: str = "long_release",
+        workflow_profile_id: str | None = None,
         custom_fields: dict[str, object] | None = None,
     ) -> DocumentVersionState:
         if not document_id.strip():
@@ -356,14 +360,20 @@ class DocumentsService:
         normalized_title = title.strip() or document_id
         fields = custom_fields or {}
         self._assert_custom_fields_safe(fields)
+        resolved_control = control_class or control_class_for(doc_type)
+        resolved_profile_id = self.resolve_workflow_profile_for_document_type(
+            doc_type,
+            workflow_profile_id=workflow_profile_id,
+            control_class=resolved_control,
+        )
         created = DocumentVersionState(
             document_id=document_id,
             version=version,
             title=normalized_title,
             description=description,
             doc_type=doc_type,
-            control_class=control_class or control_class_for(doc_type),
-            workflow_profile_id=workflow_profile_id,
+            control_class=resolved_control,
+            workflow_profile_id=resolved_profile_id,
             owner_user_id=owner_user_id,
             custom_fields=fields,
             created_at=datetime.now(timezone.utc),
@@ -374,7 +384,7 @@ class DocumentsService:
                 document_id=document_id,
                 doc_type=doc_type,
                 control_class=created.control_class,
-                workflow_profile_id=workflow_profile_id,
+                workflow_profile_id=resolved_profile_id,
                 register_binding=True,
             )
         )
@@ -598,11 +608,116 @@ class DocumentsService:
         return self._readmodels.list_current_released_documents()
 
     def get_profile(self, profile_id: str) -> WorkflowProfile:
-        if self._profile_store is None:
-            if profile_id == "long_release":
-                return WorkflowProfile.long_release_path()
-            raise ValidationError(f"profile store missing and profile '{profile_id}' is unknown")
-        return self._profile_store.get(profile_id)
+        store = self._profile_store_required()
+        return store.get(profile_id)
+
+    def resolve_workflow_profile_for_document_type(
+        self,
+        doc_type: DocumentType,
+        *,
+        workflow_profile_id: str | None = None,
+        control_class: ControlClass | None = None,
+    ) -> str:
+        store = self._profile_store_required()
+        default_code, allows_override = store.resolve_default_profile_code(doc_type)
+        expected = control_class or control_class_for(doc_type)
+        if workflow_profile_id is None or not str(workflow_profile_id).strip():
+            profile = store.get(default_code)
+            if profile.control_class != expected:
+                raise ValidationError(
+                    f"default profile control_class '{profile.control_class.value}' does not match "
+                    f"document control_class '{expected.value}'"
+                )
+            return profile.profile_id
+        requested = str(workflow_profile_id).strip()
+        if requested != default_code and not allows_override:
+            raise ValidationError(
+                f"workflow profile override is not allowed for document type {doc_type.value}"
+            )
+        profile = store.get(requested)
+        if profile.control_class != expected:
+            raise ValidationError(
+                f"profile control_class '{profile.control_class.value}' does not match "
+                f"document control_class '{expected.value}'"
+            )
+        return profile.profile_id
+
+    def list_workflow_profile_definitions(
+        self,
+        *,
+        actor: object,
+        include_inactive: bool = True,
+    ) -> list[dict[str, object]]:
+        self._require_workflow_profile_admin(actor)
+        return self._profile_store_required().list_definitions(include_inactive=include_inactive)
+
+
+    def list_workflow_profile_versions(
+        self,
+        profile_code: str,
+        *,
+        actor: object,
+    ) -> list[dict[str, object]]:
+        self._require_workflow_profile_admin(actor)
+        return self._profile_store_required().list_versions(profile_code)
+
+    def create_workflow_profile_definition(
+        self,
+        payload: dict[str, object],
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        actor_user_id = self._require_workflow_profile_admin(actor, change_reason=change_reason)
+        return self._profile_store_required().create_definition(
+            self._parse_workflow_profile_payload(payload),
+            source_kind="ADMIN",
+            change_reason=change_reason.strip(),
+            actor_user_id=actor_user_id,
+        )
+
+    def create_workflow_profile_version(
+        self,
+        profile_code: str,
+        payload: dict[str, object],
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        actor_user_id = self._require_workflow_profile_admin(actor, change_reason=change_reason)
+        normalized = dict(payload)
+        normalized["profile_code"] = profile_code
+        return self._profile_store_required().create_version(
+            self._parse_workflow_profile_payload(normalized),
+            source_kind="ADMIN",
+            change_reason=change_reason.strip(),
+            actor_user_id=actor_user_id,
+        )
+
+    def set_workflow_profile_active(
+        self,
+        profile_code: str,
+        *,
+        actor: object,
+        is_active: bool,
+        change_reason: str,
+    ) -> dict[str, object]:
+        actor_user_id = self._require_workflow_profile_admin(actor, change_reason=change_reason)
+        return self._profile_store_required().set_active(profile_code, is_active=is_active, actor_user_id=actor_user_id)
+
+    def bind_document_type_default_profile(
+        self,
+        doc_type: DocumentType,
+        profile_code: str,
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        actor_user_id = self._require_workflow_profile_admin(actor, change_reason=change_reason)
+        return self._profile_store_required().bind_default_profile(doc_type, profile_code, actor_user_id=actor_user_id)
+
+    def list_profile_ids_for_control_class(self, control_class: ControlClass) -> list[str]:
+        return self._profile_store_required().list_profile_ids_for_control_class(control_class)
 
     def import_existing_pdf(
         self,
@@ -617,7 +732,7 @@ class DocumentsService:
         state = self._ensure_document_version(
             document_id, version, owner_user_id=actor_user_id,
             doc_type=DocumentType.EXT, control_class=ControlClass.EXTERNAL,
-            workflow_profile_id="external_control",
+            workflow_profile_id=None,
         )
         self._ensure_owner_or_privileged(state, actor_user_id, actor_role)
         artifact = self._create_artifact(
@@ -646,7 +761,7 @@ class DocumentsService:
         state = self._ensure_document_version(
             document_id, version, owner_user_id=actor_user_id,
             doc_type=DocumentType.OTHER, control_class=ControlClass.CONTROLLED,
-            workflow_profile_id="long_release",
+            workflow_profile_id=None,
         )
         self._ensure_owner_or_privileged(state, actor_user_id, actor_role)
         artifact = self._create_artifact(
@@ -675,7 +790,7 @@ class DocumentsService:
         state = self._ensure_document_version(
             document_id, version, owner_user_id=actor_user_id,
             doc_type=DocumentType.OTHER, control_class=ControlClass.CONTROLLED,
-            workflow_profile_id="long_release",
+            workflow_profile_id=None,
         )
         self._ensure_owner_or_privileged(state, actor_user_id, actor_role)
         source_type = (
@@ -702,8 +817,29 @@ class DocumentsService:
             actor_user_id=actor_user_id, actor_role=actor_role,
         )
 
-    def start_workflow(self, state, profile, *, actor_user_id=None, actor_role=None):
-        return self._workflow_use_cases.start_workflow(state, profile, actor_user_id=actor_user_id, actor_role=actor_role)
+    def start_workflow(self, state, profile=None, *, profile_id=None, actor_user_id=None, actor_role=None):
+        bound_id = str(getattr(state, "workflow_profile_id", "") or "").strip()
+        if not bound_id:
+            raise ValidationError("document version has no workflow_profile_id binding")
+        requested: str | None = None
+        if profile is not None:
+            requested = str(getattr(profile, "profile_id", "") or "").strip() or None
+        if profile_id is not None and str(profile_id).strip():
+            explicit = str(profile_id).strip()
+            if requested is not None and requested != explicit:
+                raise ValidationError("conflicting workflow profile parameters")
+            requested = explicit
+        if requested is not None and requested != bound_id:
+            raise ValidationError(
+                f"workflow start profile_id '{requested}' does not match bound workflow_profile_id '{bound_id}'"
+            )
+        runtime_profile = self.get_profile(bound_id)
+        return self._workflow_use_cases.start_workflow(
+            state,
+            runtime_profile,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
 
     def complete_editing(self, state, *, sign_request=None, actor_user_id=None, actor_role=None):
         return self._workflow_use_cases.complete_editing(state, sign_request=sign_request, actor_user_id=actor_user_id, actor_role=actor_role)
@@ -788,7 +924,7 @@ class DocumentsService:
 
     def _ensure_document_version(
         self, document_id, version, owner_user_id=None,
-        *, doc_type=DocumentType.OTHER, control_class=None, workflow_profile_id="long_release",
+        *, doc_type=DocumentType.OTHER, control_class=None, workflow_profile_id=None,
     ) -> DocumentVersionState:
         state = self.get_document_version(document_id, version)
         if state is not None:
@@ -859,6 +995,81 @@ class DocumentsService:
         for version_state in self._repository.list_versions(document_id):
             if version_state.status != DocumentStatus.PLANNED:
                 raise ValidationError("workflow_profile_id can only be changed while all versions are PLANNED")
+
+    def _profile_store_required(self) -> WorkflowProfileRelationalStore:
+        if self._profile_store is None or not isinstance(self._profile_store, WorkflowProfileRelationalStore):
+            raise ValidationError("workflow profile store is not configured")
+        return self._profile_store
+
+    def _require_workflow_profile_admin(self, actor: object, *, change_reason: str | None = None) -> str:
+        from modules.usermanagement.api import (
+            AuthorizationError,
+            is_effective_qmb,
+            require_confirmed_user_context,
+        )
+
+        try:
+            context = require_confirmed_user_context(actor)
+        except AuthorizationError as exc:
+            raise PermissionDeniedError(str(exc)) from exc
+        if not is_effective_qmb(context):
+            raise PermissionDeniedError("effective QMB is required")
+        if change_reason is not None and not change_reason.strip():
+            raise ValidationError("change_reason is required")
+        actor_user_id = str(context.user_id).strip()
+        if not actor_user_id:
+            raise PermissionDeniedError("user_id is required")
+        return actor_user_id
+
+    def _parse_workflow_profile_payload(self, payload: dict[str, object]) -> WorkflowProfileVersionDefinition:
+        from .workflow_profile_store import normalize_legacy_status
+
+        profile_code = str(payload.get("profile_code", payload.get("profile_id", ""))).strip()
+        label = str(payload.get("label", "")).strip()
+        if not profile_code or not label:
+            raise ValidationError("profile_code and label are required")
+        try:
+            control_class = ControlClass(str(payload.get("control_class", "CONTROLLED")).strip())
+        except ValueError as exc:
+            raise ValidationError("invalid control_class") from exc
+        transitions_raw = payload.get("transitions")
+        if not isinstance(transitions_raw, list):
+            raise ValidationError("transitions must be a list")
+        transitions: list[WorkflowProfileTransitionDefinition] = []
+        for item in transitions_raw:
+            if not isinstance(item, dict):
+                raise ValidationError("transition entries must be objects")
+            policy_raw = item.get("decision_policy", item.get("decision_rule", "ONE_OF_POOL"))
+            policy = str(policy_raw).strip().upper()
+            if policy == "ANY_ASSIGNED":
+                policy = "ONE_OF_POOL"
+            transitions.append(
+                WorkflowProfileTransitionDefinition(
+                    transition_no=int(item.get("transition_no", item.get("position", len(transitions) + 1))),
+                    from_status=normalize_legacy_status(str(item.get("from_status", "")).strip()),
+                    to_status=normalize_legacy_status(str(item.get("to_status", "")).strip()),
+                    required_role=str(item.get("required_role", "")).strip().upper(),
+                    decision_policy=policy,
+                    signature_required=bool(item.get("signature_required", False)),
+                    four_eyes_required=bool(item.get("four_eyes_required", False)),
+                    revoke_if_changed=bool(item.get("revoke_if_changed", False)),
+                    deadline_seconds=(
+                        int(item["deadline_seconds"]) if item.get("deadline_seconds") is not None else None
+                    ),
+                    is_enabled=bool(item.get("is_enabled", True)),
+                )
+            )
+        return WorkflowProfileVersionDefinition(
+            profile_code=profile_code,
+            label=label,
+            control_class=control_class,
+            release_evidence_mode=str(payload.get("release_evidence_mode", "WORKFLOW")).strip() or "WORKFLOW",
+            requires_editors=bool(payload.get("requires_editors", True)),
+            requires_reviewers=bool(payload.get("requires_reviewers", True)),
+            requires_approvers=bool(payload.get("requires_approvers", True)),
+            allows_content_changes=bool(payload.get("allows_content_changes", True)),
+            transitions=tuple(transitions),
+        )
 
     # --- Read Confirmation ---
 

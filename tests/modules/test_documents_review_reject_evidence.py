@@ -6,6 +6,9 @@ from pathlib import Path
 from modules.documents.contracts import DocumentStatus, RejectionReason, SystemRole, WorkflowProfile
 from modules.documents.errors import InvalidTransitionError, PermissionDeniedError
 from modules.documents.service import DocumentsService
+from tests.database_helpers import make_documents_service_with_profiles
+from pathlib import Path
+import tempfile
 from qm_platform.events.event_bus import EventBus
 from qm_platform.events.event_envelope import EventEnvelope
 from qm_platform.logging.audit_logger import AuditLogger
@@ -28,11 +31,14 @@ class DocumentsReviewRejectEvidenceTest(unittest.TestCase):
     @staticmethod
     def _service(*, event_bus: EventBus | None = None, audit_file: Path | None = None) -> DocumentsService:
         audit_logger = AuditLogger(audit_file) if audit_file is not None else None
-        return DocumentsService(
+        root = Path(tempfile.mkdtemp(prefix="qmtool-docs-review-"))
+        service, _ = make_documents_service_with_profiles(
+            root / "documents.db",
             event_bus=event_bus,
             audit_logger=audit_logger,
             signature_api=_FakeSignatureApi(),
         )
+        return service
 
     @staticmethod
     def _state_in_review(service: DocumentsService, *, document_id: str = "DOC-REVIEW-REJECT"):

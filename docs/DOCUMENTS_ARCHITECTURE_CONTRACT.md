@@ -155,6 +155,27 @@ At minimum, these control classes and profiles must exist and be executable:
 - `EXTERNAL` with profile(s) like `external_control`.
 - `RECORD` with profile(s) like `record_light`.
 
+### J03 runtime ownership
+
+- Runtime truth for workflow profiles is relational state inside the Documents DB.
+- `workflow_profile_json` snapshots on document versions remain immutable execution snapshots for started workflows.
+- New workflow starts resolve the active profile version from the relational store and persist the existing immutable snapshot format using runtime vocabulary (`IN_PROGRESS` start).
+- Relational profile transitions store canonical start status `DRAFT`; the single adapter boundary
+  `modules/documents/workflow_profile_runtime_adapter.py` maps `DRAFT ↔ IN_PROGRESS` for runtime reconstruction.
+- Bootstrap provenance is derived inside Documents from the generic container port
+  `database_preflight_statuses` (captured before `runtime_preflight` migrate):
+  fresh → bundled seed; confirmed V1 → local `profiles_file`;
+  already-J03 schema with empty profiles → fail-closed (never `db_path.exists()` after migrate).
+  The platform runtime does not import Documents-specific J03 classification.
+- `modules/documents/workflow_profiles.json` is seed/export input only; it is not runtime truth after the J03 cutover.
+- Profile administration is CLI-only in J03; PyQt does not provide profile management.
+- Workflow start is not a profile transition; document status becomes `IN_PROGRESS`.
+- Workflow start uses `state.workflow_profile_id` as the authoritative binding and never changes it.
+- Document-type default profiles resolve through `document_type_definitions` for all create/import paths.
+- Auth for profile mutations uses public `require_confirmed_user_context` + `is_effective_qmb` only
+  (accepted J03 surface extension of `modules/usermanagement/api.py`; no new roles/permissions).
+- Acceptance evidence: `docs/J03_ACCEPTANCE_REPORT.md`, capability matrix: `docs/J03_WORKFLOW_ENGINE_CAPABILITY_MATRIX.md`.
+
 ## document_id identity rule (system-wide)
 
 - `document_id` is **always** a caller-provided fachliche Kennung (e.g. `"VA-2024-001"`, `"AA-HR-005"`).

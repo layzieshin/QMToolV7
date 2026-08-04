@@ -82,13 +82,12 @@ class UiController:
             actor_role=current_role,
         )
 
-    def start_workflow(self, document_id: str, version: int, profile_id: str = "long_release"):
+    def start_workflow(self, document_id: str, version: int, profile_id: str | None = None):
         current_user, current_role = self._require_user_and_role()
         state = self.get_document(document_id, version)
-        profile = self.documents_service.get_profile(profile_id)
         return self.documents_workflow_api.start_workflow(
             state,
-            profile,
+            profile_id=profile_id,
             actor_user_id=current_user.user_id,
             actor_role=current_role,
         )

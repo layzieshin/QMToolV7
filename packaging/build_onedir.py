@@ -55,6 +55,7 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
         "modules/usermanagement/postgres",
     ),
     ("modules/documents/migrations/0001_initial.sql", "modules/documents/migrations"),
+    ("modules/documents/migrations/0002_workflow_profiles.sql", "modules/documents/migrations"),
     ("modules/documents/workflow_profiles.json", "modules/documents"),
     ("modules/registry/migrations/0001_initial.sql", "modules/registry/migrations"),
     ("modules/signature/migrations/0001_initial.sql", "modules/signature/migrations"),

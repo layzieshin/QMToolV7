@@ -124,6 +124,12 @@ def activate_core_modules(
     lifecycle: LifecycleManager,
 ) -> None:
     service, specs = configure_database_evolution(container, lifecycle)
+    from types import MappingProxyType
+
+    from qm_platform.persistence.database_evolution import DATABASE_PREFLIGHT_STATUSES_PORT
+
+    preflight = {status.database_id: status for status in service.statuses(specs)}
+    container.register_port(DATABASE_PREFLIGHT_STATUSES_PORT, MappingProxyType(preflight))
     service.migrate(specs, reason="runtime_preflight")
     from qm_platform.settings.persistence_bootstrap import (
         attach_settings_persistence,

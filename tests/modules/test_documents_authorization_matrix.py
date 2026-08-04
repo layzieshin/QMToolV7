@@ -5,6 +5,9 @@ import unittest
 from modules.documents.contracts import DocumentStatus, SystemRole, WorkflowProfile
 from modules.documents.errors import PermissionDeniedError
 from modules.documents.service import DocumentsService
+from tests.database_helpers import make_documents_service_with_profiles
+from pathlib import Path
+import tempfile
 
 
 class _FakeSignatureApi:
@@ -14,7 +17,7 @@ class _FakeSignatureApi:
 
 class DocumentsAuthorizationMatrixTest(unittest.TestCase):
     def _base_state(self, *, document_id: str = "DOC-MATRIX"):
-        service = DocumentsService(signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version(document_id, 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(
             state,

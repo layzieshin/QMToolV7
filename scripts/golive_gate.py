@@ -93,7 +93,6 @@ def evaluate_golive_gate(*, documents_db_path: Path | None, registry_db_path: Pa
     if documents_db_path is not None:
         gate = evaluate_gates(
             documents_db_path=documents_db_path,
-            profiles_path=Path("modules/documents/workflow_profiles.json"),
             baseline_other_count=baseline_other_count,
         )
         diagnostics["migration_gates"] = gate

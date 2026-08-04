@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from modules.documents.contracts import (
     RejectionReason, SystemRole, ValidityExtensionOutcome
 )
 from modules.signature.api import SignatureError
-from modules.usermanagement.api import is_effective_qmb
+from modules.usermanagement.api import is_effective_qmb, resolve_session
 from modules.signature.contracts import SignRequest, SignaturePlacementInput, LabelLayoutInput
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 
@@ -39,6 +40,28 @@ def _print_documents_state(prefix: str, state) -> None:
         "extension_count": state.extension_count,
     }
     print(f"{prefix}: {json.dumps(payload, ensure_ascii=True)}")
+
+
+def _resolve_workflow_profile_actor(container) -> object:
+    token = os.environ.get("QMTOOL_SESSION_TOKEN", "").strip()
+    if not token:
+        raise DocumentWorkflowError("QMTOOL_SESSION_TOKEN is required for workflow profile administration")
+    try:
+        return resolve_session(container, token, request_id="cli-documents-workflow-profiles")
+    except RuntimeError as exc:
+        if str(exc) != "opaque session repository is not configured":
+            raise
+        raise DocumentWorkflowError(
+            "workflow profile administration requires a backend session transport; "
+            "desktop legacy runtime is fail-closed"
+        ) from exc
+
+
+def _load_profile_definition(path: str) -> dict[str, object]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise DocumentWorkflowError("workflow profile definition must be a JSON object")
+    return payload
 
 
 def _load_documents_state(pool_api, document_id: str, version: int):
@@ -97,6 +120,80 @@ def cmd_documents(args: argparse.Namespace) -> int:
     workflow_api = container.get_port("documents_workflow_api")
     registry_api = container.get_port("registry_api")
     usermanagement = container.get_port("usermanagement_service")
+    profile_admin_commands = {
+        "profile-list",
+        "profile-create",
+        "profile-create-version",
+        "profile-activate",
+        "profile-deactivate",
+        "profile-bind-doc-type",
+    }
+    if args.documents_command in profile_admin_commands:
+        try:
+            if args.documents_command == "profile-list":
+                actor = _resolve_workflow_profile_actor(container)
+                if args.profile_id:
+                    payload = workflow_api.list_workflow_profile_versions(args.profile_id, actor=actor)
+                else:
+                    payload = workflow_api.list_workflow_profile_definitions(
+                        actor=actor,
+                        include_inactive=args.include_inactive,
+                    )
+                print(json.dumps(payload, ensure_ascii=True))
+                return 0
+            if args.documents_command == "profile-create":
+                actor = _resolve_workflow_profile_actor(container)
+                payload = workflow_api.create_workflow_profile_definition(
+                    _load_profile_definition(args.definition_json),
+                    actor=actor,
+                    change_reason=args.change_reason,
+                )
+                print(json.dumps(payload, ensure_ascii=True))
+                return 0
+            if args.documents_command == "profile-create-version":
+                actor = _resolve_workflow_profile_actor(container)
+                payload = workflow_api.create_workflow_profile_version(
+                    args.profile_id,
+                    _load_profile_definition(args.definition_json),
+                    actor=actor,
+                    change_reason=args.change_reason,
+                )
+                print(json.dumps(payload, ensure_ascii=True))
+                return 0
+            if args.documents_command == "profile-activate":
+                actor = _resolve_workflow_profile_actor(container)
+                payload = workflow_api.activate_workflow_profile_definition(
+                    args.profile_id,
+                    actor=actor,
+                    change_reason=args.change_reason,
+                )
+                print(json.dumps(payload, ensure_ascii=True))
+                return 0
+            if args.documents_command == "profile-deactivate":
+                actor = _resolve_workflow_profile_actor(container)
+                payload = workflow_api.deactivate_workflow_profile_definition(
+                    args.profile_id,
+                    actor=actor,
+                    change_reason=args.change_reason,
+                )
+                print(json.dumps(payload, ensure_ascii=True))
+                return 0
+            if args.documents_command == "profile-bind-doc-type":
+                actor = _resolve_workflow_profile_actor(container)
+                payload = workflow_api.bind_document_type_default_profile(
+                    DocumentType(args.doc_type),
+                    args.profile_id,
+                    actor=actor,
+                    change_reason=args.change_reason,
+                )
+                print(json.dumps(payload, ensure_ascii=True))
+                return 0
+        except (DocumentWorkflowError, SignatureError, ValueError) as exc:
+            print(f"BLOCKED: {exc}")
+            return 6
+        except Exception as exc:  # noqa: BLE001
+            print(f"FAILED: {exc}")
+            return 7
     current_user, current_role = _resolve_current_user_and_role(usermanagement)
     if current_user is None:
         print("BLOCKED: login required for documents commands")
@@ -152,8 +249,12 @@ def cmd_documents(args: argparse.Namespace) -> int:
             return 0
         if args.documents_command == "workflow-start":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            profile = workflow_api.get_profile(args.profile_id)
-            state = workflow_api.start_workflow(state, profile, actor_user_id=current_user.user_id, actor_role=current_role)
+            state = workflow_api.start_workflow(
+                state,
+                profile_id=args.profile_id,
+                actor_user_id=current_user.user_id,
+                actor_role=current_role,
+            )
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "editing-complete":

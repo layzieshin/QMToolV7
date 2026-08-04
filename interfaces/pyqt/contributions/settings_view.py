@@ -19,7 +19,6 @@ from interfaces.pyqt.contributions.settings_sections import (
     ProfileWidget,
     SignatureSettingsWidget,
     TrainingSettingsWidget,
-    WorkflowProfilesWidget,
 )
 from interfaces.pyqt.contributions.users_view import UsersAdminWidget
 from interfaces.pyqt.registry.contribution import QtModuleContribution
@@ -56,7 +55,6 @@ class SettingsAdminWidget(QWidget):
             self._add_section("Lizenzverwaltung", LicenseManagementWidget(self._container))
             self._add_section("Schulung", TrainingSettingsWidget(self._container))
         if role == "ADMIN":
-            self._add_section("Workflow-Profile", WorkflowProfilesWidget(self._container))
             self._add_section("Modul-Einstellungen", ModuleSettingsWidget(self._container))
             self._add_section("Geplante Optionen", PlannedOptionsWidget())
 

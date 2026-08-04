@@ -122,7 +122,7 @@ class DocumentsWorkflowUseCases:
             status=DocumentStatus.IN_PROGRESS,
             workflow_active=True,
             workflow_profile=profile,
-            workflow_profile_id=profile.profile_id,
+            workflow_profile_id=state.workflow_profile_id,
             reviewed_by=frozenset(),
             approved_by=frozenset(),
         )
@@ -377,7 +377,11 @@ class DocumentsWorkflowUseCases:
     ) -> DocumentVersionState:
         if actor_user_id is not None and actor_role is not None:
             self._service._ensure_owner_or_privileged(state, actor_user_id, actor_role)
-        if state.status not in (DocumentStatus.IN_PROGRESS, DocumentStatus.IN_REVIEW, DocumentStatus.IN_APPROVAL):
+        if state.status not in (
+            DocumentStatus.IN_PROGRESS,
+            DocumentStatus.IN_REVIEW,
+            DocumentStatus.IN_APPROVAL,
+        ):
             raise InvalidTransitionError("workflow abort is only allowed during active workflow phases")
         updated = replace(state, status=DocumentStatus.PLANNED, workflow_active=False)
         with self._service._write_transaction():

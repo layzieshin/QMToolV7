@@ -67,6 +67,10 @@ class DatabaseStatus:
         return self.state == "current" and self.integrity == "ok"
 
 
+# Internal runtime port: immutable map of DatabaseStatus captured before migrate.
+DATABASE_PREFLIGHT_STATUSES_PORT = "database_preflight_statuses"
+
+
 @dataclass(frozen=True)
 class DatabaseBackup:
     backup_id: str
