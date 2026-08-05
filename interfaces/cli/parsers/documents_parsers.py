@@ -22,7 +22,7 @@ def register_documents_parsers(sub: argparse._SubParsersAction) -> None:
         choices=[v.value for v in ControlClass],
         default=ControlClass.CONTROLLED.value,
     )
-    doc_create.add_argument("--workflow-profile-id", default="long_release")
+    doc_create.add_argument("--workflow-profile-id", default=None)
     doc_create.add_argument("--title")
     doc_create.add_argument("--description")
 
@@ -54,7 +54,11 @@ def register_documents_parsers(sub: argparse._SubParsersAction) -> None:
     doc_start = documents_sub.add_parser("workflow-start", help="Start workflow from PLANNED")
     doc_start.add_argument("--document-id", required=True)
     doc_start.add_argument("--version", type=int, required=True)
-    doc_start.add_argument("--profile-id", default="long_release")
+    doc_start.add_argument(
+        "--profile-id",
+        default=None,
+        help="Optional compatibility check only; must match the document's bound workflow_profile_id",
+    )
 
     doc_edit_done = documents_sub.add_parser("editing-complete", help="Complete editing and move to next phase")
     doc_edit_done.add_argument("--document-id", required=True)
@@ -167,4 +171,30 @@ def register_documents_parsers(sub: argparse._SubParsersAction) -> None:
     doc_change_export.add_argument("--version", type=int, required=True)
     doc_change_export.add_argument("--output", required=True, help="Output file path")
     doc_change_export.add_argument("--format", choices=["json", "csv"], default="json")
+
+    profile_list = documents_sub.add_parser("profile-list", help="List workflow profile definitions (QMB session required)")
+    profile_list.add_argument("--include-inactive", action="store_true")
+    profile_list.add_argument("--profile-id", dest="profile_id")
+
+    profile_create = documents_sub.add_parser("profile-create", help="Create workflow profile definition (QMB session required)")
+    profile_create.add_argument("--definition-json", required=True, help="Path to full profile definition JSON")
+    profile_create.add_argument("--change-reason", required=True)
+
+    profile_version = documents_sub.add_parser("profile-create-version", help="Create new immutable workflow profile version (QMB session required)")
+    profile_version.add_argument("--profile-id", required=True)
+    profile_version.add_argument("--definition-json", required=True, help="Path to full profile definition JSON")
+    profile_version.add_argument("--change-reason", required=True)
+
+    profile_activate = documents_sub.add_parser("profile-activate", help="Activate workflow profile definition (QMB session required)")
+    profile_activate.add_argument("--profile-id", required=True)
+    profile_activate.add_argument("--change-reason", required=True)
+
+    profile_deactivate = documents_sub.add_parser("profile-deactivate", help="Deactivate workflow profile definition (QMB session required)")
+    profile_deactivate.add_argument("--profile-id", required=True)
+    profile_deactivate.add_argument("--change-reason", required=True)
+
+    profile_bind = documents_sub.add_parser("profile-bind-doc-type", help="Bind default profile for document type (QMB session required)")
+    profile_bind.add_argument("--doc-type", required=True, choices=[v.value for v in DocumentType])
+    profile_bind.add_argument("--profile-id", required=True)
+    profile_bind.add_argument("--change-reason", required=True)
 

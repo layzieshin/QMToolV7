@@ -6,6 +6,9 @@ from pathlib import Path
 
 from modules.documents.contracts import RejectionReason, SystemRole, ValidityExtensionOutcome, WorkflowProfile
 from modules.documents.service import DocumentsService
+from tests.database_helpers import make_documents_service_with_profiles
+from pathlib import Path
+import tempfile
 from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
 from tests.database_helpers import registry_repository as SQLiteRegistryRepository
 from modules.registry.projection_api import RegistryProjectionApi
@@ -50,9 +53,9 @@ class DocumentsEventContractsTest(unittest.TestCase):
             registry = RegistryService(
                 SQLiteRegistryRepository(db_path=root / "registry.db")
             )
-            service = DocumentsService(
+            service, _ = make_documents_service_with_profiles(
+                root / "documents.db",
                 event_bus=bus,
-                repository=repo,
                 storage_port=storage,
                 signature_api=_FakeSignatureApi(),
                 registry_projection_api=RegistryProjectionApi(registry),
@@ -105,7 +108,7 @@ class DocumentsEventContractsTest(unittest.TestCase):
         ]
         self._subscribe_all(bus, names, events)
 
-        service = DocumentsService(event_bus=bus, signature_api=_FakeSignatureApi())
+        service = make_documents_service_with_profiles(Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db", event_bus=bus, signature_api=_FakeSignatureApi())[0]
         state = service.create_document_version("DOC-EVT-WF", 1, owner_user_id="owner-1")
         state = service.assign_workflow_roles(state, editors={"owner-1"}, reviewers={"reviewer-1"}, approvers={"approver-1"})
         state = service.start_workflow(state, WorkflowProfile.long_release_path(), actor_user_id="owner-1", actor_role=SystemRole.USER)
@@ -181,9 +184,9 @@ class DocumentsEventContractsTest(unittest.TestCase):
             registry = RegistryService(
                 SQLiteRegistryRepository(db_path=root / "registry.db")
             )
-            service = DocumentsService(
+            service, _ = make_documents_service_with_profiles(
+                root / "documents.db",
                 event_bus=bus,
-                repository=repo,
                 signature_api=_FakeSignatureApi(),
                 registry_projection_api=RegistryProjectionApi(registry),
             )
@@ -206,8 +209,8 @@ class DocumentsEventContractsTest(unittest.TestCase):
             registry = RegistryService(
                 SQLiteRegistryRepository(db_path=root / "registry.db")
             )
-            service = DocumentsService(
-                repository=repo,
+            service, _ = make_documents_service_with_profiles(
+                root / "documents.db",
                 signature_api=_FakeSignatureApi(),
                 registry_projection_api=RegistryProjectionApi(registry),
             )

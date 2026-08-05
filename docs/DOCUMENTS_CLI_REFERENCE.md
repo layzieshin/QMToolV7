@@ -170,5 +170,15 @@ Read central registry projection:
 ## Runtime Notes
 
 - `documents` module uses dedicated storage at `storage/documents/documents.db` (configurable via module settings).
-- Workflow profiles are loaded from `modules/documents/workflow_profiles.json`.
+- J03 runtime truth for workflow profiles is relational data in the Documents DB.
+- `modules/documents/workflow_profiles.json` remains an immutable packaged seed/export, not the runtime owner.
+- Legacy `profiles_file` is only read during one-time bootstrap/upgrade import.
+- Workflow profile administration is CLI-only in J03:
+  - `documents profile-list`
+  - `documents profile-create`
+  - `documents profile-create-version`
+  - `documents profile-activate`
+  - `documents profile-deactivate`
+  - `documents profile-bind-doc-type`
+- These profile-admin commands require `QMTOOL_SESSION_TOKEN` and fail closed in desktop-legacy runtimes without backend session transport.
 - Events are published to EventBus for lifecycle and workflow decisions.

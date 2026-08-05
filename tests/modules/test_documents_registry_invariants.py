@@ -7,8 +7,12 @@ from pathlib import Path
 
 from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType, SystemRole, WorkflowProfile
 from modules.documents.errors import PermissionDeniedError, ValidationError
-from modules.documents.profile_store import WorkflowProfileStoreJSON
 from modules.documents.service import DocumentsService
+from tests.database_helpers import make_documents_service_with_profiles
+from pathlib import Path
+import tempfile
+from modules.documents.workflow_profile_seed_reader import WorkflowProfileSeedReader
+from modules.documents.workflow_profile_store import WorkflowProfileRelationalStore
 from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
 from tests.database_helpers import registry_repository as SQLiteRegistryRepository
 from modules.registry.projection_api import RegistryProjectionApi
@@ -28,9 +32,15 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
         reg_repo = SQLiteRegistryRepository(
             db_path=root / "registry.db",
         )
+        profile_store = WorkflowProfileRelationalStore(
+            docs_repo,
+            bundled_seed_path=Path("modules/documents/workflow_profiles.json"),
+            legacy_profiles_path=root / "workflow_profiles.json",
+        )
+        profile_store.ensure_seeded(WorkflowProfileSeedReader())
         return DocumentsService(
             repository=docs_repo,
-            profile_store=WorkflowProfileStoreJSON(Path("modules/documents/workflow_profiles.json")),
+            profile_store=profile_store,
             signature_api=_FakeSignatureApi(),
             registry_projection_api=RegistryProjectionApi(RegistryService(reg_repo)),
         )
@@ -74,8 +84,15 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
                 db_path=root / "registry.db",
             )
             registry = RegistryService(reg_repo)
+            profile_store = WorkflowProfileRelationalStore(
+                docs_repo,
+                bundled_seed_path=Path("modules/documents/workflow_profiles.json"),
+                legacy_profiles_path=root / "workflow_profiles.json",
+            )
+            profile_store.ensure_seeded(WorkflowProfileSeedReader())
             service = DocumentsService(
                 repository=docs_repo,
+                profile_store=profile_store,
                 signature_api=_FakeSignatureApi(),
                 registry_projection_api=RegistryProjectionApi(registry),
             )

@@ -1,35 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 
 from interfaces.pyqt.contributions.common import normalize_role
 from interfaces.pyqt.presenters.formatting import format_local
-from interfaces.pyqt.presenters.storage_paths import workflow_profiles_file
-
-
-class _FakeSettingsService:
-    def __init__(self, docs_settings: dict[str, object]) -> None:
-        self._docs_settings = docs_settings
-
-    def get_module_settings(self, module_id: str) -> dict[str, object]:
-        if module_id != "documents":
-            return {}
-        return dict(self._docs_settings)
-
-
-class _FakeContainer:
-    def __init__(self, docs_settings: dict[str, object] | None = None) -> None:
-        self._settings = _FakeSettingsService(docs_settings or {})
-
-    def has_port(self, port_name: str) -> bool:
-        return port_name == "settings_service"
-
-    def get_port(self, port_name: str):
-        if port_name == "settings_service":
-            return self._settings
-        raise KeyError(port_name)
-
 
 def test_normalize_role_is_case_insensitive() -> None:
     assert normalize_role("admin") == "ADMIN"
@@ -42,9 +16,3 @@ def test_format_local_uses_timezone() -> None:
     rendered = format_local(dt)
     assert isinstance(rendered, str)
     assert len(rendered) >= 16
-
-
-def test_workflow_profiles_file_respects_settings_override(tmp_path: Path) -> None:
-    container = _FakeContainer({"profiles_file": "custom/profiles.json"})
-    path = workflow_profiles_file(container, tmp_path)
-    assert path == (tmp_path / "custom" / "profiles.json")

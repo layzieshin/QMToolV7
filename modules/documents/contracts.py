@@ -21,11 +21,20 @@ class SystemRole(str, Enum):
 
 class DocumentStatus(str, Enum):
     PLANNED = "PLANNED"
+    DRAFT = "DRAFT"  # relational profile vocabulary only; document runtime uses IN_PROGRESS
     IN_PROGRESS = "IN_PROGRESS"
     IN_REVIEW = "IN_REVIEW"
     IN_APPROVAL = "IN_APPROVAL"
     APPROVED = "APPROVED"
     ARCHIVED = "ARCHIVED"
+
+
+def is_editor_phase(status: DocumentStatus) -> bool:
+    """True for active editor phase after workflow start (runtime IN_PROGRESS).
+
+    DRAFT is accepted only as a defensive alias for accidental relational leakage.
+    """
+    return status in (DocumentStatus.IN_PROGRESS, DocumentStatus.DRAFT)
 
 
 class DocumentType(str, Enum):
@@ -121,6 +130,7 @@ class WorkflowProfile:
 
     @staticmethod
     def long_release_path() -> "WorkflowProfile":
+        """Test/DTO helper only — not a production runtime fallback."""
         return WorkflowProfile(
             profile_id="long_release",
             label="Long release path",
@@ -132,7 +142,11 @@ class WorkflowProfile:
                 DocumentStatus.APPROVED,
             ),
             four_eyes_required=True,
-            signature_required_transitions=("IN_PROGRESS->IN_REVIEW", "IN_REVIEW->IN_APPROVAL", "IN_APPROVAL->APPROVED"),
+            signature_required_transitions=(
+                "IN_PROGRESS->IN_REVIEW",
+                "IN_REVIEW->IN_APPROVAL",
+                "IN_APPROVAL->APPROVED",
+            ),
             requires_editors=True,
             requires_reviewers=True,
             requires_approvers=True,

@@ -25,7 +25,6 @@ def build_top_filter_bar(
     on_refresh: Callable[[], None],
     on_advanced_filter: Callable[[], None],
     on_apply_filter: Callable[[], None],
-    on_profile_manager: Callable[[], None],
 ) -> dict[str, object]:
     """Build the top filter/action button row. Returns {"layout": QHBoxLayout, "buttons": dict}."""
     row = QHBoxLayout()
@@ -34,7 +33,6 @@ def build_top_filter_bar(
         ("refresh", "Aktualisieren", on_refresh),
         ("filter_advanced", "Erweiterter Filter", on_advanced_filter),
         ("filter", "Filter anwenden", on_apply_filter),
-        ("profile_manager", "Workflowprofil-Manager", on_profile_manager),
     ]:
         btn = QPushButton(label)
         btn.clicked.connect(handler)

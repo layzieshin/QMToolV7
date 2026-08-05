@@ -169,6 +169,10 @@ JSON-Persistenz-Baseline (Artefaktpaket Dokumentenlenkung v2, nur Dokumentation)
   Ablaufe lesen Settings, schreiben aber bis zum separat freigegebenen Desktop-
   Backend-Sessiontransport fail-closed. J09 bleibt Owner dieses Transports.
 - **J03 und alle weiteren J-Pakete** brauchen jeweils separate Freigaben.
+- **J03 (R1 / R1.1 / R1.2):** Nachbesserung im Branch `feature/j03-documents-workflow-profiles`
+  (Worktree `QMToolV7-j03`); Abnahmebericht `docs/J03_ACCEPTANCE_REPORT.md`.
+  R1.2 korrigiert Bootstrap-Provenienz vor Migration (frisch vs. V1-Upgrade).
+  Commit/Push/PR erst nach Supervisor-Review.
 - **J03–J06** muessen in den Documents-Umbau integriert werden; kein paralleler
   Persistenzumbau neben dem Documents-Sollmodell.
 

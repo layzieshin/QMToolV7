@@ -35,6 +35,14 @@ Project GUI architecture:
 - Key: `seed_mode` (repository default: `legacy_defaults`; see production standard below)
 - Key: `dev_mode` (repository default: `true`; local seed convenience toggle)
 
+### Public API surface note (J03-accepted)
+
+- `modules/usermanagement/api.py` exports `require_confirmed_user_context(actor) -> UserContext`.
+- Scope: validate an already confirmed public `UserContext` with non-empty `user_id` / `session_id` / `request_id`.
+- Non-scope: no new roles, permissions, assignments, or persistence.
+- Documents profile admin combines it with `is_effective_qmb`; ADMIN without effective QMB remains rejected.
+- Documents must not import `modules.usermanagement.contracts` and must not read private confirmation markers.
+
 | Key | Governance class | Notes |
 | --- | --- | --- |
 | `users_db_path` | operational | Storage location; change with backup/migration plan. |

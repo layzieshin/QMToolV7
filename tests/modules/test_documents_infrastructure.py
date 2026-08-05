@@ -12,11 +12,13 @@ from modules.documents.contracts import (
     ValidityExtensionOutcome,
     WorkflowProfile,
 )
-from modules.documents.profile_store import WorkflowProfileStoreJSON
 from modules.documents.service import DocumentsService
 from modules.documents.storage import FileSystemDocumentsStorage
+from modules.documents.workflow_profile_seed_reader import WorkflowProfileSeedReader
+from modules.documents.workflow_profile_store import WorkflowProfileRelationalStore
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 from tests.database_helpers import make_docs_repository as SQLiteDocumentsRepository
+from tests.database_helpers import make_documents_service_with_profiles
 
 
 class _FakeSignatureApi:
@@ -51,31 +53,40 @@ class _FakeAuditLogger:
 
 
 class DocumentsInfrastructureTest(unittest.TestCase):
-    def test_profile_store_loads_default_profiles(self) -> None:
-        file_path = Path("modules/documents/workflow_profiles.json")
-        store = WorkflowProfileStoreJSON(file_path)
-        profile = store.get("long_release")
-        self.assertEqual(profile.profile_id, "long_release")
+    def test_seed_reader_loads_default_profiles(self) -> None:
+        reader = WorkflowProfileSeedReader()
+        payload = reader.read(Path("modules/documents/workflow_profiles.json"))
+        profiles = {item.profile_code: item for item in payload["profiles"]}
+        profile = profiles["long_release"]
+        self.assertEqual(profile.profile_code, "long_release")
         self.assertTrue(profile.four_eyes_required)
 
-    def test_profile_store_loads_controlled_short_without_signatures(self) -> None:
-        file_path = Path("modules/documents/workflow_profiles.json")
-        store = WorkflowProfileStoreJSON(file_path)
-        profile = store.get("Controlled_Short_woSig")
-
-        self.assertEqual(profile.profile_id, "Controlled_Short_woSig")
-        self.assertEqual(profile.control_class, ControlClass.CONTROLLED_SHORT)
-        self.assertEqual(profile.signature_required_transitions, ())
-        self.assertTrue(profile.requires_editors)
-        self.assertTrue(profile.requires_reviewers)
-        self.assertTrue(profile.requires_approvers)
+    def test_relational_store_bootstrap_preserves_runtime_profile_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
+            store = WorkflowProfileRelationalStore(
+                repo,
+                bundled_seed_path=Path("modules/documents/workflow_profiles.json"),
+                legacy_profiles_path=root / "missing-workflow-profiles.json",
+            )
+            store.ensure_seeded(WorkflowProfileSeedReader())
+            profile = store.get("Controlled_Short_woSig")
+            self.assertEqual(profile.profile_id, "Controlled_Short_woSig")
+            self.assertEqual(profile.control_class, ControlClass.CONTROLLED_SHORT)
+            self.assertEqual(profile.signature_required_transitions, ())
+            self.assertTrue(profile.requires_editors)
+            self.assertTrue(profile.requires_reviewers)
+            self.assertTrue(profile.requires_approvers)
 
     def test_sqlite_repository_persists_and_lists_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db_path = root / "documents.db"
-            repo = SQLiteDocumentsRepository(db_path=db_path)
-            service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
+            service, _store = make_documents_service_with_profiles(
+                db_path,
+                signature_api=_FakeSignatureApi(),
+            )
 
             planned = service.create_document_version("DOC-PERSIST-1", 1)
             approved = service.create_document_version("DOC-PERSIST-2", 1)
@@ -99,8 +110,11 @@ class DocumentsInfrastructureTest(unittest.TestCase):
             root = Path(tmp)
             db_path = root / "documents.db"
             storage = FileSystemDocumentsStorage(root / "artifacts")
-            repo = SQLiteDocumentsRepository(db_path=db_path)
-            service = DocumentsService(repository=repo, storage_port=storage, signature_api=_FakeSignatureApi())
+            service, _store = make_documents_service_with_profiles(
+                db_path,
+                signature_api=_FakeSignatureApi(),
+                storage_port=storage,
+            )
 
             source_docx = root / "source.docx"
             source_docx.write_bytes(b"docx-content")
@@ -132,19 +146,18 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         root = Path(tempfile.mkdtemp(prefix="qmtool-docs-infra-"))
         db_path = root / "documents.db"
         storage = FileSystemDocumentsStorage(root / "artifacts")
-        repo = SQLiteDocumentsRepository(db_path=db_path)
         audit = _FakeAuditLogger()
 
         def _fake_docx_to_pdf(source: Path, target: Path) -> None:
             target.write_bytes(b"%PDF-1.4\n%fake\n")
 
-        service = DocumentsService(
-            repository=repo,
+        service, _store = make_documents_service_with_profiles(
+            db_path,
             storage_port=storage,
             signature_api=_FakeSignatureApi(),
             audit_logger=audit,
-            docx_to_pdf_converter=_fake_docx_to_pdf,
         )
+        service._docx_to_pdf_converter = _fake_docx_to_pdf
 
         source_docx = root / "workflow.docx"
         source_docx.write_bytes(b"docx-content")
@@ -184,17 +197,15 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         root = Path(tempfile.mkdtemp(prefix="qmtool-docs-sign-"))
         db_path = root / "documents.db"
         storage = FileSystemDocumentsStorage(root / "artifacts")
-        repo = SQLiteDocumentsRepository(db_path=db_path)
-
         def _fake_docx_to_pdf(_source: Path, target: Path) -> None:
             target.write_bytes(b"%PDF-1.4\n%source\n")
 
-        service = DocumentsService(
-            repository=repo,
+        service, _store = make_documents_service_with_profiles(
+            db_path,
             storage_port=storage,
             signature_api=_FakeSignatureApi(),
-            docx_to_pdf_converter=_fake_docx_to_pdf,
         )
+        service._docx_to_pdf_converter = _fake_docx_to_pdf
 
         source_docx = root / "review.docx"
         source_docx.write_bytes(b"docx-review")
@@ -233,8 +244,10 @@ class DocumentsInfrastructureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db_path = root / "documents.db"
-            repo = SQLiteDocumentsRepository(db_path=db_path)
-            service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
+            service, _store = make_documents_service_with_profiles(
+                db_path,
+                signature_api=_FakeSignatureApi(),
+            )
 
             state = service.create_document_version("DOC-DIST", 1, owner_user_id="owner-1")
             service.update_document_header(
@@ -265,17 +278,16 @@ class DocumentsInfrastructureTest(unittest.TestCase):
     def test_signature_chain_uses_latest_current_signed_pdf_for_next_transition(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
             storage = FileSystemDocumentsStorage(root / "artifacts")
             def _fake_docx_to_pdf(_source: Path, target: Path) -> None:
                 target.write_bytes(b"%PDF-1.4\n%source\n")
 
-            service = DocumentsService(
-                repository=repo,
+            service, _store = make_documents_service_with_profiles(
+                root / "documents.db",
                 storage_port=storage,
                 signature_api=_ChainSignatureApi(),
-                docx_to_pdf_converter=_fake_docx_to_pdf,
             )
+            service._docx_to_pdf_converter = _fake_docx_to_pdf
 
             source_docx = root / "chain.docx"
             source_docx.write_bytes(b"docx-chain")
@@ -344,8 +356,10 @@ class DocumentsInfrastructureTest(unittest.TestCase):
     def test_sqlite_roundtrip_persists_validity_extension_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            repo = SQLiteDocumentsRepository(db_path=root / "documents.db")
-            service = DocumentsService(repository=repo, signature_api=_FakeSignatureApi())
+            service, _store = make_documents_service_with_profiles(
+                root / "documents.db",
+                signature_api=_FakeSignatureApi(),
+            )
             state = service.create_document_version("DOC-EXT-SQL", 1, owner_user_id="owner-1")
             state = service.assign_workflow_roles(state, editors={"e"}, reviewers={"r"}, approvers={"a"})
             state = service.start_workflow(state, WorkflowProfile.long_release_path())
@@ -360,7 +374,7 @@ class DocumentsInfrastructureTest(unittest.TestCase):
                 reason="Audit ohne Befund",
                 review_outcome=ValidityExtensionOutcome.UNCHANGED,
             )
-            loaded = repo.get("DOC-EXT-SQL", 1)
+            loaded = service.get_document_version("DOC-EXT-SQL", 1)
             assert loaded is not None
             self.assertEqual(loaded.last_extended_by, "qmb-1")
             self.assertEqual(loaded.last_extension_reason, "Audit ohne Befund")

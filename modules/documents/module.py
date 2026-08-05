@@ -87,6 +87,11 @@ DOCUMENTS_DATABASE_CONTRIBUTION = DatabaseContribution(
             name="initial",
             sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
         ),
+        DatabaseMigrationContribution(
+            version=2,
+            name="workflow_profiles",
+            sql_path=Path(__file__).parent / "migrations" / "0002_workflow_profiles.sql",
+        ),
     ),
     validation_queries=(
         DatabaseValidationContribution(

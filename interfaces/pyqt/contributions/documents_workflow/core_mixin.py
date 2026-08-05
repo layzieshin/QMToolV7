@@ -1,18 +1,13 @@
-"""Core helpers, audit, profiles, table reload (documents workflow)."""
+"""Core helpers, audit, profile selection, table reload (documents workflow)."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from PyQt6.QtCore import QThread
-from PyQt6.QtWidgets import QDialog, QMessageBox
+from PyQt6.QtWidgets import QMessageBox
 
 from interfaces.pyqt.contributions.common import user_to_system_role
 from interfaces.pyqt.presenters.documents_detail_presenter import DocumentsDetailPresenter
-from interfaces.pyqt.presenters.storage_paths import workflow_profiles_file
 from interfaces.pyqt.sections.filter_bar import open_advanced_filter_dialog
 from interfaces.pyqt.widgets.table_helpers import fill_table
-from interfaces.pyqt.widgets.workflow_profile_wizard import WorkflowProfileWizardDialog
 from interfaces.pyqt.workers import TableReloadResult, TableReloadWorker
 from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType, SystemRole, control_class_for
 
@@ -93,20 +88,6 @@ class DocumentsWorkflowCoreMixin:
         self._table.verticalHeader().setDefaultSectionSize(24)
         self._inline_notice.setText("Tabellendichte aktiv: Kompakt")
 
-    def _is_profile_manager_allowed(self) -> bool:
-        user = self._um.get_current_user()
-        if user is None:
-            return False
-        role = user_to_system_role(user)
-        if role in (SystemRole.ADMIN, SystemRole.QMB):
-            return True
-        if self._current_state is None:
-            return False
-        return str(self._current_state.owner_user_id or "") == str(user.user_id)
-
-    def _profiles_file_path(self) -> Path:
-        return workflow_profiles_file(self._container, self._app_home)
-
     def _doc_type_profile_rules(self) -> dict[str, dict[str, object]]:
         if not self._container.has_port("settings_service"):
             return {}
@@ -143,40 +124,11 @@ class DocumentsWorkflowCoreMixin:
         }
 
     def _open_workflow_profile_manager(self) -> None:
-        try:
-            if not self._is_profile_manager_allowed():
-                raise RuntimeError("Workflowprofil-Manager ist nur fuer Admin, QMB oder Dokumenteneigner verfuegbar")
-            dialog = WorkflowProfileWizardDialog(self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
-            payload = dialog.payload()
-            if not payload.profile_id:
-                raise RuntimeError("Profil-ID ist erforderlich")
-            file_path = self._profiles_file_path()
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            data = {"profiles": []}
-            if file_path.exists():
-                data = json.loads(file_path.read_text(encoding="utf-8"))
-            profiles = list(data.get("profiles", []))
-            profiles = [p for p in profiles if str(p.get("profile_id", "")) != payload.profile_id]
-            profiles.append(payload.as_json_dict())
-            data["profiles"] = profiles
-            file_path.write_text(json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8")
-            self._append("WORKFLOWPROFIL_GESPEICHERT", {"profile_id": payload.profile_id, "path": str(file_path)})
-        except Exception as exc:  # noqa: BLE001
-            self._show_error(exc, critical=True)
+        self._show_error(RuntimeError("Workflowprofil-Verwaltung ist in J03 nur ueber die CLI verfuegbar"), critical=True)
 
     def _available_profiles_for_control_class(self, control_class: ControlClass) -> list[str]:
         try:
-            file_path = self._profiles_file_path()
-            payload = json.loads(file_path.read_text(encoding="utf-8")) if file_path.exists() else {"profiles": []}
-            profiles = []
-            for item in payload.get("profiles", []):
-                if str(item.get("control_class", "")).strip() == control_class.value:
-                    profile_id = str(item.get("profile_id", "")).strip()
-                    if profile_id:
-                        profiles.append(profile_id)
-            return sorted(set(profiles))
+            return self._wf.list_profile_ids_for_control_class(control_class)
         except Exception:  # noqa: BLE001
             self._log.exception("Loading workflow profiles failed")
             return []

@@ -598,7 +598,7 @@ class DocumentsCliTest(unittest.TestCase):
             "external_control",
         )
         self.assertEqual(blocked.returncode, 6)
-        self.assertIn("does not match document control_class", blocked.stdout)
+        self.assertIn("does not match bound workflow_profile_id", blocked.stdout)
 
     def test_header_set_blocks_doc_type_and_control_class_mutation(self) -> None:
         self._login("admin", "adminpass01")
@@ -849,6 +849,21 @@ class DocumentsCliTest(unittest.TestCase):
         )
         self.assertEqual(extended.returncode, 0, msg=extended.stderr + extended.stdout)
         self.assertIn("RECREATE_REQUIRED: false", extended.stdout)
+
+    def test_profile_admin_requires_backend_session_token(self) -> None:
+        result = run_cli("documents", "profile-list")
+        self.assertEqual(result.returncode, 6)
+        self.assertIn("qmtool_session_token", result.stdout.lower())
+
+    def test_profile_admin_rejects_unresolvable_backend_token_fail_closed(self) -> None:
+        token = "opaque-token-from-backend"
+        result = run_cli(
+            "documents",
+            "profile-list",
+            env={"QMTOOL_SESSION_TOKEN": token},
+        )
+        self.assertEqual(result.returncode, 6)
+        self.assertIn("fail-closed", result.stdout.lower())
 
 
 if __name__ == "__main__":

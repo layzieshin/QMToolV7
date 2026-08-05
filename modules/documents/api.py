@@ -191,7 +191,7 @@ class DocumentsWorkflowApi:
         description: str | None = None,
         doc_type: DocumentType = DocumentType.OTHER,
         control_class: ControlClass | None = None,
-        workflow_profile_id: str = "long_release",
+        workflow_profile_id: str | None = None,
         custom_fields: dict[str, object] | None = None,
     ) -> DocumentVersionState:
         return self._service.create_document_version(
@@ -260,6 +260,92 @@ class DocumentsWorkflowApi:
     def get_profile(self, profile_id: str) -> WorkflowProfile:
         return self._service.get_profile(profile_id)
 
+    def list_workflow_profile_definitions(
+        self,
+        *,
+        actor: object,
+        include_inactive: bool = True,
+    ) -> list[dict[str, object]]:
+        return self._service.list_workflow_profile_definitions(actor=actor, include_inactive=include_inactive)
+
+    def list_workflow_profile_versions(
+        self,
+        profile_code: str,
+        *,
+        actor: object,
+    ) -> list[dict[str, object]]:
+        return self._service.list_workflow_profile_versions(profile_code, actor=actor)
+
+    def create_workflow_profile_definition(
+        self,
+        payload: dict[str, object],
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        return self._service.create_workflow_profile_definition(payload, actor=actor, change_reason=change_reason)
+
+    def create_workflow_profile_version(
+        self,
+        profile_code: str,
+        payload: dict[str, object],
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        return self._service.create_workflow_profile_version(
+            profile_code,
+            payload,
+            actor=actor,
+            change_reason=change_reason,
+        )
+
+    def activate_workflow_profile_definition(
+        self,
+        profile_code: str,
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        return self._service.set_workflow_profile_active(
+            profile_code,
+            actor=actor,
+            is_active=True,
+            change_reason=change_reason,
+        )
+
+    def deactivate_workflow_profile_definition(
+        self,
+        profile_code: str,
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        return self._service.set_workflow_profile_active(
+            profile_code,
+            actor=actor,
+            is_active=False,
+            change_reason=change_reason,
+        )
+
+    def bind_document_type_default_profile(
+        self,
+        doc_type: DocumentType,
+        profile_code: str,
+        *,
+        actor: object,
+        change_reason: str,
+    ) -> dict[str, object]:
+        return self._service.bind_document_type_default_profile(
+            doc_type,
+            profile_code,
+            actor=actor,
+            change_reason=change_reason,
+        )
+
+    def list_profile_ids_for_control_class(self, control_class: ControlClass) -> list[str]:
+        return self._service.list_profile_ids_for_control_class(control_class)
+
     def assign_workflow_roles(
         self,
         state: DocumentVersionState,
@@ -282,12 +368,24 @@ class DocumentsWorkflowApi:
     def start_workflow(
         self,
         state: DocumentVersionState,
-        profile: WorkflowProfile,
+        profile: WorkflowProfile | None = None,
         *,
+        profile_id: str | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
     ) -> DocumentVersionState:
-        return self._service.start_workflow(state, profile, actor_user_id=actor_user_id, actor_role=actor_role)
+        """Start workflow using the document's bound ``workflow_profile_id``.
+
+        ``profile`` / ``profile_id`` are optional compatibility checks only and
+        must match the stored binding when provided. The binding is never changed.
+        """
+        return self._service.start_workflow(
+            state,
+            profile,
+            profile_id=profile_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
 
     def complete_editing(
         self,

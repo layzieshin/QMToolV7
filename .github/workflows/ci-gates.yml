@@ -74,6 +74,18 @@ jobs:
           )
 
           with sqlite3.connect(path) as connection:
+              # Relational profiles are seeded at Documents wiring time, not in SQL
+              # migrations. The CI fixture only runs migrate, so insert the minimal
+              # active definition needed for the sample document + gate checks.
+              connection.execute(
+                  """
+                  INSERT INTO workflow_profile_definitions (
+                      profile_code, label, control_class, is_active, active_version,
+                      created_at, created_by, updated_at, updated_by
+                  ) VALUES (?, ?, ?, 1, 1, datetime('now'), 'ci', datetime('now'), 'ci')
+                  """,
+                  ("long_release", "Long release path", "CONTROLLED"),
+              )
               connection.execute(
                   """
                   INSERT INTO document_headers (
@@ -112,7 +124,7 @@ jobs:
 
       - name: Run migration gate script
         run: |
-          python scripts/migration_gates_documents.py --documents-db-path build/ci-documents.db --profiles-path modules/documents/workflow_profiles.json --baseline-other-count 0 > build/migration-gate-output.json
+          python scripts/migration_gates_documents.py --documents-db-path build/ci-documents.db --baseline-other-count 0 > build/migration-gate-output.json
 
       - name: Run go-live gate script
         run: |

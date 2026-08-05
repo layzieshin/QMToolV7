@@ -24,6 +24,7 @@ from .contracts import (
     UserContext,
 )
 from .cutover_prep import CutoverPrepResult, prepare_postgres_cutover as _prepare_postgres_cutover
+from .role_policies import is_effective_qmb, normalize_base_role
 from .errors import (
     AuditUnavailableError,
     AuthenticationError,
@@ -42,7 +43,6 @@ from .errors import (
     UserNotFoundError,
     WeakPasswordError,
 )
-from .role_policies import is_effective_qmb, normalize_base_role
 
 __all__ = [
     "AuthenticatedUser",
@@ -75,6 +75,7 @@ __all__ = [
     "login_backend",
     "logout_backend",
     "resolve_session",
+    "require_confirmed_user_context",
     "revoke_all_own_sessions",
     "change_own_password",
     "create_user_as_admin",
@@ -170,6 +171,25 @@ def resolve_session(
         request_id=request_id,
         password_change_allowed=password_change_allowed,
     )
+
+
+def require_confirmed_user_context(actor: object) -> UserContext:
+    """Fail-closed guard: require a confirmed public ``UserContext`` with non-empty IDs.
+
+    Documents and other modules must call this instead of duck-typing actor attributes
+    or reading private confirmation markers.
+    """
+    if not isinstance(actor, UserContext):
+        raise AuthorizationError("confirmed UserContext is required")
+    if not actor.is_confirmed:
+        raise AuthorizationError("confirmed UserContext is required")
+    if not str(actor.user_id).strip():
+        raise AuthorizationError("user_id is required")
+    if not str(actor.session_id).strip():
+        raise AuthorizationError("session_id is required")
+    if not str(actor.request_id).strip():
+        raise AuthorizationError("request_id is required")
+    return actor
 
 
 def revoke_all_own_sessions(container, context: UserContext) -> list[SessionRecord]:
