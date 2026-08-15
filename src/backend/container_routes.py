@@ -287,6 +287,11 @@ def module_blueprints(request: Request, actor: Annotated[UserContext, Depends(re
     return _call(lambda: _api(request).list_module_blueprints(actor))
 
 
+@router.get("/runtime-modules")
+def runtime_modules(request: Request, actor: Annotated[UserContext, Depends(require_user_context_normal)]):
+    return _call(lambda: _api(request).list_runtime_modules(actor))
+
+
 @router.post("/blueprints/validate")
 def validate_blueprint(body: ModuleBlueprintCommand, request: Request, actor: Annotated[UserContext, Depends(require_user_context_normal)]):
     return _call(lambda: _api(request).validate_module_blueprint(actor, _blueprint(body)))

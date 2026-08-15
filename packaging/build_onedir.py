@@ -66,6 +66,7 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
     ),
     ("modules/container/migrations/0001_initial.sql", "modules/container/migrations"),
     ("src/backend/static/container_admin", "src/backend/static/container_admin"),
+    ("src/backend/static/container_user", "src/backend/static/container_user"),
     (
         "qm_platform/persistence/migrations/0001_platform_settings.sql",
         "qm_platform/persistence/migrations",
@@ -137,8 +138,8 @@ def main() -> int:
         cmd.extend(["--collect-all", package])
     for rel, dest in _BUNDLE_DATA:
         src = ROOT / rel
-        if not src.is_file():
-            raise FileNotFoundError(f"Bundle data file missing: {src}")
+        if not src.exists():
+            raise FileNotFoundError(f"Bundle data path missing: {src}")
         cmd.extend(["--add-data", f"{src.resolve()}{_ADD_DATA_SEP}{dest}"])
     cmd.append(str(ENTRY))
     print(" ", " ".join(cmd))

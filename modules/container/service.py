@@ -24,9 +24,10 @@ from .domain import (
     FieldType, LifecycleStateDefinition, LinkType, ModuleBlueprintDraft,
     ObjectDetail, ObjectSignature, ObjectSnapshot, ParentKind,
     PhysicalDeletionApproval, PublishedBlueprintTemplate,
-    PublishedModuleBlueprint, ReferenceKind, StructuralParentRef, TemplateDraft,
-    TemplateKind, TemplateMigrationRecord, TemplateState, TemplateVersion,
-    Tombstone,
+    PublishedModuleBlueprint, ReferenceKind, RuntimeModuleDefinition,
+    RuntimeTemplateDefinition, RuntimeTransitionDefinition, StructuralParentRef,
+    TemplateDraft, TemplateKind, TemplateMigrationRecord, TemplateState,
+    TemplateVersion, Tombstone,
 )
 from .errors import ContainerError
 from .sqlite_repository import SQLiteContainerRepository
@@ -239,6 +240,64 @@ class ContainerService:
             rows = conn.execute("SELECT uid FROM module_blueprints ORDER BY name,uid").fetchall()
         return [self._get_module_blueprint(row["uid"]) for row in rows]
 
+    def list_runtime_modules(self, actor: object) -> list[RuntimeModuleDefinition]:
+        """Return the permission-filtered module projection consumed by thin clients."""
+        context = self._actor(actor)
+        result: list[RuntimeModuleDefinition] = []
+        with self._repository.read() as conn:
+            workspace_root_uid = conn.execute("SELECT uid FROM workspace_roots WHERE singleton=1").fetchone()[0]
+            blueprints = conn.execute("SELECT * FROM module_blueprints ORDER BY name,uid").fetchall()
+            for blueprint in blueprints:
+                template_rows = conn.execute(
+                    """SELECT m.template_key,m.template_version_uid,m.is_root,v.kind,v.name
+                       FROM module_blueprint_templates m
+                       JOIN template_versions v ON v.uid=m.template_version_uid
+                       WHERE m.module_blueprint_uid=? AND v.state=?
+                       ORDER BY m.template_key""",
+                    (blueprint["uid"], TemplateState.PUBLISHED.value),
+                ).fetchall()
+                templates = tuple(
+                    self._runtime_template_definition(conn, context, row)
+                    for row in template_rows
+                )
+                roots = conn.execute(
+                    """SELECT * FROM objects
+                       WHERE parent_kind=? AND parent_uid=? AND template_version_uid=?
+                       ORDER BY created_at,uid""",
+                    (
+                        ParentKind.WORKSPACE_ROOT.value,
+                        workspace_root_uid,
+                        blueprint["root_template_version_uid"],
+                    ),
+                ).fetchall()
+                visible_roots = tuple(
+                    self._object_from_row(row)
+                    for row in roots
+                    if self._decision(
+                        conn,
+                        context,
+                        ActionCode.VIEW,
+                        ReferenceKind.OBJECT,
+                        row["uid"],
+                        row,
+                    ).allowed
+                )
+                root_template = next((item for item in templates if item.is_root), None)
+                if root_template is None or (not root_template.create_allowed and not visible_roots):
+                    continue
+                result.append(
+                    RuntimeModuleDefinition(
+                        uid=blueprint["uid"],
+                        blueprint_key=blueprint["blueprint_key"],
+                        name=blueprint["name"],
+                        description=blueprint["description"],
+                        root_template_version_uid=blueprint["root_template_version_uid"],
+                        templates=templates,
+                        root_objects=visible_roots,
+                    )
+                )
+        return result
+
     def _get_template_version(self, template_version_uid: str) -> TemplateVersion:
         with self._repository.read() as conn:
             row = conn.execute("SELECT * FROM template_versions WHERE uid=?", (template_version_uid,)).fetchone()
@@ -330,7 +389,22 @@ class ContainerService:
             values = self._read_visible_values(conn, "object", object_uid)
             refs = tuple(self.list_references(context, kind=ReferenceKind.OBJECT, uid=object_uid))
             decisions = self.allowed_actions(context, ReferenceKind.OBJECT, object_uid)
-        return ObjectDetail(entity, values, decisions, refs)
+            artifacts = tuple(
+                self._artifact_from_row(row)
+                for row in conn.execute(
+                    "SELECT * FROM artifacts WHERE owner_object_uid=? ORDER BY created_at,uid",
+                    (object_uid,),
+                ).fetchall()
+                if self._decision(
+                    conn,
+                    context,
+                    ActionCode.VIEW,
+                    ReferenceKind.ARTIFACT,
+                    row["uid"],
+                    row,
+                ).allowed
+            )
+        return ObjectDetail(entity, values, decisions, refs, artifacts)
 
     def list_children(self, actor: object, parent: StructuralParentRef) -> list[ContainerObject]:
         context = self._actor(actor)
@@ -1306,6 +1380,111 @@ class ContainerService:
                 for template in templates
             ),
             published_by=row["published_by"],
+        )
+
+    def _runtime_template_definition(self, conn, context, row) -> RuntimeTemplateDefinition:
+        """Build a published template projection without leaking role policy to clients."""
+        template_version_uid = row["template_version_uid"]
+        field_rows = conn.execute(
+            """SELECT * FROM field_definitions
+               WHERE template_version_uid=? AND visible=1
+               ORDER BY position,field_key""",
+            (template_version_uid,),
+        ).fetchall()
+        fields = tuple(
+            FieldDefinition(
+                key=field["field_key"],
+                field_type=FieldType(field["field_type"]),
+                required=bool(field["required"]),
+                searchable=bool(field["searchable"]),
+                linkable=bool(field["linkable"]),
+                printable=bool(field["printable"]),
+                relevant_for_review=bool(field["relevant_for_review"]),
+                historized=bool(field["historized"]),
+                editable=bool(field["editable"]),
+                visible=True,
+                options=tuple(
+                    option["option_value"]
+                    for option in conn.execute(
+                        """SELECT option_value FROM field_options
+                           WHERE field_definition_uid=? ORDER BY position,option_value""",
+                        (field["uid"],),
+                    ).fetchall()
+                ),
+            )
+            for field in field_rows
+        )
+        children = tuple(
+            ChildDefinition(
+                key=child["child_key"],
+                template_version_uid=child["child_template_version_uid"],
+                min_count=child["min_count"],
+                max_count=child["max_count"],
+                auto_create=bool(child["auto_create"]),
+                mode=ChildMode(child["mode"]),
+            )
+            for child in self._children(conn, template_version_uid)
+        )
+        states = tuple(
+            LifecycleStateDefinition(state["state_code"], bool(state["is_initial"]))
+            for state in conn.execute(
+                """SELECT state_code,is_initial FROM lifecycle_states
+                   WHERE template_version_uid=? ORDER BY state_code""",
+                (template_version_uid,),
+            ).fetchall()
+        )
+        transitions: list[RuntimeTransitionDefinition] = []
+        transition_rows = conn.execute(
+            """SELECT * FROM lifecycle_transitions
+               WHERE template_version_uid=? ORDER BY from_state_code,to_state_code""",
+            (template_version_uid,),
+        ).fetchall()
+        for transition in transition_rows:
+            allowed_roles = {
+                role["role_code"]
+                for role in conn.execute(
+                    """SELECT role_code FROM lifecycle_transition_roles
+                       WHERE transition_uid=?""",
+                    (transition["uid"],),
+                ).fetchall()
+            }
+            if allowed_roles and not self._actor_allowed(context, allowed_roles):
+                continue
+            transitions.append(
+                RuntimeTransitionDefinition(
+                    from_state=transition["from_state_code"],
+                    to_state=transition["to_state_code"],
+                    reason_required=bool(transition["reason_required"]),
+                    signature_required=bool(transition["signature_required"]),
+                )
+            )
+        create_roles = {
+            role["role_code"]
+            for role in conn.execute(
+                """SELECT role_code FROM template_create_roles
+                   WHERE template_version_uid=?""",
+                (template_version_uid,),
+            ).fetchall()
+        }
+        has_hidden_required_field = conn.execute(
+            """SELECT 1 FROM field_definitions
+               WHERE template_version_uid=? AND required=1 AND visible=0 LIMIT 1""",
+            (template_version_uid,),
+        ).fetchone() is not None
+        return RuntimeTemplateDefinition(
+            template_key=row["template_key"],
+            template_version_uid=template_version_uid,
+            kind=TemplateKind(row["kind"]),
+            name=row["name"],
+            fields=fields,
+            children=children,
+            lifecycle_states=states,
+            lifecycle_transitions=tuple(transitions),
+            create_allowed=(
+                self._actor_allowed(context, create_roles)
+                and not has_hidden_required_field
+            ),
+            is_root=bool(row["is_root"]),
         )
 
     def _assert_publishable(self, conn, uid):

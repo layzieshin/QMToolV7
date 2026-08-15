@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from fastapi.responses import RedirectResponse
 from uvicorn import run
 
 from modules.usermanagement.api import UserContext, issue_local_demo_context
@@ -17,6 +18,7 @@ from src.backend.api import create_app
 from src.backend.auth_dependencies import require_user_context_normal
 from src.backend.bootstrap import wire_backend_container
 from src.backend.container_admin import router as container_admin_router
+from src.backend.container_user import router as container_user_router
 
 
 def demo_user_context() -> UserContext:
@@ -42,10 +44,11 @@ def build_demo_app(app_home: Path):
     app = create_app(container, include_auth_routes=False, demo_mode=True)
     app.dependency_overrides[require_user_context_normal] = demo_user_context
     app.include_router(container_admin_router)
+    app.include_router(container_user_router)
 
     @app.get("/container/demo", include_in_schema=False)
-    def landing():
-        return {"message": "LOCAL DEMO – NO PRODUCTION AUTH", "admin": "/container/admin", "swagger": "/docs"}
+    def landing() -> RedirectResponse:
+        return RedirectResponse(url="/container/app", status_code=307)
     return app
 
 

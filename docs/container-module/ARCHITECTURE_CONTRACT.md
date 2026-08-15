@@ -46,6 +46,13 @@ vollständige Zuordnung steht in
 - `GET /docs` (Swagger/OpenAPI) ist ausschließlich eine Test-, Diagnose- und
   Inspektionsoberfläche. Es ist weder die Desktop-Integration noch ein
   separater fachlicher Vertrag.
+- Die lokalen statischen Oberflächen `/container/admin` und `/container/app`
+  sind ebenfalls ausschließlich Demo- und UX-Blaupausen. Sie werden nur durch
+  `src.backend.container_demo` gemountet, greifen über den öffentlichen
+  HTTP-Transport zu und gehören nicht zur Backend-only-Modulimplementierung.
+  Ein produktiver Client rendert die actor-gefilterte Runtime-Projektion und
+  `allowed_actions`; er erhält keine Rollenpolicy und leitet keine
+  Berechtigung aus Clientzustand ab.
 - Direkte Zugriffe auf Interna anderer QMTool-Module sind verboten. Externe
   Referenzen (z. B. Dokumente oder Benutzer) verwenden stabile externe IDs
   und die dafür vorgesehenen Ports/APIs.

@@ -35,6 +35,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/AP-027_DATABASE_EVOLUTION_FOUNDATION.md`
 - `docs/container-module/ARCHITECTURE_CONTRACT.md` — Container-Architekturvertrag (fachlicher Vertrag)
 - `docs/container-module/MODULE_BUILDER_GUIDE.md` — Bedien- und Prüfanleitung der lokalen Modulwerkstatt
+- `docs/container-module/END_USER_DEMO_GUIDE.md` — geprüfte Bedienanleitung der Single-Unit-Endnutzeransicht
 
 ## P2 (legacy/history or roadmap support) — not for onboarding
 

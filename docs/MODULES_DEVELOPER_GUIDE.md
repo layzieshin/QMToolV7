@@ -66,6 +66,17 @@ alle Template-Versionen atomar in berechneter Abhängigkeitsreihenfolge;
 `module_blueprints` und `module_blueprint_templates` halten die fachliche
 Modulzuordnung relational fest.
 
+`ContainerApi.list_runtime_modules(actor)` liefert die veröffentlichte,
+actor-gefilterte Laufzeitprojektion für Thin Clients. Sie enthält nur sichtbare
+Felder, für den Actor zulässige Lifecycle-Übergänge, serverseitig berechnete
+Create-Entscheidungen und sichtbare Root-Objekte; Rollen-Policy wird nicht an
+den Client weitergereicht. Die lokale Endnutzer-Blaupause unter
+`/container/app` rendert ausschließlich diese Projektion und
+`allowed_actions`. Sie wird wie die Modulwerkstatt nur von
+`src.backend.container_demo` eingebunden; `create_app(...)` in
+Produktionsform mountet keine statische Web-GUI. Bedienung und Voraussetzungen:
+`docs/container-module/END_USER_DEMO_GUIDE.md`.
+
 ### Events
 
 Versioned domain events are published only after the successful persistence

@@ -184,3 +184,28 @@ HTTP-Happy-Path umfasst Template → Object → Artifact → Upload/Download →
 Finalisierung; negative Nachweise umfassen Auth, gefälschte Payload-Felder,
 ungültige Nested-Commands, Base64, Dateinamen/Response-Header, Größenlimit und
 Immutability. Die menschliche Prüfanleitung steht in `MANUAL_TEST.md`.
+
+## 8. M6-Endnutzerprojektion und Single-Unit-Blaupause
+
+M6 ergänzt keine neue Fachpersistenz und keine Client-Berechtigungslogik. Die
+öffentliche Query `list_runtime_modules(actor)` projiziert veröffentlichte
+Blueprints actor-gefiltert: unsichtbare Felder und nicht zulässige
+Lifecycle-Übergänge werden nicht ausgeliefert, Rollenlisten bleiben intern,
+sichtbare Root-Objekte werden mit derselben `VIEW`-Entscheidung gefiltert und
+eine nicht vollständig renderbare Neuanlage mit verborgenem Pflichtfeld wird
+nicht angeboten. `ObjectDetail` liefert ausschließlich sichtbare, einzeln
+permission-gefilterte Owner-Artifacts.
+
+| Nachweis | Test |
+| --- | --- |
+| Rollenfreie Runtime-Projektion, sichtbare Felder/Roots/Übergänge und Artifact-Zuordnung | `tests/modules/container/test_container_m6_runtime_projection.py` |
+| Bestätigter Actor und verborgenes Pflichtfeld | `tests/modules/container/test_container_m6_runtime_projection.py` |
+| Authentifizierter HTTP-Adapter und Produktionsform 401 | `tests/backend/test_container_runtime_routes.py` |
+| Demo-only Endnutzerroute, keine Client-Actor-/Rollenclaims und Restart | `tests/backend/test_container_user_ui.py` |
+| Dokumentierte Labels, Einstieg, Packaging und Testpfade entsprechen der laufenden Oberfläche | `tests/backend/test_container_user_ui.py::test_end_user_guide_matches_live_ui_and_start_path` |
+
+Die statische Endnutzeroberfläche wird ausschließlich in der lokalen Demo
+gemountet. `/container/demo` leitet auf `/container/app`; die Produktform von
+`create_app` mountet die Oberfläche nicht. Der geprüfte menschliche Pfad und
+die QMTool-Integrationsvoraussetzungen stehen in
+`END_USER_DEMO_GUIDE.md`.

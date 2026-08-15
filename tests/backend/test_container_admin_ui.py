@@ -31,11 +31,13 @@ def test_admin_builder_is_complete_and_demo_only(tmp_path: Path):
     ):
         assert endpoint in script.text
 
-    landing = client.get("/container/demo").json()
-    assert landing["admin"] == "/container/admin"
+    landing = client.get("/container/demo", follow_redirects=False)
+    assert landing.status_code == 307
+    assert landing.headers["location"] == "/container/app"
 
     build_script = Path("packaging/build_onedir.py").read_text(encoding="utf-8")
     assert '("src/backend/static/container_admin", "src/backend/static/container_admin")' in build_script
+    assert '("src/backend/static/container_user", "src/backend/static/container_user")' in build_script
 
     production_shape = TestClient(create_app(demo_app.state.container))
     assert production_shape.get("/container/admin").status_code == 404

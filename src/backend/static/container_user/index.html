@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>QMTool Arbeitsbereich</title>
+  <link rel="stylesheet" href="/container/app/app.css">
+</head>
+<body>
+  <div class="demo-banner">
+    <span>Single-Unit-Testbetrieb · lokale Identität · keine Produktionsanmeldung</span>
+    <nav aria-label="Testwerkzeuge">
+      <a href="/container/admin">Modulwerkstatt</a>
+      <a href="/docs" target="_blank" rel="noreferrer">API</a>
+    </nav>
+  </div>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Module und Inhalte">
+      <a class="brand" href="/container/app">
+        <span class="brand-mark">QM</span>
+        <span><strong>Arbeitsbereich</strong><small>Veröffentlichte Module</small></span>
+      </a>
+
+      <div class="side-section">
+        <div class="side-label"><span>Module</span><button class="icon-button" data-action="refresh" title="Neu laden">↻</button></div>
+        <nav id="module-list" class="module-list" aria-label="Veröffentlichte Module"></nav>
+      </div>
+
+      <div class="side-section tree-section">
+        <div class="side-label"><span>Inhalte</span><button id="new-root-shortcut" class="icon-button" data-action="create-root" title="Neuer Haupteintrag">＋</button></div>
+        <nav id="object-tree" class="object-tree" aria-label="Objektstruktur">
+          <p class="side-hint">Bitte ein Modul auswählen.</p>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <span class="presence-dot"></span>
+        <span><strong>Lokale Testsitzung</strong><small>Berechtigungen kommen vom Backend</small></span>
+      </div>
+    </aside>
+
+    <main class="main-shell">
+      <header class="topbar">
+        <button class="mobile-menu" data-action="toggle-sidebar" aria-label="Navigation einblenden">☰</button>
+        <div id="breadcrumbs" class="breadcrumbs"><span>Arbeitsbereich</span></div>
+        <form id="search-form" class="search-box" role="search">
+          <span aria-hidden="true">⌕</span>
+          <input id="search-input" name="query" type="search" autocomplete="off" placeholder="Im Modul suchen …" aria-label="Im Modul suchen">
+          <kbd>Enter</kbd>
+        </form>
+        <button class="quiet-button" data-action="refresh">Aktualisieren</button>
+      </header>
+
+      <div id="loading" class="loading" aria-live="polite"><span></span><span></span><span></span></div>
+      <section id="workspace" class="workspace" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <dialog id="editor-dialog" class="dialog">
+    <form id="editor-form" method="dialog">
+      <header class="dialog-head">
+        <div><span id="dialog-kicker" class="eyebrow"></span><h2 id="dialog-title">Eintrag bearbeiten</h2></div>
+        <button type="button" class="icon-button close" data-action="close-dialog" aria-label="Schließen">×</button>
+      </header>
+      <div id="dialog-body" class="dialog-body"></div>
+      <footer class="dialog-actions">
+        <button type="button" class="button ghost" data-action="close-dialog">Abbrechen</button>
+        <button id="dialog-submit" type="submit" class="button primary">Speichern</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="artifact-dialog" class="dialog artifact-dialog">
+    <div id="artifact-panel"></div>
+  </dialog>
+
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/container/app/app.js" defer></script>
+</body>
+</html>

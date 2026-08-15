@@ -311,11 +311,45 @@ class Artifact:
 
 
 @dataclass(frozen=True)
+class RuntimeTransitionDefinition:
+    from_state: str
+    to_state: str
+    reason_required: bool = False
+    signature_required: bool = False
+
+
+@dataclass(frozen=True)
+class RuntimeTemplateDefinition:
+    template_key: str
+    template_version_uid: str
+    kind: TemplateKind
+    name: str
+    fields: tuple[FieldDefinition, ...]
+    children: tuple[ChildDefinition, ...]
+    lifecycle_states: tuple[LifecycleStateDefinition, ...]
+    lifecycle_transitions: tuple[RuntimeTransitionDefinition, ...]
+    create_allowed: bool
+    is_root: bool = False
+
+
+@dataclass(frozen=True)
+class RuntimeModuleDefinition:
+    uid: str
+    blueprint_key: str
+    name: str
+    description: str
+    root_template_version_uid: str
+    templates: tuple[RuntimeTemplateDefinition, ...]
+    root_objects: tuple[ContainerObject, ...]
+
+
+@dataclass(frozen=True)
 class ObjectDetail:
     entity: ContainerObject
     field_values: dict[str, object]
     allowed_actions: dict[ActionCode, ActionDecision]
     references: tuple[ContainerReference, ...]
+    artifacts: tuple[Artifact, ...] = ()
 
 
 @dataclass(frozen=True)

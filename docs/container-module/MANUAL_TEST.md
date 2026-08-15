@@ -1,16 +1,20 @@
 # Container Module: lokaler manueller Test
 
-Die lokale Demo besitzt zwei Testoberflächen: die visuelle **Modulwerkstatt** zum
+Die lokale Demo besitzt drei Testoberflächen: den produktionsnahen
+**Arbeitsbereich** für Endnutzer, die administrative **Modulwerkstatt** zum
 Zusammenstellen und Veröffentlichen kompletter Blueprints sowie Swagger für
-einzelne API-Operationen. Beide sind ausdrücklich lokal und isoliert; die
-Demo ersetzt Authentifizierung ausschließlich in dieser App.
+einzelne API-Operationen. Alle sind ausdrücklich lokal und isoliert; die Demo
+ersetzt Authentifizierung ausschließlich in dieser App.
 
 ```bash
 python -m src.backend.container_demo --app-home /tmp/qmtool-container-demo --port 8765
 ```
 
-Danach für den visuellen Builder `http://127.0.0.1:8765/container/admin`
-öffnen. Die vollständige Klickanleitung steht in
+Danach öffnet `http://127.0.0.1:8765/container/demo` direkt den
+Endnutzer-Arbeitsbereich. Für ein noch leeres Demo-Verzeichnis zuerst
+`http://127.0.0.1:8765/container/admin` öffnen und ein Modul veröffentlichen.
+Die vollständigen Klickanleitungen stehen in
+`docs/container-module/END_USER_DEMO_GUIDE.md` und
 `docs/container-module/MODULE_BUILDER_GUIDE.md`. Swagger bleibt unter
 `http://127.0.0.1:8765/docs` erreichbar. Der Titel **LOCAL DEMO – NO
 PRODUCTION AUTH** bestätigt den Demo-Modus. Die Daten liegen ausschließlich

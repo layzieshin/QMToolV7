@@ -15,6 +15,8 @@ def test_demo_is_explicit_isolated_and_idempotent(tmp_path: Path, monkeypatch):
     assert "LOCAL DEMO" in first.get("/openapi.json").json()["info"]["title"]
     assert first.get("/auth/me").status_code == 404
     assert first.get("/container/status").status_code == 200
+    landing = first.get("/container/demo", follow_redirects=False)
+    assert landing.status_code == 307 and landing.headers["location"] == "/container/app"
     assert (tmp_path / "storage/container/container.db").is_file()
     assert not outside_db.exists() and not outside_files.exists()
     second = TestClient(build_demo_app(tmp_path))
