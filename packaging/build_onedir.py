@@ -64,6 +64,8 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
         "modules/incident_management/migrations/0001_initial.sql",
         "modules/incident_management/migrations",
     ),
+    ("modules/container/migrations/0001_initial.sql", "modules/container/migrations"),
+    ("src/backend/static/container_admin", "src/backend/static/container_admin"),
     (
         "qm_platform/persistence/migrations/0001_platform_settings.sql",
         "qm_platform/persistence/migrations",

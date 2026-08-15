@@ -33,6 +33,8 @@ This file defines document priority and decision authority for the repository.
 - `docs/MODULES_USER_GUIDE.md`
 - `docs/QMToolV7_ENTWICKLUNG.md`
 - `docs/AP-027_DATABASE_EVOLUTION_FOUNDATION.md`
+- `docs/container-module/ARCHITECTURE_CONTRACT.md` — Container-Architekturvertrag (fachlicher Vertrag)
+- `docs/container-module/MODULE_BUILDER_GUIDE.md` — Bedien- und Prüfanleitung der lokalen Modulwerkstatt
 
 ## P2 (legacy/history or roadmap support) — not for onboarding
 

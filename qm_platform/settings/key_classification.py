@@ -25,6 +25,8 @@ class SettingKeyRef:
 # Bucket A — bootstrap paths / start parameters (never platform_settings, never residual).
 BOOTSTRAP_KEYS: frozenset[SettingKeyRef] = frozenset(
     {
+        SettingKeyRef("container", "container_db_path"),
+        SettingKeyRef("container", "artifact_files_root"),
         SettingKeyRef("usermanagement", "users_db_path"),
         SettingKeyRef("documents", "documents_db_path"),
         SettingKeyRef("documents", "artifacts_root"),

@@ -1,0 +1,64 @@
+"""The sole public Python import surface of the container module."""
+from __future__ import annotations
+
+from typing import BinaryIO
+
+from .domain import ActionCode, ActionDecision, Artifact, ArtifactDetail, ArtifactFile, ArtifactSignature, ArtifactSnapshot, AuditEvent, AuditRecord, BackupEvidence, BlueprintChildDefinition, BlueprintIssue, BlueprintTemplateDraft, BlueprintValidation, ChildDefinition, ChildMode, ContainerObject, ContainerReference, DeletionPolicy, DeletionPolicyScope, ExportBundle, ExportRecord, ExternalReferenceMode, ExternalReferenceResolution, ExternalReferenceTarget, FieldDefinition, FieldType, LifecycleStateDefinition, LifecycleTransitionDefinition, LinkType, ModuleBlueprintDraft, ObjectDetail, ObjectSignature, ObjectSnapshot, ParentKind, PhysicalDeletionApproval, PublishedBlueprintTemplate, PublishedModuleBlueprint, ReferenceKind, StructuralParentRef, TemplateDraft, TemplateKind, TemplateMigrationRecord, TemplateState, TemplateVersion, Tombstone
+from .errors import ContainerError
+from .service import ContainerService, MAX_OBJECT_DEPTH
+
+
+class ContainerApi:
+    def __init__(self, service: ContainerService) -> None:
+        self._service = service
+    def create_template_draft(self, actor: object, draft: TemplateDraft) -> TemplateVersion: return self._service.create_template_draft(actor, draft)
+    def publish_template(self, actor: object, template_version_uid: str) -> TemplateVersion: return self._service.publish_template(actor, template_version_uid)
+    def get_template_version(self, actor: object, template_version_uid: str) -> TemplateVersion: return self._service.get_template_version(actor, template_version_uid)
+    def validate_module_blueprint(self, actor: object, draft: ModuleBlueprintDraft) -> BlueprintValidation: return self._service.validate_module_blueprint(actor, draft)
+    def publish_module_blueprint(self, actor: object, draft: ModuleBlueprintDraft) -> PublishedModuleBlueprint: return self._service.publish_module_blueprint(actor, draft)
+    def list_module_blueprints(self, actor: object) -> list[PublishedModuleBlueprint]: return self._service.list_module_blueprints(actor)
+    def create_object(self, actor: object, template_version_uid: str, parent: StructuralParentRef, *, values: dict[str, object] | None = None) -> ContainerObject: return self._service.create_object(actor, template_version_uid, parent, values=values)
+    def update_object_fields(self, actor: object, object_uid: str, values: dict[str, object], *, expected_revision: int) -> ContainerObject: return self._service.update_object_fields(actor, object_uid, values, expected_revision=expected_revision)
+    def move_object(self, actor: object, object_uid: str, new_parent: StructuralParentRef, *, expected_revision: int) -> ContainerObject: return self._service.move_object(actor, object_uid, new_parent, expected_revision=expected_revision)
+    def get_object(self, actor: object, object_uid: str) -> ContainerObject: return self._service.get_object(actor, object_uid)
+    def get_object_detail(self, actor: object, object_uid: str) -> ObjectDetail: return self._service.get_object_detail(actor, object_uid)
+    def list_children(self, actor: object, parent: StructuralParentRef) -> list[ContainerObject]: return self._service.list_children(actor, parent)
+    def workspace_root_uid(self) -> str: return self._service.workspace_root_uid()
+    def create_artifact(self, actor: object, template_version_uid: str, owner_object_uid: str, *, values: dict[str, object] | None = None) -> Artifact: return self._service.create_artifact(actor, template_version_uid, owner_object_uid, values=values)
+    def get_artifact(self, actor: object, artifact_uid: str) -> Artifact: return self._service.get_artifact(actor, artifact_uid)
+    def get_artifact_detail(self, actor: object, artifact_uid: str) -> ArtifactDetail: return self._service.get_artifact_detail(actor, artifact_uid)
+    def update_artifact_fields(self, actor: object, artifact_uid: str, values: dict[str, object], *, expected_revision: int) -> Artifact: return self._service.update_artifact_fields(actor, artifact_uid, values, expected_revision=expected_revision)
+    def add_artifact_file(self, actor: object, artifact_uid: str, content: bytes | BinaryIO, *, original_name: str, media_type: str, expected_revision: int) -> ArtifactFile: return self._service.add_artifact_file(actor, artifact_uid, content, original_name=original_name, media_type=media_type, expected_revision=expected_revision)
+    def list_artifact_files(self, actor: object, artifact_uid: str) -> list[ArtifactFile]: return self._service.list_artifact_files(actor, artifact_uid)
+    def get_artifact_file(self, actor: object, file_uid: str) -> ArtifactFile: return self._service.get_artifact_file(actor, file_uid)
+    def read_artifact_file(self, actor: object, artifact_uid: str, file_uid: str) -> bytes: return self._service.read_artifact_file(actor, artifact_uid, file_uid)
+    def finalize_artifact(self, actor: object, artifact_uid: str, *, expected_revision: int) -> ArtifactSnapshot: return self._service.finalize_artifact(actor, artifact_uid, expected_revision=expected_revision)
+    def sign_artifact(self, actor: object, artifact_uid: str, *, meaning: str) -> ArtifactSignature: return self._service.sign_artifact(actor, artifact_uid, meaning=meaning)
+    def correct_artifact(self, actor: object, artifact_uid: str) -> Artifact: return self._service.correct_artifact(actor, artifact_uid)
+    def correction_source_uid(self, actor: object, corrected_artifact_uid: str) -> str | None: return self._service.correction_source_uid(actor, corrected_artifact_uid)
+    def allowed_actions(self, actor: object, kind: ReferenceKind, uid: str) -> dict[ActionCode, ActionDecision]: return self._service.allowed_actions(actor, kind, uid)
+    def create_link_type(self, actor: object, *, code: str, source_kind: ReferenceKind, target_kind: ReferenceKind, inverse_label: str | None = None) -> LinkType: return self._service.create_link_type(actor, code=code, source_kind=source_kind, target_kind=target_kind, inverse_label=inverse_label)
+    def create_reference(self, actor: object, *, source_kind: ReferenceKind, source_uid: str, target_kind: ReferenceKind, target_uid: str, link_type_uid: str) -> ContainerReference: return self._service.create_reference(actor, source_kind=source_kind, source_uid=source_uid, target_kind=target_kind, target_uid=target_uid, link_type_uid=link_type_uid)
+    def list_references(self, actor: object, *, kind: ReferenceKind, uid: str) -> list[ContainerReference]: return self._service.list_references(actor, kind=kind, uid=uid)
+    def create_external_reference(self, actor: object, *, source_kind: ReferenceKind, source_uid: str, provider_code: str, module_code: str, entity_uid: str, mode: ExternalReferenceMode, fixed_version_uid: str | None = None) -> ExternalReferenceTarget: return self._service.create_external_reference(actor, source_kind=source_kind, source_uid=source_uid, provider_code=provider_code, module_code=module_code, entity_uid=entity_uid, mode=mode, fixed_version_uid=fixed_version_uid)
+    def resolve_external_reference(self, actor: object, external_reference_uid: str) -> str: return self._service.resolve_external_reference(actor, external_reference_uid)
+    def list_external_reference_resolutions(self, actor: object, external_reference_uid: str) -> list[ExternalReferenceResolution]: return self._service.list_external_reference_resolutions(actor, external_reference_uid)
+    def transition_object(self, actor: object, object_uid: str, *, to_state: str, reason: str | None, expected_revision: int, signature_meaning: str | None = None) -> ContainerObject: return self._service.transition_object(actor, object_uid, to_state=to_state, reason=reason, expected_revision=expected_revision, signature_meaning=signature_meaning)
+    def sign_object(self, actor: object, object_uid: str, *, meaning: str) -> ObjectSignature: return self._service.sign_object(actor, object_uid, meaning=meaning)
+    def list_object_signatures(self, actor: object, object_uid: str) -> list[ObjectSignature]: return self._service.list_object_signatures(actor, object_uid)
+    def get_object_snapshot(self, actor: object, snapshot_uid: str) -> ObjectSnapshot: return self._service.get_object_snapshot(actor, snapshot_uid)
+    def list_audit_records(self, actor: object, *, kind: ReferenceKind, uid: str) -> list[AuditRecord]: return self._service.list_audit_records(actor, kind=kind, uid=uid)
+    def archive_object(self, actor: object, object_uid: str, *, expected_revision: int) -> ContainerObject: return self._service.archive_object(actor, object_uid, expected_revision=expected_revision)
+    def reactivate_object(self, actor: object, object_uid: str, *, expected_revision: int) -> ContainerObject: return self._service.reactivate_object(actor, object_uid, expected_revision=expected_revision)
+    def search_objects(self, actor: object, query: str, *, field_keys: tuple[str, ...] | None = None, include_archived: bool = False, limit: int = 100, offset: int = 0) -> list[ContainerObject]: return self._service.search_objects(actor, query, field_keys=field_keys, include_archived=include_archived, limit=limit, offset=offset)
+    def export_object_subtree(self, actor: object, root_object_uid: str, *, include_artifacts: bool = True, include_files: bool = False, printable: bool = False) -> ExportBundle: return self._service.export_object_subtree(actor, root_object_uid, include_artifacts=include_artifacts, include_files=include_files, printable=printable)
+    def store_export_as_artifact(self, actor: object, root_object_uid: str, artifact_template_version_uid: str, *, include_artifacts: bool = True, include_files: bool = True, printable: bool = False, values: dict[str, object] | None = None) -> ExportBundle: return self._service.store_export_as_artifact(actor, root_object_uid, artifact_template_version_uid, include_artifacts=include_artifacts, include_files=include_files, printable=printable, values=values)
+    def migrate_object_template(self, actor: object, object_uid: str, target_published_version_uid: str, *, expected_revision: int, values_for_new_required: dict[str, object] | None = None) -> TemplateMigrationRecord: return self._service.migrate_object_template(actor, object_uid, target_published_version_uid, expected_revision=expected_revision, values_for_new_required=values_for_new_required)
+    def configure_deletion_policy(self, actor: object, *, allowed_role_codes: tuple[str, ...], require_backup: bool, require_second_approver: bool, template_version_uid: str | None = None) -> DeletionPolicy: return self._service.configure_deletion_policy(actor, allowed_role_codes=allowed_role_codes, require_backup=require_backup, require_second_approver=require_second_approver, template_version_uid=template_version_uid)
+    def create_backup_evidence(self, actor: object, *, scope_uid: str, integrity_hash: str) -> BackupEvidence: return self._service.create_backup_evidence(actor, scope_uid=scope_uid, integrity_hash=integrity_hash)
+    def approve_physical_deletion(self, actor: object, *, object_uid: str, requester_user_id: str) -> PhysicalDeletionApproval: return self._service.approve_physical_deletion(actor, object_uid=object_uid, requester_user_id=requester_user_id)
+    def physical_delete_object(self, actor: object, object_uid: str, *, reason: str, backup_evidence_uid: str | None = None, approval_uid: str | None = None) -> Tombstone: return self._service.physical_delete_object(actor, object_uid, reason=reason, backup_evidence_uid=backup_evidence_uid, approval_uid=approval_uid)
+    def list_tombstones(self, actor: object) -> list[Tombstone]: return self._service.list_tombstones(actor)
+
+
+__all__ = ["ActionCode", "ActionDecision", "Artifact", "ArtifactDetail", "ArtifactFile", "ArtifactSignature", "ArtifactSnapshot", "AuditEvent", "AuditRecord", "BackupEvidence", "BlueprintChildDefinition", "BlueprintIssue", "BlueprintTemplateDraft", "BlueprintValidation", "ChildDefinition", "ChildMode", "ContainerApi", "ContainerError", "ContainerObject", "ContainerReference", "DeletionPolicy", "DeletionPolicyScope", "ExportBundle", "ExportRecord", "ExternalReferenceMode", "ExternalReferenceResolution", "ExternalReferenceTarget", "FieldDefinition", "FieldType", "LifecycleStateDefinition", "LifecycleTransitionDefinition", "LinkType", "MAX_OBJECT_DEPTH", "ModuleBlueprintDraft", "ObjectDetail", "ObjectSignature", "ObjectSnapshot", "ParentKind", "PhysicalDeletionApproval", "PublishedBlueprintTemplate", "PublishedModuleBlueprint", "ReferenceKind", "StructuralParentRef", "TemplateDraft", "TemplateKind", "TemplateMigrationRecord", "TemplateState", "TemplateVersion", "Tombstone"]

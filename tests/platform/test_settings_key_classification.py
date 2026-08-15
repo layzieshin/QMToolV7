@@ -14,7 +14,7 @@ from qm_platform.settings.residual_allowlist import assert_residual_allowlist_co
 
 def _contribution_keys() -> set[SettingKeyRef]:
     found: set[SettingKeyRef] = set()
-    for contract in runtime_bootstrap.core_module_contracts():
+    for contract in runtime_bootstrap.all_module_contracts():
         contribution = contract.settings_contribution
         if contribution is None:
             continue

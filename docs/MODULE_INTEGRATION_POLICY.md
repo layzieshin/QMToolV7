@@ -57,6 +57,17 @@ Use this checklist when adding or extending a module. Every item is blocking bef
 - [ ] **PyQt** (if UI needed) — `QtModuleContribution` + entry in `interfaces/pyqt/registry/catalog.py`
 - [ ] **Tests** — section 8
 
+### 2.1 Alternative für backend-only Fachmodule (Prototype)
+
+Für ein ausdrücklich backend-only Fachmodul wie `container` gilt eine
+alternative Kompositionsregel: `ModuleContract` und die öffentliche
+`modules/<name>/api.py` bleiben Pflicht. Die Registrierung und das Wiring
+erfolgen jedoch in der Backend-Komposition; das Modul wird nicht in der
+Desktop-Komposition über `core_module_contracts()` registriert. Der Desktop
+darf die fachliche SQLite-Datenbank nicht öffnen und greift nicht direkt auf
+deren Dateien zu. Diese Alternative ändert weder die öffentliche Modulgrenze
+noch die Pflicht zu Ports, Capabilities, Settings, Audit, Events und Tests.
+
 ## 3. Licensing integration
 
 Normative detail: `docs/LICENSE_SPEC.md`.

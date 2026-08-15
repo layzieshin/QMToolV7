@@ -21,6 +21,72 @@ Project engineering rules:
 Project GUI architecture:
 - `docs/GUI_ARCHITECTURE_PROJECT.md`
 
+## container (prototype)
+
+The `container` module is a backend-only generic Object/Artifact tree. Its
+binding architecture contract is
+`docs/container-module/ARCHITECTURE_CONTRACT.md`; the planned GM-01–GM-25
+coverage is in `docs/container-module/REQUIREMENTS_TRACEABILITY.md`.
+
+### Ports / capabilities
+
+- Provided port: `container_api` (public commands and queries via
+  `modules/container/api.py`)
+- Required ports: confirmed `usermanagement_service`, `event_bus`,
+  `audit_logger`, `settings_service`, backend-owned storage/clock/ID seams as
+  the implementation requires
+- Provided capabilities: `container.object.manage`,
+  `container.artifact.manage`, `container.reference.manage`,
+  `container.export.manage`, `container.blueprint.manage`
+- Registration: backend composition only; `ModuleContract` remains required,
+  but desktop `core_module_contracts()` does not register this module.
+
+### Settings and governance
+
+| Key | Governance class | Notes |
+| --- | --- | --- |
+| `container_db_path` | `operational` | SQLite path opened only by the backend process. |
+| `artifact_files_root` | `operational` | Backend-owned Artifact file root; no client path access. |
+| `max_depth` | technical invariant, not an admin setting | Pseudo-hard limit `32`; change only through code/deployment configuration. |
+| `license_tag` | — | `none` for the prototype. |
+
+### Persistence
+
+Container metadata is persisted in SQLite at `container_db_path`; physical
+Artifact files are stored below `artifact_files_root`. The desktop and other
+clients must not open the SQLite file or share direct file access. Template
+versions, stable UIDs, revisions, audit records, references, immutable
+snapshots, hashes and Tombstones are explicit persisted data; schema changes
+are forward-only and never silently migrate existing instances.
+
+`ModuleBlueprintDraft` gruppiert mehrere lokale Template-Schlüssel, bestimmt
+genau ein Object-Root und wird serverseitig auf fehlende Ziele, Zyklen,
+Lifecycle- und Feldinvarianten geprüft. Veröffentlichung erzeugt und publiziert
+alle Template-Versionen atomar in berechneter Abhängigkeitsreihenfolge;
+`module_blueprints` und `module_blueprint_templates` halten die fachliche
+Modulzuordnung relational fest.
+
+### Events
+
+Versioned domain events are published only after the successful persistence
+commit, including `domain.container.object.created.v1`,
+`domain.container.object.archived.v1`, `domain.container.artifact.created.v1`,
+`domain.container.artifact.finalized.v1`,
+`domain.container.artifact.signed.v1` and
+`domain.container.artifact.corrected.v1` sowie
+`domain.container.module_blueprint.published.v1`. Events notify about committed domain
+changes and are not a request/response surface.
+
+### Tests / extension points
+
+- Module/API and invariant tests: `tests/modules/container/`
+- Planned GM matrix and concrete test names:
+  `docs/container-module/REQUIREMENTS_TRACEABILITY.md`
+- Architecture boundary test: `tests/architecture/test_container_backend_boundary.py`
+- The prototype requires positive GM-01–GM-25 coverage, negative invariant
+  tests, permission-filtered search tests, post-commit event tests and
+  immutability/template-version regressions.
+
 ## usermanagement
 
 ### Ports / capabilities

@@ -32,6 +32,9 @@ from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.backend_bootstrap import wire_backend_usermanagement
 from qm_platform.runtime.container import RuntimeContainer
+from qm_platform.runtime.lifecycle import LifecycleManager
+from qm_platform.persistence.database_evolution import DatabaseEvolutionService, DatabaseSpec, MigrationStep
+from qm_platform.persistence.path_resolver import resolve_database_absolute_path
 from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_home
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
@@ -256,4 +259,47 @@ def build_backend_container() -> RuntimeContainer:
     container = build_platform_ports(fail_closed_license=True)
     container.register_port("usermanagement_postgres_dsn", dsn)
     wire_backend_usermanagement(container)
+    wire_backend_container(container)
     return container
+
+
+def wire_backend_container(container: RuntimeContainer) -> LifecycleManager:
+    """Migrate and start the backend-only Container module.
+
+    This composition path deliberately does not alter desktop ``core_module_contracts``.
+    The module's SQLite database is opened by the backend process only.
+    """
+    from modules.container.module import create_container_module_contract
+
+    contract = create_container_module_contract()
+    app_home = Path(container.get_port("app_home"))
+    specs = tuple(
+        DatabaseSpec(
+            database_id=contribution.database_id,
+            path=(
+                Path(container.get_port("container_db_path_override"))
+                if contribution.database_id == "container" and container.has_port("container_db_path_override")
+                else resolve_database_absolute_path(app_home, contribution)
+            ),
+            migrations=tuple(
+                MigrationStep(version=m.version, name=m.name, sql_path=m.sql_path)
+                for m in contribution.migrations
+            ),
+        )
+        for contribution in contract.database_contributions
+    )
+    evolution = container.get_port("database_evolution_service") if container.has_port("database_evolution_service") else DatabaseEvolutionService(app_home=app_home)
+    if not container.has_port("database_evolution_service"):
+        container.register_port("database_evolution_service", evolution)
+    evolution.migrate(specs, reason="backend_container_preflight")
+    # Migration and repository wiring must resolve to the same physical file.
+    # The demo may pre-register its isolated override; production derives it
+    # from the module's declared database contribution above.
+    if not container.has_port("container_db_path_override"):
+        container_spec = next(spec for spec in specs if spec.database_id == "container")
+        container.register_port("container_db_path_override", container_spec.path)
+    lifecycle = LifecycleManager(container)
+    lifecycle.prepare(contract)
+    lifecycle.wire("container")
+    lifecycle.start(strict=True)
+    return lifecycle

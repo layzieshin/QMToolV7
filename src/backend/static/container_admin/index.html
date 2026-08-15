@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>QMTool Modulwerkstatt</title>
+  <link rel="stylesheet" href="/container/admin/app.css">
+</head>
+<body>
+  <div class="demo-ribbon">Lokale Testoberfläche · keine Produktionsanmeldung</div>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Modulnavigation">
+      <a class="brand" href="/container/admin" aria-label="QMTool Modulwerkstatt">
+        <span class="brand-mark">QM</span>
+        <span><strong>Modulwerkstatt</strong><small>Container Blueprint</small></span>
+      </a>
+      <nav class="view-nav" aria-label="Ansichten">
+        <button class="nav-item is-active" data-view="structure"><span>◫</span> Struktur</button>
+        <button class="nav-item" data-view="preview"><span>▷</span> Testlauf</button>
+      </nav>
+      <div class="sidebar-section">
+        <div class="sidebar-label"><span>Bausteine</span><button data-action="add-object" title="Objekt hinzufügen">＋</button></div>
+        <div id="template-tree" class="template-tree"></div>
+        <div class="quick-add">
+          <button data-action="add-object"><span class="type-dot object"></span>Objekt</button>
+          <button data-action="add-artifact"><span class="type-dot artifact"></span>Nachweis</button>
+        </div>
+      </div>
+      <div class="sidebar-section published-section">
+        <div class="sidebar-label"><span>Veröffentlicht</span><button data-action="refresh-published" title="Neu laden">↻</button></div>
+        <div id="published-list" class="published-list"><span class="muted">Wird geladen …</span></div>
+      </div>
+      <div class="sidebar-footer">
+        <a href="/docs" target="_blank" rel="noreferrer">API öffnen ↗</a>
+        <span>Entwurf wird lokal gespeichert</span>
+      </div>
+    </aside>
+
+    <section class="content-shell">
+      <header class="topbar">
+        <div class="crumbs"><span>Module</span><b>/</b><strong id="crumb-name">Neues Modul</strong></div>
+        <div class="top-actions">
+          <span id="save-state" class="save-state">Gespeichert</span>
+          <button class="button ghost" data-action="import">Import</button>
+          <button class="button ghost" data-action="export">Export</button>
+          <button class="button secondary" data-action="validate">Prüfen</button>
+          <button class="button primary" data-action="publish">Veröffentlichen</button>
+          <input id="import-file" type="file" accept="application/json" hidden>
+        </div>
+      </header>
+
+      <div class="workspace-grid">
+        <main id="workspace" class="workspace" tabindex="-1"></main>
+        <aside id="inspector" class="inspector" aria-label="Eigenschaften und Prüfung"></aside>
+      </div>
+    </section>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/container/admin/app.js" defer></script>
+</body>
+</html>

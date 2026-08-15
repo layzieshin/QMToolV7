@@ -22,7 +22,7 @@ from qm_platform.persistence import (
     DatabaseSpec,
     MigrationStep,
 )
-from qm_platform.runtime.bootstrap import core_module_contracts
+from qm_platform.runtime.bootstrap import all_module_contracts
 from qm_platform.persistence.platform_settings_contribution import (
     PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
 )
@@ -42,6 +42,7 @@ REPOSITORY_FILES = (
     ROOT / "modules" / "training" / "training_comment_repository.py",
     ROOT / "modules" / "training" / "training_report_repository.py",
     ROOT / "modules" / "incident_management" / "sqlite_repository.py",
+    ROOT / "modules" / "container" / "sqlite_repository.py",
 )
 PACKAGING_BUILD_PATH = ROOT / "packaging" / "build_onedir.py"
 
@@ -53,7 +54,7 @@ def _sha256_bytes(content: bytes) -> str:
 def _registered_specs(root: Path) -> tuple[DatabaseSpec, ...]:
     specs = []
     contributions = []
-    for contract in core_module_contracts():
+    for contract in all_module_contracts():
         contributions.extend(contract.database_contributions)
     contributions.append(PLATFORM_SETTINGS_DATABASE_CONTRIBUTION)
     for contribution in contributions:

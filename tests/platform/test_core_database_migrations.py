@@ -22,6 +22,7 @@ REPOSITORY_FILES = (
     Path("modules/training/training_comment_repository.py"),
     Path("modules/training/training_report_repository.py"),
     Path("modules/incident_management/sqlite_repository.py"),
+    Path("modules/container/sqlite_repository.py"),
 )
 
 
@@ -479,7 +480,7 @@ def test_repository_sources_contain_no_schema_mutation_logic() -> None:
 
 
 def test_module_migration_chains_are_contiguous_and_immutable_named() -> None:
-    for contract in runtime_bootstrap.core_module_contracts():
+    for contract in runtime_bootstrap.all_module_contracts():
         for contribution in contract.database_contributions:
             versions = [
                 migration.version for migration in contribution.migrations

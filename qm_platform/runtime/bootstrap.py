@@ -10,6 +10,7 @@ from modules.registry.module import create_registry_module_contract
 from modules.signature.module import create_signature_module_contract
 from modules.training.module import create_training_module_contract
 from modules.usermanagement.module import create_usermanagement_module_contract
+from modules.container.module import create_container_module_contract
 
 from ..persistence.database_evolution import (
     DataValidationQuery,
@@ -38,6 +39,15 @@ def core_module_contracts() -> list[ModuleContract]:
         create_training_module_contract(),
         create_incident_management_module_contract(),
     ]
+
+
+def backend_module_contracts() -> list[ModuleContract]:
+    """Backend-only contracts; intentionally excluded from desktop composition."""
+    return [create_container_module_contract()]
+
+
+def all_module_contracts() -> list[ModuleContract]:
+    return [*core_module_contracts(), *backend_module_contracts()]
 
 
 def core_license_tags() -> list[str]:
@@ -153,4 +163,3 @@ def activate_core_modules(
     attach_settings_persistence(container)
     refresh_backup_reminder_from_settings(container)
     lifecycle.wire_all()
-

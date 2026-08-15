@@ -1,4 +1,12 @@
 {
+  "container": [
+    {
+      "version": 1,
+      "name": "initial",
+      "path": "modules/container/migrations/0001_initial.sql",
+      "sha256": "532272f7688f55e38bc84df2a77f10bdaa720a749f349756f14b1479d8d4c3a2"
+    }
+  ],
   "documents": [
     {
       "version": 1,

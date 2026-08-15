@@ -31,6 +31,8 @@ def resolve_database_absolute_path(app_home: Path, contribution: DatabaseContrib
 
 
 BOOTSTRAP_PATH_DEFAULTS: dict[tuple[str, str], str] = {
+    ("container", "container_db_path"): "storage/container/container.db",
+    ("container", "artifact_files_root"): "storage/container/artifacts",
     ("usermanagement", "users_db_path"): "storage/platform/users.db",
     ("documents", "documents_db_path"): "storage/documents/documents.db",
     ("documents", "artifacts_root"): "storage/documents/artifacts",

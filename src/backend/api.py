@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from src.backend.auth_routes import router as auth_router
 from src.backend.user_admin_routes import router as user_admin_router
+from src.backend.container_routes import router as container_router
 
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -18,13 +19,16 @@ class HealthResponse(BaseModel):
     service: str
 
 
-def create_app(container=None) -> FastAPI:
+def create_app(container=None, *, include_auth_routes: bool = True, demo_mode: bool = False) -> FastAPI:
     """Create the backend FastAPI app.
 
     Without ``container``, only ``/health`` is available (import/smoke-safe).
     With a wired container, auth routes are mounted.
     """
-    app = FastAPI(title="QMTool Backend")
+    app = FastAPI(
+        title="QMTool Container LOCAL DEMO – NO PRODUCTION AUTH" if demo_mode else "QMTool Backend",
+        description="LOCAL DEMO – NO PRODUCTION AUTH. Use Swagger only for isolated local testing." if demo_mode else None,
+    )
     app.state.container = container
 
     @app.middleware("http")
@@ -43,8 +47,10 @@ def create_app(container=None) -> FastAPI:
     def _health() -> HealthResponse:
         return HealthResponse(status="ok", service="qmtool-backend")
 
-    if container is not None:
+    if container is not None and include_auth_routes:
         app.include_router(auth_router)
         app.include_router(user_admin_router)
+    if container is not None and container.has_port("container_api"):
+        app.include_router(container_router)
 
     return app

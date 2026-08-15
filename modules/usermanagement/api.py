@@ -84,6 +84,7 @@ __all__ = [
     "prepare_postgres_cutover",
     "is_effective_qmb",
     "normalize_base_role",
+    "issue_local_demo_context",
 ]
 
 
@@ -190,6 +191,21 @@ def require_confirmed_user_context(actor: object) -> UserContext:
     if not str(actor.request_id).strip():
         raise AuthorizationError("request_id is required")
     return actor
+
+
+def issue_local_demo_context(*, user_id: str = "demo-user", username: str = "local-demo") -> UserContext:
+    """Issue a confirmed context for the explicitly isolated local demo host only.
+
+    Production HTTP authentication never calls this function.
+    """
+    from datetime import datetime, timezone
+    from .contracts import issue_user_context as _issue_user_context
+
+    return _issue_user_context(
+        user_id=user_id, session_id="demo-session", request_id="demo-request", username=username,
+        global_roles=frozenset({"ADMIN"}), is_qmb=True,
+        authenticated_at=datetime.now(timezone.utc),
+    )
 
 
 def revoke_all_own_sessions(container, context: UserContext) -> list[SessionRecord]:
