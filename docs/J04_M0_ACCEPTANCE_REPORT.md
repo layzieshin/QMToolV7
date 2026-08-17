@@ -17,7 +17,7 @@ gesetzt werden.
 
 ## Technical acceptance candidate (CP07 freeze)
 
-`$CandidateSha` = _(recorded after freeze commit)_
+`$CandidateSha` = `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`)
 
 Branch: `feature/ap-j04-m0`. Product/test code must not change after `$CandidateSha`.
 Any later fix requires a remediation checkpoint, a new freeze, and explicit approval for a second CP08 attempt.
@@ -33,7 +33,7 @@ Any later fix requires a remediation checkpoint, a new freeze, and explicit appr
 | CP04 | PASS | `c71c1f1` harden PG16 gates | `54d4d37` |
 | CP05 | PASS | `29ddaa6` real-process harness | `136d9e4` |
 | CP06 | PASS | `ba67126` prepare onedir | `a6959ea` |
-| CP07 | PASS | freeze commit (this documentation cycle) | SHA record |
+| CP07 | PASS | `d19e8b9` freeze technical acceptance candidate | SHA record (this documentation) |
 
 ### Remaining gates (explicitly NOT RUN)
 
@@ -64,7 +64,9 @@ Marker `-m "not postgres and not j04_final_acceptance"`.
 | --- | --- | --- |
 | CP07-FOCUS | docs artifact package, OpenAPI snapshot, PG guard, architecture gates | **60 passed** (`build/j04-m0-closure/cp07`) |
 | CP07-PACKAGING | `tests/packaging/test_j04_m0_onedir_contract.py` | **5 passed** (`build/j04-m0-closure/cp07-packaging`) |
-| CP07-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+| CP07-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** |
+
+CP07 freeze commit / `$CandidateSha`: `d19e8b9` — `checkpoint(j04-m0): freeze technical acceptance candidate`
 
 CP07 documentation-only correction: SHA-256 entries in
 `docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/QMToolV7_Dokumentenlenkung_MANIFEST_v2.txt`
