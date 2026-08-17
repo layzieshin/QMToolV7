@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR11 freeze `c263ff5`; CP08-V5 not started; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR11 freeze `c263ff5`; CP08-V5 FAILED at `document_baseline_flow`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -20,10 +20,10 @@ gesetzt werden.
 `$CandidateSha` — **`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`)**. The freeze tree contains
 R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), R5 (`34f39c0`
 / docs `164a7c9`), WR05 documentation, and the known unchanged stat-only files. Last superseded
-freeze was `1bd8aa0` (FR10, before R5). Overall **`NOT_READY`**: there is not yet a successful
-CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word COM. CP08-V4
-start contract **held**; it failed at `bootstrap_admin_login` (Word not reached). `ACCEPTED`
-is not set.
+freeze was `1bd8aa0` (FR10, before R5). Overall **`NOT_READY`**: CP08-V5 was not fully green.
+Historical CP08-V3 aborted on the acceptance start contract, not Word COM. CP08-V4 start
+contract **held**; R5 handshake **held** in CP08-V5. CP08-V5 failed at
+`document_baseline_flow` (Word not reached). `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -358,8 +358,34 @@ product or test changes are permitted after this freeze.
 | Focused gates | **93 passed** (`build/j04-m0-closure/freeze-r5-20260817T195901962Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
 | Candidate SHA | **`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`)** |
-| CP08-V5 | **NOT STARTED** |
+| CP08-V5 | **FAILED** (see below) |
 | `ACCEPTED` | **not set** |
+
+## CP08-V5 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `c263ff550a81eccfc5bb68f2ffd2e030e8e51427`.
+Lauf-SHA at gate start: `05aed9ff7b7f4dc431543fcbb915326e3eec4fd6` (FR11 SHA-record docs only).
+Gate policy: no repair and no continuation after the first failed mandatory step.
+Realprocess started through `scripts/run_postgres_live_tests.py --j04-final-acceptance`.
+Word COM live opt-in was set; the Word step was **not reached**.
+
+The start contract and R5 bootstrap handshake held: `preconditions`, `pg_bootstrap`,
+`backend_start`, `health_and_openapi`, `bootstrap_admin_login` **PASS**. Backend log shows
+`POST /auth/login` 200, `GET /auth/me` 409, `POST /auth/change-password` 204, `GET /auth/me`
+200, then directory seed and workflow profile **PASS**. Stop at `document_baseline_flow`:
+backend log shows `POST /documents/versions/create` HTTP **403**. The harness fail log only
+says `version payload missing etag` (no status/body). Word COM was **not reached** and is not
+a finding of this run.
+
+| Step | Result |
+| --- | --- |
+| 1. PostgreSQL live | **PASS** — preflight major 18; **51 passed**; `build/j04-m0-closure/cp08-v5-pg-live-runner.log` |
+| 2. Full real-process E2E | **FAILED** at `document_baseline_flow` (`POST /documents/versions/create` 403; harness: missing etag). Workspace `build/j04-m0-closure/cp08-realprocess-ws/20260817T200418444108Z-8540fb06cf7846699a99cac847f51887` |
+| 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2; Word not reached) |
+
+Overall **`NOT_READY`**: after FR11 there is no successful CP08 run. Historical CP08-V3 aborted
+on the acceptance start contract, not Word COM. R5 handshake is proven in this run.
+**`ACCEPTED` was not set.**
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -388,7 +414,8 @@ product or test changes are permitted after this freeze.
 | FR10 | PASS | `1bd8aa0` freeze R1–R4 | `fd3aeb8` |
 | CP08-V4 | FAILED | — (bootstrap_admin_login /auth/me 409; Word not reached) | `5aff642` |
 | CP08-R5 | PASS | `34f39c0` bootstrap-admin handshake | `164a7c9` |
-| FR11 | PASS | `c263ff5` freeze R1–R5 | this documentation |
+| FR11 | PASS | `c263ff5` freeze R1–R5 | `05aed9f` |
+| CP08-V5 | FAILED | — (document_baseline_flow; create 403 / missing etag; Word not reached) | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
@@ -396,7 +423,7 @@ product or test changes are permitted after this freeze.
 | --- | --- |
 | Isolated PostgreSQL live (Slot-2 PG18 local / CI PG16) | **CP04-R PASS** (guard+runner); full live suites **NOT RUN** (CP08) |
 | M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
-| Full `j04_final_acceptance` real-process E2E | **NOT RUN** (scenario implemented in CP08-R2) |
+| Full `j04_final_acceptance` real-process E2E | **FAILED** (CP08-V5) at `document_baseline_flow` |
 | Real Word COM document conversion E2E | **NOT RUN** |
 | Word COM `DispatchEx` readiness probe | **BLOCKED** — `CO_E_SERVER_EXEC_FAILURE` (0x80080005) in agent session |
 | `packaging/build_onedir.py` | **Packaging NOT RUN** |

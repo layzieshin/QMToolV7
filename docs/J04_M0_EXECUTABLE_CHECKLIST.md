@@ -38,7 +38,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR10 | Freeze R1–R4 acceptance candidate | PASS | `1bd8aa0` | 83 focused gates; `$CandidateSha` below; CP08-V4 failed |
 | CP08-V4 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `bootstrap_admin_login` (`/auth/me` 409); Word **NOT REACHED** |
 | CP08-R5 | Bootstrap-admin `/auth/me` handshake | PASS | `34f39c0` | Harness-only password-change handshake; product auth unchanged; included in FR11 freeze |
-| FR11 | Freeze R1–R5 acceptance candidate | PASS | `c263ff5` | 93 focused gates; `$CandidateSha` below; CP08-V5 not started |
+| FR11 | Freeze R1–R5 acceptance candidate | PASS | `c263ff5` | 93 focused gates; `$CandidateSha` below; CP08-V5 failed |
+| CP08-V5 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `document_baseline_flow`; bootstrap handshake **PASS**; Word **NOT REACHED** |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -833,9 +834,25 @@ documentation. Focused gates are **93 passed**
 (`build/j04-m0-closure/freeze-r5-20260817T195901962Z`): FR10 set plus R5 handshake tests and
 `tests/backend/test_auth_api.py`. The frozen candidate is
 `c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`). No product or test changes are
-allowed after this freeze. CP08-V5 remains **NOT STARTED**. Overall **`NOT_READY`**: there is
-not yet a successful CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not
-Word COM. CP08-V4 start contract **held**. `ACCEPTED` is not set.
+allowed after this freeze. CP08-V5 was executed once and **FAILED** at
+`document_baseline_flow`. The R5 bootstrap handshake **held**. Word COM was **not reached**.
+Overall **`NOT_READY`**: there is not yet a successful CP08 run. Historical CP08-V3 aborted
+on the acceptance start contract, not Word COM. CP08-V4 start contract **held**. `ACCEPTED`
+is not set.
+
+## CP08-V5 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `c263ff550a81eccfc5bb68f2ffd2e030e8e51427`.
+Lauf-SHA: `05aed9f`. Realprocess via `--j04-final-acceptance`. Word COM live opt-in was set.
+No repair, no retry.
+
+| Step | Result |
+| --- | --- |
+| PostgreSQL live | **PASS** — PG18 preflight; **51 passed**; `build/j04-m0-closure/cp08-v5-pg-live-runner.log` |
+| Full real-process E2E | **FAILED** at `document_baseline_flow` — `version payload missing etag`. Backend log: `POST /documents/versions/create` **403**. R5 handshake **PASS** (`POST /auth/login` 200, `GET /auth/me` 409, `POST /auth/change-password` 204, `GET /auth/me` 200). Start contract **PASS**. Word **not reached**. Workspace `20260817T200418444108Z-8540fb06cf7846699a99cac847f51887` |
+| Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** |
+
+`ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 
