@@ -20,7 +20,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | --- | --- | --- | --- | --- |
 | CP00 | Preserve and classify baseline | PASS | `0a844c2` | 153 A–D paths; 24 smokes green |
 | CP01 | Backend ownership, auth, HTTP contracts | PASS | `3f3f7b1` | 77+1 tests green; OpenAPI reproducible; no code fixes |
-| CP02 | Client-facing M0 use-case gates | TODO | — | Depends CP01 |
+| CP02 | Client-facing M0 use-case gates | PASS | _(pending)_ | 62 focused tests green; no code fixes |
 | CP03 | Word COM isolation | TODO | — | Depends CP02 |
 | CP04 | PostgreSQL-16 destructive gate | TODO | — | Depends CP00 |
 | CP05 | Real-process acceptance harness | TODO | — | Depends CP01, CP04 |
@@ -287,3 +287,36 @@ $Py -m pytest `
 ```
 
 Result: **24 passed** (2026-08-17, `build/j04-m0-closure/cp00`)
+
+## CP02 verification command
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/backend/test_documents_artifacts_http.py `
+  tests/backend/test_signature_http_api.py `
+  tests/backend/test_signature_authorization_http.py `
+  tests/backend/test_documents_training_read_http.py `
+  tests/backend/test_documents_p4_p9_http.py `
+  tests/interfaces/test_documents_http_reads.py `
+  tests/interfaces/test_documents_workflow_profile_manager_gate.py `
+  tests/interfaces/test_action_bar_visibility.py `
+  tests/interfaces/test_m2r_control_action_gates.py `
+  tests/interfaces/test_m2r_header_comment_cas_consumers.py `
+  tests/interfaces/test_pyqt_backend_profile_scope.py `
+  tests/modules/test_documents_authorization_matrix.py `
+  -m "not postgres" -q `
+  --basetemp build/j04-m0-closure/cp02
+```
+
+Result: **62 passed** (2026-08-17, `build/j04-m0-closure/cp02`)
+
+## CP02 acceptance criteria
+
+- [x] All M0 vertical slices use existing HTTP/public-API paths
+- [x] PyQt actions remain server-driven and fail-closed
+- [x] Training has no documents workflow/artifact logic ownership
+- [x] Profile manager has no local mutation path
+- [x] Out-of-scope findings documented as follow-ups (historical report sections)
+- [x] Documentation and tests align (62/62 green; no fixes required)

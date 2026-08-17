@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP00 in progress**
+Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP02 verified**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -49,6 +49,30 @@ Execution path (verified by tests, unchanged):
 - `allowed_actions`: computed server-side; clients fail-closed
 - Artifacts: backend transports IDs/bytes; clients never open backend file paths
 - Documents SQLite: backend-only (`DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT` opt-in for tests)
+
+## Verification (CP02 — client-facing M0 use-case gates)
+
+Ausgeführt am 2026-08-17, Python 3.14 aus `.\.venv\Scripts\python.exe`, `PYTHONPATH=.`,
+Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp02`.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP02-GATES | Fokussierter Client-/GUI-/HTTP-Smoke (12 Testmodule, siehe Plan CP02) | **62 passed** |
+| CP02-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+
+Keine reproduzierbaren Abweichungen — keine Produktkorrekturen in CP02.
+
+Verified M0 vertical slices (same-process HTTP; not live multi-process):
+
+- **Artifacts:** read/download via HTTP artifact IDs/bytes (`test_documents_artifacts_http`, `test_documents_http_reads`)
+- **Signature:** shared session transport; authorization matrix (`test_signature_http_api`, `test_signature_authorization_http`)
+- **Training read:** documents read-only consumer (`test_documents_training_read_http`)
+- **Comments / header / lifecycle / change requests:** P4–P9 HTTP + M2R CAS consumers (`test_documents_p4_p9_http`, `test_m2r_*`)
+- **Profile manager:** backend HTTP mutation only; no local SQLite path (`test_documents_workflow_profile_manager_gate`, `test_pyqt_backend_profile_scope`)
+- **PyQt actions:** server-driven `available_actions`; fail-closed visibility (`test_action_bar_visibility`, `test_m2r_control_action_gates`)
+- **Authorization matrix:** 16-action coverage index + execution (`test_documents_authorization_matrix`)
+
+Out-of-scope paths remain `not_in_m0` / fail-closed (no J04-M1 or parallel paths introduced).
 
 Baseline-Klassifizierung: `docs/J04_M0_EXECUTABLE_CHECKLIST.md` (A–D staged; E ignoriert;
 2 stat-only Pfade nicht gestaged).
