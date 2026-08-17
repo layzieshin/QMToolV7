@@ -17,9 +17,9 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **this FR09 checkpoint; full SHA recorded next**. The freeze tree contains
-R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation, and the known unchanged
-stat-only files. Last superseded freeze was `fe172c9` (FR08, before R3). CP08-V3 is
+`$CandidateSha` — **`1a22d3809683d16ad9354d609f6ce2d2af7c053a` (`1a22d38`)**. The freeze tree
+contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation, and the known
+unchanged stat-only files. Last superseded freeze was `fe172c9` (FR08, before R3). CP08-V3 is
 **NOT STARTED**.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
@@ -223,7 +223,7 @@ immediately after the commit. No product or test changes are permitted after thi
 | --- | --- |
 | Focused gates | **50 passed** (`build/j04-m0-closure/freeze-r3-20260817T171311893Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
-| Candidate SHA | **this FR09 checkpoint; full SHA recorded next** |
+| Candidate SHA | **`1a22d3809683d16ad9354d609f6ce2d2af7c053a` (`1a22d38`)** |
 | CP08-V3 | **NOT STARTED** |
 | `ACCEPTED` | **not set** |
 
