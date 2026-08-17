@@ -33,7 +33,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | Word readiness | Word COM `DispatchEx` probe (interactive) | PASS (WR05) | — | Safe mode title confirmed; interactive DispatchEx/Version/Quit PASS; add-ins not causal; DOCX/PDF E2E **NOT RUN** |
 | CP08-R3 | Isolate realprocess workspace from pytest basetemp | PASS | `c3d6587` | Test-only; included in FR09 freeze |
 | FR09 | Freeze R1+R2+R3 acceptance candidate | PASS | `1a22d38` | 50 focused gates; `$CandidateSha` below; CP08-V3 failed |
-| CP08-V3 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `pg_bootstrap` (`QMTOOL_PG_TEST_RESET`); remaining steps NOT RUN |
+| CP08-V3 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at start contract (`pg_bootstrap` / RESET); Word **NOT REACHED** |
+| CP08-R4 | Acceptance start contract via PG runner | PASS | _(pending)_ | Runner `--j04-final-acceptance`; guard unchanged; **no freeze**; no CP08 retry |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -696,14 +697,67 @@ Lauf-SHA at gate start: `57d87d46012ea2ed12c95fc7c1bca54bd200595b` (FR09 SHA-rec
 `git diff 1a22d38..57d87d4` is the two documentation files). Gate policy: no repair and no
 retry after the first red mandatory step.
 
+The documented start command was **direct pytest**. That is inconsistent with the PostgreSQL
+safety model: the PG runner injects `QMTOOL_PG_TEST_RESET` only into its pytest child after
+read-only preflight. A separately started pytest process does not receive that injection.
+`prepare_live_environment()` requires RESET because it is destructive; the guard is correct
+and must not be weakened or bypassed with a global/automatic RESET.
+
+Stop point: `pg_bootstrap`. Backend start and Word COM were **not reached**. CP08-V3 has
+**no Word-COM result**. Historical Word-readiness issues are not the cause of this run.
+Status is **`NOT_READY` because of the acceptance start contract**.
+
 | Step | Result |
 | --- | --- |
 | PostgreSQL live | **PASS** — PG18 guard preflight; **51 passed**; `build/j04-m0-closure/cp08-v3-pg-live-runner.log` |
-| Full real-process E2E | **FAILED** — `pg_bootstrap`: `QMTOOL_PG_TEST_RESET` was not set in the pytest process. The PG live runner injects RESET only into *its* pytest child; the documented realprocess invocation is direct pytest and does not. |
-| Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** — first mandatory step after PG stopped the gate |
+| Full real-process E2E | **FAILED** at start contract / `pg_bootstrap` (RESET unset in the separate pytest process) |
+| Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** — Word not reached |
 
-No repair was performed during CP08-V3. Status remains **`NOT_READY`**; no retry is allowed
-without a bounded remediation checkpoint and a new technical freeze. `ACCEPTED` is not set.
+No repair was performed during CP08-V3. `ACCEPTED` is not set.
+
+## CP08-R4 — Acceptance start contract (PG runner)
+
+Test-only. Extends the existing runner; does not change the destructive guard.
+
+The full realprocess gate must be started as:
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$env:QMTOOL_PG_TEST_EXPECTED_MAJOR = "18"
+$env:QMTOOL_J04_FINAL_ACCEPTANCE = "I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN"
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-pytest-$stamp"
+$Py scripts/run_postgres_live_tests.py `
+  --j04-final-acceptance `
+  --basetemp $Base
+```
+
+RESET remains child-only after preflight. The runner does not set Word COM live.
+Loose `pytest tests/acceptance/test_j04_m0_realprocess.py` is rejected by the runner
+(exit 4) so the unsupported start path cannot be mixed into default live targets.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-r4-$stamp"
+$Py -m pytest `
+  tests/test_run_postgres_live_tests.py `
+  tests/test_postgres_destructive_guard.py `
+  tests/acceptance/test_j04_m0_harness_unit.py `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/acceptance/test_j04_m0_realprocess.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp $Base
+```
+
+Result: **51 passed** (`build/j04-m0-closure/cp08-r4-20260817T182342311Z`).
+
+**No freeze. No CP08 retry.** Overall **`NOT_READY`** (start contract remediating; Word not
+in scope for this checkpoint).
+
+CP08-R4 commit: pending
 
 ## CP08-R2 remediation specification (real-process scenario)
 

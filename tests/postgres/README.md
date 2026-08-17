@@ -35,11 +35,17 @@ QMTOOL_PG_TEST_EXPECTED_MAJOR=18
 ```
 
 `QMTOOL_PG_TEST_RESET` is injected only into the pytest child after a read-only
-preflight:
+preflight. It is not persisted in the parent process and must not be stored in
+`.env`.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py
 ```
+
+The J04-M0 full realprocess gate uses the same runner with
+`--j04-final-acceptance` and a fresh `--basetemp`. Direct pytest of
+`tests/acceptance/test_j04_m0_realprocess.py` is not supported: it would skip
+the child-only RESET injection. The runner does not set Word COM live opt-in.
 
 Optional:
 

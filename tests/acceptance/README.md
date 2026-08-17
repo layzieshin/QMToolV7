@@ -38,18 +38,26 @@ build/j04-m0-closure/cp08-realprocess-ws/<UTC-timestamp>-<uuid>/
 The path is `resolve()`-enforced under `repo_root()/build/j04-m0-closure/`. Existing paths are
 never reused or deleted. Pytest `--basetemp` for the gate must be a **new** directory each run.
 
+The full realprocess gate **must** start through `scripts/run_postgres_live_tests.py`. That
+runner performs the read-only PG preflight and injects `QMTOOL_PG_TEST_RESET` only into the
+pytest child. Direct pytest of `test_j04_m0_realprocess.py` is not a supported start contract:
+`prepare_live_environment()` correctly refuses to run destructive schema work without RESET,
+and a separate pytest process does not inherit the child-only injection from a prior live run.
+
+The runner does **not** set `QMTOOL_J04_FINAL_ACCEPTANCE` or `QMTOOL_J04_WORD_COM_LIVE`.
+Word COM live remains a separate opt-in after the start contract succeeds.
+
 ```powershell
 $Py = ".\.venv\Scripts\python.exe"
 $env:PYTHONPATH = "."
+$env:QMTOOL_PG_TEST_EXPECTED_MAJOR = "18"
+$env:QMTOOL_J04_FINAL_ACCEPTANCE = "I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN"
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
 $Base = "build/j04-m0-closure/cp08-pytest-$stamp"
-$env:QMTOOL_J04_FINAL_ACCEPTANCE = "I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN"
-$Py -m pytest tests/acceptance/test_j04_m0_realprocess.py `
-  -m "postgres and j04_final_acceptance" -vv `
+$Py scripts/run_postgres_live_tests.py `
+  --j04-final-acceptance `
   --basetemp $Base
 ```
-
-## CP05 scope
 
 ## CP05 scope
 

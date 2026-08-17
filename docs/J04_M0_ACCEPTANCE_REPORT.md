@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-V3 FAILED at realprocess `pg_bootstrap`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **CP08-V3 FAILED on acceptance start contract (not Word COM); CP08-R4 PASS; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -20,7 +20,8 @@ gesetzt werden.
 `$CandidateSha` — **`1a22d3809683d16ad9354d609f6ce2d2af7c053a` (`1a22d38`)**. The freeze tree
 contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation, and the known
 unchanged stat-only files. Last superseded freeze was `fe172c9` (FR08, before R3). CP08-V3
-**FAILED**; overall **`NOT_READY`**.
+**FAILED** on the acceptance start contract (Word COM was **not reached**). CP08-R4 repairs
+that contract. Overall **`NOT_READY`**. No new freeze. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -232,14 +233,45 @@ immediately after the commit. No product or test changes are permitted after thi
 Executed once against CandidateSha `1a22d3809683d16ad9354d609f6ce2d2af7c053a`.
 Gate policy was applied: no repair and no continuation after the first failed mandatory step.
 
+The run did **not** fail because the operator “used pytest wrong” in an undocumented way.
+Repository acceptance documentation prescribed a **direct pytest** invocation. That start
+contract is inconsistent with the PostgreSQL safety model:
+
+- The documented realprocess command does not go through `scripts/run_postgres_live_tests.py`.
+- The PG runner injects `QMTOOL_PG_TEST_RESET` only after a successful read-only preflight
+  and **only** into its pytest child. The value is not left behind for a separately started
+  pytest process.
+- `prepare_live_environment()` correctly requires the RESET opt-in because it performs
+  destructive schema and role operations. The guard must not be weakened and RESET must not
+  be set automatically or globally.
+
+Observed stop: `pg_bootstrap` (RESET missing). Backend start and Word COM were **not reached**.
+CP08-V3 therefore produced **no Word evidence**. Historical Word-readiness findings are not
+the cause of this run.
+
 | Step | Result |
 | --- | --- |
 | 1. PostgreSQL live | **PASS** — guard preflight major 18; **51 passed**; evidence `build/j04-m0-closure/cp08-v3-pg-live-runner.log` |
-| 2. Full real-process E2E | **FAILED** — `pg_bootstrap` required `QMTOOL_PG_TEST_RESET` equal to the documented destructive opt-in; the variable was unset in the pytest process. Direct pytest of `test_j04_m0_realprocess.py` is not wrapped by `scripts/run_postgres_live_tests.py`, which injects RESET only into its own child. Evidence: `build/j04-m0-closure/cp08-v3-realprocess.log`, basetemp `build/j04-m0-closure/cp08-v3-pytest-20260817T171915206Z` |
-| 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2) |
+| 2. Full real-process E2E | **FAILED** at start contract / `pg_bootstrap` (`QMTOOL_PG_TEST_RESET` unset in the separate pytest process). Evidence: `build/j04-m0-closure/cp08-v3-realprocess.log`, basetemp `build/j04-m0-closure/cp08-v3-pytest-20260817T171915206Z` |
+| 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2; Word not reached) |
 
-No product or test repair was made during the gate. The candidate remains **`NOT_READY`**; a new
-remediation checkpoint and new freeze are required before any CP08 retry. **`ACCEPTED` was not set.**
+No product or test repair was made during the gate. Status remains **`NOT_READY` because of
+the acceptance start contract, not Word COM**. **`ACCEPTED` was not set.**
+
+## Verification (CP08-R4 — acceptance start contract)
+
+Test-only. The realprocess gate must start through the existing PG runner
+(`--j04-final-acceptance` + fresh `--basetemp`). RESET remains child-only after preflight.
+The runner does not set Word COM live opt-in. Guard and `prepare_live_environment()` are
+unchanged.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R4-CONTRACT | runner + destructive-guard + harness/scenario unit; fresh `--basetemp` | **51 passed** (`cp08-r4-20260817T182342311Z`) |
+
+**No freeze. No CP08 retry.** Next allowed sequence after this checkpoint is accepted:
+new technical freeze, then exactly one CP08 run. A Word step may be judged only from
+evidence of a run that actually reached it.
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -263,7 +295,8 @@ remediation checkpoint and new freeze are required before any CP08 retry. **`ACC
 | CP08-R2 | PASS | `30b73e9` real-process scenario | this documentation |
 | CP08-R3 | PASS | `c3d6587` isolate realprocess workspace | `a421005` |
 | FR09 | PASS | `1a22d38` freeze R1+R2+R3 | `57d87d4` |
-| CP08-V3 | FAILED | — (gate abort; no product commit) | this documentation |
+| CP08-V3 | FAILED | — (start-contract abort; Word not reached) | `de7e82d` |
+| CP08-R4 | PASS | pending start-contract runner | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
