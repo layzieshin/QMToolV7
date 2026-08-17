@@ -35,7 +35,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR09 | Freeze R1+R2+R3 acceptance candidate | PASS | `1a22d38` | 50 focused gates; `$CandidateSha` below; CP08-V3 failed |
 | CP08-V3 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at start contract (`pg_bootstrap` / RESET); Word **NOT REACHED** |
 | CP08-R4 | Acceptance start contract via PG runner | PASS | `5233b5d` | Runner `--j04-final-acceptance`; guard unchanged; included in FR10 freeze |
-| FR10 | Freeze R1–R4 acceptance candidate | PASS | _(pending)_ | 83 focused gates; SHA next; CP08-V4 not started |
+| FR10 | Freeze R1–R4 acceptance candidate | PASS | `1bd8aa0` | 83 focused gates; `$CandidateSha` below; CP08-V4 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -765,11 +765,11 @@ CP08-R4 commit: `5233b5d` — `test(j04-m0): route realprocess gate through PG l
 This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` /
 `63dda17`), WR05 documentation (`034425f`), and the freeze documentation. Focused gates are
 **83 passed** (`build/j04-m0-closure/freeze-r4-20260817T182715064Z`): FR09 set plus R4 runner
-and destructive-guard tests. The full checkpoint SHA is recorded in the following
-documentation-only commit. No product or test changes are allowed after this freeze.
-CP08-V4 remains **NOT STARTED**. Overall **`NOT_READY`**: after the start-contract
-remediation there is not yet a successful CP08 run. Historical CP08-V3 aborted on the
-acceptance start contract, not Word COM. `ACCEPTED` is not set.
+and destructive-guard tests. The frozen candidate is
+`1bd8aa0f026249cd8e635d4a3c3ad34857ea953e` (`1bd8aa0`). No product or test changes are
+allowed after this freeze. CP08-V4 remains **NOT STARTED**. Overall **`NOT_READY`**: after
+the start-contract remediation there is not yet a successful CP08 run. Historical CP08-V3
+aborted on the acceptance start contract, not Word COM. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 

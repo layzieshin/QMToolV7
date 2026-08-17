@@ -17,8 +17,8 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **this FR10 checkpoint; full SHA recorded next**. The freeze tree contains
-R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), WR05
+`$CandidateSha` — **`1bd8aa0f026249cd8e635d4a3c3ad34857ea953e` (`1bd8aa0`)**. The freeze tree
+contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), WR05
 documentation, and the known unchanged stat-only files. Last superseded freeze was `1a22d38`
 (FR09, before R4). Overall **`NOT_READY`**: after the start-contract remediation there is not
 yet a successful CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not
@@ -288,7 +288,7 @@ are permitted after this freeze.
 | --- | --- |
 | Focused gates | **83 passed** (`build/j04-m0-closure/freeze-r4-20260817T182715064Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
-| Candidate SHA | **this FR10 checkpoint; full SHA recorded next** |
+| Candidate SHA | **`1bd8aa0f026249cd8e635d4a3c3ad34857ea953e` (`1bd8aa0`)** |
 | CP08-V4 | **NOT STARTED** |
 | `ACCEPTED` | **not set** |
 
@@ -319,7 +319,7 @@ CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word 
 | FR09 | PASS | `1a22d38` freeze R1+R2+R3 | `57d87d4` |
 | CP08-V3 | FAILED | — (start-contract abort; Word not reached) | `de7e82d` |
 | CP08-R4 | PASS | `5233b5d` start-contract runner | `63dda17` |
-| FR10 | PASS | pending freeze R1–R4 | this documentation |
+| FR10 | PASS | `1bd8aa0` freeze R1–R4 | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
