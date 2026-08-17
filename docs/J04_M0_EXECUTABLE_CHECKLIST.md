@@ -22,11 +22,12 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP01 | Backend ownership, auth, HTTP contracts | PASS | `3f3f7b1` | 77+1 tests green; OpenAPI reproducible; no code fixes |
 | CP02 | Client-facing M0 use-case gates | PASS | `c2d6f3d` | 62 focused tests green; no code fixes |
 | CP03 | Word COM isolation | PASS | `1993292` | DispatchEx + cleanup + redaction; 24 tests green |
-| CP04 | PostgreSQL-16 destructive gate | PASS | `c71c1f1` | 57 static/guard tests green; PG16 LIVE NOT RUN |
+| CP04 | PostgreSQL destructive gate (static/CI) | PASS | `c71c1f1` | 57 static/guard tests; CI ephemer PG16 |
+| CP04-R | PG test infra remediation (Slot-2 / major pin) | PASS | `8c273de` | 28 guard/runner tests; PG18 local smoke; **nicht neu implementieren** |
 | CP05 | Real-process acceptance harness | PASS | `29ddaa6` | 10 harness+reference tests; final gate NOT RUN |
 | CP06 | Onedir packaging preparation | PASS | `ba67126` | 16 packaging tests green; Packaging NOT RUN |
-| CP07 | Freeze technical acceptance candidate | PASS | `d19e8b9` | 60+5 freeze smokes green; `$CandidateSha` = `d19e8b9` |
-| CP08 | Final acceptance gate | TODO | — | Depends CP07 + external preconditions |
+| CP07 | Freeze technical acceptance candidate | PASS | `d19e8b9` | superseded by remediation `8c273de` for `$CandidateSha` |
+| CP08 | Final acceptance gate | TODO | — | `$CandidateSha` = `8c273de`; PG16 install **not required** (Slot-2 PG18 local) |
 | CP09 | Human acceptance | TODO | — | Depends CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -447,4 +448,40 @@ Result: **60 passed** + **5 passed** (2026-08-17)
 - [x] Historical evidence is not presented as the current pass
 - [x] Remaining live/packaging/human gates documented as **NOT RUN**
 - [x] Worktree clean except the two known stat-only files
-- [x] `$CandidateSha` recorded: `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`)
+- [x] `$CandidateSha` recorded: `8c273de4e33837dbca44464172db1033de476399` (`8c273de`) — remediation after CP07 freeze
+
+## CP04-R verification (adopted — other agent, do not re-implement)
+
+Verified 2026-08-17 on `feature/ap-j04-m0` @ `8c273de`:
+
+| Item | Value |
+| --- | --- |
+| Slot 1 (Lab, unchanged) | `192.168.0.4:5432` / `qmtool_test` |
+| Slot 2 (destructive) | `127.0.0.1:5432` / PostgreSQL **18.4** |
+| Test DB | `qmtool_j04_destructive_test` |
+| Admin | `qmtool_j04_test_admin` |
+| Marker | `j04_m0_destructive_pg16` (unchanged string) |
+| `QMTOOL_PG_TEST_EXPECTED_MAJOR` | local **18**, CI **16**, default **16** |
+| Floor | PostgreSQL **>= 16** |
+| RESET | not persisted; injected only in pytest child via runner |
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest tests/test_postgres_destructive_guard.py tests/test_run_postgres_live_tests.py -q `
+  --basetemp build/j04-m0-closure/cp04r-verify
+```
+
+Result: **28 passed** (closure verification 2026-08-17)
+
+Commit: `8c273de` — `test(j04-m0): pin destructive PG major via env for local PG18 smoke`
+
+## CP08 preconditions (next open checkpoint)
+
+- [ ] `HEAD` == `$CandidateSha` (`8c273de`)
+- [ ] Worktree clean except known stat-only files
+- [ ] Slot-2 PG18 reachable via runner preflight (no Slot-1 changes)
+- [ ] Port 8000 free for real-process harness
+- [ ] Word available (COM isolation already in product)
+- [ ] Explicit opt-in before `j04_final_acceptance` full run
+- [ ] Human gate remains separate (CP09)

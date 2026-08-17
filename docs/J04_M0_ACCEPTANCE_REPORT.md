@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **technical acceptance candidate frozen; live/packaging/human gates remain NOT RUN**
+Current status: `Rejected / follow-up required` — **CP04-R adopted; `$CandidateSha` = `8c273de`; CP08 next**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -15,12 +15,39 @@ gesetzt werden.
 > unvollständigen Rohlogs unter `.j04_*_evidence/`. Diese Zahlen sind **nicht** der aktuelle
 > Closure-Lauf. Aktuelle Evidence entsteht erst unter `build/j04-m0-closure/` ab CP00.
 
-## Technical acceptance candidate (CP07 freeze)
+## Technical acceptance candidate
 
-`$CandidateSha` = `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`)
+`$CandidateSha` = `8c273de4e33837dbca44464172db1033de476399` (`8c273de`)
 
-Branch: `feature/ap-j04-m0`. Product/test code must not change after `$CandidateSha`.
-Any later fix requires a remediation checkpoint, a new freeze, and explicit approval for a second CP08 attempt.
+Branch: `feature/ap-j04-m0`. CP07 freeze (`d19e8b9`) remains in history; PG test-infra
+remediation `8c273de` is the current candidate baseline. Product/test code must not change
+after `$CandidateSha` without a new remediation checkpoint and freeze.
+
+### CP04-R — PostgreSQL test infrastructure (adopted PASS)
+
+Completed by separate agent; **do not re-implement**. Verified by closure run 2026-08-17.
+
+| Item | Value |
+| --- | --- |
+| Commit | `8c273de` — `test(j04-m0): pin destructive PG major via env for local PG18 smoke` |
+| Slot 1 (Lab, untouched) | `192.168.0.4:5432` / `qmtool_test` |
+| Slot 2 (destructive) | `127.0.0.1:5432` / PostgreSQL 18.4 |
+| Test DB / admin | `qmtool_j04_destructive_test` / `qmtool_j04_test_admin` |
+| Marker | `j04_m0_destructive_pg16` |
+| Major contract | `QMTOOL_PG_TEST_EXPECTED_MAJOR`: local 18, CI 16, default 16; floor >= 16 |
+| RESET | not stored; `scripts/run_postgres_live_tests.py` read-only preflight + child-only opt-in |
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP04R-GUARD | `pytest tests/test_postgres_destructive_guard.py tests/test_run_postgres_live_tests.py -q` | **28 passed** (closure verify) |
+| CP04R-LIVE | Live smoke `test_provision_is_idempotent` via runner | **PASS** (reported by infra agent; not re-run here) |
+| CP04R-PREFLIGHT | Preflight major=18, marker valid | **PASS** (reported by infra agent) |
+
+No PG16 installation planned. No Slot-1 changes.
+
+## Technical acceptance candidate (CP07 freeze — historical)
+
+`$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
 
 ### Checkpoint / commit table (this closure run)
 
@@ -30,16 +57,17 @@ Any later fix requires a remediation checkpoint, a new freeze, and explicit appr
 | CP01 | PASS | `3f3f7b1` backend transport contracts | `54181ba` |
 | CP02 | PASS | `c2d6f3d` client use-case gates | `cc4e9f2` |
 | CP03 | PASS | `1993292` isolate Word COM | `ce5a8a7` |
-| CP04 | PASS | `c71c1f1` harden PG16 gates | `54d4d37` |
+| CP04 | PASS | `c71c1f1` harden PG16 gates (static/CI) | `54d4d37` |
+| CP04-R | PASS | `8c273de` PG test infra remediation | _(adopted; no duplicate commit)_ |
 | CP05 | PASS | `29ddaa6` real-process harness | `136d9e4` |
 | CP06 | PASS | `ba67126` prepare onedir | `a6959ea` |
-| CP07 | PASS | `d19e8b9` freeze technical acceptance candidate | SHA record (this documentation) |
+| CP07 | PASS | `d19e8b9` freeze (superseded candidate) | SHA record |
 
 ### Remaining gates (explicitly NOT RUN)
 
 | Gate | Status |
 | --- | --- |
-| Isolated PostgreSQL 16 live classes | **PG16 LIVE NOT RUN** |
+| Isolated PostgreSQL live (Slot-2 PG18 local / CI PG16) | **CP04-R PASS** (guard+runner); full live suites **NOT RUN** (CP08) |
 | M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
 | Full `j04_final_acceptance` real-process E2E | **NOT RUN** |
 | Real Word COM document conversion E2E | **NOT RUN** |
