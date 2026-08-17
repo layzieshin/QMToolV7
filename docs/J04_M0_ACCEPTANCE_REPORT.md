@@ -177,7 +177,7 @@ commit. No product or test changes are permitted after this freeze.
 | --- | --- |
 | Focused gates | **46 passed** (`build/j04-m0-closure/freeze-r2-elevated-verify`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
-| Candidate SHA | **this FR08 checkpoint; full SHA recorded next** |
+| Candidate SHA | **`fe172c9fc3b5753b9b6d4b9b1a1d026760257c37` (`fe172c9`)** |
 | CP08-V2 | **NOT STARTED** |
 
 ## Technical acceptance candidate (CP07 freeze — historical)

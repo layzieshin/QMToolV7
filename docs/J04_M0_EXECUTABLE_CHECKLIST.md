@@ -620,9 +620,9 @@ R1, R2, and the documentation before CP08-V2.
 ## FR08 — Remediated acceptance candidate freeze
 
 This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), WR05 documentation (`034425f`), and the
-current technical tree. The focused gates are **46 passed**. The full checkpoint SHA is recorded
-in the following documentation-only commit; no product or test changes are allowed after this
-freeze. CP08-V2 remains **NOT STARTED**.
+current technical tree. The focused gates are **46 passed**. The frozen candidate is
+`fe172c9fc3b5753b9b6d4b9b1a1d026760257c37` (`fe172c9`). No product or test changes are allowed
+after this freeze. CP08-V2 remains **NOT STARTED**.
 
 ## CP08-R2 remediation specification (real-process scenario)
 
