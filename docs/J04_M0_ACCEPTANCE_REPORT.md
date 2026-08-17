@@ -112,7 +112,9 @@ Marker `-m "not postgres and not j04_final_acceptance"`, `--basetemp build/j04-m
 | --- | --- | --- |
 | CP05-HARNESS | Harness-Unit-Tests + Same-Process-Referenz (`two_clients…`, `version_read…`) | **10 passed** |
 | CP05-FINAL-GATE | `test_j04_m0_realprocess.py` mit `-m "not j04_final_acceptance"` | **0 collected** (absichtlich ausgeschlossen) |
-| CP05-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+| CP05-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** |
+
+CP05 commit: `29ddaa6` — `test(j04-m0): add deterministic real-process acceptance harness`
 
 **Final acceptance NOT RUN** — kein `j04_final_acceptance`-Lauf, kein `QMTOOL_J04_FINAL_ACCEPTANCE`-Opt-in.
 
