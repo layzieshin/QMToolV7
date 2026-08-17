@@ -296,7 +296,7 @@ evidence of a run that actually reached it.
 | CP08-R3 | PASS | `c3d6587` isolate realprocess workspace | `a421005` |
 | FR09 | PASS | `1a22d38` freeze R1+R2+R3 | `57d87d4` |
 | CP08-V3 | FAILED | — (start-contract abort; Word not reached) | `de7e82d` |
-| CP08-R4 | PASS | pending start-contract runner | this documentation |
+| CP08-R4 | PASS | `5233b5d` start-contract runner | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
