@@ -30,7 +30,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08 | Final acceptance gate | FAILED | — | PG live **51 passed**; regression **1 failed**; Word **BLOCKED** |
 | CP08-R1 | Literal optional documents port in wiring | PASS | `fbea360` | Architecture gate green; constant still exported; **no freeze** |
 | CP08-R2 | Realprocess scenario (replace skip stub) | PASS | `30b73e9` | Scenario implemented; live gate **NOT RUN** |
-| Word readiness | Word COM `DispatchEx` probe (interactive) | PASS (WR03) | — | Safe mode title confirmed; add-ins not causal; freeze **not set this turn** |
+| Word readiness | Word COM `DispatchEx` probe (interactive) | PASS (WR05) | — | Safe mode title confirmed; interactive DispatchEx/Version/Quit PASS; add-ins not causal; DOCX/PDF E2E **NOT RUN** |
 | CP09 | Human acceptance | TODO | — | Depends second CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -606,6 +606,16 @@ Evidence (local, not committed): `build/j04-m0-closure/word-com-readiness/wr03-r
 
 Freeze and second CP08 were **not** started in WR03.
 
+
+## WR05 — Interactive Word COM readiness (PASS)
+
+WR03 recovery was followed by a successful `DispatchEx('Word.Application')` probe in the normal
+interactive desktop session 1. Office version `16.0.17932.20884` was readable, the owned
+instance was quit, and the original HKCU add-in values were restored. No DOCX/PDF E2E was run.
+
+Readiness is **PASS** for the COM boundary only. The prior agent-context `0x80080005` attempt is
+historical evidence; it does not change the successful interactive result. FR08 must now freeze
+R1, R2, and the documentation before CP08-V2.
 
 ## CP08-R2 remediation specification (real-process scenario)
 

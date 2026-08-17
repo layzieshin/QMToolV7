@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **WR03 Safe-Mode PASS; DispatchEx PASS; add-ins not causal; freeze not set**
+Current status: `Rejected / follow-up required` — **WR03 Safe-Mode PASS; interactive DispatchEx PASS; add-ins not causal; freeze pending**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -18,9 +18,8 @@ gesetzt werden.
 ## Technical acceptance candidate
 
 `$CandidateSha` — **not set after CP08-R1/R2**. Last frozen SHA was `8c273de` (CP04-R). Product
-`fbea360` (R1) and test `30b73e9` (R2) are remediations; docs HEAD `e8a015c` is documentation
-only. A new freeze covering R1+R2 **including documentation** is deferred until Word COM
-readiness **PASS** in an interactive desktop PowerShell.
+`fbea360` (R1) and test `30b73e9` (R2) are remediations. Interactive Word COM readiness is now
+**PASS**; FR08 must still create a new freeze before CP08-V2.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -146,6 +145,26 @@ Until then overall status remains **`NOT_READY`**.
 | WR03-C | both HKCU restored to 2, `DispatchEx` | **PASS** Word 16.0 |
 | WR03-EFFECT | Add-in causality | **not causal** — COM works after clean session even with add-ins restored |
 | WR03-FREEZE | R1+R2 freeze / second CP08 | **not started** |
+
+## WR05 — Interactive Word COM readiness (PASS)
+
+The recovery was completed in the normal interactive desktop session 1. No DOCX/PDF E2E was
+run and no existing Word session was taken over.
+
+| Check | Result |
+| --- | --- |
+| Office installation | Office LTSC Professional Plus 2024 x64, build `16.0.17932.20884` |
+| Safe-mode recovery | **PASS**; Word started visibly and closed normally |
+| Add-ins | Acrobat PDFMaker/Citavi HKCU values restored to snapshot; OneNote unchanged; no causal effect found |
+| `DispatchEx('Word.Application')` | **PASS**; `Word.Version` readable as `16.0` |
+| Cleanup | Owned COM instance quit; no existing session was adopted |
+| DOCX/PDF E2E | **NOT RUN** (remains a CP08-V2 gate) |
+| Readiness | **PASS** for the interactive COM boundary |
+
+The failed agent-context probe (`0x80080005`) and its targeted orphan cleanup remain historical
+evidence. The successful interactive result is recorded in local evidence under
+`build/j04-m0-closure/word-com-readiness/` (not committed). Overall status remains
+`NOT_READY` until FR08 and the single CP08-V2 run complete.
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 

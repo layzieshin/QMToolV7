@@ -20,7 +20,7 @@ gate. It is not a product CLI, entrypoint, or alternate backend port contract.
 | --- | --- |
 | `QMTOOL_J04_FINAL_ACCEPTANCE` | Must be `I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN` for the full gate |
 | `QMTOOL_J04_WORD_COM_LIVE` | Separate opt-in for Word COM live inside the scenario (`I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN`) |
-| `QMTOOL_PG_TEST_*` | Destructive PG16 cluster (full gate only; see `tests/postgres/README.md`) |
+| `QMTOOL_PG_TEST_*` | Guard-approved destructive target; major is selected by `QMTOOL_PG_TEST_EXPECTED_MAJOR` (CI PG16, local CP04-R PG18; see `tests/postgres/README.md`) |
 | `QMTOOL_BACKEND_URL` | Client worker backend URL (defaults to `http://127.0.0.1:8000`) |
 | `QMTOOL_HOME` | Separate homes for backend and each client worker |
 
