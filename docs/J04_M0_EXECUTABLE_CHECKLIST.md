@@ -23,7 +23,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP02 | Client-facing M0 use-case gates | PASS | `c2d6f3d` | 62 focused tests green; no code fixes |
 | CP03 | Word COM isolation | PASS | `1993292` | DispatchEx + cleanup + redaction; 24 tests green |
 | CP04 | PostgreSQL-16 destructive gate | PASS | `c71c1f1` | 57 static/guard tests green; PG16 LIVE NOT RUN |
-| CP05 | Real-process acceptance harness | TODO | — | Depends CP01, CP04 |
+| CP05 | Real-process acceptance harness | PASS | _(pending)_ | 10 harness+reference tests; final gate NOT RUN |
 | CP06 | Onedir packaging preparation | TODO | — | Depends CP02, CP05 |
 | CP07 | Freeze technical acceptance candidate | TODO | — | Depends CP00–CP06 |
 | CP08 | Final acceptance gate | TODO | — | Depends CP07 + external preconditions |
@@ -371,3 +371,28 @@ Result: **57 passed** (2026-08-17, `build/j04-m0-closure/cp04`)
 - [x] `pg_dump`/`pg_restore` remain M8-only (static prep tests pass)
 - [x] **PG16 LIVE NOT RUN** locally
 - [x] Config/docs only in CP04 commit (no product code)
+
+## CP05 verification command
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_harness_unit.py `
+  tests/backend/test_documents_http_api.py `
+  -k "two_clients_and_restart_readback or version_read_after_restart or harness" `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp build/j04-m0-closure/cp05
+```
+
+Result: **10 passed** (2026-08-17, `build/j04-m0-closure/cp05`)
+
+## CP05 acceptance criteria
+
+- [x] Harness uses real separate processes (client workers; backend launch verified via mock + canonical `-m src.backend`)
+- [x] Separate `QMTOOL_HOME` paths for backend and two clients
+- [x] Cleanup terminates only tracked PIDs
+- [x] Logs redacted before write under `build/j04-m0-closure/`
+- [x] Final test requires marker + explicit opt-in (excluded in CP05 run)
+- [x] Full realprocess test **NOT RUN** in CP05
+- [x] No new product entrypoint/port/API

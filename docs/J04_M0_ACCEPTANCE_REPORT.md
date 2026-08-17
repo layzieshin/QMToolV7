@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP04 verified (PG16 LIVE NOT RUN)**
+Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP05 verified (final acceptance NOT RUN)**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -102,6 +102,28 @@ Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp04`.
 | CP04-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** |
 
 CP04 commit: `c71c1f1` — `test(j04-m0): harden isolated PostgreSQL 16 gates`
+
+## Verification (CP05 — real-process acceptance harness)
+
+Ausgeführt am 2026-08-17, Python 3.14 aus `.\.venv\Scripts\python.exe`, `PYTHONPATH=.`,
+Marker `-m "not postgres and not j04_final_acceptance"`, `--basetemp build/j04-m0-closure/cp05`.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP05-HARNESS | Harness-Unit-Tests + Same-Process-Referenz (`two_clients…`, `version_read…`) | **10 passed** |
+| CP05-FINAL-GATE | `test_j04_m0_realprocess.py` mit `-m "not j04_final_acceptance"` | **0 collected** (absichtlich ausgeschlossen) |
+| CP05-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+
+**Final acceptance NOT RUN** — kein `j04_final_acceptance`-Lauf, kein `QMTOOL_J04_FINAL_ACCEPTANCE`-Opt-in.
+
+Test-only Harness unter `tests/acceptance/`:
+
+- `j04_m0_realprocess_harness.py` — `python -m src.backend` auf Port 8000, eigene PIDs, redigierte Logs
+- `j04_m0_client_worker.py` — Client-Subprozess mit getrenntem `QMTOOL_HOME` und In-Memory-Session
+- `test_j04_m0_harness_unit.py` — Lifecycle/Redaction/Port/Session-Unit-Tests
+- `test_j04_m0_realprocess.py` — CP08-Vollgate (Marker + Opt-in; in CP05 nicht ausgeführt)
+
+Kein neuer Produkt-Entrypoint, Port oder fachliche API.
 
 **PG16 LIVE NOT RUN** — keine Verbindung zur lokalen Runtime-/Lab-DB, PG18 oder `.env`.
 Destruktive Live-Fixtures bleiben bis zur dedizierten externen PG16-Instanz blockiert.
