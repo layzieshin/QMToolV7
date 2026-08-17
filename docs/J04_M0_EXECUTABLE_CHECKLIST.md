@@ -21,7 +21,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP00 | Preserve and classify baseline | PASS | `0a844c2` | 153 A–D paths; 24 smokes green |
 | CP01 | Backend ownership, auth, HTTP contracts | PASS | `3f3f7b1` | 77+1 tests green; OpenAPI reproducible; no code fixes |
 | CP02 | Client-facing M0 use-case gates | PASS | `c2d6f3d` | 62 focused tests green; no code fixes |
-| CP03 | Word COM isolation | TODO | — | Depends CP02 |
+| CP03 | Word COM isolation | PASS | _(pending)_ | DispatchEx + cleanup + redaction; 24 tests green |
 | CP04 | PostgreSQL-16 destructive gate | TODO | — | Depends CP00 |
 | CP05 | Real-process acceptance harness | TODO | — | Depends CP01, CP04 |
 | CP06 | Onedir packaging preparation | TODO | — | Depends CP02, CP05 |
@@ -320,3 +320,27 @@ Result: **62 passed** (2026-08-17, `build/j04-m0-closure/cp02`)
 - [x] Profile manager has no local mutation path
 - [x] Out-of-scope findings documented as follow-ups (historical report sections)
 - [x] Documentation and tests align (62/62 green; no fixes required)
+
+## CP03 verification command
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/modules/test_docx_to_pdf.py `
+  tests/interfaces/test_docx_conversion_worker.py `
+  tests/backend/test_documents_p4_p9_http.py `
+  -m "not postgres" -q `
+  --basetemp build/j04-m0-closure/cp03
+```
+
+Result: **24 passed** (2026-08-17, `build/j04-m0-closure/cp03`)
+
+## CP03 acceptance criteria
+
+- [x] Production code uses isolated own Word instance (`DispatchEx`)
+- [x] Cleanup affects only self-created COM objects
+- [x] Success and error paths covered by mock-based tests
+- [x] Error output redacted (paths, COM repr)
+- [x] No real Word E2E in this checkpoint
+- [x] No changes to running Word sessions (mock-only)

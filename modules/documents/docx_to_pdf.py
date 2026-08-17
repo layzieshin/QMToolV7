@@ -2,12 +2,28 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
 from .errors import ValidationError
 
 _STDIO_PATCHED = False
+_PATH_RE = re.compile(r"[A-Za-z]:\\[^\s\"']+")
+_COM_OBJECT_RE = re.compile(r"<COMObject[^>]*>")
+
+
+def _redact_error_message(exc: BaseException) -> str:
+    """Return a user-safe summary without full paths or raw COM representations."""
+    name = type(exc).__name__
+    text = str(exc).strip()
+    if not text:
+        return name
+    text = _PATH_RE.sub("<path>", text)
+    text = _COM_OBJECT_RE.sub("<COMObject>", text)
+    if len(text) > 160:
+        text = text[:157] + "..."
+    return f"{name}: {text}"
 
 
 def docx_conversion_available() -> bool:
@@ -58,34 +74,42 @@ def _convert_with_word_com(source: Path, target: Path) -> None:
     target_resolved = target.resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    word = win32com.client.Dispatch("Word.Application")
-    word.Visible = False
-    word.DisplayAlerts = False
+    word = None
+    doc = None
     try:
+        word = win32com.client.DispatchEx("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = False
         doc = word.Documents.Open(str(source_resolved))
-        try:
-            if doc.Revisions.Count > 0:
-                doc.Revisions.AcceptAll()
-            doc.ExportAsFixedFormat(
-                str(target_resolved),
-                17,
-                False,
-                0,
-                0,
-                1,
-                1,
-                0,
-                True,
-                True,
-                0,
-                True,
-                True,
-                False,
-            )
-        finally:
-            doc.Close(False)
+        if doc.Revisions.Count > 0:
+            doc.Revisions.AcceptAll()
+        doc.ExportAsFixedFormat(
+            str(target_resolved),
+            17,
+            False,
+            0,
+            0,
+            1,
+            1,
+            0,
+            True,
+            True,
+            0,
+            True,
+            True,
+            False,
+        )
     finally:
-        word.Quit()
+        if doc is not None:
+            try:
+                doc.Close(False)
+            except Exception:  # noqa: BLE001
+                pass
+        if word is not None:
+            try:
+                word.Quit()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _convert_with_docx2pdf(source: Path, target: Path) -> None:
@@ -110,7 +134,7 @@ def convert_docx_to_pdf(source: Path, target: Path) -> None:
     source_path = Path(source)
     target_path = Path(target)
     if not source_path.is_file():
-        raise ValidationError(f"DOCX-Quelldatei nicht gefunden: {source_path}")
+        raise ValidationError(f"DOCX-Quelldatei nicht gefunden: {source_path.name}")
 
     com_initialized = False
     try:
@@ -132,7 +156,8 @@ def convert_docx_to_pdf(source: Path, target: Path) -> None:
             except Exception as fallback_exc:
                 raise ValidationError(
                     "DOCX-zu-PDF fehlgeschlagen. Microsoft Word ist erforderlich "
-                    f"(COM: {word_exc}; Fallback: {fallback_exc})"
+                    f"(COM: {_redact_error_message(word_exc)}; "
+                    f"Fallback: {_redact_error_message(fallback_exc)})"
                 ) from fallback_exc
     finally:
         if com_initialized:

@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP02 verified**
+Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP03 verified**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -75,6 +75,27 @@ Verified M0 vertical slices (same-process HTTP; not live multi-process):
 - **Authorization matrix:** 16-action coverage index + execution (`test_documents_authorization_matrix`)
 
 Out-of-scope paths remain `not_in_m0` / fail-closed (no J04-M1 or parallel paths introduced).
+
+CP02 commit: `c2d6f3d` — `checkpoint(j04-m0): verify client use-case gates`
+
+## Verification (CP03 — Word COM isolation)
+
+Ausgeführt am 2026-08-17, Python 3.14 aus `.\.venv\Scripts\python.exe`, `PYTHONPATH=.`,
+Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp03`.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP03-FOCUS | `test_docx_to_pdf`, `test_docx_conversion_worker`, `test_documents_p4_p9_http` | **24 passed** |
+| CP03-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+
+**Kein echter Word-E2E-Lauf** — ausschließlich mockbasierte Unit-/Component-Tests.
+
+Änderungen in `modules/documents/docx_to_pdf.py`:
+
+- `DispatchEx("Word.Application")` statt `Dispatch` für isolierte Word-Instanz
+- `Quit()` ausschließlich auf selbst erzeugter Instanz; `doc.Close`/`word.Quit` in `finally`
+- partielle Initialisierung: kein `Quit()` wenn `DispatchEx` fehlschlägt
+- Fehlerredaktion via `_redact_error_message` (keine vollen Pfade, kein rohes COM-Repr)
 
 Baseline-Klassifizierung: `docs/J04_M0_EXECUTABLE_CHECKLIST.md` (A–D staged; E ignoriert;
 2 stat-only Pfade nicht gestaged).
