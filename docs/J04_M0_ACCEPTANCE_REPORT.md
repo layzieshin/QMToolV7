@@ -58,7 +58,9 @@ Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp02`.
 | # | Befehl | Ergebnis |
 | --- | --- | --- |
 | CP02-GATES | Fokussierter Client-/GUI-/HTTP-Smoke (12 Testmodule, siehe Plan CP02) | **62 passed** |
-| CP02-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+| CP02-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** (CRLF warnings only on stat-only unstaged paths) |
+
+CP02 commit: `c2d6f3d` — `checkpoint(j04-m0): verify client use-case gates`
 
 Keine reproduzierbaren Abweichungen — keine Produktkorrekturen in CP02.
 
