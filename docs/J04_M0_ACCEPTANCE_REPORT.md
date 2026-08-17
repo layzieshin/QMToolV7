@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08 FAILED (regression); candidate NOT_READY; remediation required**
+Current status: `Rejected / follow-up required` — **CP08-R1 PASS (wiring); no freeze; CP08-R2 next**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -66,7 +66,22 @@ AssertionError: modules\documents\wiring.py uses non-literal get_port
 
 Evidence logs: `build/j04-m0-closure/cp08-pg-live-runner-clean.log`, `build/j04-m0-closure/cp08-regression.log`
 
-**Candidate status: NOT_READY** — remediation checkpoint required before a second CP08 attempt.
+**Candidate status: NOT_READY** — CP08-R1 remediates the wiring architecture failure; freeze
+is deferred until CP08-R2 (real-process scenario) is complete.
+
+## Verification (CP08-R1 — literal optional documents port)
+
+Ausgeführt am 2026-08-17. Product change only in `modules/documents/wiring.py`.
+`DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT` remains exported. Architecture test unchanged.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R1-FOCUS | wiring contract, documents ports, HTTP gates, bootstrap provenance | **16 passed** (`build/j04-m0-closure/cp08-r1`) |
+| CP08R1-DIFF | `git diff -- modules/documents/wiring.py` | two string-literal replacements; constant export unchanged |
+| CP08R1-DIFFCHECK | `git diff --check` | **Exit 0** (CRLF warnings only on known stat-only files) |
+
+No freeze after R1. Next: CP08-R2 (replace real-process `pytest.skip` stub), then Word COM
+readiness, then a new technical freeze before a second CP08 attempt.
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -85,6 +100,8 @@ Evidence logs: `build/j04-m0-closure/cp08-pg-live-runner-clean.log`, `build/j04-
 | CP05 | PASS | `29ddaa6` real-process harness | `136d9e4` |
 | CP06 | PASS | `ba67126` prepare onedir | `a6959ea` |
 | CP07 | PASS | `d19e8b9` freeze (superseded candidate) | SHA record |
+| CP08 | FAILED | — (gate abort; no product commit) | `c47a514` |
+| CP08-R1 | PASS | _(pending)_ literal optional documents port | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 

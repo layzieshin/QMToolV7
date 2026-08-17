@@ -28,7 +28,9 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP06 | Onedir packaging preparation | PASS | `ba67126` | 16 packaging tests green; Packaging NOT RUN |
 | CP07 | Freeze technical acceptance candidate | PASS | `d19e8b9` | superseded by remediation `8c273de` for `$CandidateSha` |
 | CP08 | Final acceptance gate | FAILED | — | PG live **51 passed**; regression **1 failed**; Word **BLOCKED** |
-| CP09 | Human acceptance | TODO | — | Depends CP08 + explicit human sign-off |
+| CP08-R1 | Literal optional documents port in wiring | PASS | _(pending)_ | Architecture gate green; constant still exported; **no freeze** |
+| CP08-R2 | Realprocess scenario (replace skip stub) | TODO | — | Required before next freeze |
+| CP09 | Human acceptance | TODO | — | Depends second CP08 + explicit human sign-off |
 
 ## Classification legend
 
@@ -512,3 +514,29 @@ Cause: `DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT` constant passed to `container.get
 checkpoint** — not an in-gate fix.
 
 Log: `build/j04-m0-closure/cp08-regression.log`
+
+## CP08-R1 verification (wiring literal port)
+
+Minimal product fix only. `DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT` remains exported for
+tests/composition roots. Architecture test unchanged. **No freeze.**
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/modules/test_module_contract_wiring.py `
+  tests/modules/test_documents_module_ports.py `
+  tests/interfaces/test_documents_http_gates.py `
+  tests/platform/test_documents_bootstrap_provenance.py `
+  -m "not postgres" -q `
+  --basetemp build/j04-m0-closure/cp08-r1
+```
+
+Result: **16 passed** (2026-08-17)
+
+Remaining after R1:
+
+1. CP08-R2 — implement full real-process scenario (remove `pytest.skip` stub)
+2. Word COM readiness in an interactive session
+3. New technical freeze
+4. Second full CP08 attempt

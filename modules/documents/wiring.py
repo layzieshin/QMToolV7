@@ -25,8 +25,8 @@ def _should_register_sqlite(container) -> bool:
     if container.has_port("documents_runtime_owner"):
         if container.get_port("documents_runtime_owner") == "backend":
             return True
-    if container.has_port(DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT):
-        return bool(container.get_port(DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT))
+    if container.has_port("documents_allow_inprocess_sqlite"):
+        return bool(container.get_port("documents_allow_inprocess_sqlite"))
     return False
 
 
