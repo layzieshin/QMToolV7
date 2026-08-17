@@ -34,6 +34,7 @@ ACCEPTANCE_DOC_ID = "J04-ACCEPT-DOC"
 ACCEPTANCE_PROFILE_CODE = "j04_accept_flow_profile"
 BOOTSTRAP_ADMIN_USERNAME = "j04acceptadmin"
 BOOTSTRAP_ADMIN_PASSWORD = "J04Accept-Admin-Secret-1"
+BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE = "J04Accept-Admin-Secret-2"
 
 WORD_COM_LIVE_ENV = "QMTOOL_J04_WORD_COM_LIVE"
 WORD_COM_LIVE_OPT_IN = "I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN"
@@ -86,6 +87,7 @@ class ScenarioContext:
     client1_token_fingerprint: str = ""
     client2_token_fingerprint: str = ""
     pre_restart_tokens: dict[str, str] = field(default_factory=dict)
+    bootstrap_admin_password: str = BOOTSTRAP_ADMIN_PASSWORD
 
 
 def scenario_step_catalog() -> tuple[str, ...]:
@@ -246,6 +248,55 @@ class AcceptanceHttpClient:
         raise ScenarioFailure("version payload missing etag")
 
 
+def _http_error_code(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        return str(detail.get("error", "")).strip()
+    return ""
+
+
+def _redact_http_payload(payload: Any) -> str:
+    if payload is None:
+        return ""
+    try:
+        text = json.dumps(payload, ensure_ascii=True)
+    except TypeError:
+        text = str(payload)
+    return redact_log_text(text[:500])
+
+
+def complete_bootstrap_admin_session(client: AcceptanceHttpClient) -> tuple[dict[str, Any], str]:
+    """Login, complete first-admin password change if required, then GET /auth/me.
+
+    Product bootstrap sets ``must_change_password=True``. Login still returns 200
+    with a session token; ``GET /auth/me`` is 409 until ``POST /auth/change-password``.
+    """
+    client.login(BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD)
+    password = BOOTSTRAP_ADMIN_PASSWORD
+    status, _headers, payload = client.request_raw("GET", "/auth/me")
+    if status == 409 and _http_error_code(payload) == "password_change_required":
+        change_status, _change_headers, change_body = client.request_raw(
+            "POST",
+            "/auth/change-password",
+            body={"new_password": BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE},
+        )
+        if change_status != 204:
+            raise ScenarioFailure(
+                "bootstrap admin password change failed "
+                f"status={change_status} body={_redact_http_payload(change_body)}"
+            )
+        password = BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE
+        status, _headers, payload = client.request_raw("GET", "/auth/me")
+    if status != 200 or not isinstance(payload, dict):
+        raise ScenarioFailure(
+            "bootstrap admin /auth/me failed "
+            f"status={status} body={_redact_http_payload(payload)}"
+        )
+    return payload, password
+
+
 def _mutation_headers(token: str, etag: str, *, extra: dict[str, str] | None = None) -> dict[str, str]:
     headers = {"Authorization": f"Bearer {token}", "If-Match": etag}
     if extra:
@@ -344,11 +395,9 @@ def _step_health_and_openapi(ctx: ScenarioContext) -> str:
 
 def _step_bootstrap_admin_login(ctx: ScenarioContext) -> str:
     client = AcceptanceHttpClient(ctx.harness.backend_url)
-    client.login(BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD)
-    me_status, _headers, me = client.request_raw("GET", "/auth/me")
-    if me_status != 200 or not isinstance(me, dict):
-        raise ScenarioFailure("bootstrap admin /auth/me failed")
+    me, password = complete_bootstrap_admin_session(client)
     ctx.admin_token = client._token or ""
+    ctx.bootstrap_admin_password = password
     return f"bootstrap admin session user={me.get('username')}"
 
 
@@ -509,7 +558,7 @@ def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
             "--username",
             BOOTSTRAP_ADMIN_USERNAME,
             "--password",
-            BOOTSTRAP_ADMIN_PASSWORD,
+            ctx.bootstrap_admin_password,
             "--method",
             "POST",
             "--path",
@@ -529,7 +578,7 @@ def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
             "--username",
             BOOTSTRAP_ADMIN_USERNAME,
             "--password",
-            BOOTSTRAP_ADMIN_PASSWORD,
+            ctx.bootstrap_admin_password,
             "--method",
             "POST",
             "--path",

@@ -1,6 +1,7 @@
 """Unit tests for the J04-M0 acceptance scenario (no live PG / no full CP08 run)."""
 from __future__ import annotations
 
+import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -10,10 +11,13 @@ import pytest
 from tests.acceptance.j04_m0_acceptance_scenario import (
     ACCEPTANCE_DOC_ID,
     AcceptanceHttpClient,
+    BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE,
     ScenarioContext,
+    ScenarioFailure,
     StepStatus,
     WORD_COM_LIVE_ENV,
     WORD_COM_LIVE_OPT_IN,
+    complete_bootstrap_admin_session,
     build_backend_extra_env,
     run_acceptance_scenario,
     scenario_step_catalog,
@@ -28,6 +32,95 @@ from tests.acceptance.j04_m0_realprocess_harness import (
     require_inside_closure_evidence,
 )
 from tests.postgres_live_support import LivePostgresEnv
+
+
+class _BootstrapAuthHandler(BaseHTTPRequestHandler):
+    """Simulates first-admin login: 200 token, /auth/me 409 until password change."""
+
+    changed = False
+    me_auths: list[str] = []
+    unexpected_409 = False
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        return
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}
+        return json.loads(raw.decode("utf-8"))
+
+    def _send(self, status: int, body: bytes | None = None) -> None:
+        self.send_response(status)
+        if body is None:
+            self.end_headers()
+            return
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/auth/login":
+            self._send(200, b'{"token":"bootstrap-session-token"}')
+            return
+        if self.path == "/auth/change-password":
+            auth = self.headers.get("Authorization", "")
+            payload = self._read_json()
+            if auth != "Bearer bootstrap-session-token":
+                self._send(401, b'{"detail":{"error":"unauthorized"}}')
+                return
+            if payload.get("new_password") != BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE:
+                self._send(400, b'{"detail":{"error":"weak_password"}}')
+                return
+            type(self).changed = True
+            self._send(204)
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path != "/auth/me":
+            self.send_response(404)
+            self.end_headers()
+            return
+        auth = self.headers.get("Authorization", "")
+        type(self).me_auths.append(auth)
+        if auth != "Bearer bootstrap-session-token":
+            self._send(401, b'{"detail":{"error":"unauthorized"}}')
+            return
+        if type(self).unexpected_409:
+            self._send(409, b'{"detail":{"error":"user_exists","message":"user already exists"}}')
+            return
+        if not type(self).changed:
+            self._send(
+                409,
+                b'{"detail":{"error":"password_change_required","message":"password change required"}}',
+            )
+            return
+        self._send(
+            200,
+            b'{"user_id":"u1","session_id":"s1","request_id":"r1",'
+            b'"username":"j04acceptadmin","global_roles":["ADMIN"],'
+            b'"is_qmb":false,"authenticated_at":"2026-08-17T00:00:00+00:00"}',
+        )
+
+
+@pytest.fixture
+def bootstrap_auth_url() -> str:
+    _BootstrapAuthHandler.changed = False
+    _BootstrapAuthHandler.me_auths = []
+    _BootstrapAuthHandler.unexpected_409 = False
+    server = HTTPServer(("127.0.0.1", 0), _BootstrapAuthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
 
 
 class _HealthOpenApiHandler(BaseHTTPRequestHandler):
@@ -98,6 +191,31 @@ def test_acceptance_http_client_reads_health_and_openapi(mock_backend_url: str) 
     openapi = client.request("GET", "/openapi.json", auth=False)
     assert health["status"] == "ok"
     assert "paths" in openapi
+
+
+def test_bootstrap_admin_session_completes_password_change_then_me_200(
+    bootstrap_auth_url: str,
+) -> None:
+    client = AcceptanceHttpClient(bootstrap_auth_url)
+    me, password = complete_bootstrap_admin_session(client)
+    assert me["username"] == "j04acceptadmin"
+    assert password == BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE
+    assert client._token == "bootstrap-session-token"
+    assert _BootstrapAuthHandler.me_auths
+    assert all(item == "Bearer bootstrap-session-token" for item in _BootstrapAuthHandler.me_auths)
+    assert _BootstrapAuthHandler.changed is True
+
+
+def test_bootstrap_admin_session_rejects_unexpected_409(bootstrap_auth_url: str) -> None:
+    _BootstrapAuthHandler.unexpected_409 = True
+    client = AcceptanceHttpClient(bootstrap_auth_url)
+    with pytest.raises(ScenarioFailure, match="bootstrap admin /auth/me failed status=409"):
+        complete_bootstrap_admin_session(client)
+
+
+def test_etag_from_version_payload_reads_etag_and_last_event_id() -> None:
+    assert AcceptanceHttpClient.etag_from_version_payload({"etag": "abc"}) == "abc"
+    assert AcceptanceHttpClient.etag_from_version_payload({"state": {"last_event_id": "evt-1"}}) == "evt-1"
 
 
 def test_harness_stop_process_only_terminates_requested_label(tmp_path: Path) -> None:
