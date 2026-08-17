@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-R5 PASS (harness handshake); FR10 freeze `1bd8aa0` superseded pending next freeze; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR11 freeze pending SHA; CP08-R5 included; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,11 +17,13 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`1bd8aa0f026249cd8e635d4a3c3ad34857ea953e` (`1bd8aa0`)** remains the last
-freeze until the next freeze includes CP08-R5. Overall **`NOT_READY`**: after CP08-R5 there is
-not yet a new freeze and no successful CP08 run. Historical CP08-V3 aborted on the acceptance
-start contract, not Word COM. CP08-V4 start contract **held**; it failed at
-`bootstrap_admin_login` (Word not reached). `ACCEPTED` is not set.
+`$CandidateSha` — recorded immediately after the FR11 freeze commit. The freeze tree contains
+R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), R5 (`34f39c0`
+/ docs `164a7c9`), WR05 documentation, and the known unchanged stat-only files. Last superseded
+freeze was `1bd8aa0` (FR10, before R5). Overall **`NOT_READY`**: there is not yet a successful
+CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word COM. CP08-V4
+start contract **held**; it failed at `bootstrap_admin_login` (Word not reached). `ACCEPTED`
+is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -337,9 +339,27 @@ PG guard are unchanged.
 | --- | --- | --- |
 | CP08R5-HANDSHAKE | scenario/harness/realprocess unit + `test_auth_api`; fresh `--basetemp`; J04/Word opt-ins unset | **28 passed** (`cp08-r5-20260817T195540932Z`) |
 
-**No freeze. No CP08 retry in this checkpoint.** Next allowed sequence: new technical freeze, then exactly one CP08 run. Word may be judged only if that run reaches it.
+**No freeze. No CP08 retry in this checkpoint.** Next allowed sequence after this checkpoint is accepted:
+new technical freeze, then exactly one CP08 run. A Word step may be judged only from
+evidence of a run that actually reached it.
 
 CP08-R5 commit: `34f39c0`
+
+## FR11 — R1–R5 technical freeze
+
+The freeze tree contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d`,
+docs `63dda17`), R5 (`34f39c0`, docs `164a7c9`), WR05 documentation (`034425f`), and the known
+unchanged stat-only files. The following checkpoint commit freezes this technical candidate;
+its full SHA is recorded in the documentation-only follow-up immediately after the commit. No
+product or test changes are permitted after this freeze.
+
+| Item | Status |
+| --- | --- |
+| Focused gates | **93 passed** (`build/j04-m0-closure/freeze-r5-20260817T195901962Z`) |
+| Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
+| Candidate SHA | **pending freeze commit** |
+| CP08-V5 | **NOT STARTED** |
+| `ACCEPTED` | **not set** |
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -367,7 +387,8 @@ CP08-R5 commit: `34f39c0`
 | CP08-R4 | PASS | `5233b5d` start-contract runner | `63dda17` |
 | FR10 | PASS | `1bd8aa0` freeze R1–R4 | `fd3aeb8` |
 | CP08-V4 | FAILED | — (bootstrap_admin_login /auth/me 409; Word not reached) | `5aff642` |
-| CP08-R5 | PASS | `34f39c0` bootstrap-admin handshake | this documentation |
+| CP08-R5 | PASS | `34f39c0` bootstrap-admin handshake | `164a7c9` |
+| FR11 | PASS | _(pending)_ freeze R1–R5 | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
