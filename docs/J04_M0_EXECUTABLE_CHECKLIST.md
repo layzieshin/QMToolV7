@@ -30,6 +30,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08 | Final acceptance gate | FAILED | — | PG live **51 passed**; regression **1 failed**; Word **BLOCKED** |
 | CP08-R1 | Literal optional documents port in wiring | PASS | `fbea360` | Architecture gate green; constant still exported; **no freeze** |
 | CP08-R2 | Realprocess scenario (replace skip stub) | PASS | `30b73e9` | Scenario implemented; live gate **NOT RUN** |
+| Word readiness | Word COM `DispatchEx` probe (interactive) | BLOCKED | — | `CO_E_SERVER_EXEC_FAILURE` (0x80080005); freeze **not set** |
 | CP09 | Human acceptance | TODO | — | Depends second CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -537,9 +538,27 @@ Result: **16 passed** (2026-08-17)
 Remaining after R1:
 
 1. CP08-R2 — implement full real-process scenario (remove `pytest.skip` stub) — **PASS (implementation only)**
-2. Word COM readiness in an interactive session
-3. New technical freeze
-4. Second full CP08 attempt
+2. Word COM readiness in an interactive session — **BLOCKED** (`CO_E_SERVER_EXEC_FAILURE`)
+3. New technical freeze — **blocked until Word readiness PASS**
+4. Second full CP08 attempt — **blocked until freeze**
+
+## Word COM readiness probe (2026-08-17)
+
+Minimal probe only — **no DOCX/PDF E2E**, no termination of pre-existing Word sessions.
+
+| Item | Result |
+| --- | --- |
+| Method | `win32com.client.DispatchEx("Word.Application")` + `pythoncom.CoInitialize()` (matches product CP03) |
+| Controlled quit | Attempted on owned instance only (`word.Quit()` in `finally`) |
+| Pre-existing WINWORD | PIDs **15936**, **23944** — **not terminated** |
+| Post-probe WINWORD | **15936**, **23944** still present; transient PID **22184** appeared during failed start |
+| HRESULT | **0x80080005** (`CO_E_SERVER_EXEC_FAILURE`) |
+| Status | **BLOCKED** — Word cannot be started from this agent shell session |
+| Evidence | `build/j04-m0-closure/word-com-readiness/probe-result.json` (local, not committed) |
+
+Re-probe required from an **interactive Windows desktop session** (outside non-interactive agent/COM context).
+Only after **PASS** may the post-R1/R2 technical freeze be set; second CP08 remains blocked until then.
+
 
 ## CP08-R2 remediation specification (real-process scenario)
 

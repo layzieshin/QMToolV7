@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-R2 PASS (scenario implemented); no freeze; Word readiness then re-freeze**
+Current status: `Rejected / follow-up required` — **Word COM readiness BLOCKED; no freeze; second CP08 blocked**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -105,6 +105,22 @@ Next: Word COM readiness in interactive session → new technical freeze → sec
 
 CP08-R2 commit: `30b73e9` — `test(j04-m0): implement realprocess acceptance scenario`
 
+## Verification (Word COM readiness — BLOCKED)
+
+Minimal `DispatchEx` probe on 2026-08-17. **No DOCX/PDF E2E.** Pre-existing Word sessions not terminated.
+
+| # | Check | Ergebnis |
+| --- | --- | --- |
+| WR-BEFORE | Existing WINWORD PIDs | **15936**, **23944** |
+| WR-PROBE | `DispatchEx("Word.Application")` + controlled `Quit` | **BLOCKED** — HRESULT **0x80080005** (`CO_E_SERVER_EXEC_FAILURE`) |
+| WR-AFTER | Pre-existing PIDs preserved | **15936**, **23944** still running |
+| WR-FREEZE | Post-R1/R2 candidate freeze | **not set** (blocked on Word readiness) |
+| WR-CP08 | Second full CP08 attempt | **not started** |
+
+Evidence: `build/j04-m0-closure/word-com-readiness/probe-result.json`
+
+Re-probe from an interactive Windows desktop session is required before freeze and second CP08.
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -134,6 +150,7 @@ CP08-R2 commit: `30b73e9` — `test(j04-m0): implement realprocess acceptance sc
 | M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
 | Full `j04_final_acceptance` real-process E2E | **NOT RUN** (scenario implemented in CP08-R2) |
 | Real Word COM document conversion E2E | **NOT RUN** |
+| Word COM `DispatchEx` readiness probe | **BLOCKED** — `CO_E_SERVER_EXEC_FAILURE` (0x80080005) in agent session |
 | `packaging/build_onedir.py` | **Packaging NOT RUN** |
 | Built EXE against separate backend | **NOT RUN** |
 | Full non-destructive regression | **FAILED** (CP08): `test_module_contract_wiring` / `documents/wiring.py` |
