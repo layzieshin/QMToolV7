@@ -22,7 +22,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP01 | Backend ownership, auth, HTTP contracts | PASS | `3f3f7b1` | 77+1 tests green; OpenAPI reproducible; no code fixes |
 | CP02 | Client-facing M0 use-case gates | PASS | `c2d6f3d` | 62 focused tests green; no code fixes |
 | CP03 | Word COM isolation | PASS | `1993292` | DispatchEx + cleanup + redaction; 24 tests green |
-| CP04 | PostgreSQL-16 destructive gate | TODO | — | Depends CP00 |
+| CP04 | PostgreSQL-16 destructive gate | PASS | _(pending)_ | 57 static/guard tests green; PG16 LIVE NOT RUN |
 | CP05 | Real-process acceptance harness | TODO | — | Depends CP01, CP04 |
 | CP06 | Onedir packaging preparation | TODO | — | Depends CP02, CP05 |
 | CP07 | Freeze technical acceptance candidate | TODO | — | Depends CP00–CP06 |
@@ -344,3 +344,30 @@ Result: **24 passed** (2026-08-17, `build/j04-m0-closure/cp03`)
 - [x] Error output redacted (paths, COM repr)
 - [x] No real Word E2E in this checkpoint
 - [x] No changes to running Word sessions (mock-only)
+
+## CP04 verification command
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/test_postgres_destructive_guard.py `
+  tests/modules/usermanagement/test_postgres_schema_static.py `
+  tests/modules/usermanagement/test_postgres_migration_gate.py `
+  tests/modules/usermanagement/test_m7_audit_evidence_static.py `
+  tests/modules/usermanagement/test_m8_cutover_prep.py `
+  -m "not postgres" -q `
+  --basetemp build/j04-m0-closure/cp04
+```
+
+Result: **57 passed** (2026-08-17, `build/j04-m0-closure/cp04`)
+
+## CP04 acceptance criteria
+
+- [x] Every destructive path centrally guarded (`require_approved_admin_dsn`)
+- [x] Runtime/lab DSNs cannot pass the guard (unit-tested)
+- [x] No secrets in staged config/docs
+- [x] CI service is ephemeral and marker-bound
+- [x] `pg_dump`/`pg_restore` remain M8-only (static prep tests pass)
+- [x] **PG16 LIVE NOT RUN** locally
+- [x] Config/docs only in CP04 commit (no product code)

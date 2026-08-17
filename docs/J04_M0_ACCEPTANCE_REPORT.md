@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP03 verified**
+Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP04 verified (PG16 LIVE NOT RUN)**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -89,6 +89,28 @@ Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp03`.
 | CP03-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** (CRLF warnings only on stat-only unstaged paths) |
 
 CP03 commit: `1993292` — `fix(j04-m0): isolate Word COM conversion`
+
+## Verification (CP04 — PostgreSQL-16 destructive gate)
+
+Ausgeführt am 2026-08-17, Python 3.14 aus `.\.venv\Scripts\python.exe`, `PYTHONPATH=.`,
+Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp04`.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP04-GUARD-STATIC | Guard + static + M8 prep (non-`postgres` marker) | **57 passed** |
+| CP04-RG-AUDIT | `rg` über Guard-/DROP-/DSN-Pfade in tests, CI, `.env.example`, `pytest.ini` | **grün** (alle DROP-Pfade über `require_approved_admin_dsn`) |
+| CP04-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+
+**PG16 LIVE NOT RUN** — keine Verbindung zur lokalen Runtime-/Lab-DB, PG18 oder `.env`.
+Destruktive Live-Fixtures bleiben bis zur dedizierten externen PG16-Instanz blockiert.
+
+Konfigurationsänderungen (kein Produktcode):
+
+- `.env.example`: Runtime/Lab- vs. `QMTOOL_PG_TEST_*`-Variablen getrennt
+- `pytest.ini`: `postgres`-Marker dokumentiert isolierten destructive cluster
+- `.github/workflows/ci-gates.yml`: Guard-Test in `quality-gates`; CI-Service auf
+  `qmtool_j04_destructive_test` + Marker-Init; Live-Lauf mit `QMTOOL_PG_TEST_*` (M8 zuletzt)
+- `tests/postgres/README.md`: CI-Ephemeral-Cluster-Hinweis
 
 **Kein echter Word-E2E-Lauf** — ausschließlich mockbasierte Unit-/Component-Tests.
 

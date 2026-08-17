@@ -76,6 +76,14 @@ Optional helper: `tests/postgres/manage.ps1` (`start`, `status`, `stop`).
 
 Volume deletion / reset is **not** automatic. Explicit operator approval is required.
 
+## CI ephemeral cluster (GitHub Actions)
+
+The `postgres-usermanagement` job in `.github/workflows/ci-gates.yml` provisions an
+**ephemeral** PostgreSQL 16 service (`qmtool_j04_destructive_test`) with the marker
+from `init/001_test_cluster_marker.sql`. It uses `QMTOOL_PG_TEST_*` variables only;
+it is **not** the runtime/lab DSN contract. Local operators must not point a personal
+`.env` runtime/lab DSN at this CI sketch.
+
 ## Safety
 
 - Destructive fixtures run through `tests/postgres_destructive_guard.py`.

@@ -31,7 +31,7 @@ jobs:
 
       - name: Run regression gates
         run: |
-          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/platform/test_database_migration_gate.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/usermanagement/test_postgres_schema_static.py tests/modules/usermanagement/test_postgres_migration_gate.py tests/modules/usermanagement/test_password_policy.py tests/modules/usermanagement/test_m6_session_enforcement.py tests/modules/usermanagement/test_m7_audit_evidence_static.py tests/modules/usermanagement/test_m8_cutover_prep.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/modules/test_incident_management_boundary.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_database_commands.py tests/e2e_cli/test_users_and_settings_cli.py tests/interfaces/test_architecture_gates.py tests/interfaces/test_json_persistence_gate.py tests/interfaces/test_pyqt_navigation_smoke.py tests/backend/test_auth_api.py tests/backend/test_user_admin_api.py -q
+          python -m pytest tests/platform/test_runtime_enforcement.py tests/platform/test_cli_first_boundaries.py tests/platform/test_license_service.py tests/platform/test_licensing_integration.py tests/platform/test_settings_governance_enforcement.py tests/platform/test_database_evolution.py tests/platform/test_core_database_migrations.py tests/platform/test_database_migration_gate.py tests/platform/test_golive_gate.py tests/modules/test_usermanagement_persistence.py tests/modules/usermanagement/test_postgres_schema_static.py tests/modules/usermanagement/test_postgres_migration_gate.py tests/modules/usermanagement/test_password_policy.py tests/modules/usermanagement/test_m6_session_enforcement.py tests/modules/usermanagement/test_m7_audit_evidence_static.py tests/modules/usermanagement/test_m8_cutover_prep.py tests/modules/test_registry_module.py tests/modules/test_migration_gates_documents.py tests/modules/test_incident_management_boundary.py tests/e2e_cli/test_startup_and_guards.py tests/e2e_cli/test_database_commands.py tests/e2e_cli/test_users_and_settings_cli.py tests/interfaces/test_architecture_gates.py tests/interfaces/test_json_persistence_gate.py tests/interfaces/test_pyqt_navigation_smoke.py tests/backend/test_auth_api.py tests/backend/test_user_admin_api.py tests/test_postgres_destructive_guard.py -q
 
       - name: Run database migration foundation gate
         run: |
@@ -140,19 +140,20 @@ jobs:
             build/golive-gate-output.json
 
   postgres-usermanagement:
+    # Ephemeral PostgreSQL 16 destructive test cluster (J04-M0). Not runtime/lab.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: qmtool
-          POSTGRES_PASSWORD: qmtool
-          POSTGRES_DB: qmtool_um
+          POSTGRES_USER: qmtool_j04_test_admin
+          POSTGRES_PASSWORD: qmtool_j04_ci_ephemeral
+          POSTGRES_DB: qmtool_j04_destructive_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U qmtool -d qmtool_um"
+          --health-cmd "pg_isready -U qmtool_j04_test_admin -d qmtool_j04_destructive_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -175,21 +176,32 @@ jobs:
           # Linux job must not install Windows-only requirements (pywin32).
           python -m pip install -c constraints-py314.txt "psycopg[binary]>=3.2.0" bcrypt pytest fastapi httpx uvicorn cryptography
 
+      - name: Install J04 destructive test cluster marker
+        env:
+          PGPASSWORD: qmtool_j04_ci_ephemeral
+        run: |
+          psql -h localhost -U qmtool_j04_test_admin -d qmtool_j04_destructive_test \
+            -v ON_ERROR_STOP=1 \
+            -f tests/postgres/init/001_test_cluster_marker.sql
+
       - name: Run PostgreSQL migration gate
         run: |
           python scripts/postgres_migration_gate.py --base-ref "${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}" --output build/postgres-migration-gate-output.json
 
       - name: Run Usermanagement PostgreSQL live tests
         env:
-          QMTOOL_PG_DSN: postgresql://qmtool:qmtool@localhost:5432/qmtool_um
+          QMTOOL_PG_TEST_ADMIN_DSN: postgresql://qmtool_j04_test_admin:qmtool_j04_ci_ephemeral@localhost:5432/qmtool_j04_destructive_test
+          QMTOOL_PG_TEST_RESET: I_UNDERSTAND_THIS_IS_DESTRUCTIVE
+          QMTOOL_PG_TEST_EXPECTED_DATABASE: qmtool_j04_destructive_test
           QMTOOL_PG_REQUIRED: "1"
           PYTHONPATH: .
         run: |
           python -m pytest tests/modules/usermanagement/test_postgres_schema_static.py tests/modules/usermanagement/test_postgres_migration_gate.py tests/modules/usermanagement/test_m7_audit_evidence_static.py -q
           python -m pytest tests/modules/usermanagement/test_postgres_schema_live.py -m postgres -q
           python -m pytest tests/modules/usermanagement/test_postgres_repositories_live.py -m postgres -q
-          python -m pytest tests/modules/usermanagement/test_m7_audit_evidence_live.py tests/modules/usermanagement/test_m8_cutover_prep.py -m postgres -q
+          python -m pytest tests/modules/usermanagement/test_m7_audit_evidence_live.py -m postgres -q
           python -m pytest tests/backend/test_auth_api_postgres_live.py tests/backend/test_m6_postgres_live.py -m postgres -q
+          python -m pytest tests/modules/usermanagement/test_m8_cutover_prep.py -m postgres -q
 
       - name: Upload PostgreSQL gate artifact
         if: always()
