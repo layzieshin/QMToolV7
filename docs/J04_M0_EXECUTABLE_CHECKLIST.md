@@ -22,7 +22,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP01 | Backend ownership, auth, HTTP contracts | PASS | `3f3f7b1` | 77+1 tests green; OpenAPI reproducible; no code fixes |
 | CP02 | Client-facing M0 use-case gates | PASS | `c2d6f3d` | 62 focused tests green; no code fixes |
 | CP03 | Word COM isolation | PASS | `1993292` | DispatchEx + cleanup + redaction; 24 tests green |
-| CP04 | PostgreSQL-16 destructive gate | PASS | _(pending)_ | 57 static/guard tests green; PG16 LIVE NOT RUN |
+| CP04 | PostgreSQL-16 destructive gate | PASS | `c71c1f1` | 57 static/guard tests green; PG16 LIVE NOT RUN |
 | CP05 | Real-process acceptance harness | TODO | — | Depends CP01, CP04 |
 | CP06 | Onedir packaging preparation | TODO | — | Depends CP02, CP05 |
 | CP07 | Freeze technical acceptance candidate | TODO | — | Depends CP00–CP06 |

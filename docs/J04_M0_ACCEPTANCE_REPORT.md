@@ -99,7 +99,9 @@ Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp04`.
 | --- | --- | --- |
 | CP04-GUARD-STATIC | Guard + static + M8 prep (non-`postgres` marker) | **57 passed** |
 | CP04-RG-AUDIT | `rg` über Guard-/DROP-/DSN-Pfade in tests, CI, `.env.example`, `pytest.ini` | **grün** (alle DROP-Pfade über `require_approved_admin_dsn`) |
-| CP04-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+| CP04-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** |
+
+CP04 commit: `c71c1f1` — `test(j04-m0): harden isolated PostgreSQL 16 gates`
 
 **PG16 LIVE NOT RUN** — keine Verbindung zur lokalen Runtime-/Lab-DB, PG18 oder `.env`.
 Destruktive Live-Fixtures bleiben bis zur dedizierten externen PG16-Instanz blockiert.
