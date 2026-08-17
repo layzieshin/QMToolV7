@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-R3 PASS (test infra); no freeze; no CP08-V3; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR09 freeze (R1+R2+R3); CP08-V3 not started; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,9 +17,10 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **not set after CP08-R1/R2**. Last frozen SHA was `8c273de` (CP04-R). Product
-`fbea360` (R1) and test `30b73e9` (R2) are remediations. Interactive Word COM readiness is now
-**PASS**; FR08 must still create a new freeze before CP08-V2.
+`$CandidateSha` — **this FR09 checkpoint; full SHA recorded next**. The freeze tree contains
+R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation, and the known unchanged
+stat-only files. Last superseded freeze was `fe172c9` (FR08, before R3). CP08-V3 is
+**NOT STARTED**.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -210,6 +211,21 @@ Child-process locks are a plausible explanation, not proven. Full-gate workspace
 No freeze. No CP08-V3. **R3 PASS ≠ Freeze / CP08-V3 / ACCEPTED.**
 
 CP08-R3 commit: `c3d6587` — `test(j04-m0): isolate realprocess workspace from pytest basetemp`
+
+## FR09 — R1+R2+R3 technical freeze
+
+The freeze tree contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation
+(`034425f`), and the known unchanged stat-only files. The following checkpoint commit freezes
+this technical candidate; its full SHA is recorded in the documentation-only follow-up
+immediately after the commit. No product or test changes are permitted after this freeze.
+
+| Item | Status |
+| --- | --- |
+| Focused gates | **50 passed** (`build/j04-m0-closure/freeze-r3-20260817T171311893Z`) |
+| Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
+| Candidate SHA | **this FR09 checkpoint; full SHA recorded next** |
+| CP08-V3 | **NOT STARTED** |
+| `ACCEPTED` | **not set** |
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 

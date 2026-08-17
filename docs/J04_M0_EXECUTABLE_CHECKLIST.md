@@ -31,7 +31,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R1 | Literal optional documents port in wiring | PASS | `fbea360` | Architecture gate green; constant still exported; **no freeze** |
 | CP08-R2 | Realprocess scenario (replace skip stub) | PASS | `30b73e9` | Scenario implemented; live gate **NOT RUN** |
 | Word readiness | Word COM `DispatchEx` probe (interactive) | PASS (WR05) | — | Safe mode title confirmed; interactive DispatchEx/Version/Quit PASS; add-ins not causal; DOCX/PDF E2E **NOT RUN** |
-| CP08-R3 | Isolate realprocess workspace from pytest basetemp | PASS | `c3d6587` | Test-only; **no freeze**; no CP08-V3 |
+| CP08-R3 | Isolate realprocess workspace from pytest basetemp | PASS | `c3d6587` | Test-only; included in FR09 freeze |
+| FR09 | Freeze R1+R2+R3 acceptance candidate | PASS | _(pending)_ | 50 focused gates; SHA next; CP08-V3 not started |
 | CP09 | Human acceptance | TODO | — | Depends CP08-V3 + explicit human sign-off |
 
 ## Classification legend
@@ -675,6 +676,16 @@ Fail-closed: **1 skipped**, exit 0 (`cp08-r3-skip-20260817T125934013Z`).
 **No freeze. No CP08-V3.** R3 PASS is not Freeze, CP08-V3, or ACCEPTED.
 
 CP08-R3 commit: `c3d6587` — `test(j04-m0): isolate realprocess workspace from pytest basetemp`
+
+## FR09 — R1+R2+R3 technical freeze
+
+This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation
+(`034425f`), and the current documentation HEAD. Focused gates are **50 passed**
+(`build/j04-m0-closure/freeze-r3-20260817T171311893Z`): R1 16, R3 harness/scenario 18,
+Word isolation 16 (`test_docx_to_pdf.py` + `test_docx_conversion_worker.py`). FR08 reported
+46 on the pre-R3 set. The full checkpoint SHA is recorded in the following documentation-only
+commit. No product or test changes are allowed after this freeze. CP08-V3 remains
+**NOT STARTED**. Overall status remains **`NOT_READY`**. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 
