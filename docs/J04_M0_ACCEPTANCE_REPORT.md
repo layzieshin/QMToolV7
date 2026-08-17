@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **Word COM readiness BLOCKED; no freeze; second CP08 blocked**
+Current status: `Rejected / follow-up required` — **overall `NOT_READY`**: Word COM readiness BLOCKED (interactive COM/session, not a product defect); no freeze; second CP08 blocked
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,11 +17,10 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` = `8c273de4e33837dbca44464172db1033de476399` (`8c273de`)
-
-Branch: `feature/ap-j04-m0`. CP07 freeze (`d19e8b9`) remains in history; PG test-infra
-remediation `8c273de` is the current candidate baseline. Product/test code must not change
-after `$CandidateSha` without a new remediation checkpoint and freeze.
+`$CandidateSha` — **not set after CP08-R1/R2**. Last frozen SHA was `8c273de` (CP04-R). Product
+`fbea360` (R1) and test `30b73e9` (R2) are remediations; docs HEAD `e8a015c` is documentation
+only. A new freeze covering R1+R2 **including documentation** is deferred until Word COM
+readiness **PASS** in an interactive desktop PowerShell.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -119,7 +118,19 @@ Minimal `DispatchEx` probe on 2026-08-17. **No DOCX/PDF E2E.** Pre-existing Word
 
 Evidence: `build/j04-m0-closure/word-com-readiness/probe-result.json`
 
-Re-probe from an interactive Windows desktop session is required before freeze and second CP08.
+Classification: interactive Windows/COM environment failure, **not** a new product deviation.
+Pre-existing Word PIDs were left unchanged; the failed `DispatchEx` instance was not
+terminated; no DOCX/PDF E2E; no freeze; no second CP08 run. Docs commit `e8a015c` is
+documentation only.
+
+On interactive **PASS** only, in this order:
+
+1. Document Word readiness in checklist and report
+2. Freeze R1+R2 including documentation HEAD
+3. Record the new `$CandidateSha`
+4. Start exactly one second CP08 run against that SHA
+
+Until then overall status remains **`NOT_READY`**.
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 

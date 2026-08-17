@@ -556,8 +556,18 @@ Minimal probe only — **no DOCX/PDF E2E**, no termination of pre-existing Word 
 | Status | **BLOCKED** — Word cannot be started from this agent shell session |
 | Evidence | `build/j04-m0-closure/word-com-readiness/probe-result.json` (local, not committed) |
 
-Re-probe required from an **interactive Windows desktop session** (outside non-interactive agent/COM context).
-Only after **PASS** may the post-R1/R2 technical freeze be set; second CP08 remains blocked until then.
+Classification: interactive Windows/COM environment failure, **not** a new product deviation.
+`e8a015c` is documentation only. Overall closure status: **`NOT_READY`**.
+
+Re-probe **must** run in a normal interactive desktop PowerShell (not the agent shell).
+On **PASS** only, in this order:
+
+1. Document readiness in checklist and report
+2. Freeze R1+R2 including documentation HEAD
+3. Record the new `$CandidateSha`
+4. Start exactly one second CP08 run against that SHA
+
+Until then: no freeze, no second CP08.
 
 
 ## CP08-R2 remediation specification (real-process scenario)
