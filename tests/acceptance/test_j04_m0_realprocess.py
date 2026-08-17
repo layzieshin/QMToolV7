@@ -16,6 +16,7 @@ from tests.acceptance.j04_m0_acceptance_scenario import (
 from tests.acceptance.j04_m0_realprocess_harness import (
     HarnessBlockedError,
     J04M0RealProcessHarness,
+    allocate_realprocess_workspace,
     require_final_acceptance_opt_in,
 )
 
@@ -32,16 +33,16 @@ def _require_opt_in() -> None:
         pytest.skip(str(exc))
 
 
-def test_j04_m0_full_realprocess_acceptance(tmp_path) -> None:  # noqa: ANN001
+def test_j04_m0_full_realprocess_acceptance() -> None:
     """Single planned full acceptance run (health, sessions, ETag, artifacts, restart, Word COM).
 
-    Implemented in CP08-R2; executes only with explicit opt-in and isolated PG preconditions.
+    Workspace is allocated under ``build/j04-m0-closure/`` (never a pytest session temp dir).
     """
     _require_opt_in()
     if os.environ.get("QMTOOL_PG_TEST_ADMIN_DSN", "").strip() == "":
         pytest.skip("QMTOOL_PG_TEST_ADMIN_DSN is required for the full acceptance run")
 
-    workspace = tmp_path / "j04-final-acceptance"
+    workspace = allocate_realprocess_workspace()
     with J04M0RealProcessHarness(workspace=workspace) as harness:
         results = run_acceptance_scenario(harness)
 

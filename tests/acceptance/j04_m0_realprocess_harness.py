@@ -11,9 +11,11 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,8 @@ BACKEND_PORT = 8000
 BACKEND_MODULE = "src.backend"
 FINAL_ACCEPTANCE_ENV = "QMTOOL_J04_FINAL_ACCEPTANCE"
 FINAL_ACCEPTANCE_OPT_IN = "I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN"
+CLOSURE_EVIDENCE_RELATIVE = ("build", "j04-m0-closure")
+REALPROCESS_WORKSPACE_PREFIX = "cp08-realprocess-ws"
 
 _BEARER_RE = re.compile(r"Bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE)
 _TOKEN_JSON_RE = re.compile(r'("token"\s*:\s*")[^"]+(")', re.IGNORECASE)
@@ -47,6 +51,42 @@ class HarnessStartupError(HarnessError):
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def closure_evidence_root() -> Path:
+    """Resolved gitignored evidence root for J04-M0 closure runs."""
+    return (repo_root().joinpath(*CLOSURE_EVIDENCE_RELATIVE)).resolve()
+
+
+def require_inside_closure_evidence(path: Path) -> Path:
+    """Reject any path that does not resolve under ``build/j04-m0-closure``."""
+    resolved = Path(path).resolve()
+    root = closure_evidence_root()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise HarnessBlockedError(
+            f"workspace must resolve under {root}; rejected {resolved}"
+        ) from exc
+    return resolved
+
+
+def allocate_realprocess_workspace() -> Path:
+    """Create a unique, never-reused realprocess workspace under the closure root.
+
+    Layout: ``build/j04-m0-closure/cp08-realprocess-ws/<UTC-timestamp>-<uuid>/``.
+    Does not delete existing paths. Evidence remains for later inspection.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    run_id = f"{stamp}-{uuid.uuid4().hex}"
+    candidate = closure_evidence_root() / REALPROCESS_WORKSPACE_PREFIX / run_id
+    resolved = require_inside_closure_evidence(candidate)
+    if resolved.exists():
+        raise HarnessBlockedError(
+            f"refusing to reuse existing realprocess workspace: {resolved}"
+        )
+    resolved.mkdir(parents=True, exist_ok=False)
+    return resolved
 
 
 def python_executable() -> str:

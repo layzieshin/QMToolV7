@@ -19,7 +19,14 @@ from tests.acceptance.j04_m0_acceptance_scenario import (
     scenario_step_catalog,
     word_com_boundary_reason,
 )
-from tests.acceptance.j04_m0_realprocess_harness import J04M0RealProcessHarness
+from tests.acceptance.j04_m0_realprocess_harness import (
+    HarnessBlockedError,
+    J04M0RealProcessHarness,
+    allocate_realprocess_workspace,
+    closure_evidence_root,
+    repo_root,
+    require_inside_closure_evidence,
+)
 from tests.postgres_live_support import LivePostgresEnv
 
 
@@ -135,3 +142,39 @@ def test_scenario_context_initializes_for_orchestrator(tmp_path: Path) -> None:
     harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
     ctx = ScenarioContext(harness=harness)
     assert ctx.harness.client1_home != ctx.harness.client2_home
+
+
+def test_allocate_realprocess_workspace_is_unique_and_inside_closure(tmp_path: Path) -> None:
+    first = allocate_realprocess_workspace()
+    second = allocate_realprocess_workspace()
+    root = closure_evidence_root()
+    tmp_resolved = tmp_path.resolve()
+    assert first != second
+    assert first.name != second.name
+    for workspace in (first, second):
+        assert workspace.is_dir()
+        assert workspace.resolve().is_relative_to(root)
+        assert not workspace.resolve().is_relative_to(tmp_resolved)
+        assert "cp08-realprocess-ws" in workspace.parts
+
+
+def test_require_inside_closure_evidence_rejects_paths_outside_build() -> None:
+    with pytest.raises(HarnessBlockedError, match="must resolve under"):
+        require_inside_closure_evidence(repo_root() / "modules")
+    with pytest.raises(HarnessBlockedError, match="must resolve under"):
+        require_inside_closure_evidence(repo_root() / "tests")
+    allowed = closure_evidence_root() / "cp08-realprocess-ws" / "probe"
+    assert require_inside_closure_evidence(allowed) == allowed.resolve()
+
+
+def test_full_gate_test_does_not_use_tmp_path_parameter() -> None:
+    import inspect
+
+    from tests.acceptance.test_j04_m0_realprocess import test_j04_m0_full_realprocess_acceptance
+
+    parameters = inspect.signature(test_j04_m0_full_realprocess_acceptance).parameters
+    assert "tmp_path" not in parameters
+    source = inspect.getsource(test_j04_m0_full_realprocess_acceptance)
+    assert "allocate_realprocess_workspace" in source
+    body = source.split('"""', 2)[-1]
+    assert "tmp_path" not in body

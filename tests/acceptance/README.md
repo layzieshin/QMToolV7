@@ -26,6 +26,31 @@ gate. It is not a product CLI, entrypoint, or alternate backend port contract.
 
 Logs and evidence belong under `build/j04-m0-closure/` only (never committed).
 
+## CP08 realprocess workspace (CP08-R3)
+
+The full gate does **not** use pytest `tmp_path` for the long-lived backend/client homes.
+`allocate_realprocess_workspace()` creates a unique directory:
+
+```text
+build/j04-m0-closure/cp08-realprocess-ws/<UTC-timestamp>-<uuid>/
+```
+
+The path is `resolve()`-enforced under `repo_root()/build/j04-m0-closure/`. Existing paths are
+never reused or deleted. Pytest `--basetemp` for the gate must be a **new** directory each run.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-pytest-$stamp"
+$env:QMTOOL_J04_FINAL_ACCEPTANCE = "I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN"
+$Py -m pytest tests/acceptance/test_j04_m0_realprocess.py `
+  -m "postgres and j04_final_acceptance" -vv `
+  --basetemp $Base
+```
+
+## CP05 scope
+
 ## CP05 scope
 
 Run harness unit tests only:
