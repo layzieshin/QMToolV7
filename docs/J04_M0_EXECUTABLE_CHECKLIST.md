@@ -624,6 +624,19 @@ current technical tree. The focused gates are **46 passed**. The frozen candidat
 `fe172c9fc3b5753b9b6d4b9b1a1d026760257c37` (`fe172c9`). No product or test changes are allowed
 after this freeze. CP08-V2 remains **NOT STARTED**.
 
+## CP08-V2 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `fe172c9fc3b5753b9b6d4b9b1a1d026760257c37`.
+
+| Step | Result |
+| --- | --- |
+| PostgreSQL live | **PASS** — PG18 guard preflight; **51 passed** |
+| Full real-process E2E | **FAILED/ABORTED** — `WinError 5` prevented pytest basetemp use and cleanup |
+| Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** — first mandatory step after PG stopped the gate |
+
+No repair was performed during CP08-V2. Status remains **`NOT_READY`**; no retry is allowed
+without a bounded remediation checkpoint and a new technical freeze.
+
 ## CP08-R2 remediation specification (real-process scenario)
 
 Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in

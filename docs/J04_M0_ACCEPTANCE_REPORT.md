@@ -180,6 +180,20 @@ commit. No product or test changes are permitted after this freeze.
 | Candidate SHA | **`fe172c9fc3b5753b9b6d4b9b1a1d026760257c37` (`fe172c9`)** |
 | CP08-V2 | **NOT STARTED** |
 
+## CP08-V2 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `fe172c9fc3b5753b9b6d4b9b1a1d026760257c37`.
+Gate policy was applied: no repair and no continuation after the first blocked mandatory step.
+
+| Step | Result |
+| --- | --- |
+| 1. PostgreSQL live | **PASS** — guard preflight major 18; **51 passed** |
+| 2. Full real-process E2E | **FAILED/ABORTED** — pytest could not use the selected basetemp because of `WinError 5` access denied; cleanup also failed. No reliable scenario result was accepted. |
+| 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2) |
+
+No product or test repair was made during the gate. The candidate remains **`NOT_READY`**; a new
+remediation checkpoint and new freeze are required before any CP08 retry.
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
