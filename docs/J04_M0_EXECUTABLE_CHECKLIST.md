@@ -34,7 +34,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R3 | Isolate realprocess workspace from pytest basetemp | PASS | `c3d6587` | Test-only; included in FR09 freeze |
 | FR09 | Freeze R1+R2+R3 acceptance candidate | PASS | `1a22d38` | 50 focused gates; `$CandidateSha` below; CP08-V3 failed |
 | CP08-V3 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at start contract (`pg_bootstrap` / RESET); Word **NOT REACHED** |
-| CP08-R4 | Acceptance start contract via PG runner | PASS | `5233b5d` | Runner `--j04-final-acceptance`; guard unchanged; **no freeze**; no CP08 retry |
+| CP08-R4 | Acceptance start contract via PG runner | PASS | `5233b5d` | Runner `--j04-final-acceptance`; guard unchanged; included in FR10 freeze |
+| FR10 | Freeze R1–R4 acceptance candidate | PASS | _(pending)_ | 83 focused gates; SHA next; CP08-V4 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -754,10 +755,21 @@ $Py -m pytest `
 
 Result: **51 passed** (`build/j04-m0-closure/cp08-r4-20260817T182342311Z`).
 
-**No freeze. No CP08 retry.** Overall **`NOT_READY`** (start contract remediating; Word not
-in scope for this checkpoint).
+**No freeze. No CP08 retry.** Overall **`NOT_READY`** at R4 close: start contract remediating;
+Word not in scope for that checkpoint.
 
 CP08-R4 commit: `5233b5d` — `test(j04-m0): route realprocess gate through PG live runner`
+
+## FR10 — R1–R4 technical freeze
+
+This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` /
+`63dda17`), WR05 documentation (`034425f`), and the freeze documentation. Focused gates are
+**83 passed** (`build/j04-m0-closure/freeze-r4-20260817T182715064Z`): FR09 set plus R4 runner
+and destructive-guard tests. The full checkpoint SHA is recorded in the following
+documentation-only commit. No product or test changes are allowed after this freeze.
+CP08-V4 remains **NOT STARTED**. Overall **`NOT_READY`**: after the start-contract
+remediation there is not yet a successful CP08 run. Historical CP08-V3 aborted on the
+acceptance start contract, not Word COM. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 

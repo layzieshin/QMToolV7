@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-V3 FAILED on acceptance start contract (not Word COM); CP08-R4 PASS; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR10 freeze (R1–R4); CP08-V4 not started; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,11 +17,12 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`1a22d3809683d16ad9354d609f6ce2d2af7c053a` (`1a22d38`)**. The freeze tree
-contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation, and the known
-unchanged stat-only files. Last superseded freeze was `fe172c9` (FR08, before R3). CP08-V3
-**FAILED** on the acceptance start contract (Word COM was **not reached**). CP08-R4 repairs
-that contract. Overall **`NOT_READY`**. No new freeze. `ACCEPTED` is not set.
+`$CandidateSha` — **this FR10 checkpoint; full SHA recorded next**. The freeze tree contains
+R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), WR05
+documentation, and the known unchanged stat-only files. Last superseded freeze was `1a22d38`
+(FR09, before R4). Overall **`NOT_READY`**: after the start-contract remediation there is not
+yet a successful CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not
+Word COM. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -255,8 +256,10 @@ the cause of this run.
 | 2. Full real-process E2E | **FAILED** at start contract / `pg_bootstrap` (`QMTOOL_PG_TEST_RESET` unset in the separate pytest process). Evidence: `build/j04-m0-closure/cp08-v3-realprocess.log`, basetemp `build/j04-m0-closure/cp08-v3-pytest-20260817T171915206Z` |
 | 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2; Word not reached) |
 
-No product or test repair was made during the gate. Status remains **`NOT_READY` because of
-the acceptance start contract, not Word COM**. **`ACCEPTED` was not set.**
+No product or test repair was made during the gate. At abort the candidate was **`NOT_READY`**.
+Word COM was **not reached** and is not the cause. After CP08-R4 the start contract is
+repaired; remaining **`NOT_READY`** is because a new freeze and a successful CP08 run were
+still outstanding at that point. **`ACCEPTED` was not set.**
 
 ## Verification (CP08-R4 — acceptance start contract)
 
@@ -272,6 +275,25 @@ unchanged.
 **No freeze. No CP08 retry.** Next allowed sequence after this checkpoint is accepted:
 new technical freeze, then exactly one CP08 run. A Word step may be judged only from
 evidence of a run that actually reached it.
+
+## FR10 — R1–R4 technical freeze
+
+The freeze tree contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d`,
+docs `63dda17`), WR05 documentation (`034425f`), and the known unchanged stat-only files.
+The following checkpoint commit freezes this technical candidate; its full SHA is recorded
+in the documentation-only follow-up immediately after the commit. No product or test changes
+are permitted after this freeze.
+
+| Item | Status |
+| --- | --- |
+| Focused gates | **83 passed** (`build/j04-m0-closure/freeze-r4-20260817T182715064Z`) |
+| Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
+| Candidate SHA | **this FR10 checkpoint; full SHA recorded next** |
+| CP08-V4 | **NOT STARTED** |
+| `ACCEPTED` | **not set** |
+
+Overall **`NOT_READY`**: after the start-contract remediation there is not yet a successful
+CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word COM.
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -296,7 +318,8 @@ evidence of a run that actually reached it.
 | CP08-R3 | PASS | `c3d6587` isolate realprocess workspace | `a421005` |
 | FR09 | PASS | `1a22d38` freeze R1+R2+R3 | `57d87d4` |
 | CP08-V3 | FAILED | — (start-contract abort; Word not reached) | `de7e82d` |
-| CP08-R4 | PASS | `5233b5d` start-contract runner | this documentation |
+| CP08-R4 | PASS | `5233b5d` start-contract runner | `63dda17` |
+| FR10 | PASS | pending freeze R1–R4 | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
