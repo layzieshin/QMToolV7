@@ -46,9 +46,8 @@ def test_database_status_dry_run_migrate_and_backups(tmp_path: Path) -> None:
     assert status_after.returncode == 0, status_after.stderr + status_after.stdout
     after_payload = json.loads(status_after.stdout)
     assert after_payload["ok"] is True
-    assert len(after_payload["databases"]) == 7
+    assert len(after_payload["databases"]) == 6
     assert {item["database_id"] for item in after_payload["databases"]} == {
-        "documents",
         "incidents",
         "platform_settings",
         "registry",

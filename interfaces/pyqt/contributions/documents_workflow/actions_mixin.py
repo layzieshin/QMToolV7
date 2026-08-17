@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from interfaces.pyqt.widgets.reject_reason_dialog import RejectReasonDialog
 from interfaces.pyqt.widgets.validity_extension_dialog import ValidityExtensionDialog
 from interfaces.pyqt.widgets.workflow_start_wizard import WorkflowStartWizard
 from interfaces.pyqt.workers.docx_conversion_worker import DocxConversionWorker
-from modules.documents.contracts import ArtifactType, DocumentStatus, DocumentType, SystemRole, ValidityExtensionOutcome, control_class_for
+from modules.documents.api import ArtifactType, DocumentStatus, DocumentType, SystemRole, ValidityExtensionOutcome, control_class_for
 
 
 class DocumentsWorkflowActionsMixin:
@@ -133,7 +134,7 @@ class DocumentsWorkflowActionsMixin:
             user = self._um.get_current_user()
             default_owner = user.user_id if user is not None else ""
             current_role = user_to_system_role(user) if user is not None else None
-            can_override_profiles = current_role in {SystemRole.QMB, SystemRole.ADMIN}
+            can_override_profiles = current_role == SystemRole.QMB
             profile_rules = {
                 dt.value: self._profile_rule_for_doc_type(dt)
                 for dt in DocumentType
@@ -288,10 +289,10 @@ class DocumentsWorkflowActionsMixin:
                 result="ok",
                 reason="complete_editing",
             )
-            sign_request = self._sig_ops.build_sign_request_or_none(state, "IN_PROGRESS->IN_REVIEW", self)
+            sign_intent = self._sig_ops.build_sign_intent_or_none(state, "IN_PROGRESS->IN_REVIEW", self)
             if self._state_from_selection().workflow_profile and "IN_PROGRESS->IN_REVIEW" in set(
                 self._state_from_selection().workflow_profile.signature_required_transitions
-            ) and sign_request is None:
+            ) and sign_intent is None:
                 self._inline_notice.setText("Signaturvorgang abgebrochen.")
                 self._audit(
                     action="documents.workflow.editing.complete",
@@ -303,7 +304,7 @@ class DocumentsWorkflowActionsMixin:
                 return
             payload = self._wf.complete_editing(
                 self._state_from_selection(),
-                sign_request=sign_request,
+                sign_request=sign_intent,
                 actor_user_id=user.user_id,
                 actor_role=role,
             )
@@ -335,9 +336,6 @@ class DocumentsWorkflowActionsMixin:
 
     def _ensure_source_pdf_for_signing_async(self, state: object, user: object, role: object) -> None:
         def _task() -> object:
-            from modules.documents.api import prepare_docx_conversion_runtime
-
-            prepare_docx_conversion_runtime()
             path = self._wf.ensure_source_pdf_for_signing(
                 state,
                 actor_user_id=user.user_id,
@@ -407,11 +405,11 @@ class DocumentsWorkflowActionsMixin:
         try:
             user, role = self._current_user_role()
             state = self._state_from_selection()
-            sign_request = self._sig_ops.build_sign_request_or_none(state, "IN_REVIEW->IN_APPROVAL", self)
+            sign_intent = self._sig_ops.build_sign_intent_or_none(state, "IN_REVIEW->IN_APPROVAL", self)
             if (
                 state.workflow_profile
                 and "IN_REVIEW->IN_APPROVAL" in set(state.workflow_profile.signature_required_transitions)
-                and sign_request is None
+                and sign_intent is None
             ):
                 self._inline_notice.setText("Signaturvorgang abgebrochen.")
                 self._audit(
@@ -425,7 +423,7 @@ class DocumentsWorkflowActionsMixin:
             payload = self._wf.accept_review(
                 self._state_from_selection(),
                 user.user_id,
-                sign_request=sign_request,
+                sign_request=sign_intent,
                 actor_role=role,
             )
             self._append("PRUEFUNG_ANGENOMMEN", payload)
@@ -462,16 +460,16 @@ class DocumentsWorkflowActionsMixin:
             if confirm != QMessageBox.StandardButton.Yes:
                 return
             user, role = self._current_user_role()
-            sign_request = self._sig_ops.build_sign_request_or_none(self._state_from_selection(), "IN_APPROVAL->APPROVED", self)
+            sign_intent = self._sig_ops.build_sign_intent_or_none(self._state_from_selection(), "IN_APPROVAL->APPROVED", self)
             if self._state_from_selection().workflow_profile and "IN_APPROVAL->APPROVED" in set(
                 self._state_from_selection().workflow_profile.signature_required_transitions
-            ) and sign_request is None:
+            ) and sign_intent is None:
                 self._inline_notice.setText("Signaturvorgang abgebrochen.")
                 return
             payload = self._wf.accept_approval(
                 self._state_from_selection(),
                 user.user_id,
-                sign_request=sign_request,
+                sign_request=sign_intent,
                 actor_role=role,
             )
             self._append("FREIGABE_ANGENOMMEN", payload)
@@ -550,19 +548,23 @@ class DocumentsWorkflowActionsMixin:
 
     def _update_header(self) -> None:
         try:
+            header = getattr(self, "_current_header", None)
+            token = getattr(header, "updated_at", None) if header is not None else None
+            if header is None or token is None:
+                raise RuntimeError("Header-ETag fehlt; bitte Details neu laden.")
             user, role = self._current_user_role()
             state = self._state_from_selection()
             payload = self._wf.update_document_header(
                 state.document_id,
-                doc_type=self._doc_type.currentData(),
-                control_class=self._control_class.currentData(),
                 workflow_profile_id=self._profile.text().strip() or None,
                 department=self._department.text().strip() or None,
                 site=self._site.text().strip() or None,
                 regulatory_scope=self._regulatory_scope.text().strip() or None,
+                if_match=token.isoformat(),
                 actor_user_id=user.user_id,
                 actor_role=role,
             )
+            self._current_header = payload
             self._append("HEADER_GESPEICHERT", payload)
             self._refresh_details()
         except Exception as exc:  # noqa: BLE001
@@ -592,21 +594,19 @@ class DocumentsWorkflowActionsMixin:
                 self._inline_notice.setText("Neue Version erforderlich - Verlaengerung nicht ausgefuehrt.")
                 return
 
-            sign_request = self._sig_ops.build_extension_sign_request(state, self)
-            if sign_request is None:
+            sign_intent = self._sig_ops.build_extension_sign_intent(state, self)
+            if sign_intent is None:
                 self._inline_notice.setText("Verlaengerungsvorgang abgebrochen.")
                 return
 
-            self._sig_ops.require_signature_call(sign_request)
-            signing_user_id = str(sign_request.signer_user or user.user_id)
-
             payload, is_maxed = self._wf.extend_annual_validity(
                 state,
-                actor_user_id=signing_user_id,
+                actor_user_id=str(user.user_id),
                 signature_present=True,
                 duration_days=request.duration_days,
                 reason=request.reason,
                 review_outcome=request.review_outcome,
+                sign_intent=sign_intent,
             )
             self._append("JAHRESVERLAENGERUNG", {
                 "new_extension_count": payload.extension_count,

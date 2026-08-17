@@ -269,6 +269,19 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             ).fetchall()
         return [self._row_to_artifact(row) for row in rows]
 
+    def get_artifact_by_id(self, artifact_id: str) -> DocumentArtifact | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM document_artifacts WHERE artifact_id = ?",
+                (artifact_id,),
+            ).fetchone()
+        return self._row_to_artifact(row) if row is not None else None
+
+    def delete_artifact(self, artifact_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM document_artifacts WHERE artifact_id = ?", (artifact_id,))
+            self._commit_if_needed(conn)
+
     def mark_current_artifact(
         self,
         document_id: str,

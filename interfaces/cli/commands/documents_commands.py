@@ -7,28 +7,16 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from modules.documents.api import DocumentWorkflowError
-from modules.documents.contracts import (
-    ControlClass, DocumentStatus, DocumentType,
-    RejectionReason, SystemRole, ValidityExtensionOutcome
+from modules.documents.api import (
+    ControlClass, DocumentStatus, DocumentType, DocumentWorkflowError,
+    RejectionReason, SystemRole, ValidityExtensionOutcome,
 )
 from modules.signature.api import SignatureError
-from modules.usermanagement.api import is_effective_qmb, resolve_session
-from modules.signature.contracts import SignRequest, SignaturePlacementInput, LabelLayoutInput
+from interfaces.clients.documents_http import resolve_session_token
+from modules.signature.api import SignRequest, SignaturePlacementInput, LabelLayoutInput
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 
 from interfaces.cli.bootstrap import build_container
-
-
-def _resolve_current_user_and_role(usermanagement) -> tuple[object | None, SystemRole | None]:
-    current_user = usermanagement.get_current_user()
-    if current_user is None:
-        return None, None
-    role_map = {"Admin": SystemRole.ADMIN, "QMB": SystemRole.QMB, "User": SystemRole.USER}
-    current_role = role_map.get(current_user.role)
-    if current_role == SystemRole.USER and is_effective_qmb(current_user):
-        current_role = SystemRole.QMB
-    return current_user, current_role
 
 
 def _print_documents_state(prefix: str, state) -> None:
@@ -40,21 +28,6 @@ def _print_documents_state(prefix: str, state) -> None:
         "extension_count": state.extension_count,
     }
     print(f"{prefix}: {json.dumps(payload, ensure_ascii=True)}")
-
-
-def _resolve_workflow_profile_actor(container) -> object:
-    token = os.environ.get("QMTOOL_SESSION_TOKEN", "").strip()
-    if not token:
-        raise DocumentWorkflowError("QMTOOL_SESSION_TOKEN is required for workflow profile administration")
-    try:
-        return resolve_session(container, token, request_id="cli-documents-workflow-profiles")
-    except RuntimeError as exc:
-        if str(exc) != "opaque session repository is not configured":
-            raise
-        raise DocumentWorkflowError(
-            "workflow profile administration requires a backend session transport; "
-            "desktop legacy runtime is fail-closed"
-        ) from exc
 
 
 def _load_profile_definition(path: str) -> dict[str, object]:
@@ -113,6 +86,23 @@ def _build_sign_request(args: argparse.Namespace, reason: str, signer_user: str)
 
 
 def cmd_documents(args: argparse.Namespace) -> int:
+    legacy_not_in_m0 = {
+        "profile-create",
+        "profile-create-version",
+        "profile-activate",
+        "profile-deactivate",
+        "profile-bind-doc-type",
+        "header-get",
+        "pool-list-artifacts",
+        "change-request-list",
+        "change-request-export",
+    }
+    if args.documents_command in legacy_not_in_m0:
+        label = "artifact reads" if args.documents_command == "pool-list-artifacts" else args.documents_command
+        print(
+            f"BLOCKED: {label} is outside the reduced J04-M0 transition-client scope"
+        )
+        return 6
     container = build_container()
     lifecycle = runtime_bootstrap.register_core_modules(container)
     lifecycle.start()
@@ -130,83 +120,45 @@ def cmd_documents(args: argparse.Namespace) -> int:
     }
     if args.documents_command in profile_admin_commands:
         try:
+            resolve_session_token()
             if args.documents_command == "profile-list":
-                actor = _resolve_workflow_profile_actor(container)
                 if args.profile_id:
-                    payload = workflow_api.list_workflow_profile_versions(args.profile_id, actor=actor)
+                    payload = workflow_api.list_workflow_profile_versions(args.profile_id)
                 else:
-                    payload = workflow_api.list_workflow_profile_definitions(
-                        actor=actor,
-                        include_inactive=args.include_inactive,
-                    )
+                    payload = workflow_api.list_workflow_profile_definitions(include_inactive=args.include_inactive)
                 print(json.dumps(payload, ensure_ascii=True))
                 return 0
             if args.documents_command == "profile-create":
-                actor = _resolve_workflow_profile_actor(container)
-                payload = workflow_api.create_workflow_profile_definition(
-                    _load_profile_definition(args.definition_json),
-                    actor=actor,
-                    change_reason=args.change_reason,
-                )
-                print(json.dumps(payload, ensure_ascii=True))
-                return 0
+                payload = workflow_api.create_workflow_profile_definition(_load_profile_definition(args.definition_json), change_reason=args.change_reason)
+                print(json.dumps(payload, ensure_ascii=True)); return 0
             if args.documents_command == "profile-create-version":
-                actor = _resolve_workflow_profile_actor(container)
-                payload = workflow_api.create_workflow_profile_version(
-                    args.profile_id,
-                    _load_profile_definition(args.definition_json),
-                    actor=actor,
-                    change_reason=args.change_reason,
-                )
-                print(json.dumps(payload, ensure_ascii=True))
-                return 0
+                payload = workflow_api.create_workflow_profile_version(args.profile_id, _load_profile_definition(args.definition_json), change_reason=args.change_reason)
+                print(json.dumps(payload, ensure_ascii=True)); return 0
             if args.documents_command == "profile-activate":
-                actor = _resolve_workflow_profile_actor(container)
-                payload = workflow_api.activate_workflow_profile_definition(
-                    args.profile_id,
-                    actor=actor,
-                    change_reason=args.change_reason,
-                )
-                print(json.dumps(payload, ensure_ascii=True))
-                return 0
+                payload = workflow_api.activate_workflow_profile_definition(args.profile_id, change_reason=args.change_reason)
+                print(json.dumps(payload, ensure_ascii=True)); return 0
             if args.documents_command == "profile-deactivate":
-                actor = _resolve_workflow_profile_actor(container)
-                payload = workflow_api.deactivate_workflow_profile_definition(
-                    args.profile_id,
-                    actor=actor,
-                    change_reason=args.change_reason,
-                )
-                print(json.dumps(payload, ensure_ascii=True))
-                return 0
+                payload = workflow_api.deactivate_workflow_profile_definition(args.profile_id, change_reason=args.change_reason)
+                print(json.dumps(payload, ensure_ascii=True)); return 0
             if args.documents_command == "profile-bind-doc-type":
-                actor = _resolve_workflow_profile_actor(container)
-                payload = workflow_api.bind_document_type_default_profile(
-                    DocumentType(args.doc_type),
-                    args.profile_id,
-                    actor=actor,
-                    change_reason=args.change_reason,
-                )
-                print(json.dumps(payload, ensure_ascii=True))
-                return 0
+                payload = workflow_api.bind_document_type_default_profile(args.doc_type, args.profile_id, change_reason=args.change_reason)
+                print(json.dumps(payload, ensure_ascii=True)); return 0
         except (DocumentWorkflowError, SignatureError, ValueError) as exc:
             print(f"BLOCKED: {exc}")
             return 6
         except Exception as exc:  # noqa: BLE001
             print(f"FAILED: {exc}")
             return 7
-    current_user, current_role = _resolve_current_user_and_role(usermanagement)
-    if current_user is None:
-        print("BLOCKED: login required for documents commands")
-        return 6
-    if current_role is None:
-        print(f"BLOCKED: unsupported user role '{current_user.role}'")
+    try:
+        resolve_session_token()
+    except DocumentWorkflowError as exc:
+        print(f"BLOCKED: {exc}")
         return 6
 
     try:
         if args.documents_command == "create-version":
             state = workflow_api.create_document_version(
                 args.document_id, args.version,
-                owner_user_id=current_user.user_id,
                 title=args.title or args.document_id,
                 description=args.description,
                 doc_type=DocumentType(args.doc_type),
@@ -216,24 +168,15 @@ def cmd_documents(args: argparse.Namespace) -> int:
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "import-pdf":
-            state = workflow_api.import_existing_pdf(
-                args.document_id, args.version, Path(args.input),
-                actor_user_id=current_user.user_id, actor_role=current_role,
-            )
+            state = workflow_api.import_existing_pdf(args.document_id, args.version, Path(args.input))
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "import-docx":
-            state = workflow_api.import_existing_docx(
-                args.document_id, args.version, Path(args.input),
-                actor_user_id=current_user.user_id, actor_role=current_role,
-            )
+            state = workflow_api.import_existing_docx(args.document_id, args.version, Path(args.input))
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "create-from-template":
-            state = workflow_api.create_from_template(
-                args.document_id, args.version, Path(args.template),
-                actor_user_id=current_user.user_id, actor_role=current_role,
-            )
+            state = workflow_api.create_from_template(args.document_id, args.version, Path(args.template))
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "assign-roles":
@@ -243,72 +186,66 @@ def cmd_documents(args: argparse.Namespace) -> int:
                 editors={v.strip() for v in args.editors.split(",") if v.strip()},
                 reviewers={v.strip() for v in args.reviewers.split(",") if v.strip()},
                 approvers={v.strip() for v in args.approvers.split(",") if v.strip()},
-                actor_user_id=current_user.user_id, actor_role=current_role,
             )
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "workflow-start":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            state = workflow_api.start_workflow(
-                state,
-                profile_id=args.profile_id,
-                actor_user_id=current_user.user_id,
-                actor_role=current_role,
-            )
+            state = workflow_api.start_workflow(state, profile_id=args.profile_id)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "editing-complete":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            sign_request = (_build_sign_request(args, "documents.editing_complete", current_user.username) if args.sign_input else None)
-            state = workflow_api.complete_editing(state, sign_request=sign_request, actor_user_id=current_user.user_id, actor_role=current_role)
+            sign_intent = _build_sign_request(args, "CLI_EDITING_COMPLETE", "") if args.sign_input else None
+            state = workflow_api.complete_editing(state, sign_request=sign_intent)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "review-accept":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            sign_request = (_build_sign_request(args, "documents.review_accept", current_user.username) if args.sign_input else None)
-            state = workflow_api.accept_review(state, current_user.user_id, sign_request=sign_request, actor_role=current_role)
+            sign_intent = _build_sign_request(args, "CLI_REVIEW_ACCEPT", "") if args.sign_input else None
+            state = workflow_api.accept_review(state, sign_request=sign_intent)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "review-reject":
             state = _load_documents_state(pool_api, args.document_id, args.version)
             reason = RejectionReason(template_id=args.reason_template_id, template_text=args.reason_template_text, free_text=args.reason_free_text)
-            state = workflow_api.reject_review(state, current_user.user_id, reason, actor_role=current_role)
+            state = workflow_api.reject_review(state, reason)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "approval-accept":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            sign_request = (_build_sign_request(args, "documents.approval_accept", current_user.username) if args.sign_input else None)
-            state = workflow_api.accept_approval(state, current_user.user_id, sign_request=sign_request, actor_role=current_role)
+            sign_intent = _build_sign_request(args, "CLI_APPROVAL_ACCEPT", "") if args.sign_input else None
+            state = workflow_api.accept_approval(state, sign_request=sign_intent)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "approval-reject":
             state = _load_documents_state(pool_api, args.document_id, args.version)
             reason = RejectionReason(template_id=args.reason_template_id, template_text=args.reason_template_text, free_text=args.reason_free_text)
-            state = workflow_api.reject_approval(state, current_user.user_id, reason, actor_role=current_role)
+            state = workflow_api.reject_approval(state, reason)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "workflow-abort":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            state = workflow_api.abort_workflow(state, actor_user_id=current_user.user_id, actor_role=current_role)
+            state = workflow_api.abort_workflow(state)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "archive":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            state = workflow_api.archive_approved(state, current_role, actor_user_id=current_user.user_id)
+            state = workflow_api.archive_approved(state)
             _print_documents_state("OK", state)
             return 0
         if args.documents_command == "annual-extend":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            state, must_recreate = workflow_api.extend_annual_validity(
+            sign_intent = _build_sign_request(args, "CLI_ANNUAL_EXTENSION", "")
+            state, is_maxed = workflow_api.extend_annual_validity(
                 state,
-                actor_user_id=current_user.user_id,
-                signature_present=args.signature_present,
                 duration_days=args.duration_days,
                 reason=args.reason,
                 review_outcome=ValidityExtensionOutcome(args.outcome),
+                sign_intent=sign_intent,
             )
             _print_documents_state("OK", state)
-            print(f"RECREATE_REQUIRED: {str(must_recreate).lower()}")
+            print(json.dumps({"is_maxed": is_maxed}))
             return 0
         if args.documents_command == "pool-list-by-status":
             status = DocumentStatus(args.status)
@@ -318,32 +255,30 @@ def cmd_documents(args: argparse.Namespace) -> int:
             return 0
         if args.documents_command == "pool-list-artifacts":
             rows = pool_api.list_artifacts(args.document_id, args.version)
-            payload = [{"artifact_id": row.artifact_id, "artifact_type": row.artifact_type.value, "source_type": row.source_type.value, "storage_key": row.storage_key, "original_filename": row.original_filename, "is_current": row.is_current} for row in rows]
-            print(json.dumps(payload, ensure_ascii=True))
+            print(json.dumps([{"artifact_id": row.artifact_id, "artifact_type": row.artifact_type.value, "size_bytes": row.size_bytes} for row in rows]))
             return 0
         if args.documents_command == "pool-get-register":
-            row = registry_api.get_entry(args.document_id)
-            if row is None:
-                print("{}")
-                return 0
-            payload = {"document_id": row.document_id, "active_version": row.active_version, "register_state": row.register_state.value, "is_findable": row.is_findable, "release_evidence_mode": row.release_evidence_mode.value, "last_update_event_id": row.last_update_event_id}
-            print(json.dumps(payload, ensure_ascii=True))
-            return 0
+            print("BLOCKED: registry reads are outside the reduced J04-M0 documents scope")
+            return 6
         if args.documents_command == "header-get":
-            row = pool_api.get_header(args.document_id)
-            if row is None:
-                print("{}")
-                return 0
-            payload = {"document_id": row.document_id, "doc_type": row.doc_type.value, "control_class": row.control_class.value, "workflow_profile_id": row.workflow_profile_id, "department": row.department, "site": row.site, "regulatory_scope": row.regulatory_scope}
-            print(json.dumps(payload, ensure_ascii=True))
+            header = pool_api.get_header(args.document_id)
+            if header is None:
+                raise DocumentWorkflowError("document header not found")
+            print(json.dumps({"document_id": header.document_id, "workflow_profile_id": header.workflow_profile_id, "department": header.department, "site": header.site}, ensure_ascii=True))
             return 0
         if args.documents_command == "header-set":
-            if current_role not in (SystemRole.ADMIN, SystemRole.QMB):
-                print("BLOCKED: only QMB or ADMIN may update document headers")
-                return 6
-            row = workflow_api.update_document_header(args.document_id, doc_type=DocumentType(args.doc_type) if args.doc_type else None, control_class=ControlClass(args.control_class) if args.control_class else None, workflow_profile_id=args.workflow_profile_id, department=args.department, site=args.site, regulatory_scope=args.regulatory_scope, actor_user_id=current_user.user_id, actor_role=current_role)
-            payload = {"document_id": row.document_id, "doc_type": row.doc_type.value, "control_class": row.control_class.value, "workflow_profile_id": row.workflow_profile_id, "department": row.department, "site": row.site, "regulatory_scope": row.regulatory_scope}
-            print(json.dumps(payload, ensure_ascii=True))
+            header = pool_api.get_header(args.document_id)
+            if header is None:
+                raise DocumentWorkflowError("document header not found")
+            updated = workflow_api.update_document_header(
+                args.document_id,
+                workflow_profile_id=args.workflow_profile_id,
+                department=args.department,
+                site=args.site,
+                regulatory_scope=args.regulatory_scope,
+                if_match=header.updated_at.isoformat(),
+            )
+            print(json.dumps({"document_id": updated.document_id, "updated_at": updated.updated_at.isoformat()}, ensure_ascii=True))
             return 0
         if args.documents_command == "metadata-get":
             state = _load_documents_state(pool_api, args.document_id, args.version)
@@ -352,33 +287,26 @@ def cmd_documents(args: argparse.Namespace) -> int:
             return 0
         if args.documents_command == "metadata-set":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            custom_fields = json.loads(args.custom_fields_json) if args.custom_fields_json else None
-            if custom_fields is not None and not isinstance(custom_fields, dict):
-                print("BLOCKED: --custom-fields-json must be a JSON object")
-                return 6
-            updated = workflow_api.update_version_metadata(state, title=args.title, description=args.description, valid_until=_parse_optional_datetime(args.valid_until), next_review_at=_parse_optional_datetime(args.next_review_at), custom_fields=custom_fields, actor_user_id=current_user.user_id, actor_role=current_role)
-            _print_documents_state("OK", updated)
+            custom = json.loads(args.custom_fields_json) if args.custom_fields_json else None
+            state = workflow_api.update_version_metadata(
+                state,
+                title=args.title,
+                description=args.description,
+                valid_until=_parse_optional_datetime(args.valid_until),
+                next_review_at=_parse_optional_datetime(args.next_review_at),
+                custom_fields=custom,
+            )
+            _print_documents_state("OK", state)
             return 0
         if args.documents_command == "change-request-add":
             state = _load_documents_state(pool_api, args.document_id, args.version)
-            updated = workflow_api.add_change_request(
+            state = workflow_api.add_change_request(
                 state,
                 change_id=args.change_id,
                 reason=args.reason,
-                impact_refs=[value.strip() for value in args.impact_refs.split(",") if value.strip()],
-                actor_user_id=current_user.user_id,
-                actor_role=current_role,
+                impact_refs=[value for value in args.impact_refs.split(",") if value],
             )
-            print(
-                json.dumps(
-                    {
-                        "document_id": updated.document_id,
-                        "version": updated.version,
-                        "change_requests": workflow_api.list_change_requests(updated),
-                    },
-                    ensure_ascii=True,
-                )
-            )
+            _print_documents_state("OK", state)
             return 0
         if args.documents_command == "change-request-list":
             state = _load_documents_state(pool_api, args.document_id, args.version)
@@ -387,41 +315,16 @@ def cmd_documents(args: argparse.Namespace) -> int:
         if args.documents_command == "change-request-export":
             state = _load_documents_state(pool_api, args.document_id, args.version)
             rows = workflow_api.list_change_requests(state)
-            output_path = Path(args.output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output = Path(args.output)
             if args.format == "json":
-                output_path.write_text(json.dumps(rows, indent=2, ensure_ascii=True), encoding="utf-8")
+                output.write_text(json.dumps(rows, ensure_ascii=True, indent=2), encoding="utf-8")
             else:
-                with output_path.open("w", encoding="utf-8", newline="") as fh:
-                    writer = csv.DictWriter(
-                        fh,
-                        fieldnames=["change_id", "reason", "impact_refs", "created_by", "created_at"],
-                    )
+                fields = sorted({key for row in rows for key in row} or {"change_id"})
+                with output.open("w", newline="", encoding="utf-8") as stream:
+                    writer = csv.DictWriter(stream, fieldnames=fields)
                     writer.writeheader()
-                    for row in rows:
-                        refs = row.get("impact_refs", [])
-                        refs_csv = ",".join(str(value) for value in refs) if isinstance(refs, list) else ""
-                        writer.writerow(
-                            {
-                                "change_id": str(row.get("change_id", "")),
-                                "reason": str(row.get("reason", "")),
-                                "impact_refs": refs_csv,
-                                "created_by": str(row.get("created_by", "")),
-                                "created_at": str(row.get("created_at", "")),
-                            }
-                        )
-            print(
-                json.dumps(
-                    {
-                        "document_id": state.document_id,
-                        "version": state.version,
-                        "format": args.format,
-                        "output": str(output_path),
-                        "count": len(rows),
-                    },
-                    ensure_ascii=True,
-                )
-            )
+                    writer.writerows(rows)
+            print(str(output))
             return 0
     except (DocumentWorkflowError, SignatureError, ValueError) as exc:
         print(f"BLOCKED: {exc}")

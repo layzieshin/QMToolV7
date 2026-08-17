@@ -34,12 +34,16 @@ def _role_to_system_role(role: str) -> SystemRole:
 
 
 class UiController:
+    def _documents_fail_closed(self) -> None:
+        raise DocumentWorkflowError(
+            "Legacy Tk documents actions are fail-closed under J04-M0 (use PyQt + backend session transport)"
+        )
+
     def __init__(self) -> None:
         self.container = build_container()
         self.lifecycle = register_core_modules(self.container)
         self.lifecycle.start()
         self.usermanagement = self.container.get_port("usermanagement_service")
-        self.documents_service = self.container.get_port("documents_service")
         self.documents_pool_api = self.container.get_port("documents_pool_api")
         self.documents_workflow_api = self.container.get_port("documents_workflow_api")
         self.settings_service = self.container.get_port("settings_service")
@@ -61,92 +65,40 @@ class UiController:
         return [{"document_id": row.document_id, "version": row.version, "status": row.status.value} for row in rows]
 
     def get_document(self, document_id: str, version: int):
-        state = self.documents_service.get_document_version(document_id, version)
+        state = self.documents_pool_api.get_document_version(document_id, version)
         if state is None:
             raise RuntimeError(f"document version not found: {document_id} v{version}")
         return state
 
     def create_document_version(self, document_id: str, version: int):
-        current_user = self._require_user()
-        return self.documents_service.create_document_version(document_id, version, owner_user_id=current_user.user_id)
+        self._documents_fail_closed()
 
     def assign_roles(self, document_id: str, version: int, editors: set[str], reviewers: set[str], approvers: set[str]):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        return self.documents_workflow_api.assign_workflow_roles(
-            state,
-            editors=editors,
-            reviewers=reviewers,
-            approvers=approvers,
-            actor_user_id=current_user.user_id,
-            actor_role=current_role,
-        )
+        self._documents_fail_closed()
 
     def start_workflow(self, document_id: str, version: int, profile_id: str | None = None):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        return self.documents_workflow_api.start_workflow(
-            state,
-            profile_id=profile_id,
-            actor_user_id=current_user.user_id,
-            actor_role=current_role,
-        )
+        self._documents_fail_closed()
 
     def complete_editing(self, document_id: str, version: int, sign_request: object | None = None):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        return self.documents_workflow_api.complete_editing(
-            state,
-            sign_request=sign_request,
-            actor_user_id=current_user.user_id,
-            actor_role=current_role,
-        )
+        self._documents_fail_closed()
 
     def review_accept(self, document_id: str, version: int, sign_request: object | None = None):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        return self.documents_workflow_api.accept_review(
-            state,
-            current_user.user_id,
-            sign_request=sign_request,
-            actor_role=current_role,
-        )
+        self._documents_fail_closed()
 
     def review_reject(self, document_id: str, version: int, reason_text: str):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        reason = RejectionReason(template_text=reason_text, free_text=None)
-        return self.documents_workflow_api.reject_review(state, current_user.user_id, reason, actor_role=current_role)
+        self._documents_fail_closed()
 
     def approval_accept(self, document_id: str, version: int, sign_request: object | None = None):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        return self.documents_workflow_api.accept_approval(
-            state,
-            current_user.user_id,
-            sign_request=sign_request,
-            actor_role=current_role,
-        )
+        self._documents_fail_closed()
 
     def approval_reject(self, document_id: str, version: int, reason_text: str):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        reason = RejectionReason(template_text=reason_text, free_text=None)
-        return self.documents_workflow_api.reject_approval(state, current_user.user_id, reason, actor_role=current_role)
+        self._documents_fail_closed()
 
     def abort_workflow(self, document_id: str, version: int):
-        current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        return self.documents_workflow_api.abort_workflow(
-            state,
-            actor_user_id=current_user.user_id,
-            actor_role=current_role,
-        )
+        self._documents_fail_closed()
 
     def archive(self, document_id: str, version: int):
-        _current_user, current_role = self._require_user_and_role()
-        state = self.get_document(document_id, version)
-        return self.documents_workflow_api.archive_approved(state, current_role)
+        self._documents_fail_closed()
 
     def list_settings_modules(self) -> list[str]:
         self._require_user()
@@ -544,11 +496,21 @@ def run_smoke_test() -> int:
     doc_id = f"DOC-UI-EXE-SMOKE-{uuid.uuid4().hex[:8]}"
     smoke_password = os.environ.get("QMTOOL_ADMIN_PASSWORD", "admin")
     controller.login("admin", smoke_password)
-    controller.create_document_version(doc_id, 1)
-    controller.assign_roles(doc_id, 1, editors={"admin"}, reviewers={"user"}, approvers={"qmb"})
-    controller.start_workflow(doc_id, 1, profile_id="long_release")
-    rows = controller.list_pool(DocumentStatus.PLANNED)
-    print(json.dumps({"smoke": "ok", "document_id": doc_id, "pool_planned_count": len(rows)}, ensure_ascii=True))
+    documents_mode = "fail_closed"
+    try:
+        controller.create_document_version(doc_id, 1)
+    except DocumentWorkflowError:
+        pass
+    print(
+        json.dumps(
+            {
+                "smoke": "ok",
+                "document_id": doc_id,
+                "documents_mode": documents_mode,
+            },
+            ensure_ascii=True,
+        )
+    )
     return 0
 
 

@@ -91,6 +91,12 @@ class SignatureServiceV2:
     def delete_signature_template(self, template_id: str) -> None:
         self._template_use_cases.delete_signature_template(template_id)
 
+    def delete_signature_template_for_actor(self, template_id: str, actor) -> None:
+        self._template_use_cases.delete_signature_template_for_actor(template_id, actor)
+
+    def create_user_signature_template_for_actor(self, **kwargs):
+        return self._template_use_cases.create_user_signature_template_for_actor(**kwargs)
+
     def update_signature_template(
         self, *, template_id: str, owner_user_id: str, name: str | None = None,
         placement: SignaturePlacementInput | None = None, layout: LabelLayoutInput | None = None,
@@ -101,8 +107,14 @@ class SignatureServiceV2:
             placement=placement, layout=layout, signature_asset_id=signature_asset_id,
         )
 
+    def update_signature_template_for_actor(self, **kwargs):
+        return self._template_use_cases.update_signature_template_for_actor(**kwargs)
+
     def copy_global_template_to_user(self, template_id: str, owner_user_id: str, name: str | None = None) -> UserSignatureTemplate:
         return self._template_use_cases.copy_global_template_to_user(template_id, owner_user_id, name=name)
+
+    def copy_global_template_for_actor(self, template_id: str, actor, name: str | None = None):
+        return self._template_use_cases.copy_global_template_for_actor(template_id, actor, name=name)
 
     # -- Policy delegation ---------------------------------------------------
 

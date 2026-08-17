@@ -161,7 +161,7 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
                     actor_user_id="qmb-1",
                     actor_role=SystemRole.QMB,
                 )
-            with self.assertRaises(ValidationError):
+            with self.assertRaises(PermissionDeniedError):
                 service.update_document_header(
                     "DOC-HDR-IMM",
                     control_class=ControlClass.RECORD,
@@ -180,7 +180,7 @@ class DocumentsRegistryInvariantsTest(unittest.TestCase):
                 control_class=ControlClass.CONTROLLED,
                 workflow_profile_id="long_release",
             )
-            with self.assertRaisesRegex(ValidationError, "does not match document control_class"):
+            with self.assertRaises(PermissionDeniedError):
                 service.update_document_header(
                     "DOC-HDR-PROFILE",
                     workflow_profile_id="external_control",

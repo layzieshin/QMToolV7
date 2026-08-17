@@ -3,10 +3,6 @@ from __future__ import annotations
 import os
 import sys
 
-from modules.documents.api import prepare_docx_conversion_runtime
-
-prepare_docx_conversion_runtime()
-
 from interfaces.pyqt.runtime.host import RuntimeHost
 from interfaces.pyqt.shell.main_window import MainWindow
 

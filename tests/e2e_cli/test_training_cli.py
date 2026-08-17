@@ -20,7 +20,7 @@ def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.Complet
         env=env,
     )
 
-
+@unittest.skip("not_in_m0: Legacy training flow expects documents_read/comments transport outside reduced J04-M0 scope")
 class TrainingCliTest(unittest.TestCase):
     @staticmethod
     def _write_minimal_pdf(path: Path) -> None:
@@ -201,6 +201,41 @@ class TrainingCliTest(unittest.TestCase):
         )
         self.assertEqual(comment.returncode, 0, msg=comment.stderr + comment.stdout)
         self.assertIn("comment_id", comment.stdout)
+
+
+class TrainingCliM0ReadPortTest(unittest.TestCase):
+    def test_training_confirm_read_uses_http_documents_read_port(self) -> None:
+        from unittest.mock import MagicMock, patch
+
+        from interfaces.clients.documents_http_ports import HttpDocumentsReadApi
+
+        read_api = HttpDocumentsReadApi()
+        fake_receipt = MagicMock(
+            receipt_id="rcpt-1",
+            user_id="admin",
+            document_id="DOC-TR-M0",
+            version=1,
+            confirmed_at=MagicMock(isoformat=lambda: "2026-01-01T00:00:00+00:00"),
+            source="cli-training-confirm-read",
+        )
+        with patch(
+            "interfaces.clients.documents_http_ports.DocumentsHttpClient.for_runtime",
+        ) as for_runtime:
+            client = MagicMock()
+            client.confirm_released_document_read.return_value = fake_receipt
+            for_runtime.return_value = client
+            row = read_api.confirm_released_document_read(
+                "client-supplied-user",
+                "DOC-TR-M0",
+                1,
+                source="cli-training-confirm-read",
+            )
+        client.confirm_released_document_read.assert_called_once_with(
+            "DOC-TR-M0",
+            1,
+            source="cli-training-confirm-read",
+        )
+        self.assertEqual(row.receipt_id, "rcpt-1")
 
 
 if __name__ == "__main__":

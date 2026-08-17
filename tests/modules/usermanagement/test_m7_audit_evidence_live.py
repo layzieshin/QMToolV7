@@ -25,10 +25,12 @@ from qm_platform.events.event_bus import EventBus
 from qm_platform.runtime.backend_bootstrap import wire_backend_usermanagement
 from src.backend.api import create_app
 from src.backend.bootstrap import build_platform_ports
-from tests.modules.usermanagement.test_postgres_schema_live import (
-    _cleanup_all,
-    _prepare_environment,
-    _require_dsn,
+from tests.postgres_destructive_guard import DestructivePostgresGuardError
+from tests.postgres_live_support import (
+    LivePostgresEnv,
+    cleanup_live_environment,
+    os_environ_required,
+    prepare_live_environment,
 )
 
 pytestmark = pytest.mark.postgres
@@ -61,10 +63,20 @@ def _read_audits(migrator_dsn: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def _prepare_or_skip() -> LivePostgresEnv:
+    try:
+        return prepare_live_environment()
+    except DestructivePostgresGuardError as exc:
+        if os_environ_required():
+            pytest.fail(str(exc))
+        pytest.skip(str(exc))
+
+
 @pytest.fixture
-def pg_service(tmp_path, monkeypatch):
-    admin_dsn = _require_dsn()
-    migrator_dsn, runtime_dsn = _prepare_environment(admin_dsn)
+def pg_service(tmp_path, monkeypatch, live_postgres_env: LivePostgresEnv):
+    admin_dsn = live_postgres_env.admin_dsn
+    migrator_dsn = live_postgres_env.migrator_dsn
+    runtime_dsn = live_postgres_env.runtime_dsn
     pgs.migrate_usermanagement_schema(migrator_dsn)
     events = EventBus()
     published: list[str] = []
@@ -93,7 +105,6 @@ def pg_service(tmp_path, monkeypatch):
         "admin": admin,
         "published": published,
     }
-    _cleanup_all(admin_dsn)
 
 
 def test_login_success_and_denied_audit(pg_service) -> None:
@@ -275,8 +286,10 @@ def test_missing_insert_privilege_rolls_back_login(pg_service) -> None:
 
 
 def test_http_login_writes_audit_and_body_cannot_set_actor(tmp_path, monkeypatch) -> None:
-    admin_dsn = _require_dsn()
-    migrator_dsn, runtime_dsn = _prepare_environment(admin_dsn)
+    env = _prepare_or_skip()
+    admin_dsn = env.admin_dsn
+    migrator_dsn = env.migrator_dsn
+    runtime_dsn = env.runtime_dsn
     try:
         pgs.migrate_usermanagement_schema(migrator_dsn)
         monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
@@ -319,15 +332,17 @@ def test_http_login_writes_audit_and_body_cannot_set_actor(tmp_path, monkeypatch
             for secret in (token, "ops-secret-1", "ops-secret-2", "opsadmin"):
                 assert secret not in blob
     finally:
-        _cleanup_all(admin_dsn)
+        cleanup_live_environment(admin_dsn=admin_dsn)
 
 
 def test_http_login_returns_503_and_rolls_back_when_audit_is_unavailable(
     tmp_path,
     monkeypatch,
 ) -> None:
-    admin_dsn = _require_dsn()
-    migrator_dsn, runtime_dsn = _prepare_environment(admin_dsn)
+    env = _prepare_or_skip()
+    admin_dsn = env.admin_dsn
+    migrator_dsn = env.migrator_dsn
+    runtime_dsn = env.runtime_dsn
     try:
         pgs.migrate_usermanagement_schema(migrator_dsn)
         monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
@@ -363,7 +378,7 @@ def test_http_login_returns_503_and_rolls_back_when_audit_is_unavailable(
             )
         assert after_sessions == before_sessions
     finally:
-        _cleanup_all(admin_dsn)
+        cleanup_live_environment(admin_dsn=admin_dsn)
 
 
 def test_create_user_audit_actor_is_admin_not_target(pg_service) -> None:

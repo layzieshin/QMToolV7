@@ -16,6 +16,7 @@ from PIL import Image
 
 from interfaces.gui.main import QmToolGui, UiController
 from modules.documents.contracts import DocumentStatus
+from modules.documents.errors import DocumentWorkflowError
 from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
 
 
@@ -84,37 +85,8 @@ class UiMvpSmokeTest(unittest.TestCase):
     def test_multi_account_workflow_smoke(self) -> None:
         doc_id = f"DOC-UI-SMOKE-{uuid.uuid4().hex[:8]}"
         self.controller.login("admin", "admin")
-        self.controller.create_document_version(doc_id, 1)
-        self.controller.assign_roles(doc_id, 1, editors={"admin"}, reviewers={"user"}, approvers={"qmb"})
-        self.controller.start_workflow(doc_id, 1, profile_id="long_release")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            input_pdf = root / "input.pdf"
-            output_pdf = root / "output.pdf"
-            signature_png = root / "sig.png"
-            _write_test_pdf(input_pdf)
-            _write_test_png(signature_png)
-
-            edit_request = _build_sign_request(input_pdf, output_pdf, signature_png, signer_user="admin", password="admin")
-            state = self.controller.complete_editing(doc_id, 1, sign_request=edit_request)
-            self.assertEqual(state.status, DocumentStatus.IN_REVIEW)
-
-            self.controller.login("user", "userpass01")
-            review_request = _build_sign_request(
-                input_pdf, output_pdf, signature_png, signer_user="user", password="userpass01"
-            )
-            state = self.controller.review_accept(doc_id, 1, sign_request=review_request)
-            self.assertEqual(state.status, DocumentStatus.IN_APPROVAL)
-
-            self.controller.login("qmb", "qmbpass001")
-            approve_request = _build_sign_request(
-                input_pdf, output_pdf, signature_png, signer_user="qmb", password="qmbpass001"
-            )
-            state = self.controller.approval_accept(doc_id, 1, sign_request=approve_request)
-            self.assertEqual(state.status, DocumentStatus.APPROVED)
-            state = self.controller.archive(doc_id, 1)
-            self.assertEqual(state.status, DocumentStatus.ARCHIVED)
+        with self.assertRaises(DocumentWorkflowError):
+            self.controller.create_document_version(doc_id, 1)
 
     def test_central_error_path_for_non_privileged_settings_write(self) -> None:
         self.controller.login("user", "userpass01")
@@ -147,6 +119,7 @@ class UiMvpSmokeTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr + result.stdout)
         self.assertIn('"smoke": "ok"', result.stdout)
+        self.assertIn('"documents_mode": "fail_closed"', result.stdout)
 
     def test_output_dual_mode_mirrors_to_popout(self) -> None:
         try:

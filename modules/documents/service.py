@@ -5,6 +5,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
 from typing import Callable
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from . import naming
 from . import registry_sync as _registry_sync
 from . import signature_guard
 from . import validation as _val
+from .comment_permissions import ensure_workflow_comment_access, ensure_workflow_comment_read_access
 from .contracts import (
     ArtifactSourceType,
     ArtifactType,
@@ -45,7 +47,7 @@ from .contracts import (
     ChangeRequest,
     control_class_for,
 )
-from .errors import InvalidTransitionError, PermissionDeniedError, ValidationError
+from .errors import CommentConflictError, DocumentConflictError, HeaderConflictError, InvalidTransitionError, PermissionDeniedError, ValidationError
 from .readmodel_use_cases import DocumentsReadmodelUseCases
 from .repository import DocumentsRepository
 from .storage import DocumentsStoragePort
@@ -86,6 +88,7 @@ class DocumentsService:
         self._registry_projection_api = registry_projection_api
         self._audit_logger = audit_logger
         self._docx_to_pdf_converter = docx_to_pdf_converter
+        self._mutation_lock = RLock()
         self._readmodels = DocumentsReadmodelUseCases(
             iter_states=self._iter_all_states,
             matches_user_context=lambda state, user_id, role: self._matches_user_context(state, user_id=user_id, role=role),
@@ -306,6 +309,27 @@ class DocumentsService:
     def _next_status_from_profile(self, profile: WorkflowProfile | None, current: DocumentStatus) -> DocumentStatus:
         return _val.next_status_from_profile(profile, current)
 
+    @staticmethod
+    def evaluate_workflow_action(state: DocumentVersionState, *, actor_user_id: str, actor_role: SystemRole, action: str):
+        from .workflow_policy import evaluate_workflow_action
+
+        return evaluate_workflow_action(
+            state,
+            user_id=actor_user_id,
+            role=actor_role,
+            action=action,
+        )
+
+    def assert_workflow_action(self, state: DocumentVersionState, *, actor_user_id: str, actor_role: SystemRole, action: str) -> None:
+        decision = self.evaluate_workflow_action(
+            state,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action=action,
+        )
+        if not decision.allowed:
+            raise PermissionDeniedError(decision.reason)
+
     # --- Delegation to signature_guard module ---
 
     def _enforce_signature_transition(
@@ -405,6 +429,34 @@ class DocumentsService:
             return self._repository.get(document_id, version)
         return self._states.get((document_id, version))
 
+    def get_document_version_for_actor(
+        self,
+        document_id: str,
+        version: int,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> DocumentVersionState | None:
+        state = self.get_document_version(document_id, version)
+        if state is None:
+            return None
+        if not self._has_read_access(state, actor_user_id=actor_user_id, actor_role=actor_role):
+            return None
+        return state
+
+    def list_by_status_for_actor(
+        self,
+        status: DocumentStatus,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> list[DocumentVersionState]:
+        rows = self.list_by_status(status)
+        return [
+            row for row in rows
+            if self._has_read_access(row, actor_user_id=actor_user_id, actor_role=actor_role)
+        ]
+
     def get_document_header(self, document_id: str) -> DocumentHeader | None:
         if self._repository is None:
             return None
@@ -430,8 +482,8 @@ class DocumentsService:
             raise ValidationError("repository is required for header updates")
         if actor_user_id is None or actor_role is None:
             raise ValidationError("actor_user_id and actor_role are required for header updates")
-        if actor_role not in (SystemRole.ADMIN, SystemRole.QMB):
-            raise PermissionDeniedError("only QMB or ADMIN may update document headers")
+        if actor_role != SystemRole.QMB:
+            raise PermissionDeniedError("only an effective QMB may update document headers")
         existing = self._repository.get_header(document_id)
         if existing is None:
             raise ValidationError(f"document header not found: {document_id}")
@@ -470,6 +522,38 @@ class DocumentsService:
         )
         self._repository.upsert_header(updated)
         return updated
+
+    def update_document_header_if_current(
+        self,
+        document_id: str,
+        *,
+        expected_updated_at: str,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+        **changes,
+    ) -> DocumentHeader:
+        with self._mutation_lock:
+            with self._write_transaction():
+                current = self._repository.get_header(document_id) if self._repository is not None else None
+                if current is None:
+                    raise ValidationError(f"document header not found: {document_id}")
+                if current.updated_at.isoformat() != expected_updated_at:
+                    raise HeaderConflictError(current)
+                if actor_user_id is None or actor_role is None:
+                    raise PermissionDeniedError("confirmed UserContext is required")
+                policy_state = self.version_state_for_document_policy(document_id)
+                self.assert_workflow_action(
+                    policy_state,
+                    actor_user_id=actor_user_id,
+                    actor_role=actor_role,
+                    action="update_header",
+                )
+                return self.update_document_header(
+                    document_id,
+                    actor_user_id=actor_user_id,
+                    actor_role=actor_role,
+                    **changes,
+                )
 
     def _build_distribution_snapshot(self, state: DocumentVersionState) -> dict[str, object]:
         header = self.get_document_header(state.document_id)
@@ -521,14 +605,16 @@ class DocumentsService:
             next_review_at=next_review_at if next_review_at is not None else state.next_review_at,
             custom_fields=merged_custom,
         )
-        event = self._publish(
-            "domain.documents.metadata.updated.v1",
-            updated,
-            {"keys": sorted((custom_fields or {}).keys())},
-            actor_user_id=actor_user_id,
-        )
-        self._store_state(updated)
-        self._sync_registry(updated, event)
+        with self._write_transaction():
+            event = self._publish(
+                "domain.documents.metadata.updated.v1",
+                updated,
+                {"keys": sorted((custom_fields or {}).keys())},
+                actor_user_id=actor_user_id,
+            )
+            updated = eventing.stamp_event_on_state(updated, event, actor_user_id)
+            self._store_state(updated)
+            self._sync_registry(updated, event)
         return updated
 
     def add_change_request(
@@ -574,13 +660,14 @@ class DocumentsService:
         merged_custom["change_requests"] = [*existing_items, request_payload]
         updated = replace(state, custom_fields=merged_custom)
         with self._write_transaction():
-            self._store_state(updated)
             event = self._publish(
                 "domain.documents.change_request.added.v1",
                 updated,
                 {"change_id": request.change_id, "impact_refs": list(request.impact_refs)},
                 actor_user_id=actor_user_id,
             )
+            updated = eventing.stamp_event_on_state(updated, event, actor_user_id)
+            self._store_state(updated)
             self._sync_registry(updated, event)
         return updated
 
@@ -594,6 +681,65 @@ class DocumentsService:
         if self._repository is None:
             return []
         return self._repository.list_artifacts(document_id, version)
+
+    def get_artifact_by_id(self, artifact_id: str) -> DocumentArtifact | None:
+        if self._repository is None:
+            return None
+        return self._repository.get_artifact_by_id(artifact_id)
+
+    def get_artifact_by_id_for_actor(
+        self,
+        artifact_id: str,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> DocumentArtifact | None:
+        artifact = self.get_artifact_by_id(artifact_id)
+        if artifact is None:
+            return None
+        state = self.get_document_version(artifact.document_id, artifact.version)
+        if state is None:
+            return None
+        if not self._has_read_access(state, actor_user_id=actor_user_id, actor_role=actor_role):
+            return None
+        # Working/source opens require the shared open_source policy (re-check).
+        if artifact.artifact_type in {ArtifactType.SOURCE_DOCX, ArtifactType.SOURCE_PDF}:
+            decision = self.evaluate_workflow_action(
+                state,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+                action="open_source",
+            )
+            if not decision.allowed:
+                return None
+        return artifact
+
+    def read_artifact_bytes(self, artifact_id: str) -> bytes:
+        artifact = self.get_artifact_by_id(artifact_id)
+        if artifact is None:
+            raise ValidationError("artifact not found")
+        if self._storage_port is None:
+            raise ValidationError("storage_port is required for artifact content")
+        try:
+            return self._storage_port.read_bytes(artifact.storage_key)
+        except (FileNotFoundError, ValueError) as exc:
+            raise ValidationError("artifact content is not available") from exc
+
+    def read_artifact_bytes_for_actor(
+        self,
+        artifact_id: str,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> bytes:
+        artifact = self.get_artifact_by_id_for_actor(
+            artifact_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
+        if artifact is None:
+            raise PermissionDeniedError("artifact is not visible to the current actor")
+        return self.read_artifact_bytes(artifact_id)
 
     def list_tasks_for_user(self, user_id: str, role: str, scope: str | None = None) -> list[DocumentTaskItem]:
         return self._readmodels.list_tasks_for_user(user_id=user_id, role=role, scope=scope)
@@ -881,13 +1027,46 @@ class DocumentsService:
             review_outcome=review_outcome,
         )
 
-    def create_new_version_after_archive(self, state, next_version):
-        return self._workflow_use_cases.create_new_version_after_archive(state, next_version)
+    def create_new_version_after_archive(self, state, next_version, *, actor_user_id=None, actor_role=None):
+        return self._workflow_use_cases.create_new_version_after_archive(
+            state,
+            next_version,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
 
     def ensure_source_pdf_for_signing(self, state, *, actor_user_id=None, actor_role=None):
         if actor_user_id is not None and actor_role is not None:
             self._ensure_editor_or_owner_or_privileged(state, actor_user_id, actor_role)
         return self._ensure_source_pdf_artifact_for_signing(state, actor_user_id=actor_user_id)
+
+    def sign_and_store_signed_artifact(self, state, sign_request, *, transition: str) -> DocumentArtifact:
+        """Execute a server-built signing request and register its SIGNED_PDF."""
+        if self._signature_api is None:
+            raise ValidationError("signature_api is required for signing")
+        sign = getattr(self._signature_api, "sign_with_fixed_position", None)
+        if not callable(sign):
+            raise ValidationError("signature_api does not provide sign_with_fixed_position")
+        try:
+            sign(sign_request)
+        except Exception as exc:
+            raise ValidationError(f"signature step failed: {exc}") from exc
+        output_pdf = getattr(sign_request, "output_pdf", None)
+        if not isinstance(output_pdf, Path) or not output_pdf.is_file() or output_pdf.suffix.lower() != ".pdf":
+            raise ValidationError(f"signature transition '{transition}' did not produce a valid signed PDF output")
+        return self._create_artifact(
+            state=state,
+            source_path=output_pdf,
+            artifact_type=ArtifactType.SIGNED_PDF,
+            source_type=ArtifactSourceType.GENERATED,
+            metadata={"transition": transition, "generated_from": str(getattr(sign_request, "input_pdf", ""))},
+        )
+
+    def delete_artifact(self, artifact: DocumentArtifact) -> None:
+        if self._storage_port is not None:
+            self._storage_port.delete(artifact.storage_key)
+        if self._repository is not None:
+            self._repository.delete_artifact(artifact.artifact_id)
 
     # --- Internal helpers ---
 
@@ -896,6 +1075,55 @@ class DocumentsService:
         self._states[(state.document_id, state.version)] = state
         if self._repository is not None:
             self._repository.upsert(state)
+
+    def mutate_version_if_current(
+        self,
+        document_id: str,
+        version: int,
+        expected_last_event_id: str | None,
+        operation: Callable[[DocumentVersionState], object],
+        *,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+        action: str | None = None,
+    ) -> object:
+        """Atomically compare the persisted event token, re-check policy, mutate.
+
+        When ``action`` is set, ``assert_workflow_action`` runs on the locked
+        ``current`` state after the ETag compare and before ``operation``.
+        """
+        with self._mutation_lock:
+            with self._write_transaction():
+                current = self.get_document_version(document_id, version)
+                if current is None:
+                    raise ValidationError("document version not found")
+                if current.last_event_id != expected_last_event_id:
+                    raise DocumentConflictError(current)
+                if action is not None:
+                    if actor_user_id is None or actor_role is None:
+                        raise PermissionDeniedError("confirmed UserContext is required")
+                    self.assert_workflow_action(
+                        current,
+                        actor_user_id=actor_user_id,
+                        actor_role=actor_role,
+                        action=action,
+                    )
+                return operation(current)
+
+    def version_state_for_document_policy(self, document_id: str) -> DocumentVersionState:
+        """Load a version state used only for shared workflow_policy checks."""
+        versions: list[DocumentVersionState] = []
+        if self._repository is not None:
+            versions = list(self._repository.list_versions(document_id))
+        if not versions:
+            versions = [
+                state
+                for (doc_id, _version), state in self._states.items()
+                if doc_id == document_id
+            ]
+        if not versions:
+            raise ValidationError(f"document version not found: {document_id}")
+        return max(versions, key=lambda state: int(state.version))
 
     @contextmanager
     def _write_transaction(self):
@@ -947,7 +1175,7 @@ class DocumentsService:
     @staticmethod
     def _matches_user_context(state: DocumentVersionState, *, user_id: str, role: str) -> bool:
         role_upper = role.upper()
-        if role_upper in ("ADMIN", "QMB"):
+        if role_upper == "QMB":
             return True
         if state.owner_user_id == user_id:
             return True
@@ -960,6 +1188,34 @@ class DocumentsService:
         if state.last_actor_user_id == user_id:
             return True
         return False
+
+    @classmethod
+    def _has_read_access(
+        cls,
+        state: DocumentVersionState,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> bool:
+        role = actor_role.value
+        if role == SystemRole.QMB.value:
+            return True
+        if state.status == DocumentStatus.APPROVED:
+            return True
+        if state.status == DocumentStatus.ARCHIVED:
+            return state.owner_user_id == actor_user_id
+        return cls._matches_user_context(state, user_id=actor_user_id, role=role)
+
+    @classmethod
+    def _ensure_read_access(
+        cls,
+        state: DocumentVersionState,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> None:
+        if not cls._has_read_access(state, actor_user_id=actor_user_id, actor_role=actor_role):
+            raise PermissionDeniedError("document is not visible to the current actor")
 
     def _supersede_other_approved_versions(self, state: DocumentVersionState, actor_user_id: str) -> list[int]:
         if self._repository is None:
@@ -1154,7 +1410,12 @@ class DocumentsService:
     ) -> list[WorkflowCommentListItem]:
         from .comment_service import WorkflowCommentService
 
-        _ = actor_user_id, actor_role
+        ensure_workflow_comment_read_access(
+            state,
+            context=context,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
         return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).list_comments(
             state, context=context
         )
@@ -1164,7 +1425,18 @@ class DocumentsService:
     ) -> WorkflowCommentDetail:
         from .comment_service import WorkflowCommentService
 
-        _ = actor_user_id, actor_role
+        record = self._comment_repo().get(comment_id)
+        if record is None:
+            raise ValidationError("comment not found")
+        state = self.get_document_version(record.document_id, record.version)
+        if state is None:
+            raise ValidationError("comment document not found")
+        ensure_workflow_comment_read_access(
+            state,
+            context=record.context,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
         return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).get_detail(comment_id)
 
     def sync_docx_comments(
@@ -1173,7 +1445,12 @@ class DocumentsService:
         from .comment_extractors.docx_comment_reader import DocxCommentReader
         from .comment_sync_service import CommentSyncService
 
-        _ = actor_role
+        ensure_workflow_comment_read_access(
+            state,
+            context=WorkflowCommentContext.DOCX_EDIT,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
         source_docx = self._resolve_source_docx_artifact_path(state)
         if source_docx is None:
             return []
@@ -1196,6 +1473,12 @@ class DocumentsService:
     ) -> WorkflowCommentRecord:
         from .comment_service import WorkflowCommentService
 
+        ensure_workflow_comment_access(
+            state,
+            context=context,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
         return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).create_pdf_comment(
             state,
             context=context,
@@ -1217,10 +1500,44 @@ class DocumentsService:
     ) -> WorkflowCommentRecord:
         from .comment_service import WorkflowCommentService
 
-        _ = actor_role
+        current = self._comment_repo().get(comment_id)
+        if current is None:
+            raise ValidationError("comment not found")
+        state = self.get_document_version(current.document_id, current.version)
+        if state is None:
+            raise ValidationError("comment document not found")
+        ensure_workflow_comment_read_access(
+            state,
+            context=current.context,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
         return WorkflowCommentService(repository=self._comment_repo(), event_bus=self._event_bus).set_status(
             comment_id, new_status=new_status, actor_user_id=actor_user_id, note=note
         )
+
+    def set_workflow_comment_status_if_current(
+        self, comment_id: str, *, expected_updated_at: str, new_status: WorkflowCommentStatus,
+        actor_user_id: str, actor_role: SystemRole, note: str | None = None,
+    ) -> WorkflowCommentRecord:
+        with self._mutation_lock:
+            current = self._comment_repo().get(comment_id)
+            if current is None:
+                raise ValidationError("comment not found")
+            if current.updated_at.isoformat() != expected_updated_at:
+                raise CommentConflictError(current)
+            parent = self.get_document_version(current.document_id, current.version)
+            if parent is None:
+                raise ValidationError("comment document not found")
+            self.assert_workflow_action(
+                parent,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+                action="comments",
+            )
+            return self.set_workflow_comment_status(
+                comment_id, new_status=new_status, actor_user_id=actor_user_id, actor_role=actor_role, note=note
+            )
 
     # --- Tracked read flow ---
 
@@ -1259,6 +1576,11 @@ class DocumentsService:
 
     def get_pdf_read_progress(self, session_id: str) -> PdfReadProgress:
         return self._tracking_service().get_progress(session_id)
+
+    def get_tracked_pdf_read_session(self, session_id: str) -> TrackedPdfReadSession | None:
+        if self._repository is None:
+            return None
+        return self._repository.get_pdf_read_session(session_id)
 
     def finalize_tracked_pdf_read(self, session_id: str, *, source: str) -> DocumentReadReceipt | None:
         return self._tracking_service().finalize(session_id, source=source)

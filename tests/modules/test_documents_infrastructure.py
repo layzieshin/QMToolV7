@@ -122,8 +122,8 @@ class DocumentsInfrastructureTest(unittest.TestCase):
                 "DOC-INTAKE",
                 1,
                 source_docx,
-                actor_user_id="admin",
-                actor_role=SystemRole.ADMIN,
+                actor_user_id="qmb",
+                actor_role=SystemRole.QMB,
             )
             self.assertEqual(state.status, DocumentStatus.PLANNED)
 
@@ -133,8 +133,8 @@ class DocumentsInfrastructureTest(unittest.TestCase):
                 "DOC-INTAKE",
                 1,
                 newer_docx,
-                actor_user_id="admin",
-                actor_role=SystemRole.ADMIN,
+                actor_user_id="qmb",
+                actor_role=SystemRole.QMB,
             )
 
             artifacts = service.list_artifacts("DOC-INTAKE", 1)
@@ -255,8 +255,8 @@ class DocumentsInfrastructureTest(unittest.TestCase):
                 distribution_roles=["QMB", "USER"],
                 distribution_sites=["HQ"],
                 distribution_departments=["QA"],
-                actor_user_id="admin",
-                actor_role=SystemRole.ADMIN,
+                actor_user_id="qmb",
+                actor_role=SystemRole.QMB,
             )
             state = service.assign_workflow_roles(
                 state,

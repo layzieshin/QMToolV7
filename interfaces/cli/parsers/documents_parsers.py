@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse
 
-from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType, ValidityExtensionOutcome
+from modules.documents.api import ControlClass, DocumentStatus, DocumentType, ValidityExtensionOutcome
 from interfaces.cli.parsers.signature_parsers import add_sign_layout_args
 
 
@@ -100,7 +100,7 @@ def register_documents_parsers(sub: argparse._SubParsersAction) -> None:
     doc_extend = documents_sub.add_parser("annual-extend", help="Perform annual validity extension")
     doc_extend.add_argument("--document-id", required=True)
     doc_extend.add_argument("--version", type=int, required=True)
-    doc_extend.add_argument("--signature-present", action="store_true")
+    add_sign_layout_args(doc_extend)
     doc_extend.add_argument("--duration-days", type=int, default=365)
     doc_extend.add_argument("--reason", required=True)
     doc_extend.add_argument(

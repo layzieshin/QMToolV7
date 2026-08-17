@@ -236,11 +236,11 @@ class PdfViewerDialog(QDialog):
             return
         context = None
         if self._request.mode == "WORKFLOW_REVIEW":
-            from modules.documents.contracts import WorkflowCommentContext
+            from modules.documents.api import WorkflowCommentContext
 
             context = WorkflowCommentContext.PDF_REVIEW
         elif self._request.mode == "WORKFLOW_APPROVAL":
-            from modules.documents.contracts import WorkflowCommentContext
+            from modules.documents.api import WorkflowCommentContext
 
             context = WorkflowCommentContext.PDF_APPROVAL
         if context is None:
@@ -302,11 +302,11 @@ class PdfViewerDialog(QDialog):
 
     def _resolve_workflow_context(self):
         if self._request.mode == "WORKFLOW_REVIEW":
-            from modules.documents.contracts import WorkflowCommentContext
+            from modules.documents.api import WorkflowCommentContext
 
             return WorkflowCommentContext.PDF_REVIEW
         if self._request.mode == "WORKFLOW_APPROVAL":
-            from modules.documents.contracts import WorkflowCommentContext
+            from modules.documents.api import WorkflowCommentContext
 
             return WorkflowCommentContext.PDF_APPROVAL
         return None

@@ -159,7 +159,17 @@ Pfadleser in Modul-Wiring duerfen nicht weiter indirekt auf `settings.json` zugr
 
 **Alte JSON-Struktur entfernen:** Runtime-Reader/-Writer nach bestandenem Vergleich entfernen. Die Datei darf als versionierter Seed/Export im Paket bleiben, nicht als mutable Wahrheit.
 
-## J04: Documents-Workflowinstanzen, Assignments und Decisions normalisieren
+## J04-M1: Documents-Workflowinstanzen, Assignments und Decisions normalisieren
+
+> **Namensklarstellung:** Dieser Abschnitt ist der relationale Persistenzkoerper
+> **J04-M1**. Er ist **nicht** J04-M0.
+>
+> **J04-M0** (Transport, Actor, Backend-Ownership, Artefakte, Signaturen,
+> Documents-Read fuer Training, vollstaendige PyQt-HTTP-Migration) ist separat
+> dokumentiert in `docs/J04_M0_PATH_MATRIX.md` und `docs/J04_M0_ACCEPTANCE_REPORT.md`
+> und muss **abgeschlossen** sein, bevor J04-M1 startet.
+>
+> Historischer Kurzname „J04“ in aelteren Planfassungen meint diesen M1-Abschnitt.
 
 **Ziel:** `workflow_profile_json`, Actorpools und Entscheidungslisten aus `document_versions` herausloesen.
 

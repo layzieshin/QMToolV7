@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from interfaces.pyqt.presenters.documents_workflow_filter_presenter import DocumentsWorkflowFilterPresenter
 from interfaces.pyqt.presenters.documents_workflow_presenter import DocumentsWorkflowPresenter
@@ -31,6 +31,7 @@ class _State:
     status: DocumentStatus
     workflow_active: bool
     assignments: _Assignments
+    available_actions: frozenset[str] | None = field(default=None)
 
 
 class DocumentsWorkflowFilterPresenterTest(unittest.TestCase):
@@ -64,7 +65,7 @@ class DocumentsWorkflowPresenterVisibilityTest(unittest.TestCase):
     def setUp(self) -> None:
         self.presenter = DocumentsWorkflowPresenter()
 
-    def test_qmb_sees_new_without_selection_when_flag_true(self) -> None:
+    def test_create_only_from_backend_capability(self) -> None:
         visible = self.presenter.visible_actions_for_context(
             None,
             user_id="u-qmb",
@@ -72,127 +73,94 @@ class DocumentsWorkflowPresenterVisibilityTest(unittest.TestCase):
             can_create_new_documents=True,
         )
         self.assertEqual(visible, {"new"})
-
-    def test_admin_without_flag_does_not_see_new(self) -> None:
-        visible = self.presenter.visible_actions_for_context(
+        denied = self.presenter.visible_actions_for_context(
             None,
             user_id="u-admin",
             user_role=SystemRole.ADMIN,
             can_create_new_documents=False,
         )
-        self.assertNotIn("new", visible)
+        self.assertNotIn("new", denied)
 
-    def test_admin_with_flag_sees_new(self) -> None:
-        visible = self.presenter.visible_actions_for_context(
-            None,
-            user_id="u-admin",
-            user_role=SystemRole.ADMIN,
-            can_create_new_documents=True,
-        )
-        self.assertIn("new", visible)
-
-    def test_user_with_flag_sees_new(self) -> None:
-        visible = self.presenter.visible_actions_for_context(
-            None,
-            user_id="u-user",
-            user_role=SystemRole.USER,
-            can_create_new_documents=True,
-        )
-        self.assertIn("new", visible)
-
-    def test_owner_can_start_when_workflow_not_active(self) -> None:
+    def test_missing_available_actions_is_fail_closed(self) -> None:
         state = _State(
             owner_user_id="owner-1",
             status=DocumentStatus.PLANNED,
             workflow_active=False,
             assignments=_Assignments(editors=set(), reviewers=set(), approvers=set()),
+            available_actions=None,
         )
-        visible = self.presenter.visible_actions_for_context(state, user_id="owner-1", user_role=SystemRole.USER)
-        self.assertIn("start", visible)
-        self.assertNotIn("abort", visible)
+        visible = self.presenter.visible_actions_for_context(
+            state, user_id="owner-1", user_role=SystemRole.USER
+        )
+        self.assertEqual(visible, set())
 
-    def test_abort_visible_for_qmb_when_workflow_active(self) -> None:
+    def test_empty_available_actions_is_fail_closed(self) -> None:
         state = _State(
             owner_user_id="owner-1",
             status=DocumentStatus.IN_PROGRESS,
             workflow_active=True,
             assignments=_Assignments(editors={"ed-1"}, reviewers=set(), approvers=set()),
+            available_actions=frozenset(),
         )
         visible = self.presenter.visible_actions_for_context(
-            state,
-            user_id="u-qmb",
-            user_role=SystemRole.QMB,
-            can_create_new_documents=True,
+            state, user_id="ed-1", user_role=SystemRole.USER, can_create_new_documents=True
         )
-        self.assertIn("new", visible)
-        self.assertIn("abort", visible)
+        self.assertEqual(visible, {"new"})
 
-    def test_reviewer_sees_review_actions_in_review_phase(self) -> None:
+    def test_known_backend_actions_map_to_ui_keys(self) -> None:
         state = _State(
             owner_user_id="owner-1",
             status=DocumentStatus.IN_REVIEW,
             workflow_active=True,
             assignments=_Assignments(editors={"ed-1"}, reviewers={"rev-1"}, approvers={"app-1"}),
+            available_actions=frozenset(
+                {"open_source", "review_accept", "review_reject", "abort", "comments"}
+            ),
         )
         visible = self.presenter.visible_actions_for_context(state, user_id="rev-1", user_role=SystemRole.USER)
-        self.assertIn("edit", visible)
-        self.assertIn("review_accept", visible)
-        self.assertIn("review_reject", visible)
-        self.assertNotIn("approval_accept", visible)
-
-    def test_approver_sees_approval_actions_in_approval_phase(self) -> None:
-        state = _State(
-            owner_user_id="owner-1",
-            status=DocumentStatus.IN_APPROVAL,
-            workflow_active=True,
-            assignments=_Assignments(editors={"ed-1"}, reviewers={"rev-1"}, approvers={"app-1"}),
+        self.assertEqual(
+            visible,
+            {"edit", "review_accept", "review_reject", "abort", "comments"},
         )
-        visible = self.presenter.visible_actions_for_context(state, user_id="app-1", user_role=SystemRole.USER)
-        self.assertIn("edit", visible)
-        self.assertIn("approval_accept", visible)
-        self.assertIn("approval_reject", visible)
 
-    def test_owner_does_not_get_start_outside_planned_status(self) -> None:
+    def test_unknown_backend_actions_are_ignored(self) -> None:
         state = _State(
             owner_user_id="owner-1",
-            status=DocumentStatus.IN_REVIEW,
+            status=DocumentStatus.PLANNED,
             workflow_active=False,
-            assignments=_Assignments(editors=set(), reviewers={"rev-1"}, approvers=set()),
+            assignments=_Assignments(editors=set(), reviewers=set(), approvers=set()),
+            available_actions=frozenset({"start", "not_a_real_action"}),
         )
-        visible = self.presenter.visible_actions_for_context(state, user_id="owner-1", user_role=SystemRole.USER)
-        self.assertNotIn("start", visible)
+        visible = self.presenter.visible_actions_for_context(state, user_id="owner-1")
+        self.assertEqual(visible, {"start"})
 
-    def test_editor_open_edit_depends_on_phase_assignment(self) -> None:
-        in_progress = _State(
+    def test_local_role_does_not_unlock_mutations_without_actions(self) -> None:
+        state = _State(
             owner_user_id="owner-1",
             status=DocumentStatus.IN_PROGRESS,
             workflow_active=True,
-            assignments=_Assignments(editors={"ed-1"}, reviewers={"rev-1"}, approvers={"app-1"}),
+            assignments=_Assignments(editors={"ed-1"}, reviewers=set(), approvers=set()),
+            available_actions=None,
         )
-        in_review = _State(
-            owner_user_id="owner-1",
-            status=DocumentStatus.IN_REVIEW,
-            workflow_active=True,
-            assignments=_Assignments(editors={"ed-1"}, reviewers={"rev-1"}, approvers={"app-1"}),
+        visible = self.presenter.visible_actions_for_context(
+            state, user_id="u-qmb", user_role=SystemRole.QMB, can_create_new_documents=True
         )
-        visible_in_progress = self.presenter.visible_actions_for_context(
-            in_progress,
-            user_id="ed-1",
-            user_role=SystemRole.USER,
-        )
-        visible_in_review = self.presenter.visible_actions_for_context(
-            in_review,
-            user_id="ed-1",
-            user_role=SystemRole.USER,
-        )
-        self.assertIn("edit", visible_in_progress)
-        self.assertNotIn("edit", visible_in_review)
+        self.assertEqual(visible, {"new"})
+        self.assertNotIn("abort", visible)
+        self.assertNotIn("edit", visible)
 
     def test_default_artifact_priority_prefers_signed_pdf_in_review_and_approval(self) -> None:
         review_order = self.presenter.default_artifact_priority(DocumentStatus.IN_REVIEW)
         approval_order = self.presenter.default_artifact_priority(DocumentStatus.IN_APPROVAL)
         self.assertEqual(review_order[:2], [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF])
         self.assertEqual(approval_order[:2], [ArtifactType.SIGNED_PDF, ArtifactType.SOURCE_PDF])
+
+    def test_presenter_module_does_not_import_compute_available_actions(self) -> None:
+        import interfaces.pyqt.presenters.documents_workflow_presenter as mod
+        import inspect
+
+        source = inspect.getsource(mod)
+        self.assertNotIn("compute_available_actions", source)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,7 @@ assert _spec.loader is not None
 _spec.loader.exec_module(_shared)
 run_cli = _shared.run_cli
 
-
+@unittest.skip("not_in_m0: Legacy local documents CLI workflow is outside reduced J04-M0 scope")
 class DocumentsCliTest(unittest.TestCase):
     def setUp(self) -> None:
         run_cli("logout")
@@ -864,6 +865,82 @@ class DocumentsCliTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 6)
         self.assertIn("fail-closed", result.stdout.lower())
+
+
+class DocumentsCliM0ContractTest(unittest.TestCase):
+    def setUp(self) -> None:
+        run_cli("logout")
+
+    def tearDown(self) -> None:
+        run_cli("logout")
+
+    @staticmethod
+    def _login(username: str, password: str) -> None:
+        result = run_cli("login", "--username", username, "--password", password)
+        assert result.returncode == 0, result.stderr + result.stdout
+
+    @staticmethod
+    def _session_env() -> dict[str, str]:
+        env = dict(os.environ)
+        env["QMTOOL_SESSION_TOKEN"] = "dummy-session-token"
+        return env
+
+    def test_documents_create_requires_session_token_even_after_login(self) -> None:
+        self._login("admin", "adminpass01")
+        result = run_cli("documents", "create-version", "--document-id", "DOC-E2E-TOKEN", "--version", "1")
+        self.assertEqual(result.returncode, 6)
+        self.assertIn("QMTOOL_SESSION_TOKEN is required", result.stdout)
+
+    def test_profile_create_is_blocked_under_reduced_m0_scope(self) -> None:
+        self._login("admin", "adminpass01")
+        result = run_cli(
+            "documents",
+            "profile-create",
+            "--definition-json",
+            "missing.json",
+            "--change-reason",
+            "x",
+            env=self._session_env(),
+        )
+        self.assertEqual(result.returncode, 6)
+        self.assertIn("profile-create", result.stdout)
+
+    def test_header_get_is_blocked_under_reduced_m0_scope(self) -> None:
+        self._login("admin", "adminpass01")
+        result = run_cli(
+            "documents",
+            "header-get",
+            "--document-id",
+            "DOC-E2E-HEADER",
+            env=self._session_env(),
+        )
+        self.assertEqual(result.returncode, 6)
+        self.assertIn("header-get", result.stdout)
+
+    def test_artifact_and_change_request_reads_are_blocked(self) -> None:
+        self._login("admin", "adminpass01")
+        artifacts = run_cli(
+            "documents",
+            "pool-list-artifacts",
+            "--document-id",
+            "DOC-E2E-ART",
+            "--version",
+            "1",
+            env=self._session_env(),
+        )
+        self.assertEqual(artifacts.returncode, 6)
+        self.assertIn("artifact reads", artifacts.stdout)
+        changes = run_cli(
+            "documents",
+            "change-request-list",
+            "--document-id",
+            "DOC-E2E-CR",
+            "--version",
+            "1",
+            env=self._session_env(),
+        )
+        self.assertEqual(changes.returncode, 6)
+        self.assertIn("change-request-list", changes.stdout)
 
 
 if __name__ == "__main__":

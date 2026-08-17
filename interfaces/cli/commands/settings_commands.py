@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from modules.documents.contracts import SystemRole
+from modules.documents.api import SystemRole
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 from qm_platform.settings.errors import SettingsDomainError
 from qm_platform.settings.settings_service import SettingsService

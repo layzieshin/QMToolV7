@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, is_dataclass
 
-from modules.documents.contracts import SystemRole
+from modules.documents.api import SystemRole
 from modules.usermanagement.api import is_effective_qmb
 
 

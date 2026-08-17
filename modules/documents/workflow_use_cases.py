@@ -13,35 +13,11 @@ from .contracts import (
     WorkflowProfile,
 )
 from .errors import InvalidTransitionError, PermissionDeniedError, ValidationError
+from .eventing import stamp_event_on_state as _stamp_event
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _stamp_event(
-    state: DocumentVersionState,
-    event: object,
-    actor_user_id: str | None = None,
-) -> DocumentVersionState:
-    """Stamp last_event_id/at/actor onto the state so the audit trail stays current."""
-    if event is None:
-        return state
-    try:
-        occurred_at_raw = getattr(event, "occurred_at_utc", None)
-        occurred_at: datetime | None = datetime.fromisoformat(str(occurred_at_raw)) if occurred_at_raw else None
-        if occurred_at is not None and occurred_at.tzinfo is None:
-            occurred_at = occurred_at.replace(tzinfo=timezone.utc)
-    except Exception:
-        occurred_at = _utcnow()
-    event_id = getattr(event, "event_id", None)
-    event_actor = getattr(event, "actor_user_id", None)
-    return replace(
-        state,
-        last_event_id=str(event_id) if event_id else state.last_event_id,
-        last_event_at=occurred_at if occurred_at else state.last_event_at,
-        last_actor_user_id=actor_user_id or event_actor or state.last_actor_user_id,
-    )
 
 
 class DocumentsWorkflowUseCases:
@@ -412,8 +388,8 @@ class DocumentsWorkflowUseCases:
     ) -> DocumentVersionState:
         if state.status != DocumentStatus.APPROVED:
             raise InvalidTransitionError("archiving is only allowed from APPROVED")
-        if actor_role not in (SystemRole.QMB, SystemRole.ADMIN):
-            raise PermissionDeniedError("only QMB or ADMIN can archive approved documents")
+        if actor_role != SystemRole.QMB:
+            raise PermissionDeniedError("only an effective QMB can archive approved documents")
         archived_at = _utcnow()
         updated = replace(
             state,
@@ -457,8 +433,6 @@ class DocumentsWorkflowUseCases:
             raise InvalidTransitionError("annual validity check is only allowed in APPROVED")
         if not actor_user_id.strip():
             raise ValidationError("annual validity extension requires actor_user_id")
-        if not signature_present:
-            raise ValidationError("annual validity extension requires a signature")
         if duration_days <= 0:
             raise ValidationError("annual validity extension requires a positive duration_days")
         normalized_reason = reason.strip()
@@ -468,6 +442,8 @@ class DocumentsWorkflowUseCases:
             raise InvalidTransitionError("new version is required; annual extension is not allowed")
         if state.extension_count >= 3:
             return state, True
+        if not signature_present:
+            raise ValidationError("annual validity extension requires a signature")
         now = _utcnow()
         base = state.valid_until or now
         if base < now:
@@ -513,9 +489,27 @@ class DocumentsWorkflowUseCases:
         )
         return updated, False
 
-    def create_new_version_after_archive(self, state: DocumentVersionState, next_version: int) -> DocumentVersionState:
+    def create_new_version_after_archive(
+        self,
+        state: DocumentVersionState,
+        next_version: int,
+        *,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+    ) -> DocumentVersionState:
         if state.status != DocumentStatus.ARCHIVED:
             raise InvalidTransitionError("new version can only be created from ARCHIVED")
+        if state.superseded_by_version is not None:
+            raise ValidationError(
+                f"archived version already superseded by version {state.superseded_by_version}"
+            )
+        next_version = int(next_version)
+        if next_version <= int(state.version):
+            raise ValidationError("next_version must be greater than the archived version")
+        existing = self._service.get_document_version(state.document_id, next_version)
+        if existing is not None:
+            raise ValidationError(f"document version already exists: {next_version}")
+
         created = DocumentVersionState(
             document_id=state.document_id,
             version=next_version,
@@ -524,9 +518,35 @@ class DocumentsWorkflowUseCases:
             doc_type=state.doc_type,
             control_class=state.control_class,
             workflow_profile_id=state.workflow_profile_id,
+            owner_user_id=state.owner_user_id,
             created_at=_utcnow(),
+            created_by=actor_user_id,
         )
         with self._service._write_transaction():
+            event = self._service._publish(
+                "domain.documents.workflow.new_version_after_archive.v1",
+                created,
+                {
+                    "from_version": state.version,
+                    "next_version": next_version,
+                    "actor_role": actor_role.value if actor_role is not None else None,
+                },
+                actor_user_id=actor_user_id,
+            )
+            source_updated = replace(state, superseded_by_version=next_version)
+            source_updated = _stamp_event(source_updated, event, actor_user_id)
+            created = _stamp_event(created, event, actor_user_id)
+            if not created.last_event_id:
+                raise ValidationError("new version must receive a non-empty event token")
+            self._service._store_state(source_updated)
             self._service._store_state(created)
-            self._service._sync_registry(created, None)
+            self._service._sync_registry(source_updated, event)
+            self._service._sync_registry(created, event)
+        self._service._emit_audit(
+            action="documents.workflow.new_version_after_archive",
+            actor=str(actor_user_id or "system"),
+            target=f"{created.document_id}:{created.version}",
+            result="ok",
+            reason=f"from:{state.version};role:{(actor_role.value if actor_role is not None else 'none')}",
+        )
         return created

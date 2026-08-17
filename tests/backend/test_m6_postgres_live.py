@@ -11,19 +11,16 @@ from modules.usermanagement import postgres_schema as pgs
 from qm_platform.runtime.backend_bootstrap import wire_backend_usermanagement
 from src.backend.api import create_app
 from src.backend.bootstrap import build_platform_ports
-from tests.modules.usermanagement.test_postgres_schema_live import (
-    _cleanup_all,
-    _prepare_environment,
-    _require_dsn,
-)
+from tests.postgres_live_support import LivePostgresEnv
 
 pytestmark = pytest.mark.postgres
 
 
 @pytest.fixture
-def runtime_env(tmp_path, monkeypatch):
-    admin_dsn = _require_dsn()
-    migrator_dsn, runtime_dsn = _prepare_environment(admin_dsn)
+def runtime_env(tmp_path, monkeypatch, live_postgres_env: LivePostgresEnv):
+    admin_dsn = live_postgres_env.admin_dsn
+    migrator_dsn = live_postgres_env.migrator_dsn
+    runtime_dsn = live_postgres_env.runtime_dsn
     pgs.migrate_usermanagement_schema(migrator_dsn)
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     monkeypatch.setenv("QMTOOL_LICENSE_MODE", "dev")
@@ -31,7 +28,6 @@ def runtime_env(tmp_path, monkeypatch):
     monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_USERNAME", "opsadmin")
     monkeypatch.setenv("QMTOOL_BOOTSTRAP_ADMIN_PASSWORD", "ops-secret-1")
     yield admin_dsn, migrator_dsn, runtime_dsn
-    _cleanup_all(admin_dsn)
 
 
 def _wired_client(runtime_dsn):

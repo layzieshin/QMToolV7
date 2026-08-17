@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QLineEdit, QVBoxLayout
 
-from modules.documents.contracts import DocumentType
+from modules.documents.api import DocumentType
 
 
 

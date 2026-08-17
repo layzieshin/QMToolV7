@@ -46,3 +46,6 @@ def _ensure_pg_dsn() -> None:
 _PYTEST_BUILD_DIR.mkdir(parents=True, exist_ok=True)
 _load_dotenv(_ENV_PATH)
 _ensure_pg_dsn()
+
+# Central destructive PostgreSQL live fixtures (J04-M0 M3).
+pytest_plugins = ("postgres_live_support",)

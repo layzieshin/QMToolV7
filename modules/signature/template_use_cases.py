@@ -8,12 +8,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from modules.usermanagement.api import UserContext, require_confirmed_user_context
+
 from .contracts import LabelLayoutInput, SignRequest, SignResult, SignatureAsset, SignaturePlacementInput, UserSignatureTemplate
 from .errors import SignatureAssetError, SignatureTemplateError
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _confirmed_actor(actor: UserContext) -> UserContext:
+    return require_confirmed_user_context(actor)
+
+
+def _is_technical_admin(actor: UserContext) -> bool:
+    context = _confirmed_actor(actor)
+    return any(str(role).strip().upper() == "ADMIN" for role in context.global_roles)
 
 
 class SignatureTemplateUseCases:
@@ -120,6 +131,83 @@ class SignatureTemplateUseCases:
             raise SignatureTemplateError("signature template storage is not configured")
         self._service.repository.delete_template(template_id)
 
+    def delete_signature_template_for_actor(self, template_id: str, actor: UserContext) -> None:
+        if self._service.repository is None:
+            raise SignatureTemplateError("signature template storage is not configured")
+        actor = _confirmed_actor(actor)
+        current = self._service.repository.get_template(template_id)
+        if current is None:
+            raise SignatureTemplateError(f"unknown signature template: {template_id}")
+        if current.scope == "global":
+            if not _is_technical_admin(actor):
+                raise SignatureTemplateError("only technical admins may manage global templates")
+        elif current.owner_user_id != actor.user_id:
+            raise SignatureTemplateError("template ownership mismatch")
+        self._service.repository.delete_template(template_id)
+
+    def create_user_signature_template_for_actor(
+        self,
+        *,
+        actor: UserContext,
+        name: str,
+        placement: SignaturePlacementInput,
+        layout: LabelLayoutInput,
+        signature_asset_id: str | None,
+        scope: str = "user",
+    ) -> UserSignatureTemplate:
+        if scope == "global" and not _is_technical_admin(actor):
+            raise SignatureTemplateError("only technical admins may create global templates")
+        actor = _confirmed_actor(actor)
+        return self.create_user_signature_template(
+            owner_user_id=actor.user_id,
+            name=name,
+            placement=placement,
+            layout=layout,
+            signature_asset_id=signature_asset_id,
+            scope=scope,
+        )
+
+    def update_signature_template_for_actor(
+        self,
+        *,
+        actor: UserContext,
+        template_id: str,
+        name: str | None = None,
+        placement: SignaturePlacementInput | None = None,
+        layout: LabelLayoutInput | None = None,
+        signature_asset_id: str | None = None,
+    ) -> UserSignatureTemplate:
+        if self._service.repository is None:
+            raise SignatureTemplateError("signature template storage is not configured")
+        current = self._service.repository.get_template(template_id)
+        if current is None:
+            raise SignatureTemplateError(f"unknown signature template: {template_id}")
+        actor = _confirmed_actor(actor)
+        actor_id = actor.user_id
+        if current.scope == "global":
+            if not _is_technical_admin(actor):
+                raise SignatureTemplateError("only technical admins may manage global templates")
+        elif current.owner_user_id != actor_id:
+            raise SignatureTemplateError("template ownership mismatch")
+        return self.update_signature_template(
+            template_id=template_id,
+            owner_user_id=current.owner_user_id,
+            name=name,
+            placement=placement,
+            layout=layout,
+            signature_asset_id=signature_asset_id,
+        )
+
+    def copy_global_template_for_actor(
+        self, template_id: str, actor: UserContext, name: str | None = None
+    ) -> UserSignatureTemplate:
+        actor = _confirmed_actor(actor)
+        return self.copy_global_template_to_user(
+            template_id,
+            actor.user_id,
+            name=name,
+        )
+
     def update_signature_template(
         self,
         *,
@@ -171,12 +259,34 @@ class SignatureTemplateUseCases:
             raise SignatureTemplateError(f"unknown signature template: {template_id}")
         if source.scope != "global":
             raise SignatureTemplateError("template is not global")
+        asset_id = source.signature_asset_id
+        if asset_id is not None:
+            source_asset = self._service.repository.get_asset(asset_id)
+            if source_asset is None:
+                raise SignatureTemplateError(f"unknown signature asset: {asset_id}")
+            if source_asset.owner_user_id != owner_user_id:
+                if self._service.secure_store is None:
+                    raise SignatureTemplateError("secure store is not configured")
+                try:
+                    payload = self._service.secure_store.get_bytes(source_asset.storage_key)
+                    storage_key = self._service.secure_store.put_bytes(owner_user_id, ".png", payload)
+                except OSError as exc:
+                    raise SignatureTemplateError("global signature asset could not be copied") from exc
+                copied_asset = replace(
+                    source_asset,
+                    asset_id=uuid4().hex,
+                    owner_user_id=owner_user_id,
+                    storage_key=storage_key,
+                    created_at=_utcnow(),
+                )
+                self._service.repository.add_asset(copied_asset)
+                asset_id = copied_asset.asset_id
         return self.create_user_signature_template(
             owner_user_id=owner_user_id,
             name=name or f"{source.name}-copy",
             placement=source.placement,
             layout=source.layout,
-            signature_asset_id=source.signature_asset_id,
+            signature_asset_id=asset_id,
             scope="user",
         )
 

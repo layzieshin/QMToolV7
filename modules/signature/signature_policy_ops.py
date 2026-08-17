@@ -88,12 +88,8 @@ class SignaturePolicyOps:
 
     def resolve_runtime_layout(self, layout: LabelLayoutInput, *, signer_user: str | None = None) -> LabelLayoutInput:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        resolved_name = layout.name_text
-        resolved_date = layout.date_text
-        if layout.show_name and not resolved_name:
-            resolved_name = signer_user or ""
-        if layout.show_date and not resolved_date:
-            resolved_date = timestamp
+        resolved_name = (signer_user or "") if layout.show_name else layout.name_text
+        resolved_date = timestamp if layout.show_date else layout.date_text
         return LabelLayoutInput(
             show_signature=layout.show_signature,
             show_name=layout.show_name,

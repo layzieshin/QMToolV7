@@ -124,6 +124,7 @@ def stop_documents_module(container) -> None:
 
 
 def create_documents_module_contract() -> ModuleContract:
+    """Full documents contract for backend ownership of documents.db (J04-M0 Option A)."""
     return ModuleContract(
         module_id="documents",
         version="1.0.0",
@@ -158,5 +159,41 @@ def create_documents_module_contract() -> ModuleContract:
         start=start_documents_module,
         stop=stop_documents_module,
         database_contributions=(DOCUMENTS_DATABASE_CONTRIBUTION,),
+    )
+
+
+def create_documents_client_module_contract() -> ModuleContract:
+    """Desktop/CLI documents contract: settings + HTTP ports, no local documents.db."""
+    return ModuleContract(
+        module_id="documents",
+        version="1.0.0",
+        min_platform_version="1.0.0",
+        max_platform_version=None,
+        required_ports=[
+            "logger",
+            "audit_logger",
+            "event_bus",
+            "settings_service",
+        ],
+        provided_ports=[
+            "documents_pool_api",
+            "documents_artifacts_api",
+            "documents_read_api",
+            "documents_comments_api",
+            "documents_workflow_api",
+        ],
+        required_capabilities=[],
+        provided_capabilities=[
+            "documents.workflow.manage",
+            "documents.version.manage",
+            "documents.comments.manage",
+            "documents.read.track",
+        ],
+        settings_contribution=DOCUMENTS_SETTINGS_CONTRIBUTION,
+        license_tag=None,
+        register=register_documents_ports,
+        start=start_documents_module,
+        stop=stop_documents_module,
+        database_contributions=(),
     )
 

@@ -120,7 +120,7 @@ def _ensure_dev_license(license_file: Path, keyring: PublicKeyring) -> None:
     license_file.write_text(json.dumps(signed, indent=2, ensure_ascii=True), encoding="utf-8")
 
 
-def build_container() -> RuntimeContainer:
+def build_container(*, client_runtime_profile: str = "legacy") -> RuntimeContainer:
     container = RuntimeContainer()
     app_home = runtime_home()
     resources = resource_root()
@@ -183,4 +183,14 @@ def build_container() -> RuntimeContainer:
     container.register_port("license_guard", license_guard)
     container.register_port("app_home", app_home)
     container.register_port("resource_root", resources)
+    # J04-M0: shipped active client profile is backend (HTTP Documents/Signature).
+    from qm_platform.runtime.client_runtime_profile import CLIENT_RUNTIME_PROFILE_PORT, normalize_client_runtime_profile
+
+    container.register_port(CLIENT_RUNTIME_PROFILE_PORT, normalize_client_runtime_profile(client_runtime_profile))
+    # J04-M0-P1: inject HTTP documents/signature ports without modules→interfaces import.
+    from interfaces.clients.documents_http_ports import register_documents_http_ports
+    from interfaces.clients.signature_http_ports import register_signature_http_ports
+
+    container.register_port("documents_client_ports_registrar", register_documents_http_ports)
+    container.register_port("signature_client_ports_registrar", register_signature_http_ports)
     return container

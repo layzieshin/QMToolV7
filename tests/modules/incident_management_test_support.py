@@ -83,6 +83,10 @@ def build_incident_test_container(
     container.register_port("license_service", _LicenseAllowAll())
     container.register_port("app_home", root)
     container.register_port("resource_root", root)
+    # This fixture composes the full in-process module graph.  Make the
+    # Documents database owner explicit; product client profiles use the HTTP
+    # registrar instead.
+    container.register_port("documents_runtime_owner", "backend")
     container.register_port("usermanagement_service", _FakeUserManagement(user))
 
     lifecycle = LifecycleManager(container)

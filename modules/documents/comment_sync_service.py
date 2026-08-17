@@ -84,6 +84,7 @@ class CommentSyncService:
                 created_at=r.source_created_at or r.created_at,
                 preview_text=r.preview_text,
                 status=r.status,
+                updated_at=r.updated_at,
             )
             for r in records
         ]

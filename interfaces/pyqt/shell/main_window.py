@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QDialog,
@@ -30,12 +30,19 @@ from interfaces.pyqt.shell.visibility_policy import ContributionVisibilityPolicy
 from interfaces.pyqt.logging_adapter import get_logger
 from interfaces.pyqt.widgets.force_password_change_dialog import ForcePasswordChangeDialog
 from interfaces.pyqt.widgets.register_dialog import RegisterDialog
+from interfaces.clients.auth_messages import user_facing_auth_message
 
 _CONTRIBUTION_ROLE = Qt.ItemDataRole.UserRole + 1
 
 
 class _LoginDialog(QDialog):
-    def __init__(self, usermanagement_service, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        usermanagement_service,
+        parent: QWidget | None = None,
+        *,
+        allow_local_register: bool = True,
+    ) -> None:
         super().__init__(parent)
         self._um = usermanagement_service
         self.setWindowTitle("Anmelden")
@@ -43,8 +50,9 @@ class _LoginDialog(QDialog):
         self._pw = QLineEdit()
         self._pw.setEchoMode(QLineEdit.EchoMode.Password)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        register_btn = buttons.addButton("Neu registrieren...", QDialogButtonBox.ButtonRole.ActionRole)
-        register_btn.clicked.connect(self._open_register)
+        if allow_local_register:
+            register_btn = buttons.addButton("Neu registrieren...", QDialogButtonBox.ButtonRole.ActionRole)
+            register_btn.clicked.connect(self._open_register)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form = QFormLayout()
@@ -76,6 +84,13 @@ class MainWindow(QMainWindow):
         self._log = get_logger(__name__)
         self._host = host
         ordered = all_contributions()
+        try:
+            enabled_ids = frozenset(
+                self._host.require_container().get_port("enabled_pyqt_contribution_ids")
+            )
+        except (KeyError, RuntimeError, TypeError):
+            enabled_ids = frozenset(c.contribution_id for c in ordered)
+        ordered = [c for c in ordered if c.contribution_id in enabled_ids]
         self._all_contributions: dict[str, QtModuleContribution] = {c.contribution_id: c for c in ordered}
         self._visible_ids: list[str] = []
         self._lazy_widgets: dict[str, QWidget] = {}
@@ -85,7 +100,12 @@ class MainWindow(QMainWindow):
         self._preferences = ShellPreferences()
         self._debug_toggle_enabled = self._preferences.load_admin_debug_toggle()
         self._visibility_policy = ContributionVisibilityPolicy()
-        self._session = SessionCoordinator(self._um())
+        backend_session = None
+        try:
+            backend_session = self._host.require_container().get_port("backend_session_api")
+        except Exception:  # noqa: BLE001
+            backend_session = None
+        self._session = SessionCoordinator(self._um(), backend_session=backend_session)
 
         self.setWindowTitle("QM-Tool")
         self.resize(1240, 760)
@@ -117,7 +137,11 @@ class MainWindow(QMainWindow):
         # Enforce explicit login every start.
         self._force_logged_out()
         self._refresh_shell_for_session()
-        self._prompt_login(required=True)
+        # ``main`` shows the shell only after construction. Opening a modal
+        # child dialog here would block ``window.show()`` and can leave both
+        # parent and login dialog invisible on Windows. Defer it to the first
+        # event-loop tick, after the shell has been shown.
+        QTimer.singleShot(0, lambda: self._prompt_login(required=True))
 
     def _apply_stylesheet(self) -> None:
         path = Path(__file__).with_name("styles.qss")
@@ -250,7 +274,11 @@ class MainWindow(QMainWindow):
 
     def _prompt_login(self, *, required: bool) -> None:
         while True:
-            dlg = _LoginDialog(self._um(), self)
+            dlg = _LoginDialog(
+                self._um(),
+                self,
+                allow_local_register=not self._session.uses_backend_session,
+            )
             result = dlg.exec()
             if result != QDialog.DialogCode.Accepted:
                 if required:
@@ -263,25 +291,24 @@ class MainWindow(QMainWindow):
             try:
                 user = self._session.login(username, password)
                 if user is None:
-                    known = next(
-                        (
-                            entry
-                            for entry in self._um().list_users()
-                            if str(getattr(entry, "username", "")).strip().lower() == username.strip().lower()
-                        ),
-                        None,
-                    )
-                    if known is not None and not bool(getattr(known, "is_active", True)):
-                        raise RuntimeError("Konto noch nicht freigeschaltet. Bitte warten Sie auf die Admin-Freigabe.")
-                    raise RuntimeError("Ungültige Zugangsdaten")
+                    raise RuntimeError("Ungültige Zugangsdaten.")
             except Exception as exc:  # noqa: BLE001
-                QMessageBox.warning(self, "Anmeldung fehlgeschlagen", str(exc))
+                QMessageBox.warning(self, "Anmeldung fehlgeschlagen", user_facing_auth_message(exc))
                 continue
             if bool(getattr(user, "must_change_password", False)):
-                dlg = ForcePasswordChangeDialog(self._um(), user, self)
+                change_pw = (
+                    self._session.change_password if self._session.uses_backend_session else None
+                )
+                dlg = ForcePasswordChangeDialog(
+                    self._um(),
+                    user,
+                    self,
+                    change_password=change_pw,
+                    require_current_password=change_pw is None,
+                )
                 if dlg.exec() != QDialog.DialogCode.Accepted:
                     try:
-                        self._um().logout()
+                        self._session.force_logged_out()
                     except Exception:  # noqa: BLE001
                         self._log.exception("Logout after cancelled password change failed")
                     self._refresh_shell_for_session()
@@ -289,15 +316,38 @@ class MainWindow(QMainWindow):
                 user = self._current_user()
                 if user is None:
                     continue
-            self._refresh_shell_for_session()
-            self._maybe_show_backup_reminder_modal()
+                if bool(getattr(user, "must_change_password", False)):
+                    continue
+            try:
+                self._refresh_shell_for_session()
+            except Exception as exc:  # noqa: BLE001
+                self._log.exception("Shell refresh after login failed")
+                QMessageBox.critical(
+                    self,
+                    "Anmeldung",
+                    "Anmeldung erfolgreich, aber die Oberflaeche konnte nicht geladen werden.\n\n"
+                    f"{exc}",
+                )
+                return
+            # Defer modal dialogs until the login dialog has fully closed
+            # (avoids native WM_DESTROY crashes on some Windows/Qt setups).
+            QTimer.singleShot(250, self._maybe_show_backup_reminder_modal)
             return
 
     def _widget_for(self, contribution_id: str) -> QWidget:
         if contribution_id in self._lazy_widgets:
             return self._lazy_widgets[contribution_id]
         c = self._all_contributions[contribution_id]
-        w = c.factory(self._host.require_container())
+        try:
+            w = c.factory(self._host.require_container())
+        except Exception as exc:  # noqa: BLE001
+            self._log.exception("Contribution factory failed for %s", contribution_id)
+            QMessageBox.critical(
+                self,
+                "Modul konnte nicht geladen werden",
+                f"{c.title}:\n{exc}",
+            )
+            return self._locked
         # Prevent contribution widgets from forcing oversized minimum geometry
         # onto the shell window on small/limited monitor work areas.
         w.setMinimumSize(0, 0)
@@ -327,7 +377,7 @@ class MainWindow(QMainWindow):
 
     def _on_sign_out(self) -> None:
         try:
-            self._um().logout()
+            self._session.force_logged_out()
         except Exception:  # noqa: BLE001
             self._log.exception("Sign-out logout failed")
         self._refresh_shell_for_session()
@@ -337,39 +387,43 @@ class MainWindow(QMainWindow):
         if not self._stopping:
             self._stopping = True
             try:
-                self._um().logout()
+                self._session.force_logged_out()
             except Exception:  # noqa: BLE001
                 self._log.exception("Logout on close failed")
             self._host.stop()
         super().closeEvent(event)
 
     def _maybe_show_backup_reminder_modal(self) -> None:
-        if self._backup_reminder_shown_for_session:
-            return
-        user = self._current_user()
-        if user is None or normalize_role(getattr(user, "role", None)) != "ADMIN":
-            return
-        container = self._host.require_container()
-        if not container.has_port("backup_reminder_service"):
-            return
-        status = container.get_port("backup_reminder_service").status()
-        if not status.is_overdue:
-            return
-        self._backup_reminder_shown_for_session = True
-        days_text = (
-            str(status.days_since_last_backup)
-            if status.days_since_last_backup is not None
-            else "noch kein"
-        )
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Logs-Backup Erinnerung")
-        box.setText(
-            f"Logs-Backup ueberfaellig (letztes Backup: {days_text} Tage).\n"
-            "Bitte jetzt ein Backup erstellen."
-        )
-        now_btn = box.addButton("Jetzt Backup erstellen", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Spaeter", QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is now_btn:
-            self.navigate_to_contribution("platform.audit_logs")
+        try:
+            if self._backup_reminder_shown_for_session:
+                return
+            user = self._current_user()
+            if user is None or normalize_role(getattr(user, "role", None)) != "ADMIN":
+                return
+            container = self._host.require_container()
+            if not container.has_port("backup_reminder_service"):
+                return
+            status = container.get_port("backup_reminder_service").status()
+            if not status.is_overdue:
+                return
+            self._backup_reminder_shown_for_session = True
+            days_text = (
+                str(status.days_since_last_backup)
+                if status.days_since_last_backup is not None
+                else "noch kein"
+            )
+            # Parent-less box: avoids destroying a child dialog while the shell
+            # is still settling after login (native crash on some Windows builds).
+            answer = QMessageBox.warning(
+                None,
+                "Logs-Backup Erinnerung",
+                f"Logs-Backup ueberfaellig (letztes Backup: {days_text} Tage).\n"
+                "Bitte jetzt ein Backup erstellen.\n\n"
+                "OK = Audit & Logs oeffnen, Abbrechen = spaeter.",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer == QMessageBox.StandardButton.Ok:
+                QTimer.singleShot(0, lambda: self.navigate_to_contribution("platform.audit_logs"))
+        except Exception:  # noqa: BLE001
+            self._log.exception("Backup reminder modal failed")

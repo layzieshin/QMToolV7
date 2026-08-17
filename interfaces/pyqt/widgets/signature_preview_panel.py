@@ -6,7 +6,7 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QLabel, QPlainTextEdit
 
 from interfaces.pyqt.widgets.signature_placement_dialog import compute_label_local_position
-from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
+from modules.signature.api import LabelLayoutInput, SignaturePlacementInput
 
 
 def render_signature_settings_preview(

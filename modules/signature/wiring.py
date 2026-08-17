@@ -8,8 +8,44 @@ from .secure_store import EncryptedSignatureBlobStore
 from .service import SignatureServiceV2
 from .sqlite_repository import SQLiteSignatureRepository
 
+# Explicit in-process opt-in for tests/dev harnesses. Never a free product env var.
+def _should_register_sqlite(container) -> bool:
+    if container.has_port("signature_runtime_owner"):
+        if container.get_port("signature_runtime_owner") == "backend":
+            return True
+    if container.has_port("signature_allow_inprocess_sqlite"):
+        return bool(container.get_port("signature_allow_inprocess_sqlite"))
+    # Backend client profile never opens local signature SQLite.
+    if container.has_port("client_runtime_profile"):
+        profile = str(container.get_port("client_runtime_profile") or "").strip().lower()
+        if profile == "backend":
+            return False
+        if profile == "legacy":
+            return True
+    # Default without profile: keep prior desktop behavior for legacy/test paths.
+    return True
+
 
 def register_signature_ports(container) -> None:
+    if _should_register_sqlite(container):
+        _register_signature_sqlite_ports(container)
+        return
+    if not container.has_port("signature_client_ports_registrar"):
+        raise RuntimeError(
+            "signature client ports registrar missing; "
+            "composition root must register signature_client_ports_registrar "
+            "before activating the signature client module"
+        )
+    if container.has_port("signature_client_ports_registrar"):
+        registrar = container.get_port("signature_client_ports_registrar")
+    else:
+        raise RuntimeError("signature client ports registrar missing")
+    if not callable(registrar):
+        raise RuntimeError("signature_client_ports_registrar must be callable")
+    registrar(container)
+
+
+def _register_signature_sqlite_ports(container) -> None:
     settings_service = container.get_port("settings_service")
     usermanagement = container.get_port("usermanagement_service")
     app_home = container.get_port("app_home")

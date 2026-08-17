@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from modules.documents.contracts import DocumentStatus
+from modules.documents.api import DocumentStatus
 
 
 @dataclass(frozen=True)

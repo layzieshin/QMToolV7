@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .artifact_query_ops import preferred_pdf_artifact_types, resolve_openable_artifact_refs, sort_artifacts_current_first
 from .contracts import (
+    ArtifactSourceType,
     ArtifactType,
     ControlClass,
     DocumentArtifact,
@@ -25,29 +26,93 @@ from .contracts import (
     WorkflowCommentDetail,
     WorkflowCommentListItem,
     WorkflowCommentRecord,
+    WorkflowCommentSourceKind,
     WorkflowCommentStatus,
     PdfReadProgress,
     TrackedPdfReadSession,
     WorkflowProfile,
+    control_class_for,
 )
 from .docx_to_pdf import convert_docx_to_pdf as _convert_docx_to_pdf
+from .docx_to_pdf import docx_conversion_available as _docx_conversion_available
 from .docx_to_pdf import prepare_frozen_stdio as _prepare_frozen_stdio
-from .errors import DocumentWorkflowError, ValidationError
+from .errors import (
+    DocumentConflictError,
+    HeaderConflictError,
+    CommentConflictError,
+    DocumentWorkflowError,
+    DocumentsFeatureUnavailableError,
+    PermissionDeniedError,
+    ValidationError,
+)
+from modules.usermanagement.api import UserContext
+
+from .actor_context import actor_user_and_role
+from .capabilities import (
+    ACTION_IDS,
+    available_actions_for_actor,
+    compute_available_actions,
+    compute_global_capabilities,
+)
 from .service import DocumentsService
+from .state_transport import (
+    document_version_state_from_json,
+    document_version_state_from_payload,
+    document_version_state_to_json,
+    document_version_state_to_payload,
+)
 
 __all__ = [
     "DocumentsApi",
+    "DocumentConflictError",
+    "HeaderConflictError",
+    "CommentConflictError",
     "DocumentWorkflowError",
+    "DocumentsFeatureUnavailableError",
+    "PermissionDeniedError",
     "ValidationError",
     "convert_docx_to_pdf",
+    "docx_conversion_available",
     "prepare_docx_conversion_runtime",
+    "build_workflow_sign_request_from_intent",
     "DocumentsArtifactsApi",
-    "ArtifactType", "ControlClass", "DocumentArtifact", "DocumentHeader", "DocumentTaskItem",
+    "DocumentsCommentsApi",
+    "DocumentsPoolApi",
+    "DocumentsReadApi",
+    "DocumentsWorkflowApi",
+    "ArtifactSourceType",
+    "ArtifactType",
+    "ControlClass",
+    "DocumentArtifact",
+    "DocumentHeader",
+    "DocumentTaskItem",
     "OpenableArtifactRef",
-    "RecentDocumentItem", "ReleasedDocumentItem", "ReviewActionItem",
-    "DocumentStatus", "DocumentType", "DocumentVersionState",
-    "RejectionReason", "SystemRole", "ValidityExtensionOutcome", "WorkflowProfile",
+    "RecentDocumentItem",
+    "ReleasedDocumentItem",
+    "ReviewActionItem",
+    "DocumentStatus",
+    "DocumentType",
+    "DocumentVersionState",
+    "RejectionReason",
+    "SystemRole",
+    "ValidityExtensionOutcome",
+    "WorkflowProfile",
+    "WorkflowCommentStatus",
+    "WorkflowCommentSourceKind",
+    "control_class_for",
+    "document_version_state_from_json",
+    "document_version_state_from_payload",
+    "document_version_state_to_json",
+    "document_version_state_to_payload",
+    "ACTION_IDS",
+    "available_actions_for_actor",
+    "compute_available_actions",
+    "compute_global_capabilities",
+    "artifact_to_public_payload",
 ]
+
+
+_NO_PRECONDITION = object()
 
 
 def prepare_docx_conversion_runtime() -> None:
@@ -60,6 +125,58 @@ def convert_docx_to_pdf(source: Path, target: Path) -> None:
     _convert_docx_to_pdf(source, target)
 
 
+def docx_conversion_available() -> bool:
+    """Return whether the backend DOCX conversion dependency is available."""
+    return _docx_conversion_available()
+
+
+def build_workflow_sign_request_from_intent(
+    *,
+    state: DocumentVersionState,
+    transition: str,
+    sign_intent: dict[str, object],
+    actor: UserContext,
+    signature_api: object,
+    documents_service: DocumentsService,
+    scratch_root: Path,
+) -> object:
+    """Build a module SignRequest for a signed workflow transition on the backend host."""
+    from .sign_intent_builder import build_workflow_sign_request_from_intent as _build
+
+    return _build(
+        state=state,
+        transition=transition,
+        sign_intent=sign_intent,
+        actor=actor,
+        signature_api=signature_api,
+        documents_service=documents_service,
+        scratch_root=scratch_root,
+    )
+
+
+def artifact_to_public_payload(artifact: DocumentArtifact) -> dict[str, object]:
+    """Serialize artifact metadata without leaking server storage locations."""
+    private_metadata_keys = {"absolute_path", "file_path", "path", "source", "generated_from", "storage_key"}
+    return {
+        "artifact_id": artifact.artifact_id,
+        "document_id": artifact.document_id,
+        "version": artifact.version,
+        "artifact_type": artifact.artifact_type.value,
+        "source_type": artifact.source_type.value,
+        "original_filename": artifact.original_filename,
+        "mime_type": artifact.mime_type,
+        "sha256": artifact.sha256,
+        "size_bytes": artifact.size_bytes,
+        "is_current": artifact.is_current,
+        "metadata": {
+            key: value
+            for key, value in artifact.metadata.items()
+            if key.lower() not in private_metadata_keys and not key.lower().endswith("_path")
+        },
+        "created_at": artifact.created_at.isoformat(),
+    }
+
+
 class DocumentsPoolApi:
     def __init__(self, service: DocumentsService) -> None:
         self._service = service
@@ -67,11 +184,23 @@ class DocumentsPoolApi:
     def list_by_status(self, status: DocumentStatus) -> list[DocumentVersionState]:
         return self._service.list_by_status(status)
 
+    def list_by_status_for_actor(self, status: DocumentStatus, actor: UserContext) -> list[DocumentVersionState]:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.list_by_status_for_actor(status, actor_user_id=user_id, actor_role=role)
+
     def list_artifacts(self, document_id: str, version: int) -> list[DocumentArtifact]:
         return self._service.list_artifacts(document_id, version)
 
     def get_document_version(self, document_id: str, version: int) -> DocumentVersionState | None:
         return self._service.get_document_version(document_id, version)
+
+    def get_document_version_for_actor(
+        self, document_id: str, version: int, actor: UserContext
+    ) -> DocumentVersionState | None:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.get_document_version_for_actor(
+            document_id, version, actor_user_id=user_id, actor_role=role
+        )
 
     def get_header(self, document_id: str) -> DocumentHeader | None:
         return self._service.get_document_header(document_id)
@@ -79,11 +208,23 @@ class DocumentsPoolApi:
     def list_tasks_for_user(self, user_id: str, role: str, scope: str | None = None) -> list[DocumentTaskItem]:
         return self._service.list_tasks_for_user(user_id, role, scope=scope)
 
+    def list_tasks_for_actor(self, actor: UserContext, scope: str | None = None) -> list[DocumentTaskItem]:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.list_tasks_for_user(user_id, role.value, scope=scope)
+
     def list_review_actions_for_user(self, user_id: str, role: str) -> list[ReviewActionItem]:
         return self._service.list_review_actions_for_user(user_id, role)
 
+    def list_review_actions_for_actor(self, actor: UserContext) -> list[ReviewActionItem]:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.list_review_actions_for_user(user_id, role.value)
+
     def list_recent_documents_for_user(self, user_id: str, role: str) -> list[RecentDocumentItem]:
         return self._service.list_recent_documents_for_user(user_id, role)
+
+    def list_recent_documents_for_actor(self, actor: UserContext) -> list[RecentDocumentItem]:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.list_recent_documents_for_user(user_id, role.value)
 
     def list_current_released_documents(self) -> list[ReleasedDocumentItem]:
         return self._service.list_current_released_documents()
@@ -94,6 +235,41 @@ class DocumentsArtifactsApi:
         self._service = service
         self._app_home = app_home
         self._artifacts_root = artifacts_root
+
+    def list_artifacts(self, document_id: str, version: int) -> list[DocumentArtifact]:
+        return self._service.list_artifacts(document_id, version)
+
+    def list_artifacts_for_actor(
+        self, document_id: str, version: int, actor: UserContext
+    ) -> list[DocumentArtifact]:
+        user_id, role = actor_user_and_role(actor)
+        state = self._service.get_document_version_for_actor(
+            document_id,
+            version,
+            actor_user_id=user_id,
+            actor_role=role,
+        )
+        if state is None:
+            return []
+        return self._service.list_artifacts(state.document_id, state.version)
+
+    def get_artifact_by_id(self, artifact_id: str) -> DocumentArtifact | None:
+        return self._service.get_artifact_by_id(artifact_id)
+
+    def get_artifact_by_id_for_actor(self, artifact_id: str, actor: UserContext) -> DocumentArtifact | None:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.get_artifact_by_id_for_actor(
+            artifact_id, actor_user_id=user_id, actor_role=role
+        )
+
+    def read_artifact_bytes(self, artifact_id: str) -> bytes:
+        return self._service.read_artifact_bytes(artifact_id)
+
+    def read_artifact_bytes_for_actor(self, artifact_id: str, actor: UserContext) -> bytes:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.read_artifact_bytes_for_actor(
+            artifact_id, actor_user_id=user_id, actor_role=role
+        )
 
     def resolve_artifact_paths(
         self,
@@ -181,6 +357,75 @@ class DocumentsWorkflowApi:
     def __init__(self, service: DocumentsService) -> None:
         self._service = service
 
+    def build_workflow_sign_request_from_intent(
+        self,
+        *,
+        state: DocumentVersionState,
+        transition: str,
+        sign_intent: dict[str, object],
+        actor: UserContext,
+        signature_api: object,
+        scratch_root: Path,
+    ) -> object:
+        """Build a server-owned signing request without exposing service internals."""
+        return build_workflow_sign_request_from_intent(
+            state=state,
+            transition=transition,
+            sign_intent=sign_intent,
+            actor=actor,
+            signature_api=signature_api,
+            documents_service=self._service,
+            scratch_root=scratch_root,
+        )
+
+    def mutate_version_if_current(
+        self,
+        state,
+        expected_last_event_id,
+        operation,
+        *,
+        actor: UserContext | None = None,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+        action: str | None = None,
+    ):
+        """Apply a public optimistic-lock boundary for a version mutation.
+
+        When ``action`` is set, workflow policy is evaluated on the locked
+        ``current`` state after the ETag compare.
+
+        ``_NO_PRECONDITION`` is a legacy compatibility default that remaps to
+        ``state.last_event_id`` and still uses the locked current path (no
+        policy-on-caller-state skip). Import helpers keep their own sentinel
+        branches and are not routed through this remap.
+        """
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if expected_last_event_id is _NO_PRECONDITION:
+            expected_last_event_id = state.last_event_id
+        return self._service.mutate_version_if_current(
+            state.document_id,
+            state.version,
+            expected_last_event_id,
+            operation,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action=action,
+        )
+
+    def _assert_workflow_policy(self, state, *, actor_user_id: str, actor_role: SystemRole, action: str) -> None:
+        self._service.assert_workflow_action(
+            state,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action=action,
+        )
+
+    # Compatibility alias for existing in-module callers. Backend transport
+    # code must use the public method above.
+    def _mutate_current(self, state, expected_last_event_id, operation, **kwargs):
+        return self.mutate_version_if_current(state, expected_last_event_id, operation, **kwargs)
+
     def create_document_version(
         self,
         document_id: str,
@@ -193,7 +438,18 @@ class DocumentsWorkflowApi:
         control_class: ControlClass | None = None,
         workflow_profile_id: str | None = None,
         custom_fields: dict[str, object] | None = None,
+        actor: UserContext | None = None,
+        delegated_create_allowed: bool = False,
     ) -> DocumentVersionState:
+        if actor is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        user_id, role = actor_user_and_role(actor)
+        if role != SystemRole.QMB and not delegated_create_allowed:
+            raise PermissionDeniedError("effective QMB or delegated create permission required")
+        if owner_user_id is None:
+            owner_user_id = user_id
+        elif owner_user_id != user_id and role != SystemRole.QMB:
+            raise PermissionDeniedError("only an effective QMB may assign a different owner")
         return self._service.create_document_version(
             document_id,
             version,
@@ -212,15 +468,29 @@ class DocumentsWorkflowApi:
         version: int,
         source_path: Path,
         *,
-        actor_user_id: str,
-        actor_role: SystemRole,
+        actor: UserContext | None = None,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.import_existing_pdf(
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        operation = lambda _current: self._service.import_existing_pdf(
             document_id,
             version,
             source_path,
             actor_user_id=actor_user_id,
             actor_role=actor_role,
+        )
+        if expected_last_event_id is _NO_PRECONDITION:
+            return operation(None)
+        return self._service.mutate_version_if_current(
+            document_id,
+            version,
+            expected_last_event_id,
+            operation,
         )
 
     def import_existing_docx(
@@ -229,15 +499,29 @@ class DocumentsWorkflowApi:
         version: int,
         source_path: Path,
         *,
-        actor_user_id: str,
-        actor_role: SystemRole,
+        actor: UserContext | None = None,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.import_existing_docx(
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        operation = lambda _current: self._service.import_existing_docx(
             document_id,
             version,
             source_path,
             actor_user_id=actor_user_id,
             actor_role=actor_role,
+        )
+        if expected_last_event_id is _NO_PRECONDITION:
+            return operation(None)
+        return self._service.mutate_version_if_current(
+            document_id,
+            version,
+            expected_last_event_id,
+            operation,
         )
 
     def create_from_template(
@@ -353,16 +637,29 @@ class DocumentsWorkflowApi:
         editors: set[str],
         reviewers: set[str],
         approvers: set[str],
+        actor: UserContext | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.assign_workflow_roles(
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
             state,
-            editors=editors,
-            reviewers=reviewers,
-            approvers=approvers,
+            expected_last_event_id,
+            lambda current: self._service.assign_workflow_roles(
+                current,
+                editors=editors,
+                reviewers=reviewers,
+                approvers=approvers,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+            ),
             actor_user_id=actor_user_id,
             actor_role=actor_role,
+            action="assign_roles",
         )
 
     def start_workflow(
@@ -371,20 +668,33 @@ class DocumentsWorkflowApi:
         profile: WorkflowProfile | None = None,
         *,
         profile_id: str | None = None,
+        actor: UserContext | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
         """Start workflow using the document's bound ``workflow_profile_id``.
 
         ``profile`` / ``profile_id`` are optional compatibility checks only and
         must match the stored binding when provided. The binding is never changed.
         """
-        return self._service.start_workflow(
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
             state,
-            profile,
-            profile_id=profile_id,
+            expected_last_event_id,
+            lambda current: self._service.start_workflow(
+                current,
+                profile,
+                profile_id=profile_id,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+            ),
             actor_user_id=actor_user_id,
             actor_role=actor_role,
+            action="start",
         )
 
     def complete_editing(
@@ -392,14 +702,27 @@ class DocumentsWorkflowApi:
         state: DocumentVersionState,
         *,
         sign_request: object | None = None,
+        actor: UserContext | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.complete_editing(
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
             state,
-            sign_request=sign_request,
+            expected_last_event_id,
+            lambda current: self._service.complete_editing(
+                current,
+                sign_request=sign_request,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+            ),
             actor_user_id=actor_user_id,
             actor_role=actor_role,
+            action="complete_editing",
         )
 
     def ensure_source_pdf_for_signing(
@@ -415,62 +738,156 @@ class DocumentsWorkflowApi:
             actor_role=actor_role,
         )
 
+    def ensure_source_pdf_for_signing_if_current(
+        self, state: DocumentVersionState, *, actor: UserContext, expected_last_event_id: str | None
+    ) -> Path | None:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.mutate_version_if_current(
+            state.document_id,
+            state.version,
+            expected_last_event_id,
+            lambda current: self._service.ensure_source_pdf_for_signing(
+                current, actor_user_id=user_id, actor_role=role
+            ),
+        )
+
     def accept_review(
         self,
         state: DocumentVersionState,
-        actor_user_id: str,
+        actor: UserContext | None = None,
         *,
+        actor_user_id: str | None = None,
         sign_request: object | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.accept_review(
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        if actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
             state,
-            actor_user_id,
-            sign_request=sign_request,
+            expected_last_event_id,
+            lambda current: self._service.accept_review(
+                current,
+                actor_user_id,
+                sign_request=sign_request,
+                actor_role=actor_role,
+            ),
+            actor_user_id=actor_user_id,
             actor_role=actor_role,
+            action="review_accept",
         )
 
     def reject_review(
         self,
         state: DocumentVersionState,
-        actor_user_id: str,
         reason: RejectionReason,
+        *,
+        actor: UserContext | None = None,
+        actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.reject_review(state, actor_user_id, reason, actor_role=actor_role)
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        if actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
+            state,
+            expected_last_event_id,
+            lambda current: self._service.reject_review(
+                current, actor_user_id, reason, actor_role=actor_role
+            ),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action="review_reject",
+        )
 
     def accept_approval(
         self,
         state: DocumentVersionState,
-        actor_user_id: str,
+        actor: UserContext | None = None,
         *,
+        actor_user_id: str | None = None,
         sign_request: object | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.accept_approval(
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        if actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
             state,
-            actor_user_id,
-            sign_request=sign_request,
+            expected_last_event_id,
+            lambda current: self._service.accept_approval(
+                current,
+                actor_user_id,
+                sign_request=sign_request,
+                actor_role=actor_role,
+            ),
+            actor_user_id=actor_user_id,
             actor_role=actor_role,
+            action="approval_accept",
         )
 
     def reject_approval(
         self,
         state: DocumentVersionState,
-        actor_user_id: str,
         reason: RejectionReason,
+        *,
+        actor: UserContext | None = None,
+        actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.reject_approval(state, actor_user_id, reason, actor_role=actor_role)
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        if actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
+            state,
+            expected_last_event_id,
+            lambda current: self._service.reject_approval(
+                current, actor_user_id, reason, actor_role=actor_role
+            ),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action="approval_reject",
+        )
 
     def abort_workflow(
         self,
         state: DocumentVersionState,
         *,
+        actor: UserContext | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
+        expected_last_event_id: str | None | object = _NO_PRECONDITION,
     ) -> DocumentVersionState:
-        return self._service.abort_workflow(state, actor_user_id=actor_user_id, actor_role=actor_role)
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
+            state,
+            expected_last_event_id,
+            lambda current: self._service.abort_workflow(
+                current, actor_user_id=actor_user_id, actor_role=actor_role
+            ),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action="abort",
+        )
 
     def archive_approved(
         self,
@@ -499,8 +916,105 @@ class DocumentsWorkflowApi:
             review_outcome=review_outcome,
         )
 
-    def create_new_version_after_archive(self, state: DocumentVersionState, next_version: int) -> DocumentVersionState:
-        return self._service.create_new_version_after_archive(state, next_version)
+    def extend_annual_validity_signed(
+        self,
+        state: DocumentVersionState,
+        *,
+        actor: UserContext,
+        sign_intent: dict[str, object],
+        signature_api: object,
+        scratch_root: Path,
+        expected_last_event_id: str | None,
+        duration_days: int,
+        reason: str,
+        review_outcome: ValidityExtensionOutcome,
+    ) -> tuple[DocumentVersionState, bool]:
+        user_id, role = actor_user_and_role(actor)
+        if role != SystemRole.QMB:
+            raise PermissionDeniedError("annual validity extension requires an effective QMB")
+
+        def _extend(current: DocumentVersionState):
+            if current.extension_count >= 3:
+                return self._service.extend_annual_validity(
+                    current,
+                    actor_user_id=user_id,
+                    signature_present=False,
+                    duration_days=duration_days,
+                    reason=reason,
+                    review_outcome=review_outcome,
+                )
+            sign_request = self.build_workflow_sign_request_from_intent(
+                state=current,
+                transition="EXTEND_VALIDITY",
+                sign_intent=sign_intent,
+                actor=actor,
+                signature_api=signature_api,
+                scratch_root=scratch_root,
+            )
+            artifact = None
+            try:
+                artifact = self._service.sign_and_store_signed_artifact(
+                    current, sign_request, transition="EXTEND_VALIDITY"
+                )
+                return self._service.extend_annual_validity(
+                    current,
+                    actor_user_id=user_id,
+                    signature_present=True,
+                    duration_days=duration_days,
+                    reason=reason,
+                    review_outcome=review_outcome,
+                )
+            except Exception:
+                if artifact is not None:
+                    try:
+                        self._service.delete_artifact(artifact)
+                    except Exception:
+                        pass
+                raise
+
+        return self._service.mutate_version_if_current(
+            state.document_id,
+            state.version,
+            expected_last_event_id,
+            _extend,
+            actor_user_id=user_id,
+            actor_role=role,
+            action="extend_validity",
+        )
+
+    def create_new_version_after_archive(
+        self,
+        state: DocumentVersionState,
+        next_version: int,
+        *,
+        expected_last_event_id: str | None,
+        actor: UserContext | None = None,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+    ) -> DocumentVersionState:
+        """Create a successor version under CAS + shared ``new_version`` policy.
+
+        ``expected_last_event_id`` is required (no ``_NO_PRECONDITION`` default).
+        Policy is evaluated on the locked persisted ``current`` after the ETag
+        compare; the use-case runs only as the mutation operation.
+        """
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        return self.mutate_version_if_current(
+            state,
+            expected_last_event_id,
+            lambda current: self._service.create_new_version_after_archive(
+                current,
+                next_version,
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+            ),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action="new_version",
+        )
 
     def update_version_metadata(
         self,
@@ -578,6 +1092,18 @@ class DocumentsWorkflowApi:
             actor_role=actor_role,
         )
 
+    def update_document_header_if_current(
+        self, document_id: str, *, expected_updated_at: str, actor: UserContext, **changes
+    ) -> DocumentHeader:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.update_document_header_if_current(
+            document_id,
+            expected_updated_at=expected_updated_at,
+            actor_user_id=user_id,
+            actor_role=role,
+            **changes,
+        )
+
 
 class DocumentsReadApi:
     """Read-Confirmation API for training integration (§6.1)."""
@@ -590,15 +1116,33 @@ class DocumentsReadApi:
     ) -> DocumentReadSession:
         return self._service.open_released_document_for_training(user_id, document_id, version)
 
+    def open_released_document_for_actor(
+        self, actor: UserContext, document_id: str, version: int
+    ) -> DocumentReadSession:
+        user_id, _role = actor_user_and_role(actor)
+        return self.open_released_document_for_training(user_id, document_id, version)
+
     def confirm_released_document_read(
         self, user_id: str, document_id: str, version: int, *, source: str
     ) -> DocumentReadReceipt:
         return self._service.confirm_released_document_read(user_id, document_id, version, source=source)
 
+    def confirm_released_document_read_for_actor(
+        self, actor: UserContext, document_id: str, version: int, *, source: str
+    ) -> DocumentReadReceipt:
+        user_id, _role = actor_user_and_role(actor)
+        return self.confirm_released_document_read(user_id, document_id, version, source=source)
+
     def get_read_receipt(
         self, user_id: str, document_id: str, version: int
     ) -> DocumentReadReceipt | None:
         return self._service.get_read_receipt(user_id, document_id, version)
+
+    def get_read_receipt_for_actor(
+        self, actor: UserContext, document_id: str, version: int
+    ) -> DocumentReadReceipt | None:
+        user_id, _role = actor_user_and_role(actor)
+        return self.get_read_receipt(user_id, document_id, version)
 
     def start_tracked_pdf_read(
         self,
@@ -621,14 +1165,60 @@ class DocumentsReadApi:
             min_seconds_per_page=min_seconds_per_page,
         )
 
+    def start_tracked_pdf_read_for_actor(
+        self,
+        actor: UserContext,
+        document_id: str,
+        version: int,
+        *,
+        artifact_id: str | None,
+        total_pages: int,
+        source: str,
+        min_seconds_per_page: int = 10,
+    ) -> TrackedPdfReadSession:
+        user_id, _role = actor_user_and_role(actor)
+        return self.start_tracked_pdf_read(
+            user_id,
+            document_id,
+            version,
+            artifact_id=artifact_id,
+            total_pages=total_pages,
+            source=source,
+            min_seconds_per_page=min_seconds_per_page,
+        )
+
+    def _require_session_actor(self, actor: UserContext, session_id: str) -> None:
+        user_id, _role = actor_user_and_role(actor)
+        session = self._service.get_tracked_pdf_read_session(session_id)
+        if session is None:
+            raise ValidationError("tracked PDF read session not found")
+        if session.user_id != user_id:
+            raise PermissionDeniedError("tracked PDF read session belongs to another user")
+
     def record_page_dwell(self, session_id: str, *, page_number: int, dwell_seconds: int) -> PdfReadProgress:
         return self._service.record_page_dwell(session_id, page_number=page_number, dwell_seconds=dwell_seconds)
+
+    def record_page_dwell_for_actor(
+        self, actor: UserContext, session_id: str, *, page_number: int, dwell_seconds: int
+    ) -> PdfReadProgress:
+        self._require_session_actor(actor, session_id)
+        return self.record_page_dwell(session_id, page_number=page_number, dwell_seconds=dwell_seconds)
 
     def get_pdf_read_progress(self, session_id: str) -> PdfReadProgress:
         return self._service.get_pdf_read_progress(session_id)
 
+    def get_pdf_read_progress_for_actor(self, actor: UserContext, session_id: str) -> PdfReadProgress:
+        self._require_session_actor(actor, session_id)
+        return self.get_pdf_read_progress(session_id)
+
     def finalize_tracked_pdf_read(self, session_id: str, *, source: str) -> DocumentReadReceipt | None:
         return self._service.finalize_tracked_pdf_read(session_id, source=source)
+
+    def finalize_tracked_pdf_read_for_actor(
+        self, actor: UserContext, session_id: str, *, source: str
+    ) -> DocumentReadReceipt | None:
+        self._require_session_actor(actor, session_id)
+        return self.finalize_tracked_pdf_read(session_id, source=source)
 
 
 class DocumentsCommentsApi:
@@ -659,6 +1249,22 @@ class DocumentsCommentsApi:
     ) -> list[WorkflowCommentListItem]:
         return self._service.sync_docx_comments(state, actor_user_id=actor_user_id, actor_role=actor_role)
 
+    def sync_docx_comments_if_current(
+        self, state: DocumentVersionState, *, expected_last_event_id: str | None,
+        actor_user_id: str, actor_role: SystemRole,
+    ) -> list[WorkflowCommentListItem]:
+        return self._service.mutate_version_if_current(
+            state.document_id,
+            state.version,
+            expected_last_event_id,
+            lambda current: self._service.sync_docx_comments(
+                current, actor_user_id=actor_user_id, actor_role=actor_role
+            ),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action="comments",
+        )
+
     def create_pdf_workflow_comment(
         self,
         state: DocumentVersionState,
@@ -680,6 +1286,19 @@ class DocumentsCommentsApi:
             anchor_json=anchor_json,
         )
 
+    def create_pdf_workflow_comment_if_current(self, state: DocumentVersionState, *, expected_last_event_id: str | None, **kwargs):
+        actor_user_id = kwargs.get("actor_user_id")
+        actor_role = kwargs.get("actor_role")
+        return self._service.mutate_version_if_current(
+            state.document_id,
+            state.version,
+            expected_last_event_id,
+            lambda current: self._service.create_pdf_workflow_comment(current, **kwargs),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            action="comments",
+        )
+
     def set_workflow_comment_status(
         self,
         comment_id: str,
@@ -695,5 +1314,10 @@ class DocumentsCommentsApi:
             actor_user_id=actor_user_id,
             actor_role=actor_role,
             note=note,
+        )
+
+    def set_workflow_comment_status_if_current(self, comment_id: str, *, expected_updated_at: str, **kwargs):
+        return self._service.set_workflow_comment_status_if_current(
+            comment_id, expected_updated_at=expected_updated_at, **kwargs
         )
 

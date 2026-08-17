@@ -10,6 +10,23 @@ from .errors import ValidationError
 _STDIO_PATCHED = False
 
 
+def docx_conversion_available() -> bool:
+    """True when this host can run DOCX→PDF conversion (Windows + Word COM or docx2pdf)."""
+    if os.name != "nt":
+        return False
+    try:
+        import win32com.client  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        return True
+    try:
+        import docx2pdf  # type: ignore[import]  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def prepare_frozen_stdio() -> None:
     """Redirect missing stdout/stderr (PyInstaller --windowed) so tqdm/docx2pdf do not crash."""
     global _STDIO_PATCHED

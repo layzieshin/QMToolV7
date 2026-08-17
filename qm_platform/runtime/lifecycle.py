@@ -50,6 +50,8 @@ class LifecycleManager:
 
     def start(self, *, strict: bool = True) -> None:
         for module_id in sorted(self._contracts.keys()):
+            if module_id in self._started:
+                continue
             contract = self._contracts[module_id]
             try:
                 ensure_required_ports(self.container, contract)

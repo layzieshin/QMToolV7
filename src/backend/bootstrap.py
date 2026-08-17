@@ -30,7 +30,7 @@ from qm_platform.licensing.license_verifier import LicenseVerifier
 from qm_platform.licensing.machine_id import get_machine_id
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
-from qm_platform.runtime.backend_bootstrap import wire_backend_usermanagement
+from qm_platform.runtime.backend_bootstrap import wire_backend_documents, wire_backend_usermanagement
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_home
 from qm_platform.settings.settings_registry import SettingsRegistry
@@ -255,5 +255,6 @@ def build_backend_container() -> RuntimeContainer:
     dsn = resolve_usermanagement_postgres_dsn()
     container = build_platform_ports(fail_closed_license=True)
     container.register_port("usermanagement_postgres_dsn", dsn)
-    wire_backend_usermanagement(container)
+    lifecycle = wire_backend_usermanagement(container)
+    wire_backend_documents(container, lifecycle=lifecycle)
     return container

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from modules.documents.contracts import SystemRole
+from modules.documents.api import SystemRole
 from modules.usermanagement.api import is_effective_qmb
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 

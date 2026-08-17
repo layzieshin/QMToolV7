@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLabel, QLineEdit, QToolButton, QVBoxLayout, QWidget
 
-from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
+from modules.signature.api import LabelLayoutInput, SignRequest, SignaturePlacementInput
 
 
 class SignatureRequestForm(QWidget):
