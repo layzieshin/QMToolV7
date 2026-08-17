@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR10 freeze `1bd8aa0`; CP08-V4 FAILED at `bootstrap_admin_login`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **CP08-R5 PASS (harness handshake); FR10 freeze `1bd8aa0` superseded pending next freeze; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,12 +17,11 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`1bd8aa0f026249cd8e635d4a3c3ad34857ea953e` (`1bd8aa0`)**. The freeze tree
-contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), WR05
-documentation, and the known unchanged stat-only files. Last superseded freeze was `1a22d38`
-(FR09, before R4). Overall **`NOT_READY`**: after the start-contract remediation there is not
-yet a successful CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not
-Word COM. CP08-V4 failed at `bootstrap_admin_login` (Word not reached). `ACCEPTED` is not set.
+`$CandidateSha` — **`1bd8aa0f026249cd8e635d4a3c3ad34857ea953e` (`1bd8aa0`)** remains the last
+freeze until the next freeze includes CP08-R5. Overall **`NOT_READY`**: after CP08-R5 there is
+not yet a new freeze and no successful CP08 run. Historical CP08-V3 aborted on the acceptance
+start contract, not Word COM. CP08-V4 start contract **held**; it failed at
+`bootstrap_admin_login` (Word not reached). `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -317,6 +316,31 @@ COM. **`ACCEPTED` was not set.**
 Overall **`NOT_READY`**: after the start-contract remediation there is not yet a successful
 CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word COM.
 
+## Verification (CP08-R5 — bootstrap-admin handshake)
+
+Test-only. Product bootstrap still sets `must_change_password=True`. The realprocess step
+`bootstrap_admin_login` now completes login → `/auth/me` 409 `password_change_required` →
+`POST /auth/change-password` 204 → `/auth/me` 200, and later admin re-logins use the changed
+password. Failures include a redacted response body. Product auth, Word, packaging, and the
+PG guard are unchanged.
+
+| # | Check | Finding |
+| --- | --- | --- |
+| 1 | 409 body | Product: `password_change_required`. V4 harness did not log the body; R5 failures include a redacted body. |
+| 2 | Token header | Login token is sent as `Authorization: Bearer`; missing token would be 401. |
+| 3 | Owner | `session_ops` `must_change_password` via `require_user_context_normal`. |
+| 4 | Persistence | Login 200 means a session was issued; bootstrap admin remains `must_change_password=True` until change-password. |
+| 5 | Coverage gap | Auth API tests already expect the 409 handshake; realprocess did not. |
+| 6 | Smallest test | Mock HTTP `complete_bootstrap_admin_session` (not a second live CP08). |
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R5-HANDSHAKE | scenario/harness/realprocess unit + `test_auth_api`; fresh `--basetemp`; J04/Word opt-ins unset | **28 passed** (`cp08-r5-20260817T195540932Z`) |
+
+**No freeze. No CP08 retry in this checkpoint.** Next allowed sequence: new technical freeze, then exactly one CP08 run. Word may be judged only if that run reaches it.
+
+CP08-R5 commit: `34f39c0`
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -342,7 +366,8 @@ CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word 
 | CP08-V3 | FAILED | — (start-contract abort; Word not reached) | `de7e82d` |
 | CP08-R4 | PASS | `5233b5d` start-contract runner | `63dda17` |
 | FR10 | PASS | `1bd8aa0` freeze R1–R4 | `fd3aeb8` |
-| CP08-V4 | FAILED | — (bootstrap_admin_login /auth/me 409; Word not reached) | this documentation |
+| CP08-V4 | FAILED | — (bootstrap_admin_login /auth/me 409; Word not reached) | `5aff642` |
+| CP08-R5 | PASS | `34f39c0` bootstrap-admin handshake | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 

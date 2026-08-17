@@ -37,6 +37,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R4 | Acceptance start contract via PG runner | PASS | `5233b5d` | Runner `--j04-final-acceptance`; guard unchanged; included in FR10 freeze |
 | FR10 | Freeze R1–R4 acceptance candidate | PASS | `1bd8aa0` | 83 focused gates; `$CandidateSha` below; CP08-V4 failed |
 | CP08-V4 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `bootstrap_admin_login` (`/auth/me` 409); Word **NOT REACHED** |
+| CP08-R5 | Bootstrap-admin `/auth/me` handshake | PASS | `34f39c0` | Harness-only password-change handshake; product auth unchanged; **no freeze** |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -786,6 +787,42 @@ Lauf-SHA: `fd3aeb8`. Realprocess via `--j04-final-acceptance`. No repair, no ret
 
 `ACCEPTED` is not set.
 
+## CP08-R5 — Bootstrap-admin `/auth/me` handshake (test-only)
+
+CP08-V4 stopped at `bootstrap_admin_login` after `POST /auth/login` **200** and `GET /auth/me` **409**.
+The V4 fail log did not capture the 409 body. Investigation (read-only, then harness-only fix):
+
+| # | Check | Finding |
+| --- | --- | --- |
+| 1 | 409 body / backend log | Uvicorn: login 200 then `/auth/me` 409. Product mapping: `PasswordChangeRequiredError` → `{"detail":{"error":"password_change_required","message":"password change required"}}`. Other 409s (`user_exists`, `last_active_admin`) are not typical of `GET /auth/me`. |
+| 2 | Authorization header | `AcceptanceHttpClient.request_raw(..., auth=True)` sends `Authorization: Bearer {token}` after login. A missing token would be **401**, not 409. |
+| 3 | Owner | `GET /auth/me` → `require_user_context_normal` (`password_change_allowed=False`) → `um_api.resolve_session` → `session_ops.py` raises if `user.must_change_password`. Transport has no domain logic. |
+| 4 | Session / bootstrap admin | Login persisted a session (otherwise 401). `bootstrap_first_admin` sets `must_change_password=True`. **Not weakened.** |
+| 5 | Coverage gap | `tests/backend/test_auth_api.py` and postgres-live auth tests **expect** login 200 → `/auth/me` 409 → change-password 204 → `/auth/me` 200. Realprocess expected `/auth/me` 200 immediately. Gap is the scenario handshake, not product auth. |
+| 6 | Smallest test | Mock HTTP reproducing that handshake (`complete_bootstrap_admin_session`). A full OS-process backend test is CP08 itself. |
+
+Decision: **harness/testdata, not product.** No Word, packaging, PG-guard, or RESET change.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-r5-$stamp"
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/acceptance/test_j04_m0_harness_unit.py `
+  tests/acceptance/test_j04_m0_realprocess.py `
+  tests/backend/test_auth_api.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp $Base
+```
+
+Result: **28 passed** (`build/j04-m0-closure/cp08-r5-20260817T195540932Z`). Ambient J04/Word opt-ins unset before the run.
+
+**No freeze. No CP08 retry in this checkpoint.** Overall **`NOT_READY`**: after R5 there is not yet a new freeze and no successful CP08 run. Historical V3 = start contract. V4 start contract **held**. Word still has **no finding** from CP08-V4. `ACCEPTED` is not set.
+
+CP08-R5 commit: `34f39c0` — `test(j04-m0): complete bootstrap admin password-change handshake`
+
 ## CP08-R2 remediation specification (real-process scenario)
 
 Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
@@ -801,8 +838,8 @@ Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
 | Reset | `QMTOOL_PG_TEST_RESET` injected only for the pytest child / backend env |
 | Provision | `prepare_live_environment()` + `migrate_usermanagement_schema(migrator_dsn)` |
 | Runtime DSN | Backend receives `QMTOOL_PG_DSN = runtime_dsn` only (never admin DSN) |
-| Bootstrap admin | `QMTOOL_BOOTSTRAP_ADMIN_USERNAME/PASSWORD` on first backend start |
-| Directory users | Created via `POST /users` after bootstrap login |
+| Bootstrap admin | `QMTOOL_BOOTSTRAP_ADMIN_USERNAME/PASSWORD` on first backend start; first `/auth/me` is 409 `password_change_required` until `POST /auth/change-password` (CP08-R5 handshake) |
+| Directory users | Created via `POST /users` after bootstrap session is usable (`/auth/me` 200) |
 
 ### Two separate client processes and sessions
 
