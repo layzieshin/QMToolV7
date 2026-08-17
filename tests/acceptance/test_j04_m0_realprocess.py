@@ -9,9 +9,11 @@ import os
 
 import pytest
 
+from tests.acceptance.j04_m0_acceptance_scenario import (
+    StepStatus,
+    run_acceptance_scenario,
+)
 from tests.acceptance.j04_m0_realprocess_harness import (
-    FINAL_ACCEPTANCE_ENV,
-    FINAL_ACCEPTANCE_OPT_IN,
     HarnessBlockedError,
     J04M0RealProcessHarness,
     require_final_acceptance_opt_in,
@@ -33,7 +35,7 @@ def _require_opt_in() -> None:
 def test_j04_m0_full_realprocess_acceptance(tmp_path) -> None:  # noqa: ANN001
     """Single planned full acceptance run (health, sessions, ETag, artifacts, restart, Word COM).
 
-    Implemented for CP08; must not execute during CP05 harness bring-up.
+    Implemented in CP08-R2; executes only with explicit opt-in and isolated PG preconditions.
     """
     _require_opt_in()
     if os.environ.get("QMTOOL_PG_TEST_ADMIN_DSN", "").strip() == "":
@@ -41,15 +43,11 @@ def test_j04_m0_full_realprocess_acceptance(tmp_path) -> None:  # noqa: ANN001
 
     workspace = tmp_path / "j04-final-acceptance"
     with J04M0RealProcessHarness(workspace=workspace) as harness:
-        harness.start_backend(
-            extra_env={
-                "QMTOOL_LICENSE_MODE": "dev",
-                "QMTOOL_PG_TEST_RESET": os.environ.get("QMTOOL_PG_TEST_RESET", ""),
-                "QMTOOL_PG_TEST_EXPECTED_DATABASE": os.environ.get(
-                    "QMTOOL_PG_TEST_EXPECTED_DATABASE",
-                    "qmtool_j04_destructive_test",
-                ),
-            }
-        )
-        harness.wait_for_health()
-        pytest.skip("full acceptance scenario orchestration is completed in CP08")
+        results = run_acceptance_scenario(harness)
+
+    failures = [result for result in results if result.status == StepStatus.FAIL]
+    assert failures == [], [f"{item.name}: {item.detail}" for item in failures]
+
+    word_step = next(result for result in results if result.name == "word_com_live_boundary")
+    if os.environ.get("QMTOOL_J04_WORD_COM_LIVE", "").strip() != "I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN":
+        assert word_step.status == StepStatus.SKIP

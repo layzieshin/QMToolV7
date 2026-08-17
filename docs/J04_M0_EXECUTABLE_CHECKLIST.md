@@ -29,7 +29,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP07 | Freeze technical acceptance candidate | PASS | `d19e8b9` | superseded by remediation `8c273de` for `$CandidateSha` |
 | CP08 | Final acceptance gate | FAILED | — | PG live **51 passed**; regression **1 failed**; Word **BLOCKED** |
 | CP08-R1 | Literal optional documents port in wiring | PASS | `fbea360` | Architecture gate green; constant still exported; **no freeze** |
-| CP08-R2 | Realprocess scenario (replace skip stub) | TODO | — | Required before next freeze |
+| CP08-R2 | Realprocess scenario (replace skip stub) | PASS | _(pending)_ | Scenario implemented; live gate **NOT RUN** |
 | CP09 | Human acceptance | TODO | — | Depends second CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -536,7 +536,106 @@ Result: **16 passed** (2026-08-17)
 
 Remaining after R1:
 
-1. CP08-R2 — implement full real-process scenario (remove `pytest.skip` stub)
+1. CP08-R2 — implement full real-process scenario (remove `pytest.skip` stub) — **PASS (implementation only)**
 2. Word COM readiness in an interactive session
 3. New technical freeze
 4. Second full CP08 attempt
+
+## CP08-R2 remediation specification (real-process scenario)
+
+Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
+`tests/acceptance/j04_m0_acceptance_scenario.py`. **No freeze.** PG live, full
+`j04_final_acceptance` execution, Word COM live, and Onedir remain **NOT RUN** in R2.
+
+### PG test environment and admin bootstrap
+
+| Item | Contract |
+| --- | --- |
+| Guard | `preflight_isolated_postgres_target()` before any destructive work |
+| Admin DSN | `QMTOOL_PG_TEST_ADMIN_DSN` from gitignored `.env`; never logged |
+| Reset | `QMTOOL_PG_TEST_RESET` injected only for the pytest child / backend env |
+| Provision | `prepare_live_environment()` + `migrate_usermanagement_schema(migrator_dsn)` |
+| Runtime DSN | Backend receives `QMTOOL_PG_DSN = runtime_dsn` only (never admin DSN) |
+| Bootstrap admin | `QMTOOL_BOOTSTRAP_ADMIN_USERNAME/PASSWORD` on first backend start |
+| Directory users | Created via `POST /users` after bootstrap login |
+
+### Two separate client processes and sessions
+
+| Item | Contract |
+| --- | --- |
+| Homes | `client1-home` / `client2-home` under harness workspace |
+| Processes | `j04_m0_client_worker.py` subprocesses only |
+| Sessions | In-memory Bearer per worker; output uses `token_fingerprint` only |
+| Proof | Distinct `QMTOOL_HOME` paths and token fingerprints in step `client_process_sessions` |
+
+### ETag concurrency synchronization
+
+| Item | Contract |
+| --- | --- |
+| Pattern | Two workers issue the same `If-Match` assign-roles mutation in parallel |
+| Expected | Exactly one HTTP **200** and one HTTP **409** with current etag in body |
+| Transport | Worker `--action http` (no shared in-process `TestClient`) |
+
+### M0 HTTP coverage (orchestrator + workers)
+
+| Area | Step | Reference alignment |
+| --- | --- | --- |
+| Health/OpenAPI | `health_and_openapi` | Dev `/health`, `/openapi.json` |
+| Artifacts | `artifacts_transport` | No `storage_key` in list/metadata |
+| Signature | `signature_verify_password` | Import PNG + `/signature/verify-password` |
+| Training read | `training_read_receipt` | Approve → open-released → confirm receipt |
+| Comments / CR / lifecycle | `comments_lifecycle_change_requests` | Comment, change request, archive |
+| Document baseline | `document_baseline_flow` | Create → import PDF → assign → start |
+
+### Backend restart and persistence/session contract
+
+| Item | Contract |
+| --- | --- |
+| Restart | `harness.stop_process("backend")` then start new backend on same `backend-home` |
+| Documents | SQLite under backend home survives restart (`ARCHIVED` readback) |
+| Sessions | Pre-restart Bearer tokens remain valid via `GET /auth/me` (PG-backed sessions) |
+| Step | `persistence_and_session_contract` |
+
+### Fail-closed preconditions, redaction, PID cleanup
+
+| Item | Contract |
+| --- | --- |
+| Opt-in | `QMTOOL_J04_FINAL_ACCEPTANCE=I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN` |
+| Port | `127.0.0.1:8000` must be free before backend start |
+| PIDs | Harness tracks and terminates **only** self-spawned processes |
+| Logs | `redact_log_text()` on all harness/scenario logs under `build/j04-m0-closure/` |
+| Abort | First failing required step stops the scenario (`FAIL` result) |
+
+### Word COM live boundary (explicitly not R2 execution)
+
+| Item | Contract |
+| --- | --- |
+| Env | `QMTOOL_J04_WORD_COM_LIVE=I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN` |
+| R2 | Step `word_com_live_boundary` returns **SKIP** with documented reason |
+| CP08 | Requires interactive Windows session; real `import-docx` only when opt-in set |
+| Product | Uses existing `DispatchEx` isolation from CP03; no new COM entrypoint |
+
+### CP08-R2 verification (implementation only)
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_harness_unit.py `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/acceptance/test_j04_m0_realprocess.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp build/j04-m0-closure/cp08-r2
+$Py -m pytest tests/acceptance/test_j04_m0_realprocess.py -m "j04_final_acceptance" -q
+```
+
+Result: **15 passed** + final gate **1 skipped** without opt-in (2026-08-17)
+
+Changed files (test-only):
+
+- `tests/acceptance/j04_m0_acceptance_scenario.py` — ordered scenario orchestrator
+- `tests/acceptance/j04_m0_client_worker.py` — `--action http` for worker mutations
+- `tests/acceptance/j04_m0_realprocess_harness.py` — `stop_process()` for restart step
+- `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — focused scenario unit tests
+- `tests/acceptance/test_j04_m0_realprocess.py` — calls `run_acceptance_scenario()`
+

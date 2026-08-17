@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-R1 PASS (wiring); no freeze; CP08-R2 next**
+Current status: `Rejected / follow-up required` — **CP08-R2 PASS (scenario implemented); no freeze; Word readiness then re-freeze**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -85,6 +85,24 @@ readiness, then a new technical freeze before a second CP08 attempt.
 
 CP08-R1 commit: `fbea360` — `fix(j04-m0): use literal optional documents port in wiring`
 
+## Verification (CP08-R2 — real-process scenario implementation)
+
+Test-only remediation. Replaces the `pytest.skip` stub with `run_acceptance_scenario()`.
+**No freeze.** Live PG, full gate execution, Word COM live, and Onedir **NOT RUN**.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R2-FOCUS | harness unit + scenario unit + realprocess excluded marker | **15 passed** (`build/j04-m0-closure/cp08-r2`) |
+| CP08R2-GATE-SKIP | `test_j04_m0_realprocess.py -m j04_final_acceptance` ohne Opt-in | **1 skipped** |
+| CP08R2-DIFFCHECK | `git diff --check` | **Exit 0** (expected) |
+
+Scenario step catalog (17 steps): preconditions → PG bootstrap → backend start → health/openapi →
+bootstrap login → seed users/profile → two client sessions → document baseline → ETag race →
+artifacts → signature → training read → comments/CR/lifecycle → backend restart → persistence/sessions →
+Word COM boundary (SKIP until CP08 interactive opt-in).
+
+Next: Word COM readiness in interactive session → new technical freeze → second CP08 attempt.
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -103,7 +121,8 @@ CP08-R1 commit: `fbea360` — `fix(j04-m0): use literal optional documents port 
 | CP06 | PASS | `ba67126` prepare onedir | `a6959ea` |
 | CP07 | PASS | `d19e8b9` freeze (superseded candidate) | SHA record |
 | CP08 | FAILED | — (gate abort; no product commit) | `c47a514` |
-| CP08-R1 | PASS | `fbea360` literal optional documents port | SHA record (this documentation) |
+| CP08-R1 | PASS | `fbea360` literal optional documents port | SHA record |
+| CP08-R2 | PASS | _(pending)_ real-process scenario | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
@@ -111,7 +130,7 @@ CP08-R1 commit: `fbea360` — `fix(j04-m0): use literal optional documents port 
 | --- | --- |
 | Isolated PostgreSQL live (Slot-2 PG18 local / CI PG16) | **CP04-R PASS** (guard+runner); full live suites **NOT RUN** (CP08) |
 | M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
-| Full `j04_final_acceptance` real-process E2E | **NOT RUN** |
+| Full `j04_final_acceptance` real-process E2E | **NOT RUN** (scenario implemented in CP08-R2) |
 | Real Word COM document conversion E2E | **NOT RUN** |
 | `packaging/build_onedir.py` | **Packaging NOT RUN** |
 | Built EXE against separate backend | **NOT RUN** |

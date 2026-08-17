@@ -195,6 +195,31 @@ class J04M0RealProcessHarness:
         )
         return self._register_process(popen, label=label)
 
+    def stop_process(self, label: str, *, grace_seconds: float = 5.0) -> None:
+        """Terminate and detach a single managed process by label."""
+        remaining: list[ManagedProcess] = []
+        for managed in self._processes:
+            if managed.label == label:
+                popen = managed.popen
+                if popen.poll() is None:
+                    popen.terminate()
+                    try:
+                        popen.wait(timeout=grace_seconds)
+                    except subprocess.TimeoutExpired:
+                        popen.kill()
+                        popen.wait(timeout=2.0)
+                output = ""
+                if popen.stdout is not None:
+                    try:
+                        output = popen.stdout.read() or ""
+                    except Exception:  # noqa: BLE001
+                        output = ""
+                if output and self.log_dir is not None:
+                    self.write_log(f"{managed.label}-{managed.pid}.log", output)
+            else:
+                remaining.append(managed)
+        self._processes = remaining
+
     def cleanup(self, *, grace_seconds: float = 5.0) -> None:
         for managed in reversed(self._processes):
             popen = managed.popen
