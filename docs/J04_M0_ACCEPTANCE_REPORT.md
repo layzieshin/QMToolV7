@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR10 freeze (R1–R4); CP08-V4 not started; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR10 freeze `1bd8aa0`; CP08-V4 FAILED at `bootstrap_admin_login`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -22,7 +22,7 @@ contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `6
 documentation, and the known unchanged stat-only files. Last superseded freeze was `1a22d38`
 (FR09, before R4). Overall **`NOT_READY`**: after the start-contract remediation there is not
 yet a successful CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not
-Word COM. `ACCEPTED` is not set.
+Word COM. CP08-V4 failed at `bootstrap_admin_login` (Word not reached). `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -289,8 +289,30 @@ are permitted after this freeze.
 | Focused gates | **83 passed** (`build/j04-m0-closure/freeze-r4-20260817T182715064Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
 | Candidate SHA | **`1bd8aa0f026249cd8e635d4a3c3ad34857ea953e` (`1bd8aa0`)** |
-| CP08-V4 | **NOT STARTED** |
+| CP08-V4 | **FAILED** (see below) |
 | `ACCEPTED` | **not set** |
+
+## CP08-V4 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `1bd8aa0f026249cd8e635d4a3c3ad34857ea953e`.
+Lauf-SHA at gate start: `fd3aeb8bd81bb6b48a8dda0f41dc0613cae9f209` (FR10 SHA-record docs only).
+Gate policy: no repair and no continuation after the first failed mandatory step.
+Realprocess started through `scripts/run_postgres_live_tests.py --j04-final-acceptance`.
+
+The start contract held: `preconditions` and `pg_bootstrap` **PASS**. Backend started and
+health/openapi **PASS**. Stop at `bootstrap_admin_login`: backend log shows `POST /auth/login`
+HTTP 200 then `GET /auth/me` HTTP **409**. Word COM was **not reached** and is not a finding
+of this run. Pre-existing WINWORD PID 4756 was present and **not** terminated.
+
+| Step | Result |
+| --- | --- |
+| 1. PostgreSQL live | **PASS** — preflight major 18; **51 passed**; `build/j04-m0-closure/cp08-v4-pg-live-runner.log` |
+| 2. Full real-process E2E | **FAILED** at `bootstrap_admin_login` (`GET /auth/me` 409 after login 200). Workspace `build/j04-m0-closure/cp08-realprocess-ws/20260817T183206770668Z-3da54ae0ec944243aeab4f6f96c132a3` |
+| 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2; Word not reached) |
+
+Overall **`NOT_READY`**: after the start-contract remediation and FR10 freeze there is no
+successful CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word
+COM. **`ACCEPTED` was not set.**
 
 Overall **`NOT_READY`**: after the start-contract remediation there is not yet a successful
 CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word COM.
@@ -319,7 +341,8 @@ CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not Word 
 | FR09 | PASS | `1a22d38` freeze R1+R2+R3 | `57d87d4` |
 | CP08-V3 | FAILED | — (start-contract abort; Word not reached) | `de7e82d` |
 | CP08-R4 | PASS | `5233b5d` start-contract runner | `63dda17` |
-| FR10 | PASS | `1bd8aa0` freeze R1–R4 | this documentation |
+| FR10 | PASS | `1bd8aa0` freeze R1–R4 | `fd3aeb8` |
+| CP08-V4 | FAILED | — (bootstrap_admin_login /auth/me 409; Word not reached) | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
