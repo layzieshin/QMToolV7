@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP06 verified (Packaging NOT RUN)**
+Current status: `Rejected / follow-up required` — **technical acceptance candidate frozen; live/packaging/human gates remain NOT RUN**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -14,6 +14,62 @@ gesetzt werden.
 > unten dokumentieren frühere Teilläufe (2026-08-06/07) mit teils widersprüchlichen oder
 > unvollständigen Rohlogs unter `.j04_*_evidence/`. Diese Zahlen sind **nicht** der aktuelle
 > Closure-Lauf. Aktuelle Evidence entsteht erst unter `build/j04-m0-closure/` ab CP00.
+
+## Technical acceptance candidate (CP07 freeze)
+
+`$CandidateSha` = _(recorded after freeze commit)_
+
+Branch: `feature/ap-j04-m0`. Product/test code must not change after `$CandidateSha`.
+Any later fix requires a remediation checkpoint, a new freeze, and explicit approval for a second CP08 attempt.
+
+### Checkpoint / commit table (this closure run)
+
+| CP | Status | Technical commit | Follow-up docs commit |
+| --- | --- | --- | --- |
+| CP00 | PASS | `0a844c2` preserve baseline | `8469add` |
+| CP01 | PASS | `3f3f7b1` backend transport contracts | `54181ba` |
+| CP02 | PASS | `c2d6f3d` client use-case gates | `cc4e9f2` |
+| CP03 | PASS | `1993292` isolate Word COM | `ce5a8a7` |
+| CP04 | PASS | `c71c1f1` harden PG16 gates | `54d4d37` |
+| CP05 | PASS | `29ddaa6` real-process harness | `136d9e4` |
+| CP06 | PASS | `ba67126` prepare onedir | `a6959ea` |
+| CP07 | PASS | freeze commit (this documentation cycle) | SHA record |
+
+### Remaining gates (explicitly NOT RUN)
+
+| Gate | Status |
+| --- | --- |
+| Isolated PostgreSQL 16 live classes | **PG16 LIVE NOT RUN** |
+| M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
+| Full `j04_final_acceptance` real-process E2E | **NOT RUN** |
+| Real Word COM document conversion E2E | **NOT RUN** |
+| `packaging/build_onedir.py` | **Packaging NOT RUN** |
+| Built EXE against separate backend | **NOT RUN** |
+| Full non-destructive regression | **NOT RUN** |
+| `scripts/golive_gate.py` | **NOT RUN** |
+| Human visible onedir acceptance | **NOT RUN** (`ACCEPTED` not set) |
+
+### Worktree at freeze
+
+- No F/G files. No untracked product/test paths.
+- Remaining dirty paths are the two known stat-only files (no content diff): `label_geometry.py`, `modules/training/wiring.py`.
+- Historical `.j04*_evidence/` remains local/ignored (category E).
+
+### Verification (CP07 — freeze)
+
+Ausgeführt am 2026-08-17, Python 3.14 aus `.\.venv\Scripts\python.exe`, `PYTHONPATH=.`,
+Marker `-m "not postgres and not j04_final_acceptance"`.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP07-FOCUS | docs artifact package, OpenAPI snapshot, PG guard, architecture gates | **60 passed** (`build/j04-m0-closure/cp07`) |
+| CP07-PACKAGING | `tests/packaging/test_j04_m0_onedir_contract.py` | **5 passed** (`build/j04-m0-closure/cp07-packaging`) |
+| CP07-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+
+CP07 documentation-only correction: SHA-256 entries in
+`docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/QMToolV7_Dokumentenlenkung_MANIFEST_v2.txt`
+for `JSON_TO_DATABASE_MIGRATION_PLAN.md` (J04-M0 content from CP00) and
+`JSON_STORAGE_INVENTORY.md` (pre-existing stale hash vs current worktree). No product or test code changed.
 
 ## Verification (CP00 — baseline preservation)
 

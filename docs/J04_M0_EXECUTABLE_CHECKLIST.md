@@ -25,7 +25,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP04 | PostgreSQL-16 destructive gate | PASS | `c71c1f1` | 57 static/guard tests green; PG16 LIVE NOT RUN |
 | CP05 | Real-process acceptance harness | PASS | `29ddaa6` | 10 harness+reference tests; final gate NOT RUN |
 | CP06 | Onedir packaging preparation | PASS | `ba67126` | 16 packaging tests green; Packaging NOT RUN |
-| CP07 | Freeze technical acceptance candidate | TODO | — | Depends CP00–CP06 |
+| CP07 | Freeze technical acceptance candidate | PASS | _(pending)_ | 60+5 freeze smokes green; candidate SHA recorded after commit |
 | CP08 | Final acceptance gate | TODO | — | Depends CP07 + external preconditions |
 | CP09 | Human acceptance | TODO | — | Depends CP08 + explicit human sign-off |
 
@@ -421,3 +421,30 @@ Result: **16 passed** (2026-08-17, `build/j04-m0-closure/cp06`)
 - [x] **Packaging NOT RUN** documented
 - [x] Static contract test added (gap not fully covered by prior tests)
 - [x] No new product entrypoint/port/API
+
+## CP07 verification command
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/docs/test_document_control_artifact_package.py `
+  tests/backend/test_openapi_contract.py::test_openapi_snapshot_is_reproducible `
+  tests/test_postgres_destructive_guard.py `
+  tests/interfaces/test_architecture_gates.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp build/j04-m0-closure/cp07
+$Py -m pytest tests/packaging/test_j04_m0_onedir_contract.py -q `
+  --basetemp build/j04-m0-closure/cp07-packaging
+```
+
+Result: **60 passed** + **5 passed** (2026-08-17)
+
+## CP07 acceptance criteria
+
+- [x] CP00–CP06 committed and documented
+- [x] No unresolved F/G files overlapping the candidate
+- [x] Historical evidence is not presented as the current pass
+- [x] Remaining live/packaging/human gates documented as **NOT RUN**
+- [x] Worktree clean except the two known stat-only files
+- [ ] `$CandidateSha` recorded after freeze commit
