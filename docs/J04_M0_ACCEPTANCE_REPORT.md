@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP05 verified (final acceptance NOT RUN)**
+Current status: `Rejected / follow-up required` — **J04-M0 executable closure CP06 verified (Packaging NOT RUN)**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -115,6 +115,25 @@ Marker `-m "not postgres and not j04_final_acceptance"`, `--basetemp build/j04-m
 | CP05-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** |
 
 CP05 commit: `29ddaa6` — `test(j04-m0): add deterministic real-process acceptance harness`
+
+## Verification (CP06 — onedir packaging preparation)
+
+Ausgeführt am 2026-08-17, Python 3.14 aus `.\.venv\Scripts\python.exe`, `PYTHONPATH=.`,
+Marker `-m "not postgres and not j04_final_acceptance"`, `--basetemp build/j04-m0-closure/cp06`.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP06-PACKAGING | Bundle guards + onedir contract + backend client scope | **16 passed** |
+| CP06-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+
+**Packaging NOT RUN** — kein `packaging/build_onedir.py`-Lauf, kein EXE-Fachworkflow in CP06.
+
+Änderungen:
+
+- `packaging/build_onedir.py` — explizite J04-Client-/COM-`hidden-import`s ergänzt
+- `packaging/verify_customer_bundle.py` — fail-closed gegen `.env`, `.db`, `.sqlite`, J04-Evidence
+- `tests/packaging/test_j04_m0_onedir_contract.py` — statischer Onedir-Vertrag (Entrypoint, Imports, kein baked `QMTOOL_BACKEND_URL`)
+- `QMTOOL_BACKEND_URL` bleibt Laufzeitkonfiguration (`resolve_backend_base_url_from_env`)
 
 **Final acceptance NOT RUN** — kein `j04_final_acceptance`-Lauf, kein `QMTOOL_J04_FINAL_ACCEPTANCE`-Opt-in.
 

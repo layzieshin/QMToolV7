@@ -13,7 +13,9 @@ Produces:
 - `packaging/dist_output/QM-Tool/` — `QM-Tool.exe`, `_internal/`, bundled `prod_ed25519_public.pem` only (no private keys, no license issuer).
 - `packaging/dist_output/QM-Tool.zip` — unpack anywhere and run `QM-Tool.exe`.
 
-After PyInstaller, `packaging/verify_customer_bundle.py` and `packaging/verify_bundle_imports.py` run automatically. The build **fails** if private keys, internal issuer tools, or critical runtime modules (e.g. `fitz`/PyMuPDF) are missing from the bundle.
+After PyInstaller, `packaging/verify_customer_bundle.py` and `packaging/verify_bundle_imports.py` run automatically. The build **fails** if private keys, internal issuer tools, local `.env`/database files, J04 evidence artifacts, or critical runtime modules (e.g. `fitz`/PyMuPDF) are missing from the bundle.
+
+The shipped PyQt onedir client targets a **separate backend process**. Configure it at runtime with `QMTOOL_BACKEND_URL` (never baked into the build script). Default when unset: `http://127.0.0.1:8000`.
 
 Runtime data (`storage/`, users DB, logs, session, `license/license.json`) is created **next to the executable** unless `QMTOOL_HOME` is set. Customers import a license via the app settings UI.
 

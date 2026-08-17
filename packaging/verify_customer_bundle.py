@@ -24,6 +24,19 @@ FORBIDDEN_NAME_FRAGMENTS = (
     "_private.key",
 )
 
+FORBIDDEN_SUFFIXES = (
+    ".env",
+    ".db",
+    ".sqlite",
+)
+
+FORBIDDEN_RELATIVE_MARKERS = (
+    ".j04",
+    "j04-m0-closure",
+    "/build/",
+    "\\build\\",
+)
+
 
 def _is_private_pem(path: Path) -> bool:
     try:
@@ -50,6 +63,14 @@ def verify_bundle(bundle_dir: Path) -> list[str]:
         for fragment in FORBIDDEN_NAME_FRAGMENTS:
             if fragment in name_lower:
                 errors.append(f"forbidden filename: {rel}")
+        if path.name == ".env" or name_lower.endswith(".env"):
+            errors.append(f"forbidden env file in bundle: {rel}")
+        suffix_lower = path.suffix.lower()
+        if suffix_lower in FORBIDDEN_SUFFIXES:
+            errors.append(f"forbidden local data file in bundle: {rel}")
+        for marker in FORBIDDEN_RELATIVE_MARKERS:
+            if marker.replace("\\", "/") in rel_lower:
+                errors.append(f"forbidden evidence/build artifact in bundle: {rel}")
         if path.suffix.lower() == ".pem" and _is_private_pem(path):
             errors.append(f"private key material in bundle: {rel}")
     return errors

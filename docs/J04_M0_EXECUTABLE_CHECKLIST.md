@@ -24,7 +24,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP03 | Word COM isolation | PASS | `1993292` | DispatchEx + cleanup + redaction; 24 tests green |
 | CP04 | PostgreSQL-16 destructive gate | PASS | `c71c1f1` | 57 static/guard tests green; PG16 LIVE NOT RUN |
 | CP05 | Real-process acceptance harness | PASS | `29ddaa6` | 10 harness+reference tests; final gate NOT RUN |
-| CP06 | Onedir packaging preparation | TODO | — | Depends CP02, CP05 |
+| CP06 | Onedir packaging preparation | PASS | _(pending)_ | 16 packaging tests green; Packaging NOT RUN |
 | CP07 | Freeze technical acceptance candidate | TODO | — | Depends CP00–CP06 |
 | CP08 | Final acceptance gate | TODO | — | Depends CP07 + external preconditions |
 | CP09 | Human acceptance | TODO | — | Depends CP08 + explicit human sign-off |
@@ -395,4 +395,29 @@ Result: **10 passed** (2026-08-17, `build/j04-m0-closure/cp05`)
 - [x] Logs redacted before write under `build/j04-m0-closure/`
 - [x] Final test requires marker + explicit opt-in (excluded in CP05 run)
 - [x] Full realprocess test **NOT RUN** in CP05
+
+## CP06 verification command
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$Py -m pytest `
+  tests/packaging/test_bundle_excludes_secrets.py `
+  tests/packaging/test_j04_m0_onedir_contract.py `
+  tests/interfaces/test_backend_session_client.py `
+  tests/interfaces/test_pyqt_backend_profile_scope.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp build/j04-m0-closure/cp06
+```
+
+Result: **16 passed** (2026-08-17, `build/j04-m0-closure/cp06`)
+
+## CP06 acceptance criteria
+
+- [x] Existing onedir owner covers J04-M0 runtime imports (hidden-import list extended)
+- [x] Bundle verifier rejects secrets, local DBs, `.env`, evidence artifacts
+- [x] `QMTOOL_BACKEND_URL` remains runtime configuration (contract test)
+- [x] No parallel/onefile build path introduced
+- [x] **Packaging NOT RUN** documented
+- [x] Static contract test added (gap not fully covered by prior tests)
 - [x] No new product entrypoint/port/API
