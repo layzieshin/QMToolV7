@@ -24,7 +24,9 @@ Ausgeführt am 2026-08-17 im Worktree `QMToolV7-j04-m0`, Branch `feature/ap-j04-
 | # | Befehl | Ergebnis |
 | --- | --- | --- |
 | CP00-FOCUS | Fokussierter Architektur-/Contract-Smoke (siehe Checkliste) | **24 passed** |
-| CP00-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+| CP00-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** (CRLF warnings only on stat-only unstaged paths) |
+
+CP00 commit: `0a844c2` — `checkpoint(j04-m0): preserve current implementation baseline`
 
 Baseline-Klassifizierung: `docs/J04_M0_EXECUTABLE_CHECKLIST.md` (A–D staged; E ignoriert;
 2 stat-only Pfade nicht gestaged).

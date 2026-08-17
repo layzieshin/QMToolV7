@@ -18,7 +18,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 
 | CP | Title | Status | Commit SHA | Notes |
 | --- | --- | --- | --- | --- |
-| CP00 | Preserve and classify baseline | TODO | — | In progress |
+| CP00 | Preserve and classify baseline | PASS | `0a844c2` | 153 A–D paths; 24 smokes green |
 | CP01 | Backend ownership, auth, HTTP contracts | TODO | — | Depends CP00 |
 | CP02 | Client-facing M0 use-case gates | TODO | — | Depends CP01 |
 | CP03 | Word COM isolation | TODO | — | Depends CP02 |
@@ -270,7 +270,7 @@ No path classified **F** (out of scope) or **G** (unclear). All modified/untrack
 - [x] Stat-only files confirmed (`label_geometry.py`, `wiring.py`)
 - [x] Focused architecture/contract smokes green (24 passed)
 - [x] Checklist and acceptance report updated
-- [ ] Staged file list contains only confirmed J04-M0 baseline (A–D)
+- [x] Staged file list contains only confirmed J04-M0 baseline (A–D)
 
 ## CP00 verification command
 
