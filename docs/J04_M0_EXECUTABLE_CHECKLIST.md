@@ -30,7 +30,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08 | Final acceptance gate | FAILED | — | PG live **51 passed**; regression **1 failed**; Word **BLOCKED** |
 | CP08-R1 | Literal optional documents port in wiring | PASS | `fbea360` | Architecture gate green; constant still exported; **no freeze** |
 | CP08-R2 | Realprocess scenario (replace skip stub) | PASS | `30b73e9` | Scenario implemented; live gate **NOT RUN** |
-| Word readiness | Word COM `DispatchEx` probe (interactive) | BLOCKED | — | `CO_E_SERVER_EXEC_FAILURE` (0x80080005); freeze **not set** |
+| Word readiness | Word COM `DispatchEx` probe (interactive) | PASS (WR03) | — | Safe mode title confirmed; add-ins not causal; freeze **not set this turn** |
 | CP09 | Human acceptance | TODO | — | Depends second CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -538,8 +538,8 @@ Result: **16 passed** (2026-08-17)
 Remaining after R1:
 
 1. CP08-R2 — implement full real-process scenario (remove `pytest.skip` stub) — **PASS (implementation only)**
-2. Word COM readiness in an interactive session — **BLOCKED** (`CO_E_SERVER_EXEC_FAILURE`)
-3. New technical freeze — **blocked until Word readiness PASS**
+2. Word COM readiness in an interactive session — **WR03 DispatchEx PASS** (see WR03 below); freeze not started this turn
+3. New technical freeze — **next** (R1+R2 including docs HEAD) after this report is accepted
 4. Second full CP08 attempt — **blocked until freeze**
 
 ## Word COM readiness probe (2026-08-17)
@@ -568,6 +568,43 @@ On **PASS** only, in this order:
 4. Start exactly one second CP08 run against that SHA
 
 Until then: no freeze, no second CP08.
+
+## WR03 — Safe mode + add-in isolation (2026-08-17)
+
+WR02 leftover PID was already gone. No pre-existing WINWORD at WR03 start. **No DOCX/PDF E2E.**
+
+### Safe mode
+
+| Item | Result |
+| --- | --- |
+| Command | `C:\Program Files\Microsoft Office\Root\Office16\WINWORD.EXE /safe` |
+| PID | **21364** (started by this probe; later stopped) |
+| Title | **`Microsoft Word (Abgesicherter Modus)`** |
+| Responding | True |
+| Status | **PASS** |
+
+### Add-in inventory and isolation order
+
+Autoload (`LoadBehavior=3`) third-party first, then HKCU demand-load copies:
+
+1. Acrobat PDFMaker (HKLM + WOW6432Node `LoadBehavior=3`; HKCU `2`)
+2. Citavi Word Add-In 6.17 (WOW6432Node `LoadBehavior=3`; HKCU `2`)
+3. OneNote (HKCU `8` / `0`) — not changed
+
+| Action | Result |
+| --- | --- |
+| HKLM `LoadBehavior` 3→0 (Acrobat, Citavi) | **BLOCKED** — registry access denied (no elevation) |
+| HKCU Acrobat + Citavi `LoadBehavior`→0, then `DispatchEx` | **PASS** Word 16.0 |
+| A: Acrobat=0, Citavi=2 | **PASS** |
+| B: Acrobat=2, Citavi=0 | **PASS** |
+| C: both restored HKCU=2 | **PASS** |
+| HKCU restored to snapshot | Acrobat=2, Citavi=2 |
+
+**Add-in effect:** not causal in this session. `DispatchEx` succeeded with original HKCU values after a clean safe-mode quit and empty WINWORD list. HKLM autoload entries remain `3`.
+
+Evidence (local, not committed): `build/j04-m0-closure/word-com-readiness/wr03-result.json`
+
+Freeze and second CP08 were **not** started in WR03.
 
 
 ## CP08-R2 remediation specification (real-process scenario)

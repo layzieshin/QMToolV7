@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **overall `NOT_READY`**: Word COM readiness BLOCKED (interactive COM/session, not a product defect); no freeze; second CP08 blocked
+Current status: `Rejected / follow-up required` — **WR03 Safe-Mode PASS; DispatchEx PASS; add-ins not causal; freeze not set**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -131,6 +131,21 @@ On interactive **PASS** only, in this order:
 4. Start exactly one second CP08 run against that SHA
 
 Until then overall status remains **`NOT_READY`**.
+
+## Verification (WR03 — Safe mode + add-in isolation)
+
+2026-08-17. **No DOCX/PDF E2E.** WR02 leftover PID already gone; WINWORD list empty at start.
+
+| # | Check | Ergebnis |
+| --- | --- | --- |
+| WR03-SAFE | `WINWORD.EXE /safe` PID 21364 | **PASS** — window title **`Microsoft Word (Abgesicherter Modus)`** |
+| WR03-HKLM | Disable Acrobat/Citavi `LoadBehavior=3` | **BLOCKED** — HKLM access denied |
+| WR03-HKCU | Acrobat then Citavi `LoadBehavior=0` | applied; originals snapshotted |
+| WR03-A | Acrobat=0, Citavi=2, `DispatchEx` | **PASS** Word 16.0 |
+| WR03-B | Acrobat=2, Citavi=0, `DispatchEx` | **PASS** Word 16.0 |
+| WR03-C | both HKCU restored to 2, `DispatchEx` | **PASS** Word 16.0 |
+| WR03-EFFECT | Add-in causality | **not causal** — COM works after clean session even with add-ins restored |
+| WR03-FREEZE | R1+R2 freeze / second CP08 | **not started** |
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
