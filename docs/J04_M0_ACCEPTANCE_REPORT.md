@@ -103,6 +103,8 @@ Word COM boundary (SKIP until CP08 interactive opt-in).
 
 Next: Word COM readiness in interactive session → new technical freeze → second CP08 attempt.
 
+CP08-R2 commit: `30b73e9` — `test(j04-m0): implement realprocess acceptance scenario`
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -122,7 +124,7 @@ Next: Word COM readiness in interactive session → new technical freeze → sec
 | CP07 | PASS | `d19e8b9` freeze (superseded candidate) | SHA record |
 | CP08 | FAILED | — (gate abort; no product commit) | `c47a514` |
 | CP08-R1 | PASS | `fbea360` literal optional documents port | SHA record |
-| CP08-R2 | PASS | _(pending)_ real-process scenario | this documentation |
+| CP08-R2 | PASS | `30b73e9` real-process scenario | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 

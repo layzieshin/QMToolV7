@@ -29,7 +29,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP07 | Freeze technical acceptance candidate | PASS | `d19e8b9` | superseded by remediation `8c273de` for `$CandidateSha` |
 | CP08 | Final acceptance gate | FAILED | — | PG live **51 passed**; regression **1 failed**; Word **BLOCKED** |
 | CP08-R1 | Literal optional documents port in wiring | PASS | `fbea360` | Architecture gate green; constant still exported; **no freeze** |
-| CP08-R2 | Realprocess scenario (replace skip stub) | PASS | _(pending)_ | Scenario implemented; live gate **NOT RUN** |
+| CP08-R2 | Realprocess scenario (replace skip stub) | PASS | `30b73e9` | Scenario implemented; live gate **NOT RUN** |
 | CP09 | Human acceptance | TODO | — | Depends second CP08 + explicit human sign-off |
 
 ## Classification legend
