@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR11 freeze pending SHA; CP08-R5 included; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR11 freeze `c263ff5`; CP08-V5 not started; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,7 +17,7 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — recorded immediately after the FR11 freeze commit. The freeze tree contains
+`$CandidateSha` — **`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`)**. The freeze tree contains
 R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), R5 (`34f39c0`
 / docs `164a7c9`), WR05 documentation, and the known unchanged stat-only files. Last superseded
 freeze was `1bd8aa0` (FR10, before R5). Overall **`NOT_READY`**: there is not yet a successful
@@ -357,7 +357,7 @@ product or test changes are permitted after this freeze.
 | --- | --- |
 | Focused gates | **93 passed** (`build/j04-m0-closure/freeze-r5-20260817T195901962Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
-| Candidate SHA | **pending freeze commit** |
+| Candidate SHA | **`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`)** |
 | CP08-V5 | **NOT STARTED** |
 | `ACCEPTED` | **not set** |
 
@@ -388,7 +388,7 @@ product or test changes are permitted after this freeze.
 | FR10 | PASS | `1bd8aa0` freeze R1–R4 | `fd3aeb8` |
 | CP08-V4 | FAILED | — (bootstrap_admin_login /auth/me 409; Word not reached) | `5aff642` |
 | CP08-R5 | PASS | `34f39c0` bootstrap-admin handshake | `164a7c9` |
-| FR11 | PASS | _(pending)_ freeze R1–R5 | this documentation |
+| FR11 | PASS | `c263ff5` freeze R1–R5 | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 

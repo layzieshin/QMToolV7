@@ -38,7 +38,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR10 | Freeze R1–R4 acceptance candidate | PASS | `1bd8aa0` | 83 focused gates; `$CandidateSha` below; CP08-V4 failed |
 | CP08-V4 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `bootstrap_admin_login` (`/auth/me` 409); Word **NOT REACHED** |
 | CP08-R5 | Bootstrap-admin `/auth/me` handshake | PASS | `34f39c0` | Harness-only password-change handshake; product auth unchanged; included in FR11 freeze |
-| FR11 | Freeze R1–R5 acceptance candidate | PASS | _(pending)_ | 93 focused gates; `$CandidateSha` next; CP08-V5 not started |
+| FR11 | Freeze R1–R5 acceptance candidate | PASS | `c263ff5` | 93 focused gates; `$CandidateSha` below; CP08-V5 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -831,11 +831,11 @@ This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`523
 `63dda17`), R5 (`34f39c0` / docs `164a7c9`), WR05 documentation (`034425f`), and the freeze
 documentation. Focused gates are **93 passed**
 (`build/j04-m0-closure/freeze-r5-20260817T195901962Z`): FR10 set plus R5 handshake tests and
-`tests/backend/test_auth_api.py`. The frozen candidate SHA is recorded immediately after this
-checkpoint commit. No product or test changes are allowed after this freeze. CP08-V5 remains
-**NOT STARTED**. Overall **`NOT_READY`**: there is not yet a successful CP08 run. Historical
-CP08-V3 aborted on the acceptance start contract, not Word COM. CP08-V4 start contract **held**.
-`ACCEPTED` is not set.
+`tests/backend/test_auth_api.py`. The frozen candidate is
+`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`). No product or test changes are
+allowed after this freeze. CP08-V5 remains **NOT STARTED**. Overall **`NOT_READY`**: there is
+not yet a successful CP08 run. Historical CP08-V3 aborted on the acceptance start contract, not
+Word COM. CP08-V4 start contract **held**. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 
