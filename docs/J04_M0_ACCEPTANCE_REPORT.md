@@ -86,7 +86,9 @@ Marker `-m "not postgres"`, `--basetemp build/j04-m0-closure/cp03`.
 | # | Befehl | Ergebnis |
 | --- | --- | --- |
 | CP03-FOCUS | `test_docx_to_pdf`, `test_docx_conversion_worker`, `test_documents_p4_p9_http` | **24 passed** |
-| CP03-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+| CP03-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** (CRLF warnings only on stat-only unstaged paths) |
+
+CP03 commit: `1993292` — `fix(j04-m0): isolate Word COM conversion`
 
 **Kein echter Word-E2E-Lauf** — ausschließlich mockbasierte Unit-/Component-Tests.
 
