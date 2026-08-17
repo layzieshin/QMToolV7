@@ -83,6 +83,8 @@ Ausgeführt am 2026-08-17. Product change only in `modules/documents/wiring.py`.
 No freeze after R1. Next: CP08-R2 (replace real-process `pytest.skip` stub), then Word COM
 readiness, then a new technical freeze before a second CP08 attempt.
 
+CP08-R1 commit: `fbea360` — `fix(j04-m0): use literal optional documents port in wiring`
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -101,7 +103,7 @@ readiness, then a new technical freeze before a second CP08 attempt.
 | CP06 | PASS | `ba67126` prepare onedir | `a6959ea` |
 | CP07 | PASS | `d19e8b9` freeze (superseded candidate) | SHA record |
 | CP08 | FAILED | — (gate abort; no product commit) | `c47a514` |
-| CP08-R1 | PASS | _(pending)_ literal optional documents port | this documentation |
+| CP08-R1 | PASS | `fbea360` literal optional documents port | SHA record (this documentation) |
 
 ### Remaining gates (explicitly NOT RUN)
 
