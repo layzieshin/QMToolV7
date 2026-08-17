@@ -32,8 +32,9 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R2 | Realprocess scenario (replace skip stub) | PASS | `30b73e9` | Scenario implemented; live gate **NOT RUN** |
 | Word readiness | Word COM `DispatchEx` probe (interactive) | PASS (WR05) | — | Safe mode title confirmed; interactive DispatchEx/Version/Quit PASS; add-ins not causal; DOCX/PDF E2E **NOT RUN** |
 | CP08-R3 | Isolate realprocess workspace from pytest basetemp | PASS | `c3d6587` | Test-only; included in FR09 freeze |
-| FR09 | Freeze R1+R2+R3 acceptance candidate | PASS | `1a22d38` | 50 focused gates; `$CandidateSha` below; CP08-V3 not started |
-| CP09 | Human acceptance | TODO | — | Depends CP08-V3 + explicit human sign-off |
+| FR09 | Freeze R1+R2+R3 acceptance candidate | PASS | `1a22d38` | 50 focused gates; `$CandidateSha` below; CP08-V3 failed |
+| CP08-V3 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `pg_bootstrap` (`QMTOOL_PG_TEST_RESET`); remaining steps NOT RUN |
+| CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
 
@@ -685,8 +686,24 @@ This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 doc
 Word isolation 16 (`test_docx_to_pdf.py` + `test_docx_conversion_worker.py`). FR08 reported
 46 on the pre-R3 set. The frozen candidate is
 `1a22d3809683d16ad9354d609f6ce2d2af7c053a` (`1a22d38`). No product or test changes are
-allowed after this freeze. CP08-V3 remains **NOT STARTED**. Overall status remains
-**`NOT_READY`**. `ACCEPTED` is not set.
+allowed after this freeze. CP08-V3 was executed once against this candidate and **FAILED**.
+Overall status remains **`NOT_READY`**. `ACCEPTED` is not set.
+
+## CP08-V3 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `1a22d3809683d16ad9354d609f6ce2d2af7c053a`.
+Lauf-SHA at gate start: `57d87d46012ea2ed12c95fc7c1bca54bd200595b` (FR09 SHA-record docs only;
+`git diff 1a22d38..57d87d4` is the two documentation files). Gate policy: no repair and no
+retry after the first red mandatory step.
+
+| Step | Result |
+| --- | --- |
+| PostgreSQL live | **PASS** — PG18 guard preflight; **51 passed**; `build/j04-m0-closure/cp08-v3-pg-live-runner.log` |
+| Full real-process E2E | **FAILED** — `pg_bootstrap`: `QMTOOL_PG_TEST_RESET` was not set in the pytest process. The PG live runner injects RESET only into *its* pytest child; the documented realprocess invocation is direct pytest and does not. |
+| Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** — first mandatory step after PG stopped the gate |
+
+No repair was performed during CP08-V3. Status remains **`NOT_READY`**; no retry is allowed
+without a bounded remediation checkpoint and a new technical freeze. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 

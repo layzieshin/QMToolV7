@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR09 freeze (R1+R2+R3); CP08-V3 not started; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **CP08-V3 FAILED at realprocess `pg_bootstrap`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -19,8 +19,8 @@ gesetzt werden.
 
 `$CandidateSha` — **`1a22d3809683d16ad9354d609f6ce2d2af7c053a` (`1a22d38`)**. The freeze tree
 contains R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), WR05 documentation, and the known
-unchanged stat-only files. Last superseded freeze was `fe172c9` (FR08, before R3). CP08-V3 is
-**NOT STARTED**.
+unchanged stat-only files. Last superseded freeze was `fe172c9` (FR08, before R3). CP08-V3
+**FAILED**; overall **`NOT_READY`**.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -224,8 +224,22 @@ immediately after the commit. No product or test changes are permitted after thi
 | Focused gates | **50 passed** (`build/j04-m0-closure/freeze-r3-20260817T171311893Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
 | Candidate SHA | **`1a22d3809683d16ad9354d609f6ce2d2af7c053a` (`1a22d38`)** |
-| CP08-V3 | **NOT STARTED** |
+| CP08-V3 | **FAILED** (see below) |
 | `ACCEPTED` | **not set** |
+
+## CP08-V3 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `1a22d3809683d16ad9354d609f6ce2d2af7c053a`.
+Gate policy was applied: no repair and no continuation after the first failed mandatory step.
+
+| Step | Result |
+| --- | --- |
+| 1. PostgreSQL live | **PASS** — guard preflight major 18; **51 passed**; evidence `build/j04-m0-closure/cp08-v3-pg-live-runner.log` |
+| 2. Full real-process E2E | **FAILED** — `pg_bootstrap` required `QMTOOL_PG_TEST_RESET` equal to the documented destructive opt-in; the variable was unset in the pytest process. Direct pytest of `test_j04_m0_realprocess.py` is not wrapped by `scripts/run_postgres_live_tests.py`, which injects RESET only into its own child. Evidence: `build/j04-m0-closure/cp08-v3-realprocess.log`, basetemp `build/j04-m0-closure/cp08-v3-pytest-20260817T171915206Z` |
+| 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2) |
+
+No product or test repair was made during the gate. The candidate remains **`NOT_READY`**; a new
+remediation checkpoint and new freeze are required before any CP08 retry. **`ACCEPTED` was not set.**
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -247,7 +261,9 @@ immediately after the commit. No product or test changes are permitted after thi
 | CP08 | FAILED | — (gate abort; no product commit) | `c47a514` |
 | CP08-R1 | PASS | `fbea360` literal optional documents port | SHA record |
 | CP08-R2 | PASS | `30b73e9` real-process scenario | this documentation |
-| CP08-R3 | PASS | `c3d6587` isolate realprocess workspace | SHA record (this documentation) |
+| CP08-R3 | PASS | `c3d6587` isolate realprocess workspace | `a421005` |
+| FR09 | PASS | `1a22d38` freeze R1+R2+R3 | `57d87d4` |
+| CP08-V3 | FAILED | — (gate abort; no product commit) | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
