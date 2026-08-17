@@ -166,6 +166,20 @@ evidence. The successful interactive result is recorded in local evidence under
 `build/j04-m0-closure/word-com-readiness/` (not committed). Overall status remains
 `NOT_READY` until FR08 and the single CP08-V2 run complete.
 
+## FR08 — Remediated acceptance candidate freeze
+
+The freeze tree contains R1 (`fbea360`), R2 (`30b73e9`), WR05 documentation (`034425f`), and
+the known unchanged stat-only files. The following checkpoint commit freezes this technical
+candidate; its full SHA is recorded in the documentation-only follow-up immediately after the
+commit. No product or test changes are permitted after this freeze.
+
+| Item | Status |
+| --- | --- |
+| Focused gates | **46 passed** (`build/j04-m0-closure/freeze-r2-elevated-verify`) |
+| Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
+| Candidate SHA | **this FR08 checkpoint; full SHA recorded next** |
+| CP08-V2 | **NOT STARTED** |
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.

@@ -617,6 +617,13 @@ Readiness is **PASS** for the COM boundary only. The prior agent-context `0x8008
 historical evidence; it does not change the successful interactive result. FR08 must now freeze
 R1, R2, and the documentation before CP08-V2.
 
+## FR08 — Remediated acceptance candidate freeze
+
+This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), WR05 documentation (`034425f`), and the
+current technical tree. The focused gates are **46 passed**. The full checkpoint SHA is recorded
+in the following documentation-only commit; no product or test changes are allowed after this
+freeze. CP08-V2 remains **NOT STARTED**.
+
 ## CP08-R2 remediation specification (real-process scenario)
 
 Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
