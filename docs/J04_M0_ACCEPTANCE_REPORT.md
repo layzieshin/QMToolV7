@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **WR03 Safe-Mode PASS; interactive DispatchEx PASS; add-ins not causal; freeze pending**
+Current status: `Rejected / follow-up required` — **CP08-R3 PASS (test infra); no freeze; no CP08-V3; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -194,6 +194,23 @@ Gate policy was applied: no repair and no continuation after the first blocked m
 No product or test repair was made during the gate. The candidate remains **`NOT_READY`**; a new
 remediation checkpoint and new freeze are required before any CP08 retry.
 
+## Verification (CP08-R3 — isolate realprocess workspace)
+
+Test-only. Observed CP08-V2 failure: pytest basetemp **`WinError 5`** on use and cleanup.
+Child-process locks are a plausible explanation, not proven. Full-gate workspace is now
+`build/j04-m0-closure/cp08-realprocess-ws/<UTC-timestamp>-<uuid>/` via
+`allocate_realprocess_workspace()` (`resolve()` under closure evidence root; never reuse/delete).
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R3-FOCUS | harness + scenario unit + realprocess excluded marker; fresh `--basetemp` | **18 passed** (`cp08-r3-20260817T125918964Z`) |
+| CP08R3-SKIP | `j04_final_acceptance` without opt-in; fresh `--basetemp` | **1 skipped**, exit 0 |
+| CP08R3-DIFFCHECK | `git diff --check` | **Exit 0** (CRLF warnings only on known stat-only files) |
+
+No freeze. No CP08-V3. **R3 PASS ≠ Freeze / CP08-V3 / ACCEPTED.**
+
+CP08-R3 commit: `c3d6587` — `test(j04-m0): isolate realprocess workspace from pytest basetemp`
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -214,6 +231,7 @@ remediation checkpoint and new freeze are required before any CP08 retry.
 | CP08 | FAILED | — (gate abort; no product commit) | `c47a514` |
 | CP08-R1 | PASS | `fbea360` literal optional documents port | SHA record |
 | CP08-R2 | PASS | `30b73e9` real-process scenario | this documentation |
+| CP08-R3 | PASS | `c3d6587` isolate realprocess workspace | SHA record (this documentation) |
 
 ### Remaining gates (explicitly NOT RUN)
 

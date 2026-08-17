@@ -31,7 +31,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R1 | Literal optional documents port in wiring | PASS | `fbea360` | Architecture gate green; constant still exported; **no freeze** |
 | CP08-R2 | Realprocess scenario (replace skip stub) | PASS | `30b73e9` | Scenario implemented; live gate **NOT RUN** |
 | Word readiness | Word COM `DispatchEx` probe (interactive) | PASS (WR05) | — | Safe mode title confirmed; interactive DispatchEx/Version/Quit PASS; add-ins not causal; DOCX/PDF E2E **NOT RUN** |
-| CP09 | Human acceptance | TODO | — | Depends second CP08 + explicit human sign-off |
+| CP08-R3 | Isolate realprocess workspace from pytest basetemp | PASS | `c3d6587` | Test-only; **no freeze**; no CP08-V3 |
+| CP09 | Human acceptance | TODO | — | Depends CP08-V3 + explicit human sign-off |
 
 ## Classification legend
 
@@ -636,6 +637,44 @@ Executed once against CandidateSha `fe172c9fc3b5753b9b6d4b9b1a1d026760257c37`.
 
 No repair was performed during CP08-V2. Status remains **`NOT_READY`**; no retry is allowed
 without a bounded remediation checkpoint and a new technical freeze.
+
+## CP08-R3 — Basetemp / workspace isolation (test-only)
+
+Observed CP08-V2 abort: **`WinError 5`** on pytest basetemp use and cleanup. Child-process file
+locks under `tmp_path` remain a **plausible** cause, not a proven one. R3 decouples the
+long-lived workspace from pytest `tmp_path` without claiming a root-cause proof.
+
+Workspace helper in `tests/acceptance/j04_m0_realprocess_harness.py`:
+
+```text
+build/j04-m0-closure/cp08-realprocess-ws/<UTC-timestamp>-<uuid>/
+```
+
+Path is `resolve()`-enforced under `repo_root()/build/j04-m0-closure/`. Existing paths are never
+reused or deleted. Full-gate test no longer takes `tmp_path`. `pytest.ini` default basetemp
+unchanged.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-r3-$stamp"
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_harness_unit.py `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/acceptance/test_j04_m0_realprocess.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp $Base
+```
+
+Result: **18 passed** (`build/j04-m0-closure/cp08-r3-20260817T125918964Z`). No `PermissionError` /
+WinError 5 on start or cleanup.
+
+Fail-closed: **1 skipped**, exit 0 (`cp08-r3-skip-20260817T125934013Z`).
+
+**No freeze. No CP08-V3.** R3 PASS is not Freeze, CP08-V3, or ACCEPTED.
+
+CP08-R3 commit: `c3d6587` — `test(j04-m0): isolate realprocess workspace from pytest basetemp`
 
 ## CP08-R2 remediation specification (real-process scenario)
 
