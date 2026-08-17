@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP04-R adopted; `$CandidateSha` = `8c273de`; CP08 next**
+Current status: `Rejected / follow-up required` — **CP08 FAILED (regression); candidate NOT_READY; remediation required**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -45,6 +45,29 @@ Completed by separate agent; **do not re-implement**. Verified by closure run 20
 
 No PG16 installation planned. No Slot-1 changes.
 
+## Verification (CP08 — final acceptance gate, aborted)
+
+Ausgeführt am 2026-08-17 auf `feature/ap-j04-m0`, Produkt-Baseline `8c273de`, Doc-HEAD `94fb480`.
+Gate-Regel: keine Reparatur während des laufenden Gates.
+
+| # | Gate | Ergebnis |
+| --- | --- | --- |
+| CP08-PG-LIVE | `scripts/run_postgres_live_tests.py` (PG18, `QMTOOL_PG_TEST_EXPECTED_MAJOR=18`) | **51 passed**; preflight major=18 |
+| CP08-REGRESSION | `pytest -m "not postgres and not j04_final_acceptance" -q` | **1 failed** — siehe unten |
+| CP08-WORD | Word COM availability probe | **BLOCKED** (`CO_E_SERVER_EXEC_FAILURE`) |
+| CP08-E2E / ONEDIR / GOLIVE | — | **NOT RUN** (gate abort) |
+
+Regression failure:
+
+```
+tests/modules/test_module_contract_wiring.py::test_module_wiring_hard_get_ports_are_declared_as_required_ports
+AssertionError: modules\documents\wiring.py uses non-literal get_port
+```
+
+Evidence logs: `build/j04-m0-closure/cp08-pg-live-runner-clean.log`, `build/j04-m0-closure/cp08-regression.log`
+
+**Candidate status: NOT_READY** — remediation checkpoint required before a second CP08 attempt.
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -73,7 +96,7 @@ No PG16 installation planned. No Slot-1 changes.
 | Real Word COM document conversion E2E | **NOT RUN** |
 | `packaging/build_onedir.py` | **Packaging NOT RUN** |
 | Built EXE against separate backend | **NOT RUN** |
-| Full non-destructive regression | **NOT RUN** |
+| Full non-destructive regression | **FAILED** (CP08): `test_module_contract_wiring` / `documents/wiring.py` |
 | `scripts/golive_gate.py` | **NOT RUN** |
 | Human visible onedir acceptance | **NOT RUN** (`ACCEPTED` not set) |
 

@@ -27,7 +27,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP05 | Real-process acceptance harness | PASS | `29ddaa6` | 10 harness+reference tests; final gate NOT RUN |
 | CP06 | Onedir packaging preparation | PASS | `ba67126` | 16 packaging tests green; Packaging NOT RUN |
 | CP07 | Freeze technical acceptance candidate | PASS | `d19e8b9` | superseded by remediation `8c273de` for `$CandidateSha` |
-| CP08 | Final acceptance gate | TODO | — | `$CandidateSha` = `8c273de`; PG16 install **not required** (Slot-2 PG18 local) |
+| CP08 | Final acceptance gate | FAILED | — | PG live **51 passed**; regression **1 failed**; Word **BLOCKED** |
 | CP09 | Human acceptance | TODO | — | Depends CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -478,10 +478,37 @@ Commit: `8c273de` — `test(j04-m0): pin destructive PG major via env for local 
 
 ## CP08 preconditions (next open checkpoint)
 
-- [ ] `HEAD` == `$CandidateSha` (`8c273de`)
-- [ ] Worktree clean except known stat-only files
-- [ ] Slot-2 PG18 reachable via runner preflight (no Slot-1 changes)
-- [ ] Port 8000 free for real-process harness
+- [x] Product `$CandidateSha` = `8c273de` (doc follow-up `94fb480` only)
+- [x] Worktree clean except known stat-only files
+- [x] Slot-2 PG18 preflight: major=18, marker valid, port 5432
+- [x] Port 8000 free
 - [ ] Word available (COM isolation already in product)
 - [ ] Explicit opt-in before `j04_final_acceptance` full run
 - [ ] Human gate remains separate (CP09)
+
+## CP08 execution order (FAILED — candidate NOT_READY)
+
+Per gate rules: **no product/test fixes during CP08**. One regression failure aborts the gate.
+
+| Step | Gate | Status | Evidence |
+| --- | --- | --- | --- |
+| 1 | PostgreSQL live (`run_postgres_live_tests.py`, PG18 / `EXPECTED_MAJOR=18`) | **PASS** | **51 passed**; preflight major=18; `build/j04-m0-closure/cp08-pg-live-runner-clean.log` |
+| 2 | Full `j04_final_acceptance` real-process E2E | **NOT RUN** | Opt-in not set; harness scenario still `pytest.skip` stub |
+| 3 | Word COM live E2E | **BLOCKED** | `CO_E_SERVER_EXEC_FAILURE` — Word cannot start in this session |
+| 4 | Onedir build + bundle verify | **NOT RUN** | Blocked by gate abort after step 5 failure |
+| 5 | Full non-destructive regression | **FAILED** | `test_module_wiring_hard_get_ports_are_declared_as_required_ports` — `modules/documents/wiring.py` non-literal `get_port` |
+| 6 | `scripts/golive_gate.py` | **NOT RUN** | — |
+| 7 | Human acceptance prep | **NOT RUN** | CP09 |
+
+### CP08 regression failure (blocks gate)
+
+```
+FAILED tests/modules/test_module_contract_wiring.py::test_module_wiring_hard_get_ports_are_declared_as_required_ports
+AssertionError: modules\documents\wiring.py uses non-literal get_port
+```
+
+Cause: `DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT` constant passed to `container.get_port()` in
+`modules/documents/wiring.py` (J04 baseline product code). Requires a **post-gate remediation
+checkpoint** — not an in-gate fix.
+
+Log: `build/j04-m0-closure/cp08-regression.log`
