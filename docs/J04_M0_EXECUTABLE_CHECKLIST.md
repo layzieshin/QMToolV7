@@ -19,7 +19,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP | Title | Status | Commit SHA | Notes |
 | --- | --- | --- | --- | --- |
 | CP00 | Preserve and classify baseline | PASS | `0a844c2` | 153 A–D paths; 24 smokes green |
-| CP01 | Backend ownership, auth, HTTP contracts | TODO | — | Depends CP00 |
+| CP01 | Backend ownership, auth, HTTP contracts | PASS | _(pending)_ | 77+1 tests green; OpenAPI reproducible; no code fixes |
 | CP02 | Client-facing M0 use-case gates | TODO | — | Depends CP01 |
 | CP03 | Word COM isolation | TODO | — | Depends CP02 |
 | CP04 | PostgreSQL-16 destructive gate | TODO | — | Depends CP00 |

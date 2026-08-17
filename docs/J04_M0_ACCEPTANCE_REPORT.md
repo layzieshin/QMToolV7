@@ -28,6 +28,28 @@ Ausgeführt am 2026-08-17 im Worktree `QMToolV7-j04-m0`, Branch `feature/ap-j04-
 
 CP00 commit: `0a844c2` — `checkpoint(j04-m0): preserve current implementation baseline`
 
+## Verification (CP01 — backend transport contracts)
+
+Ausgeführt am 2026-08-17, Python 3.14 aus `.\.venv\Scripts\python.exe`, `PYTHONPATH=.`,
+Marker `-m "not postgres"`.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP01-BACKEND | Fokussierter Backend-/Client-/OpenAPI-Smoke (siehe Plan CP01) | **77 passed** |
+| CP01-EXPORT | `python scripts/export_openapi.py` | **Exit 0** (kein Snapshot-Drift) |
+| CP01-SNAPSHOT | `pytest …::test_openapi_snapshot_is_reproducible` | **1 passed** |
+
+Keine reproduzierbaren Vertragsabweichungen — keine Produktkorrekturen in CP01.
+
+Execution path (verified by tests, unchanged):
+
+- Auth: HTTP → `src/backend/*` routes → `modules/usermanagement/api.py` → service → session `UserContext`
+- Documents mutation: HTTP client → backend routes → `modules/documents/api.py` → service (policy-on-lock, ETag)
+- Actor: exclusively from authenticated session; request actor fields ignored
+- `allowed_actions`: computed server-side; clients fail-closed
+- Artifacts: backend transports IDs/bytes; clients never open backend file paths
+- Documents SQLite: backend-only (`DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT` opt-in for tests)
+
 Baseline-Klassifizierung: `docs/J04_M0_EXECUTABLE_CHECKLIST.md` (A–D staged; E ignoriert;
 2 stat-only Pfade nicht gestaged).
 
