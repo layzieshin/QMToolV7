@@ -24,7 +24,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP03 | Word COM isolation | PASS | `1993292` | DispatchEx + cleanup + redaction; 24 tests green |
 | CP04 | PostgreSQL-16 destructive gate | PASS | `c71c1f1` | 57 static/guard tests green; PG16 LIVE NOT RUN |
 | CP05 | Real-process acceptance harness | PASS | `29ddaa6` | 10 harness+reference tests; final gate NOT RUN |
-| CP06 | Onedir packaging preparation | PASS | _(pending)_ | 16 packaging tests green; Packaging NOT RUN |
+| CP06 | Onedir packaging preparation | PASS | `ba67126` | 16 packaging tests green; Packaging NOT RUN |
 | CP07 | Freeze technical acceptance candidate | TODO | — | Depends CP00–CP06 |
 | CP08 | Final acceptance gate | TODO | — | Depends CP07 + external preconditions |
 | CP09 | Human acceptance | TODO | — | Depends CP08 + explicit human sign-off |

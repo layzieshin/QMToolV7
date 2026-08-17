@@ -124,7 +124,9 @@ Marker `-m "not postgres and not j04_final_acceptance"`, `--basetemp build/j04-m
 | # | Befehl | Ergebnis |
 | --- | --- | --- |
 | CP06-PACKAGING | Bundle guards + onedir contract + backend client scope | **16 passed** |
-| CP06-DIFFCHECK | `git diff --check`; `git diff --cached --check` | _(pending commit)_ |
+| CP06-DIFFCHECK | `git diff --check`; `git diff --cached --check` | **Exit 0** |
+
+CP06 commit: `ba67126` — `test(j04-m0): prepare reproducible onedir acceptance`
 
 **Packaging NOT RUN** — kein `packaging/build_onedir.py`-Lauf, kein EXE-Fachworkflow in CP06.
 
