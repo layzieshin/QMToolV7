@@ -17,6 +17,9 @@ RESET_OPT_IN_VALUE = "I_UNDERSTAND_THIS_IS_DESTRUCTIVE"
 TEST_ADMIN_DSN_ENV = "QMTOOL_PG_TEST_ADMIN_DSN"
 TEST_RESET_ENV = "QMTOOL_PG_TEST_RESET"
 TEST_EXPECTED_DATABASE_ENV = "QMTOOL_PG_TEST_EXPECTED_DATABASE"
+TEST_EXPECTED_MAJOR_ENV = "QMTOOL_PG_TEST_EXPECTED_MAJOR"
+DEFAULT_EXPECTED_MAJOR = 16
+MINIMUM_MAJOR = 16
 MARKER_TABLE = "public.qmtool_j04_test_cluster_marker"
 MARKER_KEY = "cluster_id"
 
@@ -137,6 +140,34 @@ def _forbidden_databases() -> set[str]:
     return names
 
 
+def _expected_major() -> int:
+    """Parse Slot-2 expected major. Unset defaults to 16; invalid values fail closed."""
+    raw = os.environ.get(TEST_EXPECTED_MAJOR_ENV, "").strip()
+    if not raw:
+        return DEFAULT_EXPECTED_MAJOR
+    if not raw.isdigit() or raw != str(int(raw)):
+        raise DestructivePostgresGuardError(
+            f"{TEST_EXPECTED_MAJOR_ENV} must be an integer major version"
+        )
+    value = int(raw)
+    if value < MINIMUM_MAJOR:
+        raise DestructivePostgresGuardError(
+            f"{TEST_EXPECTED_MAJOR_ENV} must be at least {MINIMUM_MAJOR}"
+        )
+    return value
+
+
+def _assert_major(major: int, expected: int) -> None:
+    if major < MINIMUM_MAJOR:
+        raise DestructivePostgresGuardError(
+            f"PostgreSQL major version must be at least {MINIMUM_MAJOR}"
+        )
+    if major != expected:
+        raise DestructivePostgresGuardError(
+            "PostgreSQL major version must match QMTOOL_PG_TEST_EXPECTED_MAJOR"
+        )
+
+
 def _assert_admin_privileges(conn: psycopg.Connection) -> None:
     """Fail-closed admin/ownership probe for the destructive test login."""
     role = conn.execute(
@@ -173,19 +204,24 @@ def _assert_admin_privileges(conn: psycopg.Connection) -> None:
         raise DestructivePostgresGuardError("admin login lacks CREATEDB")
 
 
-def require_destructive_postgres_target(*, connect: bool = True) -> ApprovedDestructiveTarget:
-    """Validate opt-in + identity. Optionally open a connection for live checks."""
+def require_destructive_postgres_target(
+    *,
+    connect: bool = True,
+    require_opt_in: bool = True,
+) -> ApprovedDestructiveTarget:
+    """Validate identity. Destructive paths must pass ``require_opt_in=True``."""
     test_dsn = os.environ.get(TEST_ADMIN_DSN_ENV, "").strip()
     if not test_dsn:
         raise DestructivePostgresGuardError(
             f"{TEST_ADMIN_DSN_ENV} is required for destructive PostgreSQL tests"
         )
 
-    reset = os.environ.get(TEST_RESET_ENV, "").strip()
-    if reset != RESET_OPT_IN_VALUE:
-        raise DestructivePostgresGuardError(
-            f"{TEST_RESET_ENV} must equal the documented destructive opt-in value"
-        )
+    if require_opt_in:
+        reset = os.environ.get(TEST_RESET_ENV, "").strip()
+        if reset != RESET_OPT_IN_VALUE:
+            raise DestructivePostgresGuardError(
+                f"{TEST_RESET_ENV} must equal the documented destructive opt-in value"
+            )
 
     # Hard ban: never treat runtime DSN env as the destructive target.
     if test_dsn == os.environ.get("QMTOOL_PG_DSN", "").strip():
@@ -219,11 +255,13 @@ def require_destructive_postgres_target(*, connect: bool = True) -> ApprovedDest
         if runtime_is_external and runtime_db == dbname:
             raise DestructivePostgresGuardError("test database name collides with runtime database")
 
+    expected_major = _expected_major()
+
     if not connect:
         host, port = _endpoint(test_info)
         return ApprovedDestructiveTarget(
             database=dbname,
-            major_version=16,
+            major_version=expected_major,
             cluster_marker=EXPECTED_CLUSTER_MARKER,
             host=host,
             port=port,
@@ -236,8 +274,7 @@ def require_destructive_postgres_target(*, connect: bool = True) -> ApprovedDest
                 raise DestructivePostgresGuardError("connected database is not the isolated test database")
             version_row = conn.execute("SHOW server_version_num").fetchone()
             major = int(str(version_row[0])) // 10000
-            if major != 16:
-                raise DestructivePostgresGuardError("PostgreSQL major version must be 16")
+            _assert_major(major, expected_major)
             marker = conn.execute(
                 f"""
                 SELECT marker_value
@@ -263,6 +300,11 @@ def require_destructive_postgres_target(*, connect: bool = True) -> ApprovedDest
         raise DestructivePostgresGuardError(
             f"destructive PostgreSQL identity check failed: {type(exc).__name__}"
         ) from None
+
+
+def preflight_isolated_postgres_target() -> ApprovedDestructiveTarget:
+    """Read-only identity checks. Does not require destructive opt-in."""
+    return require_destructive_postgres_target(connect=True, require_opt_in=False)
 
 
 def require_approved_admin_dsn(*, candidate: str | None = None) -> str:

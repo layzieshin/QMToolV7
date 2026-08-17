@@ -11,6 +11,7 @@ from tests.postgres_destructive_guard import (
     EXPECTED_DATABASE,
     RESET_OPT_IN_VALUE,
     DestructivePostgresGuardError,
+    preflight_isolated_postgres_target,
     require_approved_admin_dsn,
     require_destructive_postgres_target,
 )
@@ -30,6 +31,7 @@ def _valid_test_dsn() -> str:
 def _arm_valid(monkeypatch) -> None:
     monkeypatch.setenv("QMTOOL_PG_TEST_ADMIN_DSN", _valid_test_dsn())
     monkeypatch.setenv("QMTOOL_PG_TEST_RESET", RESET_OPT_IN_VALUE)
+    monkeypatch.delenv("QMTOOL_PG_TEST_EXPECTED_MAJOR", raising=False)
     monkeypatch.setenv(
         "QMTOOL_PG_DSN",
         "postgresql://app:runtime-secret@127.0.0.1:5432/qmtool_app",
@@ -106,6 +108,7 @@ def test_valid_identity_without_connect_is_approved(monkeypatch) -> None:
     _arm_valid(monkeypatch)
     approved = require_destructive_postgres_target(connect=False)
     assert approved.database == EXPECTED_DATABASE
+    assert approved.major_version == 16
     assert "secret" not in repr(approved)
     assert "runtime-secret" not in repr(approved)
 
@@ -176,8 +179,106 @@ def test_wrong_pg_version_is_rejected(monkeypatch) -> None:
             }
         ),
     )
-    with pytest.raises(DestructivePostgresGuardError, match="major version must be 16"):
+    with pytest.raises(DestructivePostgresGuardError, match="at least 16"):
         require_destructive_postgres_target(connect=True)
+
+
+def test_invalid_expected_major_is_rejected(monkeypatch) -> None:
+    _arm_valid(monkeypatch)
+    monkeypatch.setenv("QMTOOL_PG_TEST_EXPECTED_MAJOR", "18.4")
+    with pytest.raises(DestructivePostgresGuardError, match="integer major version"):
+        require_destructive_postgres_target(connect=False)
+
+
+def test_expected_major_below_floor_is_rejected(monkeypatch) -> None:
+    _arm_valid(monkeypatch)
+    monkeypatch.setenv("QMTOOL_PG_TEST_EXPECTED_MAJOR", "15")
+    with pytest.raises(DestructivePostgresGuardError, match="at least 16"):
+        require_destructive_postgres_target(connect=False)
+
+
+def test_unexpected_major_is_rejected(monkeypatch) -> None:
+    _arm_valid(monkeypatch)
+    monkeypatch.setattr(
+        "tests.postgres_destructive_guard.psycopg.connect",
+        _mock_connect(
+            {
+                "database": EXPECTED_DATABASE,
+                "version_num": "180004",
+                "marker": (EXPECTED_CLUSTER_MARKER,),
+            }
+        ),
+    )
+    with pytest.raises(
+        DestructivePostgresGuardError,
+        match="must match QMTOOL_PG_TEST_EXPECTED_MAJOR",
+    ):
+        require_destructive_postgres_target(connect=True)
+
+
+def test_expected_major_18_accepts_18(monkeypatch) -> None:
+    _arm_valid(monkeypatch)
+    monkeypatch.setenv("QMTOOL_PG_TEST_EXPECTED_MAJOR", "18")
+    monkeypatch.setattr(
+        "tests.postgres_destructive_guard.psycopg.connect",
+        _mock_connect(
+            {
+                "database": EXPECTED_DATABASE,
+                "version_num": "180004",
+                "marker": (EXPECTED_CLUSTER_MARKER,),
+                "role_flags": (True, True, True),
+                "is_owner": (True,),
+            }
+        ),
+    )
+    approved = require_destructive_postgres_target(connect=True)
+    assert approved.major_version == 18
+
+
+def test_preflight_does_not_require_reset_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv("QMTOOL_PG_TEST_ADMIN_DSN", _valid_test_dsn())
+    monkeypatch.delenv("QMTOOL_PG_TEST_RESET", raising=False)
+    monkeypatch.setenv("QMTOOL_PG_TEST_EXPECTED_MAJOR", "18")
+    monkeypatch.setenv(
+        "QMTOOL_PG_DSN",
+        "postgresql://app:runtime-secret@127.0.0.1:5432/qmtool_app",
+    )
+    monkeypatch.setattr(
+        "tests.postgres_destructive_guard.psycopg.connect",
+        _mock_connect(
+            {
+                "database": EXPECTED_DATABASE,
+                "version_num": "180004",
+                "marker": (EXPECTED_CLUSTER_MARKER,),
+                "role_flags": (True, True, True),
+                "is_owner": (True,),
+            }
+        ),
+    )
+    approved = preflight_isolated_postgres_target()
+    assert approved.major_version == 18
+    assert approved.database == EXPECTED_DATABASE
+
+
+def test_preflight_does_not_authorize_destructive_helpers(monkeypatch) -> None:
+    monkeypatch.setenv("QMTOOL_PG_TEST_ADMIN_DSN", _valid_test_dsn())
+    monkeypatch.delenv("QMTOOL_PG_TEST_RESET", raising=False)
+    monkeypatch.setenv(
+        "QMTOOL_PG_DSN",
+        "postgresql://app:runtime-secret@127.0.0.1:5432/qmtool_app",
+    )
+    monkeypatch.setattr(
+        "tests.postgres_destructive_guard.psycopg.connect",
+        _mock_connect(
+            {
+                "database": EXPECTED_DATABASE,
+                "version_num": "160001",
+                "marker": (EXPECTED_CLUSTER_MARKER,),
+            }
+        ),
+    )
+    with pytest.raises(DestructivePostgresGuardError, match="QMTOOL_PG_TEST_RESET"):
+        cleanup_live_environment()
 
 
 def test_missing_cluster_marker_is_rejected(monkeypatch) -> None:

@@ -1,4 +1,4 @@
-# Isolated PostgreSQL 16 destructive test target (J04-M0 M3)
+# Isolated PostgreSQL destructive test target (J04-M0 M3)
 
 This target is **only** for destructive pytest fixtures. It must never share
 host, port, volume/data directory, database, or credentials with runtime/lab
@@ -10,25 +10,35 @@ instances such as `qmtool_app`.
 | --- | --- |
 | Database | `qmtool_j04_destructive_test` |
 | Marker | `public.qmtool_j04_test_cluster_marker.cluster_id = j04_m0_destructive_pg16` |
-| PostgreSQL | major version **16** |
+| PostgreSQL | major **>= 16**, pinned by `QMTOOL_PG_TEST_EXPECTED_MAJOR` (CI: 16; local disposable cluster may be 18) |
 | Admin login | dedicated administrative test role (own DB or superuser; `CREATEROLE` + `CREATEDB`) |
+
+The marker string stays `j04_m0_destructive_pg16` even when the server major is 18.
 
 ## Required local environment
 
-A **separate, fully disposable** PostgreSQL 16 instance must be provided by the
-operator. Docker is **not** required. Allowed examples:
+A **separate, fully disposable** PostgreSQL instance (major 16 or newer) must be
+provided by the operator. Docker is **not** required. Allowed examples:
 
-- native PostgreSQL 16 installation
+- native PostgreSQL installation (16+)
 - separate VM
 - dedicated test server
 - a container **only if explicitly chosen**
 
-Generally required:
+Store Slot-2 secrets in gitignored `.env` (never commit). Do **not** store the
+destructive opt-in there.
 
 ```text
 QMTOOL_PG_TEST_ADMIN_DSN=postgresql://<admin>:<password>@<host>:<port>/qmtool_j04_destructive_test
-QMTOOL_PG_TEST_RESET=I_UNDERSTAND_THIS_IS_DESTRUCTIVE
 QMTOOL_PG_TEST_EXPECTED_DATABASE=qmtool_j04_destructive_test
+QMTOOL_PG_TEST_EXPECTED_MAJOR=18
+```
+
+`QMTOOL_PG_TEST_RESET` is injected only into the pytest child after a read-only
+preflight:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py
 ```
 
 Optional:
@@ -91,6 +101,7 @@ it is **not** the runtime/lab DSN contract. Local operators must not point a per
   `QMTOOL_PG_TEST_ADMIN_DSN`; a freely passed alternate admin DSN cannot bypass
   that boundary.
 - Without test DSN + reset opt-in the guard refuses to connect/mutate.
-- Preflight checks PostgreSQL 16, database name, cluster marker, ownership /
-  admin rights (`CREATEROLE`, `CREATEDB`), and rejects known runtime/lab endpoints.
+- Preflight checks major >= 16 and exact `QMTOOL_PG_TEST_EXPECTED_MAJOR`,
+  database name, cluster marker, ownership / admin rights (`CREATEROLE`,
+  `CREATEDB`), and rejects known runtime/lab endpoints.
 - Secrets must never appear in logs, pytest IDs, exceptions, or docs.

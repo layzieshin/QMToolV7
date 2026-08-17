@@ -193,6 +193,7 @@ jobs:
           QMTOOL_PG_TEST_ADMIN_DSN: postgresql://qmtool_j04_test_admin:qmtool_j04_ci_ephemeral@localhost:5432/qmtool_j04_destructive_test
           QMTOOL_PG_TEST_RESET: I_UNDERSTAND_THIS_IS_DESTRUCTIVE
           QMTOOL_PG_TEST_EXPECTED_DATABASE: qmtool_j04_destructive_test
+          QMTOOL_PG_TEST_EXPECTED_MAJOR: "16"
           QMTOOL_PG_REQUIRED: "1"
           PYTHONPATH: .
         run: |
