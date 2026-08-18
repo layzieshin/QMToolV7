@@ -43,7 +43,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R6 | Document-create 403 (QMB actor + diagnostics) | PASS | `e28a44d` | Harness-only; Create/Race/Comments/Word-Token use seeded QMB; `require_version_success`; included in FR12 freeze |
 | FR12 | Freeze R1–R6 acceptance candidate | PASS | `b63d9a1` | 108 focused gates; `$CandidateSha` below; CP08-V6 failed |
 | CP08-V6 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `etag_concurrency_race` (`TypeError`); document create **PASS**; Word **NOT REACHED** |
-| CP08-R7 | ETag-race harness `sorted()` + stable assignment | PASS | `f5dcfa8` | Test-only; `sorted([a, b])`; both race bodies keep editor/reviewer/approver; next: new freeze, then one CP08 |
+| CP08-R7 | ETag-race harness `sorted()` + stable assignment | PASS | `f5dcfa8` | Test-only; `sorted([a, b])`; both race bodies keep editor/reviewer/approver; included in FR13 freeze |
+| FR13 | Freeze R1–R7 acceptance candidate | PASS | _(pending)_ | 137 focused gates; `$CandidateSha` next; CP08-V7 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -949,8 +950,22 @@ the R7 content diff and code; evidence contents were ACL-blocked in that review 
 
 CP08-R7 commit: `f5dcfa8` — `test(j04-m0): fix etag race harness evaluation`
 
-**No freeze yet.** Next allowed sequence: new technical freeze, then exactly one CP08 run.
-Overall **`NOT_READY`**. Word still **not reached**. `ACCEPTED` is not set.
+Docs SHA record: `ae5be41` — `docs(j04-m0): record CP08-R7 SHA`
+
+## FR13 — R1–R7 technical freeze
+
+This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` /
+`63dda17`), R5 (`34f39c0` / docs `164a7c9`), R6 (`e28a44d` / docs `1f72451`), R7 (`f5dcfa8` /
+docs `ae5be41`), WR05 documentation (`034425f`), and the freeze documentation. Focused gates
+are **137 passed** (`build/j04-m0-closure/freeze-r7-20260818T051722279Z`): FR12 set plus
+`tests/backend/test_documents_concurrency_http.py` and the R7 race-evaluation tests.
+The frozen candidate SHA is recorded immediately after this checkpoint commit. No product
+or test changes are allowed after this freeze. CP08-V7 remains **NOT STARTED**. Overall
+**`NOT_READY`**: there is not yet a successful CP08 run. `ACCEPTED` is not set.
+
+Worktree at freeze: only the two confirmed stat-only files
+(`interfaces/pyqt/widgets/signature_placement/label_geometry.py`,
+`modules/training/wiring.py`).
 
 ## CP08-R2 remediation specification (real-process scenario)
 

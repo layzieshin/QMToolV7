@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-R7 PASS (`f5dcfa8`); FR12 freeze `b63d9a1`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR13 freeze pending SHA; CP08-R7 `f5dcfa8`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,10 +17,9 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`b63d9a16f87e8e9a12942d41101ee793d1fbb209` (`b63d9a1`)** remains the last
-freeze until a new freeze after R7 (`f5dcfa8`) is approved. Overall **`NOT_READY`**: CP08-V6
-was not fully green. Document create **held**. The V6 abort was the etag-race harness
-`sorted()` call. Word not reached. `ACCEPTED` is not set.
+`$CandidateSha` — the FR13 freeze commit SHA is recorded immediately after that checkpoint
+commit. R7 (`f5dcfa8`, docs `ae5be41`) is included. Overall **`NOT_READY`**: CP08-V6 was not
+fully green. Word not reached. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -451,8 +450,22 @@ in that review session; **54 passed** is recorded from the generated R7 evidence
 
 CP08-R7 commit: `f5dcfa8`
 
-**No freeze yet.** Next allowed sequence: new technical freeze, then exactly one CP08 run.
-Word remains not reached. Overall **`NOT_READY`**. `ACCEPTED` is not set.
+Docs SHA record: `ae5be41`
+
+## FR13 — R1–R7 technical freeze
+
+The freeze tree contains R1–R6 plus R7 (`f5dcfa8`, docs `ae5be41`), WR05 documentation, and the
+known unchanged stat-only files. The following checkpoint commit freezes this technical
+candidate; its full SHA is recorded immediately after. No product or test changes are permitted
+after this freeze.
+
+| Item | Status |
+| --- | --- |
+| Focused gates | **137 passed** (`build/j04-m0-closure/freeze-r7-20260818T051722279Z`) |
+| Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
+| Candidate SHA | recorded immediately after this checkpoint commit |
+| CP08-V7 | **NOT STARTED** |
+| `ACCEPTED` | **not set** |
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -486,7 +499,8 @@ Word remains not reached. Overall **`NOT_READY`**. `ACCEPTED` is not set.
 | CP08-R6 | PASS | `e28a44d` QMB actor + create 403 diagnostics | `1f72451` |
 | FR12 | PASS | `b63d9a1` freeze R1–R6 | `049c0fd` |
 | CP08-V6 | FAILED | — (etag_concurrency_race TypeError; create 200; Word not reached) | `bd769ba` |
-| CP08-R7 | PASS | `f5dcfa8` etag race `sorted()` + stable assignment | this documentation |
+| CP08-R7 | PASS | `f5dcfa8` etag race `sorted()` + stable assignment | `ae5be41` |
+| FR13 | PASS | freeze R1–R7 (SHA after this checkpoint) | SHA record |
 
 ### Remaining gates (explicitly NOT RUN)
 
