@@ -1,11 +1,14 @@
-"""J04-M0 full real-process acceptance scenario (test-only, CP08-R2).
+"""J04-M0 full real-process acceptance scenario (test-only).
 
-Orchestrates the single planned CP08 real-process gate: PG bootstrap, backend process,
-two isolated client worker processes, HTTP use-case coverage, backend restart, and an
-explicit Word COM live boundary (executed only with separate opt-in at CP08).
+Orchestrates the planned CP08 real-process gate for M0 document release:
+PG bootstrap, backend process, two isolated client workers, signed workflow
+to APPROVED, artifact content transport, PDF/DOCX comments, backend restart.
+Training, reads, change requests, archive, and Word COM conversion are out of
+this catalog.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import urllib.error
@@ -13,7 +16,9 @@ import urllib.request
 from dataclasses import dataclass, field
 from enum import Enum
 from http.client import HTTPResponse
+from io import BytesIO
 from typing import Any, Callable
+from zipfile import ZipFile
 
 from modules.usermanagement import postgres_schema as pgs
 from tests.acceptance.j04_m0_realprocess_harness import (
@@ -50,9 +55,34 @@ DIRECTORY_ROLE_PASSWORDS = {
     APPROVER_USERNAME: APPROVER_PASSWORD,
 }
 WORKFLOW_ASSIGNMENT_ROLES = (EDITOR_USERNAME, REVIEWER_USERNAME, APPROVER_USERNAME)
-
-WORD_COM_LIVE_ENV = "QMTOOL_J04_WORD_COM_LIVE"
-WORD_COM_LIVE_OPT_IN = "I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN"
+DOCX_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+)
+REQUIRED_STEP_CATALOG = (
+    "preconditions",
+    "pg_bootstrap",
+    "backend_start",
+    "health_and_openapi",
+    "bootstrap_admin_login",
+    "seed_directory_users",
+    "seed_workflow_profile",
+    "client_process_sessions",
+    "document_baseline_flow",
+    "etag_concurrency_race",
+    "artifacts_transport",
+    "signature_verify_password",
+    "signed_editing_complete",
+    "pdf_comment_flow",
+    "docx_comment_sync",
+    "signed_review_approval",
+    "backend_restart",
+    "persistence_and_session_contract",
+)
+FORBIDDEN_STEP_NAMES = (
+    "document_release_flow",
+    "comments_lifecycle_change_requests",
+    "word_com_live_boundary",
+)
 
 _MINIMAL_PDF = (
     b"%PDF-1.4\n"
@@ -104,39 +134,17 @@ class ScenarioContext:
     client2_token_fingerprint: str = ""
     pre_restart_tokens: dict[str, str] = field(default_factory=dict)
     bootstrap_admin_password: str = BOOTSTRAP_ADMIN_PASSWORD
+    source_artifact_id: str = ""
+    source_artifact_sha256: str = ""
+    pre_restart_etag: str = ""
+    pre_restart_status: str = ""
+    pdf_comment_id: str = ""
+    docx_comment_id: str = ""
 
 
 def scenario_step_catalog() -> tuple[str, ...]:
-    """Ordered step names for the full acceptance run (CP08 contract)."""
-    return (
-        "preconditions",
-        "pg_bootstrap",
-        "backend_start",
-        "health_and_openapi",
-        "bootstrap_admin_login",
-        "seed_directory_users",
-        "seed_workflow_profile",
-        "client_process_sessions",
-        "document_baseline_flow",
-        "etag_concurrency_race",
-        "artifacts_transport",
-        "signature_verify_password",
-        "training_read_receipt",
-        "comments_lifecycle_change_requests",
-        "backend_restart",
-        "persistence_and_session_contract",
-        "word_com_live_boundary",
-    )
-
-
-def word_com_boundary_reason() -> str:
-    """Explain why Word COM live is not part of CP08-R2 verification."""
-    if os.environ.get(WORD_COM_LIVE_ENV, "").strip() != WORD_COM_LIVE_OPT_IN:
-        return (
-            f"Word COM live requires {WORD_COM_LIVE_ENV}={WORD_COM_LIVE_OPT_IN!r} "
-            "and an interactive Windows session; executed only in CP08 step 4/9, not in R2"
-        )
-    return "Word COM live opt-in set; execution deferred to CP08 gate (R2 implements handler only)"
+    """Ordered step names for the M0 real-process acceptance run."""
+    return REQUIRED_STEP_CATALOG
 
 
 def build_backend_extra_env(pg_env: LivePostgresEnv) -> dict[str, str]:
@@ -238,6 +246,27 @@ class AcceptanceHttpClient:
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers), self._parse_response(exc)
 
+    def request_bytes(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        auth: bool = True,
+    ) -> tuple[int, dict[str, str], bytes]:
+        url = f"{self._base_url}{path}"
+        req_headers = dict(headers or {})
+        if auth:
+            if not self._token:
+                raise ScenarioFailure("HTTP client is not authenticated")
+            req_headers["Authorization"] = f"Bearer {self._token}"
+        request = urllib.request.Request(url, headers=req_headers, method=method.upper())
+        try:
+            with urllib.request.urlopen(request, timeout=30.0) as response:
+                return response.status, dict(response.headers), response.read()
+        except urllib.error.HTTPError as exc:
+            return exc.code, dict(exc.headers), exc.read()
+
     @staticmethod
     def _parse_response(response: HTTPResponse) -> Any:
         raw = response.read()
@@ -262,6 +291,26 @@ class AcceptanceHttpClient:
             if etag:
                 return etag
         raise ScenarioFailure("version payload missing etag")
+
+
+def _header_value(headers: dict[str, str], name: str) -> str:
+    target = name.lower()
+    for key, value in headers.items():
+        if str(key).lower() == target:
+            return str(value)
+    return ""
+
+
+def _assert_no_server_paths(payload: Any, *, where: str) -> None:
+    try:
+        text = json.dumps(payload, ensure_ascii=True)
+    except TypeError:
+        text = str(payload)
+    lowered = text.lower()
+    if "storage_key" in lowered:
+        raise ScenarioFailure(f"{where} leaked storage_key")
+    if ":\\" in text or "/storage/" in lowered or "\\storage\\" in lowered:
+        raise ScenarioFailure(f"{where} leaked a server filesystem path")
 
 
 def _http_error_code(payload: Any) -> str:
@@ -343,6 +392,13 @@ def capture_authenticated_user_id(
     return user_id
 
 
+def authenticated_client(token: str, base_url: str) -> AcceptanceHttpClient:
+    """Create a scenario client pinned to one already-authenticated actor token."""
+    client = AcceptanceHttpClient(base_url)
+    client._token = token
+    return client
+
+
 def workflow_role_assignment(user_ids: dict[str, str]) -> dict[str, list[str]]:
     """Build assign-roles bodies from stored user_ids, never from login usernames."""
     missing = [
@@ -357,15 +413,6 @@ def workflow_role_assignment(user_ids: dict[str, str]) -> dict[str, list[str]]:
         "reviewers": [user_ids[REVIEWER_USERNAME]],
         "approvers": [user_ids[APPROVER_USERNAME]],
     }
-
-
-def require_editor_read_receipt(confirmed: Any, user_ids: dict[str, str]) -> None:
-    """Accept a training receipt only when ``user_id`` matches the stored editor id."""
-    expected = str(user_ids.get(EDITOR_USERNAME) or "").strip()
-    if not expected:
-        raise ScenarioFailure("role user_id missing for training read receipt: editor")
-    if not isinstance(confirmed, dict) or confirmed.get("user_id") != expected:
-        raise ScenarioFailure("training read receipt missing editor actor")
 
 
 def _mutation_headers(token: str, etag: str, *, extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -407,7 +454,7 @@ def _profile_transitions() -> list[dict[str, object]]:
             "to_status": "IN_REVIEW",
             "required_role": "EDITOR",
             "decision_policy": "ONE_OF_POOL",
-            "signature_required": False,
+            "signature_required": True,
             "four_eyes_required": False,
         },
         {
@@ -416,7 +463,7 @@ def _profile_transitions() -> list[dict[str, object]]:
             "to_status": "IN_APPROVAL",
             "required_role": "REVIEWER",
             "decision_policy": "ONE_OF_POOL",
-            "signature_required": False,
+            "signature_required": True,
             "four_eyes_required": False,
         },
         {
@@ -425,7 +472,7 @@ def _profile_transitions() -> list[dict[str, object]]:
             "to_status": "APPROVED",
             "required_role": "APPROVER",
             "decision_policy": "ONE_OF_POOL",
-            "signature_required": False,
+            "signature_required": True,
             "four_eyes_required": False,
         },
     ]
@@ -692,127 +739,321 @@ def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
     return evaluate_etag_race_payloads(payload_a, payload_b)
 
 
-def _step_artifacts_transport(ctx: ScenarioContext) -> str:
-    client = AcceptanceHttpClient(ctx.harness.backend_url)
-    client._token = ctx.tokens["editor"]
-    listed = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts")
-    if not isinstance(listed, list) or not listed:
-        raise ScenarioFailure("artifact list empty")
-    row = listed[0]
-    if "storage_key" in row:
-        raise ScenarioFailure("artifact list leaked storage_key")
-    meta = client.request("GET", f"/documents/artifacts/{row['artifact_id']}")
-    if isinstance(meta, dict) and "storage_key" in meta:
-        raise ScenarioFailure("artifact metadata leaked storage_key")
-    return f"artifacts listed count={len(listed)}"
+def _refresh_document_etag(client: AcceptanceHttpClient) -> str:
+    payload = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
+    return AcceptanceHttpClient.etag_from_version_payload(payload)
 
 
-def _step_signature_verify_password(ctx: ScenarioContext) -> str:
-    client = AcceptanceHttpClient(ctx.harness.backend_url)
-    client._token = ctx.tokens["editor"]
-    status, _headers, imported = client.request_raw(
+def _sign_intent_body(password: str) -> dict[str, object]:
+    return {
+        "sign_intent": {
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {
+                "show_signature": True,
+                "show_name": True,
+                "show_date": True,
+                "name_position": "above",
+                "date_position": "below",
+            },
+            "password": password,
+            "reason": "J04_M0_ACCEPTANCE",
+        }
+    }
+
+
+def _comments_docx_bytes() -> bytes:
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<w:comments xmlns:w="{ns}">'
+        '<w:comment w:id="1" w:author="Editor" w:date="2026-08-18T00:00:00Z">'
+        "<w:p><w:r><w:t>acceptance native comment</w:t></w:r></w:p>"
+        "</w:comment></w:comments>"
+    )
+    buf = BytesIO()
+    with ZipFile(buf, "w") as zf:
+        zf.writestr("word/comments.xml", xml)
+    return buf.getvalue()
+
+
+def _activate_signature_asset(client: AcceptanceHttpClient, *, token: str, username: str, password: str) -> None:
+    status, _headers, _body = client.request_raw(
         "POST",
         "/signature/assets/import-and-activate",
         content=_MINIMAL_PNG,
         headers={
-            "Authorization": f"Bearer {ctx.tokens['editor']}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "image/png",
-            "X-Filename-Hint": "accept.png",
+            "X-Filename-Hint": f"accept-{username}.png",
+            "X-Signature-Password": password,
         },
     )
     if status != 200:
-        raise ScenarioFailure(f"signature asset import failed HTTP {status}")
+        raise ScenarioFailure(f"signature asset import failed for {username} HTTP {status}")
     verify = client.request(
         "POST",
         "/signature/verify-password",
-        body={"password": EDITOR_PASSWORD},
+        body={"password": password},
     )
     if not isinstance(verify, dict) or not verify.get("ok"):
-        raise ScenarioFailure("signature verify-password failed")
-    return "signature asset active and password verified"
+        raise ScenarioFailure(f"signature verify-password failed for {username}")
 
 
-def _step_training_read_receipt(ctx: ScenarioContext) -> str:
-    client = AcceptanceHttpClient(ctx.harness.backend_url)
-    client._token = ctx.tokens["editor"]
-    read = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
-    etag = AcceptanceHttpClient.etag_from_version_payload(read)
-    edited = client.request_raw(
+def _step_artifacts_transport(ctx: ScenarioContext) -> str:
+    client = authenticated_client(ctx.tokens["editor"], ctx.harness.backend_url)
+    listed = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts")
+    if not isinstance(listed, list) or not listed:
+        raise ScenarioFailure("artifact list empty")
+    row = listed[0]
+    if not isinstance(row, dict):
+        raise ScenarioFailure("artifact list row is not an object")
+    _assert_no_server_paths(listed, where="artifact list")
+    artifact_id = str(row.get("artifact_id") or "").strip()
+    listed_sha = str(row.get("sha256") or "").strip()
+    if not artifact_id or not listed_sha:
+        raise ScenarioFailure("artifact list missing artifact_id or sha256")
+    meta = client.request("GET", f"/documents/artifacts/{artifact_id}")
+    _assert_no_server_paths(meta, where="artifact metadata")
+    status, headers, content = client.request_bytes(
+        "GET",
+        f"/documents/artifacts/{artifact_id}/content",
+    )
+    if status != 200:
+        raise ScenarioFailure(f"artifact content download failed HTTP {status}")
+    digest = hashlib.sha256(content).hexdigest()
+    header_sha = _header_value(headers, "X-Content-SHA256")
+    header_etag = _header_value(headers, "ETag").strip('"')
+    header_length = _header_value(headers, "Content-Length")
+    if header_sha != listed_sha or header_sha != digest:
+        raise ScenarioFailure(
+            f"artifact SHA-256 mismatch listed={listed_sha} header={header_sha} body={digest}"
+        )
+    if header_etag != listed_sha:
+        raise ScenarioFailure(f"artifact ETag expected {listed_sha}, got {header_etag}")
+    if header_length and int(header_length) != len(content):
+        raise ScenarioFailure(
+            f"artifact Content-Length expected {len(content)}, got {header_length}"
+        )
+    _assert_no_server_paths(dict(headers), where="artifact content headers")
+    ctx.source_artifact_id = artifact_id
+    ctx.source_artifact_sha256 = digest
+    return f"artifact content verified id={artifact_id} sha256={digest[:16]}..."
+
+
+def _step_signature_verify_password(ctx: ScenarioContext) -> str:
+    for username, password in DIRECTORY_ROLE_PASSWORDS.items():
+        if username == QMB_USERNAME:
+            continue
+        client = authenticated_client(ctx.tokens[username], ctx.harness.backend_url)
+        _activate_signature_asset(
+            client,
+            token=ctx.tokens[username],
+            username=username,
+            password=password,
+        )
+    return "editor, reviewer, and approver signature assets active and verified"
+
+
+def _step_signed_editing_complete(ctx: ScenarioContext) -> str:
+    editor_client = authenticated_client(ctx.tokens["editor"], ctx.harness.backend_url)
+    etag = _refresh_document_etag(editor_client)
+    denied_status, _headers, denied_payload = editor_client.request_raw(
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete",
-        headers=_mutation_headers(ctx.tokens["editor"], etag),
-    )[2]
-    etag = AcceptanceHttpClient.etag_from_version_payload(edited)
-    reviewed = client.request_raw(
-        "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept",
-        headers=_mutation_headers(ctx.tokens["reviewer"], etag),
-    )[2]
-    etag = AcceptanceHttpClient.etag_from_version_payload(reviewed)
-    approved = client.request_raw(
-        "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept",
-        headers=_mutation_headers(ctx.tokens["approver"], etag),
-    )[2]
-    if not isinstance(approved, dict) or approved.get("state", {}).get("status") != "APPROVED":
-        raise ScenarioFailure("approval did not reach APPROVED")
-    client._token = ctx.tokens["editor"]
-    opened = client.request(
-        "POST",
-        "/documents/reads/open-released",
-        body={"document_id": ACCEPTANCE_DOC_ID, "version": 1, "source": "training"},
+        body={},
+        headers={"If-Match": etag},
     )
-    confirmed = client.request(
+    if denied_status != 400:
+        raise ScenarioFailure(
+            "editing-complete without sign-intent must fail closed, "
+            f"got status={denied_status} body={_redact_http_payload(denied_payload)}"
+        )
+    edited_status, _headers, edited_payload = editor_client.request_raw(
         "POST",
-        "/documents/reads/confirm",
-        body={
-            "document_id": ACCEPTANCE_DOC_ID,
-            "version": 1,
-            "source": "j04-acceptance",
-        },
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete",
+        body=_sign_intent_body(EDITOR_PASSWORD),
+        headers={"If-Match": etag},
     )
-    require_editor_read_receipt(confirmed, ctx.user_ids)
-    return "approved document training read confirmed"
+    edited = require_version_success(
+        edited_status,
+        edited_payload,
+        action=f"POST /documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete",
+    )
+    if edited.get("state", {}).get("status") != "IN_REVIEW":
+        raise ScenarioFailure(
+            f"signed editing-complete did not reach IN_REVIEW, got {edited.get('state')}"
+        )
+    ctx.document_etag = AcceptanceHttpClient.etag_from_version_payload(edited)
+    return "signed editing-complete fail-closed then reached IN_REVIEW"
 
 
-def _step_comments_lifecycle_change_requests(ctx: ScenarioContext) -> str:
-    client = AcceptanceHttpClient(ctx.harness.backend_url)
-    qmb_token = ctx.tokens["qmb"]
-    client._token = qmb_token
-    read = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
-    etag = AcceptanceHttpClient.etag_from_version_payload(read)
-    created_cr = client.request_raw(
-        "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/change-requests",
-        body={"change_id": "CR-J04-1", "reason": "acceptance", "impact_refs": ["TR-1"]},
-        headers=_mutation_headers(qmb_token, etag),
-    )
-    if created_cr[0] != 200:
-        raise ScenarioFailure("change request create failed")
-    etag = AcceptanceHttpClient.etag_from_version_payload(created_cr[2])
-    comment = client.request_raw(
+def _step_pdf_comment_flow(ctx: ScenarioContext) -> str:
+    reviewer_client = authenticated_client(ctx.tokens["reviewer"], ctx.harness.backend_url)
+    etag = _refresh_document_etag(reviewer_client)
+    status, _headers, payload = reviewer_client.request_raw(
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments",
-        body={"context": "PDF_REVIEW", "page_number": 1, "comment_text": "acceptance note"},
-        headers=_mutation_headers(qmb_token, etag),
+        body={
+            "context": "PDF_REVIEW",
+            "page_number": 1,
+            "comment_text": "acceptance pdf review note",
+        },
+        headers=_mutation_headers(ctx.tokens["reviewer"], etag),
     )
-    if comment[0] != 200:
-        raise ScenarioFailure("comment create failed")
-    etag = AcceptanceHttpClient.etag_from_version_payload(comment[2])
-    client._token = ctx.tokens["qmb"]
-    archived = client.request_raw(
+    if status != 200 or not isinstance(payload, dict):
+        raise ScenarioFailure(
+            f"PDF comment create failed status={status} body={_redact_http_payload(payload)}"
+        )
+    comment_id = str(payload.get("comment_id") or "").strip()
+    if not comment_id:
+        raise ScenarioFailure("PDF comment create missing comment_id")
+    listed = reviewer_client.request(
+        "GET",
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments?context=PDF_REVIEW",
+    )
+    if not isinstance(listed, list) or not any(
+        isinstance(row, dict) and row.get("comment_id") == comment_id for row in listed
+    ):
+        raise ScenarioFailure("PDF_REVIEW comment list missing the created comment")
+    ctx.pdf_comment_id = comment_id
+    ctx.document_etag = _refresh_document_etag(reviewer_client)
+    return f"PDF_REVIEW comment created id={comment_id}"
+
+
+def _step_docx_comment_sync(ctx: ScenarioContext) -> str:
+    qmb_client = authenticated_client(ctx.tokens["qmb"], ctx.harness.backend_url)
+    etag = _refresh_document_etag(qmb_client)
+    imported_status, _headers, imported_payload = qmb_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/lifecycle/archive",
-        headers=_mutation_headers(ctx.tokens["qmb"], etag),
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-docx",
+        content=_comments_docx_bytes(),
+        headers=_mutation_headers(
+            ctx.tokens["qmb"],
+            etag,
+            extra={"Content-Type": DOCX_CONTENT_TYPE},
+        ),
     )
-    if archived[0] != 200:
-        raise ScenarioFailure("lifecycle archive failed")
-    if archived[2].get("state", {}).get("status") != "ARCHIVED":
-        raise ScenarioFailure("document not archived")
-    return "change request, comment, and archive verified"
+    imported = require_version_success(
+        imported_status,
+        imported_payload,
+        action=f"POST /documents/versions/{ACCEPTANCE_DOC_ID}/1/import-docx",
+    )
+    etag = AcceptanceHttpClient.etag_from_version_payload(imported)
+    editor_client = authenticated_client(ctx.tokens["editor"], ctx.harness.backend_url)
+    first_status, _headers, first_payload = editor_client.request_raw(
+        "POST",
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments/sync-docx",
+        headers=_mutation_headers(ctx.tokens["editor"], etag),
+    )
+    if first_status != 200 or not isinstance(first_payload, list) or not first_payload:
+        raise ScenarioFailure(
+            f"DOCX comment sync failed status={first_status} "
+            f"body={_redact_http_payload(first_payload)}"
+        )
+    first_id = str(first_payload[0].get("comment_id") or "").strip()
+    if not first_id:
+        raise ScenarioFailure("DOCX comment sync missing comment_id")
+    if ctx.pdf_comment_id and first_id == ctx.pdf_comment_id:
+        raise ScenarioFailure("DOCX sync reused the PDF_REVIEW comment_id")
+    second_status, _headers, second_payload = editor_client.request_raw(
+        "POST",
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments/sync-docx",
+        headers=_mutation_headers(ctx.tokens["editor"], etag),
+    )
+    if second_status != 200 or not isinstance(second_payload, list):
+        raise ScenarioFailure(
+            f"idempotent DOCX comment sync failed status={second_status} "
+            f"body={_redact_http_payload(second_payload)}"
+        )
+    if len(second_payload) != len(first_payload) or str(
+        second_payload[0].get("comment_id") or ""
+    ) != first_id:
+        raise ScenarioFailure("DOCX comment sync was not idempotent")
+    reviewer_client = authenticated_client(ctx.tokens["reviewer"], ctx.harness.backend_url)
+    pdf_listed = reviewer_client.request(
+        "GET",
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments?context=PDF_REVIEW",
+    )
+    if ctx.pdf_comment_id and isinstance(pdf_listed, list):
+        pdf_ids = {
+            str(row.get("comment_id") or "")
+            for row in pdf_listed
+            if isinstance(row, dict)
+        }
+        if first_id in pdf_ids:
+            raise ScenarioFailure("DOCX comment appeared in PDF_REVIEW listing")
+    ctx.docx_comment_id = first_id
+    ctx.document_etag = _refresh_document_etag(editor_client)
+    return f"DOCX_EDIT comment sync idempotent id={first_id}"
+
+
+def _assert_artifact_types(listed: Any, *, required: tuple[str, ...]) -> None:
+    if not isinstance(listed, list):
+        raise ScenarioFailure("artifact list is not an array")
+    types = {
+        str(row.get("artifact_type") or "")
+        for row in listed
+        if isinstance(row, dict)
+    }
+    missing = [name for name in required if name not in types]
+    if missing:
+        raise ScenarioFailure(f"artifact types missing {missing}; have {sorted(types)}")
+
+
+def _step_signed_review_approval(ctx: ScenarioContext) -> str:
+    reviewer_client = authenticated_client(ctx.tokens["reviewer"], ctx.harness.backend_url)
+    etag = _refresh_document_etag(reviewer_client)
+    reviewed_status, _headers, reviewed_payload = reviewer_client.request_raw(
+        "POST",
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept",
+        body=_sign_intent_body(REVIEWER_PASSWORD),
+        headers={"If-Match": etag},
+    )
+    reviewed = require_version_success(
+        reviewed_status,
+        reviewed_payload,
+        action=f"POST /documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept",
+    )
+    if reviewed.get("state", {}).get("status") != "IN_APPROVAL":
+        raise ScenarioFailure(
+            f"signed review did not reach IN_APPROVAL, got {reviewed.get('state')}"
+        )
+    etag = AcceptanceHttpClient.etag_from_version_payload(reviewed)
+    approver_client = authenticated_client(ctx.tokens["approver"], ctx.harness.backend_url)
+    approved_status, _headers, approved_payload = approver_client.request_raw(
+        "POST",
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept",
+        body=_sign_intent_body(APPROVER_PASSWORD),
+        headers={"If-Match": etag},
+    )
+    approved = require_version_success(
+        approved_status,
+        approved_payload,
+        action=f"POST /documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept",
+    )
+    if approved.get("state", {}).get("status") != "APPROVED":
+        raise ScenarioFailure(
+            f"signed approval did not reach APPROVED, got {approved.get('state')}"
+        )
+    ctx.document_etag = AcceptanceHttpClient.etag_from_version_payload(approved)
+    listed = approver_client.request(
+        "GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts"
+    )
+    _assert_artifact_types(listed, required=("SIGNED_PDF", "RELEASED_PDF"))
+    return "signed review/approval reached APPROVED with SIGNED_PDF and RELEASED_PDF"
 
 
 def _step_backend_restart(ctx: ScenarioContext) -> str:
+    probe = authenticated_client(ctx.tokens["reviewer"], ctx.harness.backend_url)
+    persisted = probe.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
+    ctx.pre_restart_etag = AcceptanceHttpClient.etag_from_version_payload(persisted)
+    ctx.pre_restart_status = str(
+        persisted.get("state", {}).get("status") if isinstance(persisted, dict) else ""
+    )
+    if ctx.pre_restart_status != "APPROVED":
+        raise ScenarioFailure(
+            f"expected APPROVED before restart, got {ctx.pre_restart_status}"
+        )
     ctx.pre_restart_tokens = dict(ctx.tokens)
     ctx.harness.stop_process("backend")
     assert_backend_port_free()
@@ -828,8 +1069,11 @@ def _step_persistence_and_session_contract(ctx: ScenarioContext) -> str:
         raise ScenarioFailure("reviewer token missing for persistence check")
     persisted = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
     status = persisted.get("state", {}).get("status") if isinstance(persisted, dict) else None
-    if status != "ARCHIVED":
-        raise ScenarioFailure(f"expected ARCHIVED after restart, got {status}")
+    etag = AcceptanceHttpClient.etag_from_version_payload(persisted)
+    if status != "APPROVED":
+        raise ScenarioFailure(f"expected APPROVED after restart, got {status}")
+    if etag != ctx.pre_restart_etag:
+        raise ScenarioFailure("document etag changed across backend restart")
     me_status, _headers, me = client.request_raw("GET", "/auth/me")
     if me_status != 200 or not isinstance(me, dict) or me.get("username") != "reviewer":
         raise ScenarioFailure("pre-restart reviewer session did not survive backend restart")
@@ -838,34 +1082,7 @@ def _step_persistence_and_session_contract(ctx: ScenarioContext) -> str:
     editor_status, _headers, editor_me = editor_client.request_raw("GET", "/auth/me")
     if editor_status != 200 or editor_me.get("username") != "editor":
         raise ScenarioFailure("pre-restart editor session did not survive backend restart")
-    return "document persisted; PG-backed sessions survived restart"
-
-
-def _step_word_com_live_boundary(ctx: ScenarioContext) -> str:
-    reason = word_com_boundary_reason()
-    if os.environ.get(WORD_COM_LIVE_ENV, "").strip() != WORD_COM_LIVE_OPT_IN:
-        raise ScenarioSkip(reason)
-    client = AcceptanceHttpClient(ctx.harness.backend_url)
-    qmb_token = ctx.tokens["qmb"]
-    client._token = qmb_token
-    read = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
-    etag = AcceptanceHttpClient.etag_from_version_payload(read)
-    docx_stub = b"PK\x03\x04acceptance-docx-stub"
-    status, _headers, body = client.request_raw(
-        "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-docx",
-        content=docx_stub,
-        headers=_mutation_headers(
-            qmb_token,
-            etag,
-            extra={
-                "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            },
-        ),
-    )
-    if status not in (200, 400, 422, 501):
-        raise ScenarioFailure(f"unexpected Word COM live HTTP {status}: {body}")
-    return f"word com live attempted status={status}"
+    return "document persisted in APPROVED; PG-backed sessions survived restart"
 
 
 _STEP_HANDLERS: dict[str, Callable[[ScenarioContext], str]] = {
@@ -881,11 +1098,12 @@ _STEP_HANDLERS: dict[str, Callable[[ScenarioContext], str]] = {
     "etag_concurrency_race": _step_etag_concurrency_race,
     "artifacts_transport": _step_artifacts_transport,
     "signature_verify_password": _step_signature_verify_password,
-    "training_read_receipt": _step_training_read_receipt,
-    "comments_lifecycle_change_requests": _step_comments_lifecycle_change_requests,
+    "signed_editing_complete": _step_signed_editing_complete,
+    "pdf_comment_flow": _step_pdf_comment_flow,
+    "docx_comment_sync": _step_docx_comment_sync,
+    "signed_review_approval": _step_signed_review_approval,
     "backend_restart": _step_backend_restart,
     "persistence_and_session_contract": _step_persistence_and_session_contract,
-    "word_com_live_boundary": _step_word_com_live_boundary,
 }
 
 
@@ -908,8 +1126,11 @@ def run_acceptance_scenario(harness: J04M0RealProcessHarness) -> list[ScenarioSt
     """Execute the ordered CP08 acceptance scenario against a prepared harness."""
     catalog = scenario_step_catalog()
     missing = [name for name in catalog if name not in _STEP_HANDLERS]
+    extra = [name for name in _STEP_HANDLERS if name not in catalog]
     if missing:
         raise ScenarioFailure(f"scenario handlers missing for: {missing}")
+    if extra:
+        raise ScenarioFailure(f"scenario handlers outside catalog: {extra}")
     ctx = ScenarioContext(harness=harness)
     results: list[ScenarioStepResult] = []
     for name in catalog:

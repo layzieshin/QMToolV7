@@ -12,6 +12,7 @@ import pytest
 from tests.acceptance.j04_m0_acceptance_scenario import (
     StepStatus,
     run_acceptance_scenario,
+    scenario_step_catalog,
 )
 from tests.acceptance.j04_m0_realprocess_harness import (
     HarnessBlockedError,
@@ -34,9 +35,10 @@ def _require_opt_in() -> None:
 
 
 def test_j04_m0_full_realprocess_acceptance() -> None:
-    """Single planned full acceptance run (health, sessions, ETag, artifacts, restart, Word COM).
+    """Single planned full acceptance run through signed APPROVED and restart.
 
     Workspace is allocated under ``build/j04-m0-closure/`` (never a pytest session temp dir).
+    Word COM conversion is not a catalog step.
     """
     _require_opt_in()
     if os.environ.get("QMTOOL_PG_TEST_ADMIN_DSN", "").strip() == "":
@@ -48,7 +50,9 @@ def test_j04_m0_full_realprocess_acceptance() -> None:
 
     failures = [result for result in results if result.status == StepStatus.FAIL]
     assert failures == [], [f"{item.name}: {item.detail}" for item in failures]
-
-    word_step = next(result for result in results if result.name == "word_com_live_boundary")
-    if os.environ.get("QMTOOL_J04_WORD_COM_LIVE", "").strip() != "I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN":
-        assert word_step.status == StepStatus.SKIP
+    names = [result.name for result in results]
+    assert names == list(scenario_step_catalog())
+    assert all(result.status == StepStatus.PASS for result in results)
+    assert "word_com_live_boundary" not in names
+    assert "comments_lifecycle_change_requests" not in names
+    assert "document_release_flow" not in names

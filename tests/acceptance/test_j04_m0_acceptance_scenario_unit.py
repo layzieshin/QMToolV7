@@ -14,30 +14,42 @@ from tests.acceptance.j04_m0_acceptance_scenario import (
     ACCEPTANCE_DOC_ID,
     AcceptanceHttpClient,
     APPROVER_USERNAME,
+    APPROVER_PASSWORD,
     BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE,
     EDITOR_USERNAME,
+    EDITOR_PASSWORD,
+    FORBIDDEN_STEP_NAMES,
     QMB_PASSWORD,
     QMB_USERNAME,
+    REQUIRED_STEP_CATALOG,
     REVIEWER_USERNAME,
+    REVIEWER_PASSWORD,
     ScenarioContext,
     ScenarioFailure,
     StepStatus,
-    WORD_COM_LIVE_ENV,
-    WORD_COM_LIVE_OPT_IN,
     capture_authenticated_user_id,
+    authenticated_client,
     complete_bootstrap_admin_session,
     build_backend_extra_env,
     evaluate_etag_race_payloads,
     post_acceptance_document_create,
     require_version_success,
-    require_editor_read_receipt,
     run_acceptance_scenario,
     scenario_step_catalog,
-    word_com_boundary_reason,
     workflow_role_assignment,
+    _STEP_HANDLERS,
+    _profile_transitions,
+    _sign_intent_body,
+    _step_artifacts_transport,
     _step_document_baseline_flow,
+    _step_docx_comment_sync,
     _step_etag_concurrency_race,
+    _step_pdf_comment_flow,
+    _step_persistence_and_session_contract,
     _step_seed_directory_users,
+    _step_signed_editing_complete,
+    _step_signed_review_approval,
+    _step_signature_verify_password,
 )
 from tests.acceptance.j04_m0_realprocess_harness import (
     HarnessBlockedError,
@@ -172,19 +184,87 @@ def mock_backend_url() -> str:
         thread.join(timeout=2.0)
 
 
-def test_scenario_step_catalog_matches_cp08_contract() -> None:
+def test_scenario_step_catalog_matches_m0_contract() -> None:
     catalog = scenario_step_catalog()
-    assert catalog[0] == "preconditions"
-    assert "etag_concurrency_race" in catalog
-    assert "word_com_live_boundary" in catalog[-1:]
-    assert len(catalog) == 17
+    assert catalog == REQUIRED_STEP_CATALOG
+    assert catalog == (
+        "preconditions",
+        "pg_bootstrap",
+        "backend_start",
+        "health_and_openapi",
+        "bootstrap_admin_login",
+        "seed_directory_users",
+        "seed_workflow_profile",
+        "client_process_sessions",
+        "document_baseline_flow",
+        "etag_concurrency_race",
+        "artifacts_transport",
+        "signature_verify_password",
+        "signed_editing_complete",
+        "pdf_comment_flow",
+        "docx_comment_sync",
+        "signed_review_approval",
+        "backend_restart",
+        "persistence_and_session_contract",
+    )
+    assert len(catalog) == 18
+    assert tuple(_STEP_HANDLERS.keys()) == catalog
+    for forbidden in FORBIDDEN_STEP_NAMES:
+        assert forbidden not in catalog
+        assert forbidden not in _STEP_HANDLERS
 
 
-def test_word_com_boundary_defaults_to_skip_reason(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(WORD_COM_LIVE_ENV, raising=False)
-    reason = word_com_boundary_reason()
-    assert WORD_COM_LIVE_OPT_IN in reason
-    assert "interactive Windows session" in reason
+def test_forbidden_scope_is_absent_from_handlers_and_live_gate() -> None:
+    import inspect
+
+    from tests.acceptance import test_j04_m0_realprocess as live_gate
+
+    handlers_src = "".join(inspect.getsource(handler) for handler in _STEP_HANDLERS.values())
+    live_src = inspect.getsource(live_gate.test_j04_m0_full_realprocess_acceptance)
+    for token in (
+        "/documents/reads/",
+        "/change-requests",
+        "/lifecycle/archive",
+        "read_receipt",
+        "word_com_live_boundary",
+        "document_release_flow",
+        "comments_lifecycle_change_requests",
+    ):
+        assert token not in handlers_src
+    assert "scenario_step_catalog" in live_src
+    assert "word_com_live_boundary" not in inspect.getsource(_STEP_HANDLERS["persistence_and_session_contract"])
+
+
+def test_profile_transitions_require_signatures_for_all_three() -> None:
+    transitions = _profile_transitions()
+    assert len(transitions) == 3
+    assert [item["from_status"] for item in transitions] == ["DRAFT", "IN_REVIEW", "IN_APPROVAL"]
+    assert [item["to_status"] for item in transitions] == ["IN_REVIEW", "IN_APPROVAL", "APPROVED"]
+    assert all(item["signature_required"] is True for item in transitions)
+
+
+def test_sign_intent_body_requires_password_argument() -> None:
+    import inspect
+
+    signature = inspect.signature(_sign_intent_body)
+    assert list(signature.parameters) == ["password"]
+    assert signature.parameters["password"].default is inspect.Parameter.empty
+    with pytest.raises(TypeError):
+        _sign_intent_body()  # type: ignore[call-arg]
+    payload = _sign_intent_body(EDITOR_PASSWORD)
+    assert payload["sign_intent"]["password"] == EDITOR_PASSWORD
+    assert payload["sign_intent"]["password"] is not None
+    from tests.acceptance.j04_m0_acceptance_scenario import _activate_signature_asset
+
+    editing_src = inspect.getsource(_step_signed_editing_complete)
+    review_src = inspect.getsource(_step_signed_review_approval)
+    activate_src = inspect.getsource(_activate_signature_asset)
+    assert "EDITOR_PASSWORD" in editing_src
+    assert "REVIEWER_PASSWORD" in review_src
+    assert "APPROVER_PASSWORD" in review_src
+    assert "X-Signature-Password" in activate_src
+    assert "password: None" not in editing_src
+    assert "password: None" not in review_src
 
 
 def test_build_backend_extra_env_uses_runtime_dsn_only() -> None:
@@ -313,24 +393,15 @@ _ROLE_USER_IDS = {
 }
 
 
-def test_document_baseline_and_race_use_seeded_qmb_not_bootstrap_admin() -> None:
+def test_document_baseline_and_docx_import_use_seeded_qmb_not_bootstrap_admin() -> None:
     import inspect
 
-    from tests.acceptance.j04_m0_acceptance_scenario import (
-        _step_document_baseline_flow,
-        _step_comments_lifecycle_change_requests,
-        _step_word_com_live_boundary,
-    )
-
     baseline = inspect.getsource(_step_document_baseline_flow)
-    comments = inspect.getsource(_step_comments_lifecycle_change_requests)
-    word = inspect.getsource(_step_word_com_live_boundary)
+    docx = inspect.getsource(_step_docx_comment_sync)
     assert 'tokens["qmb"]' in baseline
     assert 'tokens["admin"]' not in baseline
-    assert 'tokens["qmb"]' in comments
-    assert 'tokens["admin"]' not in comments
-    assert 'tokens["qmb"]' in word
-    assert 'tokens["admin"]' not in word
+    assert 'tokens["qmb"]' in docx
+    assert 'tokens["admin"]' not in docx
 
 
 class _FakeRaceHarness:
@@ -423,12 +494,6 @@ def test_workflow_role_assignment_uses_user_ids_never_usernames() -> None:
 def test_workflow_role_assignment_requires_all_role_user_ids() -> None:
     with pytest.raises(ScenarioFailure, match="role user_id missing"):
         workflow_role_assignment({EDITOR_USERNAME: EDITOR_USER_ID})
-
-
-def test_training_read_receipt_matches_user_id_not_username() -> None:
-    require_editor_read_receipt({"user_id": EDITOR_USER_ID}, _ROLE_USER_IDS)
-    with pytest.raises(ScenarioFailure, match="training read receipt missing editor actor"):
-        require_editor_read_receipt({"user_id": EDITOR_USERNAME}, _ROLE_USER_IDS)
 
 
 class _AuthMeHandler(BaseHTTPRequestHandler):
@@ -629,6 +694,512 @@ def test_baseline_and_race_requests_send_user_ids_never_usernames(
     assert baseline_body == expected
     _assert_assignment_uses_user_ids_not_usernames(baseline_body)
     _assert_user_id_qmb_race_args(race_harness)
+
+
+def _workflow_ctx(backend_url: str) -> ScenarioContext:
+    ctx = ScenarioContext(harness=SimpleNamespace(backend_url=backend_url))  # type: ignore[arg-type]
+    ctx.tokens.update(
+        {
+            EDITOR_USERNAME: "editor-token",
+            REVIEWER_USERNAME: "reviewer-token",
+            APPROVER_USERNAME: "approver-token",
+            QMB_USERNAME: "qmb-token",
+        }
+    )
+    ctx.user_ids.update(_ROLE_USER_IDS)
+    return ctx
+
+
+class _JsonHandler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        return
+
+    def _send_json(self, status: int, body: Any) -> None:
+        payload = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_bytes(self, status: int, body: bytes, headers: dict[str, str]) -> None:
+        self.send_response(status)
+        for key, value in headers.items():
+            self.send_header(key, value)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _auth_token(self) -> str:
+        return self.headers.get("Authorization", "").removeprefix("Bearer ")
+
+    def _read_json(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}
+        return json.loads(raw.decode("utf-8"))
+
+
+class _ArtifactTransportHandler(_JsonHandler):
+    listed_sha = "a" * 64
+    pdf_bytes = b"%PDF-1.4 artifact-body\n%%EOF\n"
+    leaked = False
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts":
+            row = {
+                "artifact_id": "art-source-1",
+                "sha256": type(self).listed_sha,
+                "artifact_type": "SOURCE_PDF",
+            }
+            if type(self).leaked:
+                row["storage_key"] = "objects/ab/secret.pdf"
+            self._send_json(200, [row])
+            return
+        if self.path == "/documents/artifacts/art-source-1":
+            self._send_json(200, {"artifact_id": "art-source-1", "sha256": type(self).listed_sha})
+            return
+        if self.path == "/documents/artifacts/art-source-1/content":
+            import hashlib
+
+            digest = hashlib.sha256(type(self).pdf_bytes).hexdigest()
+            self._send_bytes(
+                200,
+                type(self).pdf_bytes,
+                {
+                    "Content-Type": "application/pdf",
+                    "ETag": digest,
+                    "X-Content-SHA256": digest,
+                },
+            )
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
+@pytest.fixture
+def artifact_transport_url() -> str:
+    import hashlib
+
+    _ArtifactTransportHandler.leaked = False
+    _ArtifactTransportHandler.pdf_bytes = b"%PDF-1.4 artifact-body\n%%EOF\n"
+    _ArtifactTransportHandler.listed_sha = hashlib.sha256(_ArtifactTransportHandler.pdf_bytes).hexdigest()
+    server = HTTPServer(("127.0.0.1", 0), _ArtifactTransportHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_artifacts_transport_checks_content_hash_etag_and_length(artifact_transport_url: str) -> None:
+    import hashlib
+    import inspect
+
+    ctx = _workflow_ctx(artifact_transport_url)
+    detail = _step_artifacts_transport(ctx)
+    digest = hashlib.sha256(_ArtifactTransportHandler.pdf_bytes).hexdigest()
+    assert ctx.source_artifact_id == "art-source-1"
+    assert ctx.source_artifact_sha256 == digest
+    assert digest[:16] in detail
+    source = inspect.getsource(_step_artifacts_transport)
+    assert "/documents/artifacts/" in source
+    assert "/content" in source
+    assert "X-Content-SHA256" in source
+    assert "Content-Length" in source
+    assert "hashlib.sha256" in source
+
+
+def test_artifacts_transport_rejects_storage_key_leak(artifact_transport_url: str) -> None:
+    _ArtifactTransportHandler.leaked = True
+    ctx = _workflow_ctx(artifact_transport_url)
+    with pytest.raises(ScenarioFailure, match="storage_key"):
+        _step_artifacts_transport(ctx)
+
+
+class _SignatureVerifyHandler(_JsonHandler):
+    actors: list[str] = []
+    verified: list[str] = []
+    header_passwords: list[tuple[str, str]] = []
+
+    def do_POST(self) -> None:  # noqa: N802
+        token = self._auth_token()
+        if self.path == "/signature/assets/import-and-activate":
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length:
+                self.rfile.read(length)
+            header_password = self.headers.get("X-Signature-Password", "")
+            type(self).actors.append(token)
+            type(self).header_passwords.append((token, header_password))
+            expected = {
+                "editor-token": EDITOR_PASSWORD,
+                "reviewer-token": REVIEWER_PASSWORD,
+                "approver-token": APPROVER_PASSWORD,
+            }.get(token)
+            if header_password != expected:
+                self._send_json(400, {"detail": {"error": "password_required"}})
+                return
+            self._send_json(200, {"ok": True})
+            return
+        if self.path == "/signature/verify-password":
+            type(self).verified.append(token)
+            body = self._read_json()
+            expected = {
+                "editor-token": EDITOR_PASSWORD,
+                "reviewer-token": REVIEWER_PASSWORD,
+                "approver-token": APPROVER_PASSWORD,
+            }.get(token)
+            if body.get("password") != expected:
+                self._send_json(400, {"ok": False})
+                return
+            self._send_json(200, {"ok": True})
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
+@pytest.fixture
+def signature_verify_url() -> str:
+    _SignatureVerifyHandler.actors = []
+    _SignatureVerifyHandler.verified = []
+    _SignatureVerifyHandler.header_passwords = []
+    server = HTTPServer(("127.0.0.1", 0), _SignatureVerifyHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_signature_verify_password_activates_editor_reviewer_approver(
+    signature_verify_url: str,
+) -> None:
+    ctx = _workflow_ctx(signature_verify_url)
+    detail = _step_signature_verify_password(ctx)
+    assert "editor" in detail and "reviewer" in detail and "approver" in detail
+    assert _SignatureVerifyHandler.actors == [
+        "editor-token",
+        "reviewer-token",
+        "approver-token",
+    ]
+    assert _SignatureVerifyHandler.verified == [
+        "editor-token",
+        "reviewer-token",
+        "approver-token",
+    ]
+    assert _SignatureVerifyHandler.header_passwords == [
+        ("editor-token", EDITOR_PASSWORD),
+        ("reviewer-token", REVIEWER_PASSWORD),
+        ("approver-token", APPROVER_PASSWORD),
+    ]
+
+
+class _SignedEditingHandler(_JsonHandler):
+    actor_sequence: list[tuple[str, str]] = []
+    passwords: list[tuple[str, object]] = []
+    saw_empty_intent = False
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path != f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+            self.send_response(404)
+            self.end_headers()
+            return
+        type(self).actor_sequence.append(("GET version", self._auth_token()))
+        self._send_json(200, {"etag": "etag-progress", "state": {"status": "IN_PROGRESS"}})
+
+    def do_POST(self) -> None:  # noqa: N802
+        token = self._auth_token()
+        if self.path != f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete":
+            self.send_response(404)
+            self.end_headers()
+            return
+        body = self._read_json()
+        intent = body.get("sign_intent") if isinstance(body, dict) else None
+        password = intent.get("password") if isinstance(intent, dict) else None
+        type(self).actor_sequence.append(("editing-complete", token))
+        type(self).passwords.append((token, password))
+        if not intent:
+            type(self).saw_empty_intent = True
+            self._send_json(400, {"detail": {"error": "validation_error"}})
+            return
+        if password != EDITOR_PASSWORD:
+            self._send_json(400, {"detail": {"error": "password_required"}})
+            return
+        self._send_json(200, {"etag": "etag-review", "state": {"status": "IN_REVIEW"}})
+
+
+@pytest.fixture
+def signed_editing_url() -> str:
+    _SignedEditingHandler.actor_sequence = []
+    _SignedEditingHandler.passwords = []
+    _SignedEditingHandler.saw_empty_intent = False
+    server = HTTPServer(("127.0.0.1", 0), _SignedEditingHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_signed_editing_complete_fail_closed_then_reaches_in_review(signed_editing_url: str) -> None:
+    ctx = _workflow_ctx(signed_editing_url)
+    detail = _step_signed_editing_complete(ctx)
+    assert "IN_REVIEW" in detail
+    assert _SignedEditingHandler.saw_empty_intent is True
+    assert _SignedEditingHandler.actor_sequence == [
+        ("GET version", "editor-token"),
+        ("editing-complete", "editor-token"),
+        ("editing-complete", "editor-token"),
+    ]
+    assert _SignedEditingHandler.passwords == [
+        ("editor-token", None),
+        ("editor-token", EDITOR_PASSWORD),
+    ]
+    assert ctx.document_etag == "etag-review"
+    assert _sign_intent_body(EDITOR_PASSWORD)["sign_intent"]["password"] == EDITOR_PASSWORD
+
+
+class _SignedReviewHandler(_JsonHandler):
+    actor_sequence: list[tuple[str, str]] = []
+    passwords: list[tuple[str, object]] = []
+    review_status = 200
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+            type(self).actor_sequence.append(("GET version", self._auth_token()))
+            self._send_json(200, {"etag": "etag-review", "state": {"status": "IN_REVIEW"}})
+            return
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts":
+            type(self).actor_sequence.append(("GET artifacts", self._auth_token()))
+            self._send_json(
+                200,
+                [
+                    {"artifact_id": "a1", "artifact_type": "SIGNED_PDF"},
+                    {"artifact_id": "a2", "artifact_type": "RELEASED_PDF"},
+                ],
+            )
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802
+        token = self._auth_token()
+        body = self._read_json()
+        intent = body.get("sign_intent") if isinstance(body, dict) else None
+        password = intent.get("password") if isinstance(intent, dict) else None
+        expected = {
+            "reviewer-token": REVIEWER_PASSWORD,
+            "approver-token": APPROVER_PASSWORD,
+        }.get(token)
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept":
+            type(self).actor_sequence.append(("review/accept", token))
+            type(self).passwords.append((token, password))
+            if type(self).review_status != 200:
+                self._send_json(
+                    type(self).review_status,
+                    {"detail": {"error": "forbidden", "message": "reviewer required"}},
+                )
+                return
+            if not intent:
+                self._send_json(400, {"detail": {"error": "validation_error"}})
+                return
+            if password != expected:
+                self._send_json(400, {"detail": {"error": "password_required"}})
+                return
+            self._send_json(200, {"etag": "etag-approval", "state": {"status": "IN_APPROVAL"}})
+            return
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept":
+            type(self).actor_sequence.append(("approval/accept", token))
+            type(self).passwords.append((token, password))
+            if not intent:
+                self._send_json(400, {"detail": {"error": "validation_error"}})
+                return
+            if password != expected:
+                self._send_json(400, {"detail": {"error": "password_required"}})
+                return
+            self._send_json(200, {"etag": "etag-approved", "state": {"status": "APPROVED"}})
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
+@pytest.fixture
+def signed_review_url() -> str:
+    _SignedReviewHandler.actor_sequence = []
+    _SignedReviewHandler.passwords = []
+    _SignedReviewHandler.review_status = 200
+    server = HTTPServer(("127.0.0.1", 0), _SignedReviewHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_signed_review_approval_uses_reviewer_then_approver(signed_review_url: str) -> None:
+    ctx = _workflow_ctx(signed_review_url)
+    detail = _step_signed_review_approval(ctx)
+    assert "APPROVED" in detail
+    assert "SIGNED_PDF" in detail and "RELEASED_PDF" in detail
+    assert _SignedReviewHandler.actor_sequence == [
+        ("GET version", "reviewer-token"),
+        ("review/accept", "reviewer-token"),
+        ("approval/accept", "approver-token"),
+        ("GET artifacts", "approver-token"),
+    ]
+    assert ctx.document_etag == "etag-approved"
+    assert _SignedReviewHandler.passwords == [
+        ("reviewer-token", REVIEWER_PASSWORD),
+        ("approver-token", APPROVER_PASSWORD),
+    ]
+
+
+def test_signed_review_approval_surfaces_review_forbidden_with_action(signed_review_url: str) -> None:
+    _SignedReviewHandler.review_status = 403
+    ctx = _workflow_ctx(signed_review_url)
+    with pytest.raises(
+        ScenarioFailure,
+        match=r"POST /documents/versions/.*/workflow/review/accept failed status=403 error=forbidden",
+    ):
+        _step_signed_review_approval(ctx)
+    assert ("review/accept", "reviewer-token") in _SignedReviewHandler.actor_sequence
+    assert ("approval/accept", "approver-token") not in _SignedReviewHandler.actor_sequence
+
+
+class _CommentFlowHandler(_JsonHandler):
+    pdf_created = 0
+    sync_calls = 0
+    version_etag = "etag-review"
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+            self._send_json(
+                200,
+                {"etag": type(self).version_etag, "state": {"status": "IN_REVIEW"}},
+            )
+            return
+        if self.path.startswith(f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments"):
+            if "PDF_REVIEW" in self.path:
+                self._send_json(200, [{"comment_id": "pdf-1", "context": "PDF_REVIEW"}])
+                return
+            self._send_json(200, [{"comment_id": "docx-1", "context": "DOCX_EDIT"}])
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments":
+            body = self._read_json()
+            type(self).pdf_created += 1
+            assert body.get("context") == "PDF_REVIEW"
+            type(self).version_etag = "etag-after-pdf"
+            self._send_json(200, {"comment_id": "pdf-1", "context": "PDF_REVIEW"})
+            return
+        if self.path.endswith("/import-docx"):
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            if length:
+                self.rfile.read(length)
+            type(self).version_etag = "etag-after-docx"
+            self._send_json(200, {"etag": "etag-after-docx", "state": {"status": "IN_REVIEW"}})
+            return
+        if self.path.endswith("/comments/sync-docx"):
+            type(self).sync_calls += 1
+            self._send_json(200, [{"comment_id": "docx-1", "context": "DOCX_EDIT"}])
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
+@pytest.fixture
+def comment_flow_url() -> str:
+    _CommentFlowHandler.pdf_created = 0
+    _CommentFlowHandler.sync_calls = 0
+    _CommentFlowHandler.version_etag = "etag-review"
+    server = HTTPServer(("127.0.0.1", 0), _CommentFlowHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_pdf_and_docx_comments_stay_separate_and_docx_sync_is_idempotent(
+    comment_flow_url: str,
+) -> None:
+    ctx = _workflow_ctx(comment_flow_url)
+    pdf_detail = _step_pdf_comment_flow(ctx)
+    docx_detail = _step_docx_comment_sync(ctx)
+    assert ctx.pdf_comment_id == "pdf-1"
+    assert ctx.docx_comment_id == "docx-1"
+    assert ctx.pdf_comment_id != ctx.docx_comment_id
+    assert "PDF_REVIEW" in pdf_detail
+    assert "idempotent" in docx_detail
+    assert _CommentFlowHandler.pdf_created == 1
+    assert _CommentFlowHandler.sync_calls == 2
+
+
+class _PersistenceHandler(_JsonHandler):
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+            self._send_json(200, {"etag": "etag-approved", "state": {"status": "APPROVED"}})
+            return
+        if self.path == "/auth/me":
+            token = self._auth_token()
+            username = "reviewer" if token == "reviewer-token" else "editor"
+            self._send_json(200, {"username": username, "user_id": "u"})
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
+@pytest.fixture
+def persistence_url() -> str:
+    server = HTTPServer(("127.0.0.1", 0), _PersistenceHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_persistence_contract_expects_approved_not_archived(persistence_url: str) -> None:
+    import inspect
+
+    ctx = _workflow_ctx(persistence_url)
+    ctx.pre_restart_tokens = dict(ctx.tokens)
+    ctx.pre_restart_etag = "etag-approved"
+    detail = _step_persistence_and_session_contract(ctx)
+    assert "APPROVED" in detail
+    source = inspect.getsource(_step_persistence_and_session_contract)
+    assert "APPROVED" in source
+    assert "ARCHIVED" not in source
+    restart_src = inspect.getsource(_STEP_HANDLERS["backend_restart"])
+    assert "APPROVED" in restart_src
+    assert "ARCHIVED" not in restart_src
+
+
+def test_authenticated_client_keeps_bound_token() -> None:
+    client = authenticated_client("reviewer-token", "http://example.invalid")
+    assert client._token == "reviewer-token"
 
 
 def test_harness_stop_process_only_terminates_requested_label(tmp_path: Path) -> None:
