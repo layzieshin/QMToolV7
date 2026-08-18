@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR13 freeze pending SHA; CP08-R7 `f5dcfa8`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR13 freeze `cd3a376`; CP08-R7 `f5dcfa8`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,9 +17,9 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — the FR13 freeze commit SHA is recorded immediately after that checkpoint
-commit. R7 (`f5dcfa8`, docs `ae5be41`) is included. Overall **`NOT_READY`**: CP08-V6 was not
-fully green. Word not reached. `ACCEPTED` is not set.
+`$CandidateSha` — **`cd3a3769c4d3b470f227bb25464785926b9584db` (`cd3a376`)** includes R7
+(`f5dcfa8`, docs `ae5be41`). Overall **`NOT_READY`**: CP08-V6 was not fully green. Word not
+reached. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -463,7 +463,7 @@ after this freeze.
 | --- | --- |
 | Focused gates | **137 passed** (`build/j04-m0-closure/freeze-r7-20260818T051722279Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
-| Candidate SHA | recorded immediately after this checkpoint commit |
+| Candidate SHA | **`cd3a3769c4d3b470f227bb25464785926b9584db` (`cd3a376`)** |
 | CP08-V7 | **NOT STARTED** |
 | `ACCEPTED` | **not set** |
 
@@ -500,7 +500,7 @@ after this freeze.
 | FR12 | PASS | `b63d9a1` freeze R1–R6 | `049c0fd` |
 | CP08-V6 | FAILED | — (etag_concurrency_race TypeError; create 200; Word not reached) | `bd769ba` |
 | CP08-R7 | PASS | `f5dcfa8` etag race `sorted()` + stable assignment | `ae5be41` |
-| FR13 | PASS | freeze R1–R7 (SHA after this checkpoint) | SHA record |
+| FR13 | PASS | `cd3a376` freeze R1–R7 | SHA record |
 
 ### Remaining gates (explicitly NOT RUN)
 
