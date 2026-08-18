@@ -46,7 +46,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R7 | ETag-race harness `sorted()` + stable assignment | PASS | `f5dcfa8` | Test-only; `sorted([a, b])`; both race bodies keep editor/reviewer/approver; included in FR13 freeze |
 | FR13 | Freeze R1–R7 acceptance candidate | PASS | `cd3a376` | 137 focused gates; `$CandidateSha` below; CP08-V7 failed |
 | CP08-V7 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** before artifacts (harness assigned usernames, PG uses UUID `user_id`; route masked 404); etag race **PASS**; Word **NOT REACHED** |
-| CP08-R8 | Workflow assignments use `/auth/me` user_id | PASS | `31dc273` | Test-only; role → `user_id` from GET `/auth/me`; baseline + both race bodies; **no freeze, no CP08-V8 at this checkpoint** |
+| CP08-R8 | Workflow assignments use `/auth/me` user_id | PASS | `31dc273` | Test-only; role → `user_id` from GET `/auth/me`; baseline + both race bodies; included in FR14 freeze |
+| FR14 | Freeze R1–R8 acceptance candidate | PASS | _(pending)_ | 144 focused gates; `$CandidateSha` next; CP08-V8 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -1028,8 +1029,24 @@ opt-ins unset. `git diff --check` on the four R8 files: exit 0.
 
 CP08-R8 commit: `31dc273` — `test(j04-m0): use authenticated user ids in acceptance workflow`
 
-**No freeze and no CP08-V8 at this documentation checkpoint.** Overall **`NOT_READY`**.
-Word still **not reached**. `ACCEPTED` is not set.
+Docs SHA record: `83b7b1a` — `docs(j04-m0): record CP08-R8 SHA`
+
+## FR14 — R1–R8 technical freeze
+
+This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` /
+`63dda17`), R5 (`34f39c0` / docs `164a7c9`), R6 (`e28a44d` / docs `1f72451`), R7 (`f5dcfa8` /
+docs `ae5be41`), R8 (`31dc273` / docs `83b7b1a`), WR05 documentation (`034425f`), and the
+freeze documentation. Focused gates are **144 passed**
+(`build/j04-m0-closure/freeze-r8-results-20260818T061803564Z/junit.xml`, `tests="144"
+failures="0"`): FR13 set plus R8 `user_id` / race / receipt regressions. Pytest log:
+`build/j04-m0-closure/freeze-r8-results-20260818T061803564Z/pytest.log`. The frozen
+candidate SHA is recorded immediately after this checkpoint commit. No product or test
+changes are allowed after this freeze. CP08-V8 remains **NOT STARTED**. Overall
+**`NOT_READY`**: there is not yet a successful CP08 run. `ACCEPTED` is not set.
+
+Worktree at freeze: only the two confirmed stat-only files
+(`interfaces/pyqt/widgets/signature_placement/label_geometry.py`,
+`modules/training/wiring.py`).
 
 ## CP08-R2 remediation specification (real-process scenario)
 

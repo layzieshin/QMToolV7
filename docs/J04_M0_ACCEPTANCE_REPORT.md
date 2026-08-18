@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-R8 PASS (`31dc273`); FR13 freeze `cd3a376`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR14 freeze pending SHA; CP08-R8 `31dc273`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,10 +17,9 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`cd3a3769c4d3b470f227bb25464785926b9584db` (`cd3a376`)** remains the last
-freeze until a new freeze after R8 (`31dc273`) is approved. Overall **`NOT_READY`**: CP08-V7
-was not fully green. The V7 abort was a harness identity error (usernames assigned where
-user ids are required). Word not reached. `ACCEPTED` is not set.
+`$CandidateSha` — the FR14 freeze commit SHA is recorded immediately after that checkpoint
+commit. R8 (`31dc273`, docs `83b7b1a`) is included. Overall **`NOT_READY`**: CP08-V7 was not
+fully green. Word not reached. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -511,6 +510,23 @@ usernames. Training receipt matches the stored editor `user_id`. Race contract r
 
 CP08-R8 commit: `31dc273`
 
+Docs SHA record: `83b7b1a`
+
+## FR14 — R1–R8 technical freeze
+
+The freeze tree contains R1–R7 plus R8 (`31dc273`, docs `83b7b1a`), WR05 documentation, and the
+known unchanged stat-only files. The following checkpoint commit freezes this technical
+candidate; its full SHA is recorded immediately after. No product or test changes are permitted
+after this freeze.
+
+| Item | Status |
+| --- | --- |
+| Focused gates | **144 passed** (`build/j04-m0-closure/freeze-r8-results-20260818T061803564Z/junit.xml`) |
+| Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
+| Candidate SHA | recorded immediately after this checkpoint commit |
+| CP08-V8 | **NOT STARTED** |
+| `ACCEPTED` | **not set** |
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -546,7 +562,8 @@ CP08-R8 commit: `31dc273`
 | CP08-R7 | PASS | `f5dcfa8` etag race `sorted()` + stable assignment | `ae5be41` |
 | FR13 | PASS | `cd3a376` freeze R1–R7 | `45df9d6` |
 | CP08-V7 | FAILED | — (harness username assignments; 404 mask; race 200/409; Word not reached) | `63a000d` |
-| CP08-R8 | PASS | `31dc273` workflow assignments use `/auth/me` user_id | this documentation |
+| CP08-R8 | PASS | `31dc273` workflow assignments use `/auth/me` user_id | `83b7b1a` |
+| FR14 | PASS | freeze R1–R8 (SHA after this checkpoint) | SHA record |
 
 ### Remaining gates (explicitly NOT RUN)
 
