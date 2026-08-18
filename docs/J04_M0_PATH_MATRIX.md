@@ -110,11 +110,11 @@ vorschnelle Hochstufung auf `available`.
 | Standalone sign | Signature view | opaque upload | signature HTTP | session | `available` | `test_signature_http_api.py` | P3B |
 | Word-COM DOCX→PDF Live-Smoke | converter host | import-docx / ensure-source-pdf | — | — | `gap` | **NOT RUN** (host-abhaengig) | P6/P3A |
 
-## F. Training Documents-Read (P3C)
+## F. Training Documents-Read (P3C, follow-up only)
 
 | UI-Consumer | Moduloperation | HTTP | Client-Port | Actor | Status | Test | Paket |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Training open/read/receipt | `DocumentsReadApi.*` | `/documents/reads/*` | `HttpDocumentsReadApi` | session | `available` | `test_documents_training_read_http.py` | P3C |
+| Training open/read/receipt | `DocumentsReadApi.*` | `/documents/reads/*` | `HttpDocumentsReadApi` | session | `available`, **not part of J04-M0 acceptance** | `test_documents_training_read_http.py` | P3C |
 
 ## G. Comments (P4)
 

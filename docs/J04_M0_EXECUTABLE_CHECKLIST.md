@@ -2,7 +2,14 @@
 
 Living task list for the J04-M0 executable closure plan. Status values: `TODO` | `PASS` | `BLOCKED` | `FAILED`.
 
-## Repository baseline (CP00 input)
+## Repository baseline (CP00 input) — historical snapshot (2026-08-17)
+
+> **Historisch / nicht aktuell:** Dieser Abschnitt dokumentiert den CP00-Eingangsstand
+> vor dem ersten Closure-Commit. `HEAD` war damals identisch mit `origin/main`
+> (`125709f`). Er darf nicht als aktueller Merge-Readiness-Stand gelesen werden.
+> Der verifizierte Stand zum Start des Merge-Readiness-Programms steht in **MR00**
+> unter „Current Merge-Readiness Program“. Historische CP00–CP08-, FR- und
+> V-Abschnitte bleiben Evidenz und werden nicht rückwirkend umgeschrieben.
 
 | Item | Value |
 | --- | --- |
@@ -48,8 +55,1001 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-V7 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** before artifacts (harness assigned usernames, PG uses UUID `user_id`; route masked 404); etag race **PASS**; Word **NOT REACHED** |
 | CP08-R8 | Workflow assignments use `/auth/me` user_id | PASS | `31dc273` | Test-only; role → `user_id` from GET `/auth/me`; baseline + both race bodies; included in FR14 freeze |
 | FR14 | Freeze R1–R8 acceptance candidate | PASS | `ed488ed` | 144 focused gates; `$CandidateSha` below; CP08-V8 failed |
-| CP08-V8 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `training_read_receipt`; artifacts **PASS**; Word **NOT REACHED** |
+| CP08-V8 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** in `training_read_receipt` before out-of-scope reads (`review/accept` sent as editor → 403); artifacts **PASS**; Word **NOT REACHED** |
+| CP08-R9 | Document-release actor remediation + scope cut | PASS | _(uncommitted)_ | Test-only; editor/reviewer/approver use separate clients; gate ends at `APPROVED`; ready for controlled commit sequence |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
+
+## Current Merge-Readiness Program
+
+Controlled program to take J04-M0 from the historical CP00–CP08 evidence to
+technical merge readiness. Historical checkpoint rows above remain evidence and
+are not rewritten. This program starts at MR00 and does not skip checkpoints.
+
+CP08-R9 remains a successful **actor-fix** (separate editor/reviewer/approver
+clients; fail-closed `require_version_success()` before ETag parse). That does
+**not** mean the realprocess harness already covers the full mandatory M0
+scope. Training/Reads, Change Requests, and mandatory archive remain out of
+the M0 acceptance gate and are still incorrectly mixed into the historical
+harness catalog; PDF-comment, signature-required `APPROVED`, content-stream,
+and restart-at-`APPROVED` coverage are MR07 work. CP08-V8 is the last live
+run. CP08-V9 has **not** been executed.
+
+<!-- J04_M0_MERGE_LEDGER_START -->
+
+Current checkpoint: MR08
+
+| ID | Titel | Status | Start-SHA | Ergebnis/Evidence | Commit |
+| --- | --- | --- | --- | --- | --- |
+| MR00 | Aktuellen Stand und Ledger etablieren | PASS | `3bf6518` | 6 passed; `build/j04-m0-closure/mr00-results-20260818T103125784Z/junit.xml` | pending user approval |
+| MR01 | Duplicate-Create atomar verhindern | PASS | `3bf6518` | 79 passed; `build/j04-m0-closure/mr01-results-20260818T103800332Z/junit.xml` | pending user approval |
+| MR02 | Documents-Dateipfade vollständig begrenzen | PASS | `3bf6518` | 52 passed; `build/j04-m0-closure/mr02-results-20260818T104608124Z/junit.xml` | pending user approval |
+| MR03 | Autorisierung vor Zustands-/ETag-Offenlegung | PASS | `3bf6518` | 120 passed; `build/j04-m0-closure/mr03-results-20260818T110322811Z/junit.xml` | pending user approval |
+| MR04 | Import-CAS und SQLite-Thread-Sicherheit | PASS | `3bf6518` | 80 passed; `build/j04-m0-closure/mr04-results-20260818T111025277Z/junit.xml` | pending user approval |
+| MR05 | Signature-Dateien und Scratch-Lebenszyklus härten | PASS | `3bf6518` | 25 passed; `build/j04-m0-closure/mr05-results-20260818T112018936Z/junit.xml` | pending user approval |
+| MR06 | DOCX-Kommentarsynchronisation stabilisieren | PASS | `3bf6518` | 71 passed; `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml` | pending user approval |
+| MR07 | Realprocess-Harness auf verbindlichen M0-Scope bringen | PASS | `3bf6518` | 75 passed; `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml` | pending user approval |
+| MR08 | Gesamte Regression und Candidate Freeze | IN_PROGRESS | `3bf6518` | MR08-R3 PASS serial R3-C 1246 tests 0 failed `build/j04-m0-closure/mr08-r3-serial-regression-results-20260818T185750907Z/junit.xml`; first complete R3-C PASS `build/j04-m0-closure/mr08-r3-regression-results-20260818T172223274Z/junit.xml`; freeze pending user approval | pending user approval |
+| MR09 | Kontrollierten CP08-V9-Lauf ausführen | TODO | — | — | — |
+| MR10 | Packaging, Golive, Human Gate und Merge | TODO | — | — | — |
+
+<!-- J04_M0_MERGE_LEDGER_END -->
+
+### MR00 — Aktuellen Stand und Ledger etablieren
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T10:26:00Z
+- **Endzeit:** 2026-08-18T10:31:26Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Historischen CP00-Baselineabschnitt als Snapshot kennzeichnen,
+  den aktuellen Repositoryzustand separat dokumentieren, den maschinenlesbaren
+  Merge-Ledger plus Detailvorlage anlegen, den Ledger-Konsistenztest
+  implementieren, CP08-R9 als Actor-Fix erhalten und klarstellen, dass der
+  gesamte M0-Scope im Harness noch nicht korrekt abgebildet ist. Keine
+  Produktdatei verändern.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — historischer Marker, aktueller Stand,
+    Ledger, MR-Detailabschnitte
+  - `tests/docs/test_docs_consistency.py` — Parser und Konsistenzregeln für den
+    markierten Ledger
+- **Bewusst nicht geänderte Dateien:** alle Produktdateien; die sieben
+  uncommitted R9-Inhaltsdiffs außer diesem Checklist-Dokument;
+  `interfaces/pyqt/widgets/signature_placement/label_geometry.py`;
+  `modules/training/wiring.py`; `docs/transition/20260818/*`; Evidence unter
+  `build/` und `.pytest_cache/`.
+- **Implementierte Invarianten:** Ledger nur zwischen
+  `J04_M0_MERGE_LEDGER_START` / `J04_M0_MERGE_LEDGER_END`; MR00–MR10 je einmal;
+  zulässige Statuswerte; höchstens ein `IN_PROGRESS`; feste Reihenfolge; kein
+  späterer `PASS` vor einem offenen früheren Checkpoint; jeder `PASS` mit
+  Ergebnis und Evidence unter `build/j04-m0-closure/`; `Current checkpoint`
+  = erster offener Checkpoint oder `COMPLETE`.
+- **Alle Testversuche:**
+  1. 2026-08-18T10:31:25Z — first gate while ledger `IN_PROGRESS` — PASS (`6 passed`; stamp `20260818T103125784Z`)
+  2. 2026-08-18T10:32:51Z — confirmation after ledger `PASS` / current `MR01` — PASS (`6 passed`; stamp `20260818T103251842Z`)
+- **Genaue Befehle:**
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/mr00-pytest-$stamp"
+$Results = "build/j04-m0-closure/mr00-results-$stamp"
+New-Item -ItemType Directory -Path $Results | Out-Null
+& $Py -m pytest tests/docs/test_docs_consistency.py `
+  -q `
+  --basetemp $Base `
+  --junitxml "$Results/junit.xml" 2>&1 |
+  Tee-Object -FilePath "$Results/pytest.log"
+```
+
+First run stamp: `20260818T103125784Z`.
+- **Passed/Failed/Skipped:** 6 passed / 0 failed / 0 skipped (JUnit `tests="6" failures="0"`)
+- **Evidence-Pfade:**
+  - `build/j04-m0-closure/mr00-results-20260818T103125784Z/junit.xml`
+  - `build/j04-m0-closure/mr00-results-20260818T103125784Z/pytest.log`
+  - `build/j04-m0-closure/mr00-pytest-20260818T103125784Z/`
+- **Abweichungen:** keine materiellen Abweichungen zur Prompt-Erwartung; siehe
+  Tabelle „Aktueller Repositoryzustand“. Prompt-Zahlen wurden am Repository
+  nachgeprüft und bestätigt (`HEAD` `3bf6518`, `main` `125709f`, `0 60`,
+  sieben Inhaltsdiffs, zwei Stat-only-Dateien, acht Transition-Dokumente,
+  kein Remote-Branch/`PR`, CP08-V8 last live, CP08-V9 nicht ausgeführt).
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR00 PASS. Historischer CP00-Stand bleibt Snapshot.
+  CP08-R9 bleibt als Actor-Fix erhalten; der Harness bildet den verbindlichen
+  M0-Scope noch nicht vollständig ab. Nächster Checkpoint: MR01.
+
+#### Aktueller Repositoryzustand (MR00, verifiziert)
+
+Verifiziert vor der ersten MR00-Änderung. Prompt-Erwartung und Repository
+stimmen in den entscheidenden Punkten überein; wo Zahlen aus dem Prompt
+stammen, gilt der gemessene Stand.
+
+| Item | Prompt-Erwartung | Gemessen |
+| --- | --- | --- |
+| Branch | `feature/ap-j04-m0` | `feature/ap-j04-m0` (tracking `origin/main`) |
+| `HEAD` | `3bf6518` | `3bf651865c4da2c665d53f2fa83a3672b91b57ef` |
+| `HEAD` subject | — | `docs(j04-m0): record CP08-V8 training abort` |
+| `main` / `origin/main` | `125709f` | `125709fedc4c6b719a46cab9c45e4e342e3df241` |
+| Divergence `main...HEAD` | ~60 ahead, 0 behind | `0 60` (`git rev-list --left-right --count`) |
+| Remote `feature/ap-j04-m0` | none | `git ls-remote --heads origin feature/ap-j04-m0` empty |
+| PR | none | `gh pr list --head feature/ap-j04-m0` → `[]` |
+| Content diffs | 7 R9 files | 7 paths (`git diff --name-only`; `git diff --quiet` false) |
+| Stat-only | 2 files | `label_geometry.py`, `modules/training/wiring.py` (`git diff --quiet` exit 0) |
+| Untracked transition docs | 8 files | 8 files under `docs/transition/20260818/` |
+| Last live CP08 | CP08-V8 | CP08-V8 FAILED at `training_read_receipt`; CandidateSha `ed488ed` |
+| CP08-V9 | not executed | no V9 evidence; not started |
+
+Uncommitted content diffs (R9, leave untouched except this checklist):
+
+| Path | Numstat |
+| --- | --- |
+| `docs/J04_M0_ACCEPTANCE_REPORT.md` | 36 / 11 |
+| `docs/J04_M0_EXECUTABLE_CHECKLIST.md` | 45 / 3 before MR00 edits |
+| `docs/J04_M0_PATH_MATRIX.md` | 2 / 2 |
+| `docs/MASTER_ORCHESTRATION_ROADMAP.md` | 3 / 1 |
+| `docs/TRAINING_MODULE_SPEC.md` | 3 / 0 |
+| `tests/acceptance/j04_m0_acceptance_scenario.py` | 43 / 43 |
+| `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` | 114 / 7 |
+
+Do not stage: the two stat-only files, `build/`, `.pytest_cache/`,
+`.j04_m0_audit/`, other evidence trees, or `docs/transition/20260818/` in
+implementation commits. Git write actions (commit/push/PR/merge) remain
+user-gated.
+
+### MR01 — Duplicate-Create atomar verhindern
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T10:33:00Z
+- **Endzeit:** 2026-08-18T10:40:13Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Zweites `POST /documents/versions/create` darf eine
+  bestehende Version nicht per Repository-Upsert auf `PLANNED` zurücksetzen.
+  HTTP-Ergebnis für berechtigten Duplicate-Create: 409.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `modules/documents/service.py` — `create_document_version` prüft Existenz
+    unter `_mutation_lock` + `_write_transaction` und wirft
+    `DocumentConflictError`; `_ensure_document_version` fängt denselben
+    Konflikt für interne Import-Ensure-Aufrufe ab
+  - `tests/modules/test_documents_service.py` — serieller Duplicate-Create,
+    Duplicate nach Workflowstart, paralleler Create
+  - `tests/modules/test_documents_infrastructure.py` — eine DB-Version,
+    Artefakte und ETag unverändert
+  - `tests/backend/test_documents_http_api.py` — HTTP 409 serial + nach Start
+  - `tests/backend/test_documents_concurrency_http.py` — paralleler Create
+    genau ein 200 und ein 409
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — Ledger/MR01-Dokumentation
+  - `tests/docs/test_docs_consistency.py` — unverändert gegenüber MR00, im
+    Gate mitgelaufen
+- **Bewusst nicht geänderte Dateien:** Repository-Upsert bleibt der
+  Zustandsupdate-Pfad; keine neue Create-API, kein HTTP-Mapping-Umbau
+  (`DocumentConflictError` war bereits 409); R9-Dateien außer Checklist;
+  Stat-only-Dateien; Transition-Dokumente.
+- **Implementierte Invarianten:** Existenz von `(document_id, version)` vor
+  Insert; bestehender Zustand, Header, Assignments, Artefakte und Event-Token
+  unverändert; parallele Creates serialisiert durch den bestehenden Service-Lock.
+- **Alle Testversuche:**
+  1. 2026-08-18T10:38:00Z — MR01 gate — PASS (`79 passed`)
+- **Genaue Befehle:**
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = "20260818T103800332Z"
+$Base = "build/j04-m0-closure/mr01-pytest-$stamp"
+$Results = "build/j04-m0-closure/mr01-results-$stamp"
+& $Py -m pytest `
+  tests/docs/test_docs_consistency.py `
+  tests/modules/test_documents_service.py `
+  tests/modules/test_documents_infrastructure.py `
+  tests/backend/test_documents_http_api.py `
+  tests/backend/test_documents_concurrency_http.py `
+  -q --basetemp $Base --junitxml "$Results/junit.xml"
+```
+
+- **Passed/Failed/Skipped:** 79 passed / 0 failed / 0 skipped
+- **Evidence-Pfade:**
+  - `build/j04-m0-closure/mr01-results-20260818T103800332Z/junit.xml`
+  - `build/j04-m0-closure/mr01-results-20260818T103800332Z/pytest.log`
+  - `build/j04-m0-closure/mr01-pytest-20260818T103800332Z/`
+- **Abweichungen:** `_ensure_document_version` fängt `DocumentConflictError` ab,
+  damit Import-Ensure bei einem Race den bestehenden Zustand zurückgibt statt
+  den Aufrufer zu 409-en. Keine neue öffentliche Fläche.
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR01 PASS. Duplicate-Create ist atomar und liefert
+  409. Nächster Checkpoint: MR02.
+
+### MR02 — Documents-Dateipfade vollständig begrenzen
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T10:41:00Z
+- **Endzeit:** 2026-08-18T10:47:50Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Artifact-, Scratch- und Release-Pfade dürfen rohe
+  `document_id`-Werte nicht als Pfadbestandteile verwenden. Fachliche
+  `document_id` in API und DB bleibt unverändert.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `modules/documents/storage.py` — Object-Keys
+    `objects/<uuid-prefix>/<uuid><suffix>`; Containment vor mkdir/copy;
+    Legacy-Keys lesbar
+  - `modules/documents/naming.py` — Release-Dateiname bereinigt `document_id`
+  - `modules/documents/artifact_ops.py` — Pfadauflösung über
+    `resolve_storage_key`; Temp-PDF ohne `document_id`
+  - `src/backend/documents_routes.py` — Import-Scratch nur UUID + serverseitige
+    Endung unter `scratch/imports`
+  - Tests in infrastructure, release-filename, artifacts-api, HTTP-API,
+    artifacts-HTTP
+- **Bewusst nicht geänderte Dateien:** Signature-Scratch (MR05);
+  fachliche `document_id`-Validierung; Repository-Schema.
+- **Implementierte Invarianten:** keine Datei außerhalb des Storage-Roots;
+  keine `document_id`/Version/Artifact-Typ in neuen Storage-Keys; keine
+  `storage_key`/Serverpfade in HTTP-Payloads; Legacy-Keys lesbar.
+- **Alle Testversuche:**
+  1. 2026-08-18T10:46:08Z — MR02 gate — PASS (`52 passed`)
+- **Genaue Befehle:**
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = "20260818T104608124Z"
+& $Py -m pytest `
+  tests/docs/test_docs_consistency.py `
+  tests/modules/test_documents_infrastructure.py `
+  tests/modules/test_documents_release_filename.py `
+  tests/modules/test_documents_artifacts_api.py `
+  tests/backend/test_documents_http_api.py `
+  tests/backend/test_documents_artifacts_http.py `
+  -q --basetemp "build/j04-m0-closure/mr02-pytest-$stamp" `
+  --junitxml "build/j04-m0-closure/mr02-results-$stamp/junit.xml"
+```
+
+- **Passed/Failed/Skipped:** 52 passed / 0 failed / 0 skipped
+- **Evidence-Pfade:**
+  - `build/j04-m0-closure/mr02-results-20260818T104608124Z/junit.xml`
+  - `build/j04-m0-closure/mr02-results-20260818T104608124Z/pytest.log`
+- **Abweichungen:** `contained_path` ist eine Funktion im bestehenden Storage-Owner,
+  kein neues Modul. Backend-Scratch-Containment bleibt in der Route, ohne Import
+  von Storage-Interna.
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR02 PASS. Nächster Checkpoint: MR03.
+
+### MR03 — Autorisierung vor Zustands-/ETag-Offenlegung
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T10:50:00Z
+- **Endzeit:** 2026-08-18T11:06:12Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Unsichtbare Dokumente und unberechtigte stale Mutationen
+  liefern 404, bevor ETag oder `current_state` offengelegt werden. Berechtigte
+  stale Requests bleiben 409. Workflow-Policy bleibt fachlicher Owner.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `modules/documents/service.py` — `get_document_header_for_actor`;
+    `mutate_version_if_current` prüft Sichtbarkeit und Aktion vor dem ETag
+  - `modules/documents/api.py` — `DocumentsPoolApi.get_header_for_actor`;
+    Import-Mutationen setzen `owner_or_privileged=True` und Actor
+  - `src/backend/documents_routes.py` — actor-bewusstes `_load_state`; Header
+    nur über `get_header_for_actor`; `ValidationError("document version not
+    found")` → 404; Template-Create unterscheidet fehlend vs. unsichtbar
+  - `tests/modules/test_documents_authorization_matrix.py` — Header/stale
+    Actor-Invarianten; unsichtbare Admin-Negativfälle als 404
+  - `tests/backend/test_documents_authorization_http.py` — versteckter Header,
+    unauthorized stale 404 ohne `current_state`, berechtigter stale 409
+- **Bewusst nicht geänderte Dateien:** Training, Reads, Change Requests;
+  R9-Harness-Dateien (MR07); Signature-Scratch (MR05); `label_geometry.py`;
+  `modules/training/wiring.py`; Transition-Dokumente.
+- **Implementierte Invarianten:**
+  - Unsichtbare Version/Header: 404 vor If-Match/`current_state`
+  - Unberechtigte stale Assign/Import/Kommentar/Workflowmutation: 404 ohne
+    `current_state`/`current_etag`
+  - Berechtigte stale Mutation: 409 mit `current_state`
+  - Sichtbares `APPROVED` bleibt für Observer lesbar
+  - Workflow-Policy bleibt Owner der Aktionsprüfung
+- **Alle Testversuche:**
+  1. `20260818T105629353Z` — FAILED (7): unsichtbare Admin-Akteure erwarteten
+     noch 403/`PermissionDeniedError` statt 404/`ValidationError`
+  2. `20260818T110322811Z` — PASS
+- **Genaue Befehle:** `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest
+  tests/docs/test_docs_consistency.py
+  tests/modules/test_documents_authorization_matrix.py
+  tests/backend/test_documents_authorization_http.py
+  tests/backend/test_documents_concurrency_http.py
+  tests/backend/test_documents_http_api.py -q --basetemp
+  build/j04-m0-closure/mr03-pytest-20260818T110322811Z --junitxml
+  build/j04-m0-closure/mr03-results-20260818T110322811Z/junit.xml`
+- **Passed/Failed/Skipped:** 120 passed / 0 failed / 0 skipped
+- **Evidence-Pfade:**
+  `build/j04-m0-closure/mr03-results-20260818T110322811Z/junit.xml`,
+  `build/j04-m0-closure/mr03-results-20260818T110322811Z/pytest.log`
+- **Abweichungen:** `get_header` bleibt intern für Owner-Pfade bestehen;
+  HTTP-GET nutzt nur `get_header_for_actor`. Keine neue öffentliche
+  Fach-API-Klasse.
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR03 PASS. Nächster Checkpoint: MR04.
+
+### MR04 — Import-CAS und SQLite-Thread-Sicherheit
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T11:06:12Z
+- **Endzeit:** 2026-08-18T11:12:32Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** PDF/DOCX-Import stempelt das Import-Event in
+  `last_event_id`/`last_event_at`/`last_actor_user_id` und persistiert den
+  neuen ETag in derselben Write-Transaction. Replay mit altem ETag liefert
+  409. Repository-Connections sind threadlokal, ohne `check_same_thread=False`.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `modules/documents/service.py` — Import stempelt und speichert den
+    aktualisierten Zustand unter `_write_transaction`
+  - `modules/documents/sqlite_repository.py` — `_txn_local` statt
+    repositoryweiter Connection; nested reuse nur im selben Thread
+  - `tests/modules/test_documents_infrastructure.py` — Import-CAS und
+    SQLite-Thread-Invarianten
+  - `tests/modules/test_documents_event_contracts.py` — gestempelter Import-Actor
+  - `tests/backend/test_documents_http_api.py` — PDF/DOCX-Import-ETag und Replay
+  - `tests/backend/test_documents_concurrency_http.py` — paralleler PDF-Import
+    200/409
+- **Bewusst nicht geänderte Dateien:** Template-Create-CAS (nicht im
+  Pflichtgate); Signature-Scratch (MR05); Training; R9-Harness.
+- **Implementierte Invarianten:**
+  - Erster Import erzeugt neuen ETag und persistiert ihn
+  - Replay mit altem ETag: 409, Zustand unverändert
+  - Konkurrierende Imports: genau ein 200 und ein 409
+  - Read während Write ohne `sqlite3.ProgrammingError`
+  - Nested writes desselben Threads teilen die Connection
+  - Rollback entfernt die threadlokale Connection
+  - Kein `check_same_thread=False`
+- **Alle Testversuche:**
+  1. `20260818T111025277Z` — PASS
+- **Genaue Befehle:** `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest
+  tests/docs/test_docs_consistency.py
+  tests/modules/test_documents_infrastructure.py
+  tests/modules/test_documents_event_order.py
+  tests/modules/test_documents_event_contracts.py
+  tests/backend/test_documents_http_api.py
+  tests/backend/test_documents_concurrency_http.py -q --basetemp
+  build/j04-m0-closure/mr04-pytest-20260818T111025277Z --junitxml
+  build/j04-m0-closure/mr04-results-20260818T111025277Z/junit.xml`
+- **Passed/Failed/Skipped:** 80 passed / 0 failed / 0 skipped
+- **Evidence-Pfade:**
+  `build/j04-m0-closure/mr04-results-20260818T111025277Z/junit.xml`,
+  `build/j04-m0-closure/mr04-results-20260818T111025277Z/pytest.log`
+- **Abweichungen:** Service-Lock unverändert. Keine neue öffentliche API.
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR04 PASS. Nächster Checkpoint: MR05.
+
+### MR05 — Signature-Dateien und Scratch-Lebenszyklus härten
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T11:12:32Z
+- **Endzeit:** 2026-08-18T11:20:58Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Signature-Scratch und Upload-Store dürfen den eigenen
+  Root nicht verlassen; Klartextreste werden nach Export/Standalone/Workflow
+  gelöscht. Kanonische Documents-Input-PDFs bleiben erhalten.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `modules/signature/signature_policy_ops.py` — sicherer PNG-Basename;
+    Temp-Pfad gegen TemporaryDirectory-Root
+  - `src/backend/signature_routes.py` — Export löscht nach Read; Standalone
+    löscht Input/PNG/Output in `finally`; Upload-Store räumt nur den eigenen
+    Root auf
+  - `modules/documents/sign_intent_builder.py` — Workflow-Output-PDF als UUID
+  - `modules/documents/signature_guard.py` — Workflow-PNG/Output nach Store
+    und auf Fehlerpfaden löschen
+  - `modules/documents/service.py` — `sign_and_store_signed_artifact` räumt
+    Scratch auf
+  - `tests/modules/test_signature_templates.py` — Filename-Hint Escape
+  - `tests/backend/test_signature_http_api.py` — Export/Standalone/Janitor
+  - `tests/backend/test_documents_signed_transitions_http.py` — kein
+    Workflow-Scratch, SOURCE_PDF bleibt
+- **Bewusst nicht geänderte Dateien:** Training; Reads; neues Signature-API;
+  kein globaler Janitor; kein neuer Endpunkt.
+- **Implementierte Invarianten:**
+  - Filename-Hint kann Temp-Root nicht verlassen
+  - Export liefert Bytes und hinterlässt keine Datei
+  - Standalone Erfolg/Fehler ohne Klartextreste
+  - Workflow erzeugt SIGNED_PDF ohne Scratchreste
+  - Upload-Store bereinigt nur abgelaufene/verwaiste Dateien im eigenen Root
+  - Fremddateien außerhalb des Roots bleiben unangetastet
+  - Kanonisches Documents-Input-PDF wird nicht gelöscht
+- **Alle Testversuche:**
+  1. `20260818T111640820Z` — FAILED (2): Upload-Purge löschte frische Datei
+     vor Store-Insert; Workflow-Cleanup lag in `signature_guard`, nicht nur
+     in `sign_and_store_signed_artifact`
+  2. `20260818T112018936Z` — PASS
+- **Genaue Befehle:** `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest
+  tests/docs/test_docs_consistency.py
+  tests/modules/test_signature_service_v2.py
+  tests/modules/test_signature_templates.py
+  tests/backend/test_signature_http_api.py
+  tests/backend/test_signature_authorization_http.py
+  tests/backend/test_documents_signed_transitions_http.py -q --basetemp
+  build/j04-m0-closure/mr05-pytest-20260818T112018936Z --junitxml
+  build/j04-m0-closure/mr05-results-20260818T112018936Z/junit.xml`
+- **Passed/Failed/Skipped:** 25 passed / 0 failed / 0 skipped
+- **Evidence-Pfade:**
+  `build/j04-m0-closure/mr05-results-20260818T112018936Z/junit.xml`,
+  `build/j04-m0-closure/mr05-results-20260818T112018936Z/pytest.log`
+- **Abweichungen:** Keine neue öffentliche API. Windows-Unlink mit kurzem
+  Retry wegen gehaltener PDF-Handles.
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR05 PASS. Nächster Checkpoint: MR06.
+
+### MR06 — DOCX-Kommentarsynchronisation stabilisieren
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T11:20:58Z
+- **Endzeit:** 2026-08-18T11:32:18Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Stabile Kommentaridentität `(document_id, version,
+  context, w:id)`; Autor/Datum/Text sind Inhalt. Legacy-Keys über Kontext/ID
+  eindeutig matchen; Status bleibt beim Resync erhalten.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `modules/documents/comment_extractors/docx_comment_reader.py` — Key
+    `context|w:id`; deterministische ZIP/`comments.xml`-Fehler
+  - `modules/documents/comment_sync_service.py` — Legacy-Match, eindeutige
+    `ref_no`, Status-/Audit-Erhalt, keine Duplikat-Löschung
+  - `modules/documents/sqlite_repository.py` — Upsert aktualisiert
+    Source-Key, Autor, Quelldatum und Text
+  - `tests/modules/test_documents_infrastructure.py` — echtes DOCX-ZIP;
+    Signaturkette liest gespeichertes SIGNED_PDF statt Scratch
+  - `tests/backend/test_documents_p4_p9_http.py` — HTTP-Sync in IN_REVIEW
+    idempotent; Observer 404; Converter-Capability gemockt
+- **Bewusst nicht geänderte Dateien:** Training; Reads; Change Requests;
+  R9-Harness (MR07); kein neuer Kommentar-Service.
+- **Implementierte Invarianten:**
+  - Wiederholter Sync mit/ohne Datum: ein Kommentar
+  - Textänderung bei gleichem `w:id` aktualisiert denselben Kommentar
+  - Zwei neue Kommentare haben eindeutige Referenzen
+  - Kommentarstatus bleibt erhalten
+  - Observer bleibt ausgeschlossen
+  - HTTP-Sync in IN_REVIEW idempotent
+  - Ungültiges ZIP / fehlende `comments.xml` deterministisch
+- **Alle Testversuche:**
+  1. `20260818T112642792Z` — FAILED (1): Signaturketten-Test las gelöschte
+     Scratch-PDF (MR05-Invariante)
+  2. `20260818T112948464Z` — PASS
+- **Genaue Befehle:** `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest
+  tests/docs/test_docs_consistency.py
+  tests/modules/test_documents_infrastructure.py
+  tests/backend/test_documents_p4_p9_http.py
+  tests/backend/test_documents_authorization_http.py
+  tests/backend/test_documents_concurrency_http.py -q --basetemp
+  build/j04-m0-closure/mr06-pytest-20260818T112948464Z --junitxml
+  build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml`
+- **Passed/Failed/Skipped:** 71 passed / 0 failed / 0 skipped
+- **Evidence-Pfade:**
+  `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml`,
+  `build/j04-m0-closure/mr06-results-20260818T112948464Z/pytest.log`
+- **Abweichungen:** Keine neue öffentliche API. HTTP mockt nur
+  `docx_conversion_available`.
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR06 PASS. Nächster Checkpoint: MR07.
+
+### MR07 — Realprocess-Harness auf verbindlichen M0-Scope bringen
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T12:06:00Z
+- **Endzeit:** 2026-08-18T13:50:21Z
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Pflichtschrittfolge des M0-Realprocess ohne Training,
+  Reads, Read Receipts, Change Requests, Archivierung und Word-COM-Schritt;
+  signaturpflichtige Übergänge bis `APPROVED`; Artefakt-Content-Stream;
+  Restart in `APPROVED`.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `tests/acceptance/j04_m0_acceptance_scenario.py` — 18-Schritt-Katalog
+    und Handler (Signaturpflicht, Content-Stream, PDF/DOCX-Kommentare,
+    signed review/approval, Restart `APPROVED`)
+  - `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — Vertrag
+    für Reihenfolge, verbotene Routen, Signatur-Actor, Hash-Header,
+    Kommentartrennung, Restart-Status
+  - `tests/acceptance/test_j04_m0_realprocess.py` — kein separater
+    Word-Schritt; voller Katalog muss PASS sein
+  - `tests/backend/test_documents_signed_transitions_http.py` — R1:
+    `require_password=True`, Actor-Passwörter, Negativtest ohne Passwort
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — Ledger und MR07-Detail
+  - `docs/J04_M0_ACCEPTANCE_REPORT.md` — MR07-Evidence
+- **Bewusst nicht geänderte Dateien:** Produktdateien; Training; Reads;
+  Change Requests; Lifecycle; PATH_MATRIX/Roadmap/Training-Spec; kein neuer
+  Harness-Owner; `test_j04_m0_harness_unit.py` unverändert.
+- **Implementierte Invarianten:**
+  - Katalog genau 18 Schritte in der verbindlichen Reihenfolge
+  - Training, `/documents/reads/*`, Change Requests, Archivierung und
+    `word_com_live_boundary` fehlen in Katalog und Handlern
+  - alle drei Profilübergänge `signature_required=True`
+  - Editor/Reviewer/Approver aktivieren getrennte Signaturassets
+  - `signed_editing_complete` fail-closed ohne Sign-Intent, sonst `IN_REVIEW`
+  - PDF-Kommentar und idempotenter DOCX-Sync getrennt während `IN_REVIEW`
+  - `signed_review_approval` erreicht `APPROVED` und weist SIGNED_PDF sowie
+    RELEASED_PDF nach
+  - Artefakt-Content: SHA-256, ETag, Content-Length, keine Serverpfade
+  - Restart erwartet `APPROVED` und überlebende Editor-/Reviewer-Sessions
+- **Alle Testversuche:**
+  1. `20260818T121816713Z` — FAILED (1): bekannter lokaler
+     `WinError 10053` im Bootstrap-HTTP-Handler
+  2. `20260818T121957135Z` — PASS (`73 passed`)
+  3. `20260818T122324312Z` — Ledger-PASS-Bestätigung: docs-consistency +
+     scenario-unit **43 passed**
+- **MR07-R1 Befund:** Sign-Intents sendeten `password: None`. Die produktive
+  Signature-Konfiguration hat `require_password=True`; `SignatureExecuteOps`
+  lehnt fehlende Passwörter ab. Der MR07-Mock prüfte nur die Existenz von
+  `sign_intent`. Der Same-Process-Backendtest setzte `require_password=False`.
+- **MR07-R1 Remediation:** verpflichtendes `_sign_intent_body(password)`;
+  Actor-Passwörter in Editor-/Reviewer-/Approver-Übergängen;
+  `X-Signature-Password` bei Asset-Aktivierung; Mocks prüfen Passwort je
+  Actor; Backendtest mit `require_password=True`; Negativtest ohne Passwort.
+- **Alle Testversuche (R1):**
+  1. `20260818T134857083Z` — FAILED (1): Inspect-Assertion traf den
+     Verify-Schritt statt `_activate_signature_asset`
+  2. `20260818T134943927Z` — R1-Fokus **53 passed**
+  3. `20260818T135020994Z` — vollständiges ursprüngliches MR07-Gate
+     **75 passed**
+- **Genaue Befehle:** `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest
+  tests/docs/test_docs_consistency.py
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py
+  tests/backend/test_documents_signed_transitions_http.py
+  tests/modules/test_signature_service_v2.py
+  -m "not postgres and not j04_final_acceptance" -q --basetemp
+  build/j04-m0-closure/mr07-r1-pytest-20260818T134943927Z --junitxml
+  build/j04-m0-closure/mr07-r1-results-20260818T134943927Z/junit.xml`
+  danach dasselbe ursprüngliche MR07-Gate mit stamp `20260818T135020994Z`.
+- **Passed/Failed/Skipped:** 75 passed / 0 failed / 0 skipped (volles MR07-Gate);
+  R1-Fokus 53 passed / 0 failed / 0 skipped
+- **Evidence-Pfade:**
+  `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml`,
+  `build/j04-m0-closure/mr07-r1-results-20260818T134943927Z/junit.xml`,
+  `build/j04-m0-closure/mr07-r1-results-20260818T134857083Z/junit.xml`
+  (R1 Versuch 1),
+  `build/j04-m0-closure/mr07-results-20260818T121957135Z/junit.xml`
+  (ursprüngliches Katalog-Gate). `build/` ist Evidence/Basetemp, nicht
+  gestaged und kein Produktcode.
+- **Abweichungen:** Kein Produktcode. Signature-Policy wird nicht abgeschwächt.
+  `_wire_signature_module` bleibt `require_password=False` für andere
+  Signature-HTTP-Tests; der signed-transition-Backendtest setzt danach
+  ausdrücklich `require_password=True`.
+  CP08-R9-Actor-Fix bleibt erhalten.
+  Live-`import-docx` hängt weiterhin an der bestehenden Converter-Capability
+  der Produktschnittstelle; Word-COM-Konvertierung bleibt außerhalb MR07.
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** MR07 PASS nach R1. Nächster Checkpoint: MR08.
+
+### MR08 — Gesamte Regression und Candidate Freeze
+
+- **Status:** IN_PROGRESS
+- **Startzeit:** 2026-08-18T14:07:28Z
+- **Endzeit:** — (ursprüngliches Gate 3 FAILED 2026-08-18T14:30:27Z; MR08-R1 offen)
+- **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ziel und Scope:** Nicht-destruktive Regression, CLI-E2E, Architektur-/OpenAPI-
+  Verträge und Diff-/Scopeprüfung des uncommitted J04-M0-Standes. Keine
+  Produktänderung. Kein PostgreSQL-Live, kein `j04_final_acceptance`, kein
+  CP08-V9, kein Word COM, kein Packaging, kein Golive, kein sichtbarer
+  PyQt-Smoke. **Freeze pending explicit user approval.**
+- **Geänderte Dateien und Verantwortlichkeiten (dieser Checkpoint):**
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — Ledger IN_PROGRESS→FAILED, Ausführungsplan,
+    Gate-Evidence, Fehlerklassifikation, MR08-R1-Vorschlag
+  - `docs/J04_M0_ACCEPTANCE_REPORT.md` — MR08 begonnen und FAILED, Freeze nicht
+    freigegeben, Gesamtstatus NOT_READY
+- **Bewusst nicht geänderte Dateien:** alle 36 Inhaltsdiffs außer den zwei
+  MR08-Dokumenten; die zwei stat-only Dateien; `docs/transition/20260818/*`;
+  Produktcode; Tests; Training; Reads; Change Requests; Archivierung.
+- **Ausgangs-HEAD:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef`
+- **Divergenz bei Start:** `0 hinter / 60 voraus` gegen `origin/main`
+- **Vollständiges Diff-Manifest (36 Inhaltsdiffs gegen HEAD):**
+
+  Produkt / Backend (13):
+  1. `modules/documents/api.py`
+  2. `modules/documents/artifact_ops.py`
+  3. `modules/documents/comment_extractors/docx_comment_reader.py`
+  4. `modules/documents/comment_sync_service.py`
+  5. `modules/documents/naming.py`
+  6. `modules/documents/service.py`
+  7. `modules/documents/sign_intent_builder.py`
+  8. `modules/documents/signature_guard.py`
+  9. `modules/documents/sqlite_repository.py`
+  10. `modules/documents/storage.py`
+  11. `modules/signature/signature_policy_ops.py`
+  12. `src/backend/documents_routes.py`
+  13. `src/backend/signature_routes.py`
+
+  Tests (18):
+  14. `tests/acceptance/j04_m0_acceptance_scenario.py`
+  15. `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py`
+  16. `tests/acceptance/test_j04_m0_realprocess.py`
+  17. `tests/backend/test_documents_artifacts_http.py`
+  18. `tests/backend/test_documents_authorization_http.py`
+  19. `tests/backend/test_documents_concurrency_http.py`
+  20. `tests/backend/test_documents_http_api.py`
+  21. `tests/backend/test_documents_p4_p9_http.py`
+  22. `tests/backend/test_documents_signed_transitions_http.py`
+  23. `tests/backend/test_signature_http_api.py`
+  24. `tests/docs/test_docs_consistency.py`
+  25. `tests/modules/test_documents_artifacts_api.py`
+  26. `tests/modules/test_documents_authorization_matrix.py`
+  27. `tests/modules/test_documents_event_contracts.py`
+  28. `tests/modules/test_documents_infrastructure.py`
+  29. `tests/modules/test_documents_release_filename.py`
+  30. `tests/modules/test_documents_service.py`
+  31. `tests/modules/test_signature_templates.py`
+
+  Dokumentation (5):
+  32. `docs/J04_M0_ACCEPTANCE_REPORT.md`
+  33. `docs/J04_M0_EXECUTABLE_CHECKLIST.md`
+  34. `docs/J04_M0_PATH_MATRIX.md`
+  35. `docs/MASTER_ORCHESTRATION_ROADMAP.md`
+  36. `docs/TRAINING_MODULE_SPEC.md`
+
+  Summe 13+18+5 = 36 Inhaltsdiffs.
+
+- **Ausgeschlossene Dateien (kein Commit, kein Anfassen):**
+  - `interfaces/pyqt/widgets/signature_placement/label_geometry.py` (stat-only)
+  - `modules/training/wiring.py` (stat-only)
+  - `docs/transition/20260818/00_README.md`
+  - `docs/transition/20260818/01_IMMEDIATE_MERGE_SEQUENCE.md`
+  - `docs/transition/20260818/02_J04_M0_SCOPE_AND_ACCEPTANCE.md`
+  - `docs/transition/20260818/03_MASTER_TRANSITION_ROADMAP.md`
+  - `docs/transition/20260818/04_BACKEND_MODULE_MIGRATION_PATTERN.md`
+  - `docs/transition/20260818/05_DEPENDENCIES_AND_PARALLEL_WORK.md`
+  - `docs/transition/20260818/06_FOLLOWUP_PACKAGES.md`
+  - `docs/transition/20260818/07_CORRECTIONS_TO_EXISTING_DOCS.md`
+- **Testgates (seriell, je eigener UTC-Stamp / basetemp / JUnit):**
+  0. Ledger-Konsistenz nach IN_PROGRESS
+  1. Verträge und Architektur
+  2. CLI-E2E (`tests/e2e_cli`, Marker `not postgres and not j04_final_acceptance`)
+  3. Vollständige nicht-live Regression (`pytest -m "not postgres and not j04_final_acceptance"`)
+- **Fail-fast-Regeln:** Beim ersten roten Pflichtgate stoppen; keine
+  Produkt-/Testkorrektur in MR08; Fehler klassifizieren; Produkt-/Test-/ungeklärter
+  Fehler → MR08 FAILED und MR08-R1 vorschlagen; eindeutiger Umgebungsblocker →
+  BLOCKED; Current checkpoint bleibt MR08; kein automatischer Retry mit
+  geänderter Assertion; kein Freeze, keine Git-Schreibaktion.
+- **Acceptance Criteria:**
+  - Alle drei Pflichtgates Exit 0, 0 failures, 0 errors
+  - Skips vollständig dokumentiert und sachlich begründet
+  - Diff-Manifest unverändert außer den zwei MR08-Dokumenten
+  - Adversarial Review ohne neue APIs/Parallelpfade/Interna-Imports
+  - Freeze nicht gesetzt ohne ausdrückliche Nutzerfreigabe
+- **Implementierte Invarianten:** keine Produktinvarianten in diesem Checkpoint;
+  Regression darf den uncommitted Stand nicht verändern.
+- **Alle Testversuche:**
+  0. `20260818T140815286Z` — Ledger-Konsistenz nach IN_PROGRESS — **6 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-ledger-results-20260818T140815286Z/junit.xml`)
+  1. `20260818T140907659Z` — Gate 1 Verträge und Architektur — **53 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-contract-results-20260818T140907659Z/junit.xml`,
+     `tests="53" failures="0" errors="0" skipped="0"`)
+  2. `20260818T140950379Z` — Gate 2 CLI-E2E — **31 passed / 0 failed / 20 skipped**
+     (`build/j04-m0-closure/mr08-cli-results-20260818T140950379Z/junit.xml`,
+     `tests="51" failures="0" errors="0" skipped="20"`)
+     Skips (sachlich, Marker `not_in_m0`, außerhalb reduziertem J04-M0):
+     - 16× Legacy local documents CLI workflow
+     - 3× Legacy local documents CLI authorization matrix
+     - 1× Legacy training flow (`documents_read`/comments Transport)
+  3. `20260818T141720756Z` — Gate 3 vollständige nicht-live Regression — **FAILED**
+     1208 passed / 1 failed / 0 errors / 20 skipped
+     (`build/j04-m0-closure/mr08-regression-results-20260818T141720756Z/junit.xml`,
+     `tests="1229" failures="1" errors="0" skipped="20"`)
+     Failure:
+     `tests/modules/test_documents_authorization_matrix.py::DocumentsAuthorizationMatrixTest::test_open_source_reauthorization_on_artifact_read_path`
+     `DocumentConflictError: document version changed since it was loaded`
+     Skips: dieselben 20 `not_in_m0` wie Gate 2.
+  4. `20260818T143406754Z` — Ledger-Konsistenz nach FAILED — **6 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-failed-ledger-results-20260818T143406754Z/junit.xml`)
+     Kein Retry von Gate 3; nur Dokumentationsintegrität.
+- **Genaue Befehle:**
+
+```powershell
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+New-Item -ItemType Directory -Force -Path "build/j04-m0-closure/mr08-ledger-results-$stamp" | Out-Null
+.\.venv\Scripts\python.exe -m pytest tests/docs/test_docs_consistency.py -q --basetemp "build/j04-m0-closure/mr08-ledger-pytest-$stamp" --junitxml "build/j04-m0-closure/mr08-ledger-results-$stamp/junit.xml"
+# stamp 20260818T140815286Z
+
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$root = "build/j04-m0-closure"
+New-Item -ItemType Directory -Force -Path "$root/mr08-contract-results-$stamp" | Out-Null
+.\.venv\Scripts\python.exe -m pytest tests/docs/test_docs_consistency.py tests/interfaces/test_architecture_gates.py tests/modules/test_module_contract_wiring.py tests/platform/test_documents_bootstrap_provenance.py tests/backend/test_openapi_contract.py -m "not postgres and not j04_final_acceptance" -q --basetemp "$root/mr08-contract-pytest-$stamp" --junitxml "$root/mr08-contract-results-$stamp/junit.xml"
+# stamp 20260818T140907659Z
+
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+New-Item -ItemType Directory -Force -Path "$root/mr08-cli-results-$stamp" | Out-Null
+.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -m "not postgres and not j04_final_acceptance" -q --basetemp "$root/mr08-cli-pytest-$stamp" --junitxml "$root/mr08-cli-results-$stamp/junit.xml"
+# stamp 20260818T140950379Z
+
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp" | Out-Null
+.\.venv\Scripts\python.exe -m pytest -m "not postgres and not j04_final_acceptance" -q --basetemp "$root/mr08-regression-pytest-$stamp" --junitxml "$root/mr08-regression-results-$stamp/junit.xml"
+# stamp 20260818T141720756Z
+```
+
+- **Passed/Failed/Skipped:** Gate 0: 6/0/0; Gate 1: 53/0/0; Gate 2: 31/0/20; Gate 3: 1208/1/20
+- **Evidence-Pfade:** `build/j04-m0-closure/mr08-*` (nicht gestaged, kein Produktcode)
+- **Fehlerklassifikation (Gate 3):** **2. Testfehler.**
+  Der Test hält `state` von `assign_workflow_roles` und ruft danach
+  `import_existing_pdf` auf, das seit MR04 `last_event_id` stempelt. Anschließend
+  geht `DocumentsWorkflowApi.start_workflow(state, …)` über
+  `mutate_version_if_current` und wirft korrekt `DocumentConflictError`.
+  Die Artifact-Reautorisierungsprüfungen wurden nicht erreicht. Der Testkörper
+  ist gegenüber HEAD unverändert; die Produkt-CAS-Invariante von MR04 ist
+  beabsichtigt. Kein Umgebungsfehler, kein Produktregressionsfix in MR08.
+- **Adversarial Review:** nicht ausgeführt im ursprünglichen MR08 (Fail-fast nach
+  Gate 3). Nach MR08-R1 Gate 3 ausgeführt — siehe Unterabschnitt.
+- **Abweichungen:** Ursprüngliches Gate 3 rot; Freeze nicht gesetzt; MR09 nicht begonnen.
+- **Commit-SHA:** pending user approval — Freeze pending explicit user approval
+- **Abschlussbewertung:** **Regression PASS after MR08-R1 – Candidate Freeze pending explicit user approval.**
+  Current checkpoint bleibt MR08. Gesamtstatus NOT_READY. MR09/MR10 TODO.
+  Kein CandidateSha, kein Commit, kein Freeze.
+
+#### MR08-R1 — Import-ETag im Artifact-Reautorisierungstest fortschreiben
+
+- **Status:** PASS (Remediation; Parent MR08 bleibt IN_PROGRESS bis Freeze-Freigabe)
+- **Startzeit:** 2026-08-18T14:46:26Z
+- **Endzeit:** 2026-08-18T15:08:14Z
+- **Start-HEAD:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Ausgangsfehler:** Gate 3 `20260818T141720756Z` — 1208 passed / 1 failed /
+  20 skipped. JUnit:
+  `build/j04-m0-closure/mr08-regression-results-20260818T141720756Z/junit.xml`
+  Failure:
+  `tests/modules/test_documents_authorization_matrix.py::DocumentsAuthorizationMatrixTest::test_open_source_reauthorization_on_artifact_read_path`
+  `DocumentConflictError: document version changed since it was loaded`
+- **Nachgewiesene Ursache:** Der Test speichert `state` aus
+  `assign_workflow_roles`, ruft `import_existing_pdf` auf (seit MR04 stempelt
+  der Import in derselben Write-Transaction einen neuen `last_event_id` und
+  gibt den aktualisierten `DocumentVersionState` zurück), verwirft den
+  Rückgabewert und übergibt den alten ETag an `start_workflow`.
+  `mutate_version_if_current` erkennt den Konflikt korrekt. Die Artifact-
+  Reautorisierung wird nicht erreicht. Produkt-CAS ist richtig.
+- **Zulässiger Drei-Dateien-Scope:**
+  1. `tests/modules/test_documents_authorization_matrix.py` — nur der betroffene
+     Testfall
+  2. `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — dieser Plan, Fortschritt, Evidence
+  3. `docs/J04_M0_ACCEPTANCE_REPORT.md` — MR08-R1-Ergebnis, NOT_READY
+- **Explizit ausgeschlossene Produktänderungen:** `modules/documents/*`;
+  `mutate_version_if_current`; Import-CAS-Semantik; Reload-/Fallback-Helper;
+  neue API/Service/Wrapper; neue Tests außerhalb dieses Falls; abgeschwächte
+  Assertions; PostgreSQL; `j04_final_acceptance`; CP08-V9; Word COM; Packaging;
+  Golive; PyQt-Smoke; Git-Schreibaktionen; stat-only Dateien; Transition-Docs.
+- **Ausgeführte minimale Testkorrektur:** Import-Rückgabewert `imported` verwendet;
+  `self.assertNotEqual(imported.last_event_id, state.last_event_id)`;
+  `start_workflow(imported, …)`. Kein Reload, kein Fallback, keine
+  Repository-Interna. Bestehende Artifact-Assertions vollständig erhalten.
+- **Fail-fast-Regeln:** Beim ersten roten Pflichtgate stoppen; keine weitere
+  Änderung; kein Gate 3 nach rotem R1-A/B; anderer Gate-3-Fehler → MR08-R1
+  FAILED, kein adversarialer Review, MR08-R2 vorschlagen, kein Freeze.
+- **Alle Testversuche:**
+  0. `20260818T144714476Z` — Ledger-Konsistenz nach R1 IN_PROGRESS — **6 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r1-ledger-results-20260818T144714476Z/junit.xml`)
+  1. `20260818T144754849Z` — Gate R1-A einzelner zuvor roter Test — **1 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r1-target-results-20260818T144754849Z/junit.xml`)
+  2. `20260818T144816993Z` — Gate R1-B Authorization-/Import-Schicht — **71 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r1-focused-results-20260818T144816993Z/junit.xml`,
+     `tests="71" failures="0" errors="0" skipped="0"`)
+  3. `20260818T144851070Z` — Gate 3 vollständige nicht-live Regression — **1209 passed / 0 failed / 0 errors / 20 skipped**
+     (`build/j04-m0-closure/mr08-r1-regression-results-20260818T144851070Z/junit.xml`,
+     `tests="1229" failures="0" errors="0" skipped="20"`)
+     Skips (`not_in_m0`): 16 Legacy-Documents-CLI, 3 CLI-Auth-Matrix, 1 Training/`documents_read`
+  4. `20260818T151044314Z` — Ledger-Konsistenz nach finaler Dokumentation — **6 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r1-final-ledger-results-20260818T151044314Z/junit.xml`)
+- **Passed/Failed/Skipped:** R1-A 1/0/0; R1-B 71/0/0; Gate 3 1209/0/20
+- **Evidence-Pfade:** `build/j04-m0-closure/mr08-r1-*` (nicht gestaged, kein Produktcode)
+- **Adversarialer Review:** **PASS** (kumulativer 36-Dateien-Diff gegen HEAD).
+  Keine neuen Entrypoints, keine neue Public-API-Klasse, kein Service/Wrapper/Helper,
+  kein paralleler Persistenzpfad, keine Modul-Internaimporte im Backend,
+  Autorisierung in der Documents-Serviceschicht, keine Testabschwächung in R1,
+  Training/Reads/CR/Archiv nicht im M0-Gate. Zwei dokumentierte P3-Reste
+  (außerhalb MR08-R1, keine Produktänderung):
+  1. `artifact_ops.py` Fallback `root / storage_key` wenn `resolve_storage_key`
+     fehlt (Produktions-Storage hat die Methode).
+  2. Template-Create-Mutate übergibt kein `actor`/`owner_or_privileged` auf dem
+     Lock (unsichtbare Versionen 404en vorher; sichtbar-nicht-Owner kann 409
+     statt 404 erhalten). **Behoben in MR08-R2.**
+  Git: 36 Inhaltsdiffs; Testkorrektur in bereits vorhandener Diff-Datei;
+  stat-only ohne Inhaltsdiff; acht Transition-Dokumente untracked; kein Staging.
+- **Abweichungen:** keine. Historische Gates 1 und 2 nicht einzeln wiederholt
+  (in Gate 3 enthalten).
+- **Commit-SHA:** pending user approval — Freeze pending explicit user approval
+- **Abschlussbewertung:** Regression PASS after MR08-R1 – Candidate Freeze
+  pending explicit user approval. Parent MR08 bleibt IN_PROGRESS. NOT_READY.
+  Adversarialer Review nach R1 wieder geöffnet (MR08-R2).
+
+#### MR08-R2 — Template-Create-Autorisierung vor Create und ETag
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T15:23:52Z
+- **Endzeit:** 2026-08-18T15:32:19Z
+- **Start-HEAD:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Historie:** MR08-R1 und dessen Regression bleiben historisch PASS.
+  Der adversariale Review wird wegen zweier Template-Autorisierungslücken
+  wieder geöffnet. MR08-R3 (Artifact-Storage-Fallback) ist nachfolgend und
+  **nicht** begonnen.
+- **Reproduzierte Fehler:**
+  - A bestehendes sichtbares Dokument: sichtbarer Nicht-Owner mit stale ETag
+    erhält HTTP 409 inkl. `current_etag`/`current_state`; mit aktuellem ETag
+    HTTP 403. Ursache: `_mutate_version_state` ohne `actor` /
+    `owner_or_privileged`, ETag vor Owner-Prüfung.
+  - B fehlendes Ziel: Observer erzeugt die Version (HTTP 200, wird Owner).
+    `/documents/versions/create` lehnt denselben Actor mit HTTP 403 ab.
+    Ursache: Missing-Target-Zweig ohne QMB-/Delegated-Create-Policy.
+- **Vorhandene Behavior-Owner:**
+  - `DocumentsWorkflowApi.create_from_template` (`modules/documents/api.py`)
+  - `_mutate_version_state` / `create_from_template`
+    (`src/backend/documents_routes.py`)
+  - Referenzpolicy: `DocumentsWorkflowApi.create_document_version` (unverändert)
+  - Lock: `mutate_version_if_current` (unverändert, nicht abschwächen)
+- **Zulässige sechs Dateien:**
+  1. `modules/documents/api.py` — bestehende Methode erweitern
+  2. `src/backend/documents_routes.py` — Lock-Flag und Actor durchreichen
+  3. `tests/backend/test_documents_authorization_http.py` — HTTP-Verträge
+  4. `tests/modules/test_documents_authorization_matrix.py` — Public-API-Vertrag
+  5. `docs/J04_M0_EXECUTABLE_CHECKLIST.md`
+  6. `docs/J04_M0_ACCEPTANCE_REPORT.md`
+- **Zielverhalten:**
+  - Missing: QMB oder `delegated_create_allowed=True` → Erfolg; sonst HTTP 403;
+    keine Version entsteht
+  - Existing unsichtbar: HTTP 404 ohne `current_state`/`current_etag`
+  - Existing sichtbar Nicht-Owner stale: HTTP 404 ohne Konfliktpayload
+  - Existing sichtbar Nicht-Owner aktuell: HTTP 403
+  - Existing Owner/QMB stale: HTTP 409 mit Konfliktzustand
+  - Existing Owner/QMB aktuell: bestehender Erfolgsweg
+- **Implementierungsschritte:**
+  1. `create_from_template`: optionale `actor` + `delegated_create_allowed`;
+     Actor ableiten; Missing-Target-Create-Policy vor Service-Create
+  2. `_mutate_version_state(..., owner_or_privileged=False)` durchreichen
+  3. Missing-Target-Route: `actor` + `_delegated_create_allowed`
+  4. Existing-Target-Route: `actor` + `owner_or_privileged=True` und Actor an API
+- **Tests und Evidence:** Gate R2-A (`-k template or create_from_template`),
+  R2-B (Authorization/Concurrency/OpenAPI/Matrix), R2-C Ledger.
+  Keine 1209er Vollregression (folgt nach MR08-R3).
+- **Fail-fast:** erstes rotes Gate stoppt; MR08-R2 FAILED/BLOCKED; kein R3;
+  kein Freeze; keine Git-Schreibaktion.
+- **Freeze:** nicht freigegeben. CandidateSha nicht erzeugen.
+- **Alle Testversuche:**
+  0. `20260818T152445755Z` — Ledger-Konsistenz nach R2 IN_PROGRESS — **6 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r2-ledger-results-20260818T152445755Z/junit.xml`)
+  1. `20260818T152657988Z` — Gate R2-A — **FAILED** (1 failed: Public-API-Erfolgspfad ohne `storage_port`; HTTP-Fälle grün). Test um vorhandenen `FileSystemDocumentsStorage` ergänzt.
+  2. `20260818T152746610Z` — Gate R2-A Wiederholung — **4 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r2-target-results-20260818T152746610Z/junit.xml`)
+  3. `20260818T152830890Z` — Gate R2-B betroffene Backendgrenze — **110 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r2-focused-results-20260818T152830890Z/junit.xml`,
+     `tests="110" failures="0" errors="0" skipped="0"`)
+  4. `20260818T153303900Z` — Gate R2-C Dokumentkonsistenz — **6 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-r2-ledger-final-results-20260818T153303900Z/junit.xml`)
+- **Passed/Failed/Skipped:** R2-A 4/0/0; R2-B 110/0/0
+- **Evidence-Pfade:** `build/j04-m0-closure/mr08-r2-*` (nicht gestaged, kein Produktcode)
+- **Adversarialer Review (nur MR08-R2-Diff):** **PASS** für R2-Scope.
+  Autorisierung vor Missing-Create und vor stale ETag im Public-API-/Servicepfad;
+  Backend reicht nur `actor`, `_delegated_create_allowed` und `owner_or_privileged`
+  durch. Keine neue API-Klasse, Route oder Persistenz. `mutate_version_if_current`
+  unverändert. Keine Testabschwächung. Signaturerweiterung von
+  `DocumentsWorkflowApi.create_from_template` dokumentiert (keine neue Klasse).
+  Gesamtreview bleibt offen bis MR08-R3 (resolver-loser Artifact-Fallback).
+- **Abweichungen:** erste R2-A-Ausführung rot wegen fehlendem `storage_port` im
+  neuen Modultest; danach grün. Keine 1209er Vollregression (folgt nach R3).
+- **Commit-SHA:** pending user approval — Freeze pending explicit user approval
+- **Abschlussbewertung:** MR08-R2 PASS. Parent MR08 bleibt IN_PROGRESS.
+  Current checkpoint MR08. NOT_READY. Nächster Schritt: MR08-R3.
+
+#### MR08-R3 — Resolver-losen Artifact-Storage-Fallback begrenzen
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-18T17:19:08Z
+- **Endzeit:** 2026-08-18T19:10:37Z
+- **Start-HEAD:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
+- **Problem und Sicherheitsinvariante:** `resolve_artifact_path` verbindet bei
+  fehlendem callable `resolve_storage_key` direkt `root / artifact.storage_key`.
+  Ein ausbrechender Key kann den Storage-Root verlassen. Invariante: auch der
+  resolver-lose Fallback bleibt durch vorhandenes `contained_path` im Root.
+  Ungültige Keys fail-closed → `None`. Resolverpfad bleibt bevorzugt.
+- **Bestehender Owner:** `modules/documents/artifact_ops.py` `resolve_artifact_path`
+- **Minimaler Dateisatz:**
+  1. `modules/documents/artifact_ops.py` — resolver-losen Fallback auf `contained_path`
+  2. `tests/modules/test_documents_infrastructure.py` — direkte `resolve_artifact_path`-Verträge
+  3. `docs/J04_M0_EXECUTABLE_CHECKLIST.md`
+  4. `docs/J04_M0_ACCEPTANCE_REPORT.md`
+- **Ausgeschlossene Legacy-Metadatenpfade:** `absolute_path` / `file_path` /
+  `path` in `artifact.metadata` bleiben unverändert. `storage.py` unverändert
+  (kein `contained_path`-Defekt nachgewiesen). Keine neue Public API, Route,
+  Port-Methode, Serviceklasse, Persistenz, Wrapper- oder Helperdatei.
+- **Implementierung:** Resolver-loser Fallback ruft `contained_path(root, key)`
+  auf und übersetzt `ValueError` nach `None`. Callable `resolve_storage_key`
+  bleibt bevorzugt. Legacy-Metadatenauflösung unverändert.
+- **Fail-fast:** erstes rotes Pflichtgate stoppt; MR08-R3 FAILED oder BLOCKED;
+  kein Review, kein Freeze, keine Git-Schreibaktion; keine Policyabschwächung.
+- **Freeze:** ausdrücklich nicht freigegeben. CandidateSha nicht erzeugen.
+  Parent MR08 bleibt IN_PROGRESS. MR09/MR10 TODO. Gesamtstatus NOT_READY.
+- **Alle Testversuche:**
+  0. `20260818T171938978Z` — Ledger-Konsistenz nach R3 IN_PROGRESS — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr08-r3-ledger-results-20260818T171938978Z/junit.xml`)
+  1. `20260818T172123561Z` — Gate R3-A `-k resolverless_artifact_path` — **PASS**
+     Konsole: 5 passed / 0 failed / 15 deselected / 8 subtests passed.
+     JUnit: `tests="13" failures="0" errors="0" skipped="0"`
+     (`build/j04-m0-closure/mr08-r3-target-results-20260818T172123561Z/junit.xml`)
+  2. `20260818T172135322Z` — Gate R3-B Artifact/Storage/Signatur — **PASS**
+     Konsole: 57 passed / 0 failed / 8 subtests passed.
+     JUnit: `tests="65" failures="0" errors="0" skipped="0"`
+     (`build/j04-m0-closure/mr08-r3-artifact-results-20260818T172135322Z/junit.xml`)
+  3. `20260818T172223274Z` — Gate R3-C erster vollständiger nicht-live Lauf — **PASS**
+     JUnit: `tests="1246" failures="0" errors="0" skipped="20" time="935.721"`
+     timestamp `2026-08-18T19:22:24.193367+02:00` bis `19:37:59.914367+02:00`.
+     Dieser Lauf war im vorherigen BLOCKED-Bericht ausgelassen und ist der
+     erste vollständige R3-C-Versuch.
+     (`build/j04-m0-closure/mr08-r3-regression-results-20260818T172223274Z/junit.xml`)
+  4. `20260818T173505528Z` — Gate R3-C zweiter Volltest, überlappend — **nicht als serieller Gate-Lauf verwertbar**
+     JUnit: `tests="1246" failures="2" errors="0" skipped="20" time="1028.502"`
+     timestamp `2026-08-18T19:35:07.489322+02:00` bis `19:52:15.991322+02:00`.
+     Start 763.3 s nach Lauf 3; Überlappung **172.425 s**, während Lauf 3 noch
+     172.425 s Restlaufzeit hatte. Failures: WinError 10053 auf
+     `test_bootstrap_admin_session_completes_password_change_then_me_200`
+     (`127.0.0.1:57413`) und `test_seed_directory_users_stores_user_ids_from_auth_me`
+     (`127.0.0.1:57429`). **Nicht** der erste vollständige Versuch.
+     (`build/j04-m0-closure/mr08-r3-regression-results-20260818T173505528Z/junit.xml`)
+  5. `20260818T175336276Z` — Diagnoseisolierung der zwei überlappenden Failures — **2 passed / 0 failed / 0 errors**
+     Kein Produkt- oder Testcode geändert.
+     (`build/j04-m0-closure/mr08-r3-c-isolate-results-20260818T175336276Z/junit.xml`)
+  6. `20260818T175701619Z` — Ledger-Konsistenz nach irrtümlichem R3 BLOCKED — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr08-r3-ledger-blocked-results-20260818T175701619Z/junit.xml`)
+  7. `20260818T175729687Z` — Ledger-Konsistenz nach BLOCKED-Nachtrag — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr08-r3-ledger-final-results-20260818T175729687Z/junit.xml`)
+  8. `20260818T185736086Z` — Ledger-Konsistenz nach Historienkorrektur / serial pending — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr08-r3-serial-ledger-results-20260818T185736086Z/junit.xml`)
+  9. `20260818T185750907Z` — Gate R3-C serieller Bestätigungslauf — **PASS**
+     Konsole: 988 passed / 20 skipped / 52 deselected / 238 subtests passed.
+     JUnit: `tests="1246" failures="0" errors="0" skipped="20" time="705.366"`
+     timestamp `2026-08-18T20:57:51.746194+02:00`. Kein paralleler Pytest-Prozess.
+     Dateihashes vor/nach unverändert.
+     (`build/j04-m0-closure/mr08-r3-serial-regression-results-20260818T185750907Z/junit.xml`)
+  10. `20260818T191144020Z` — Ledger-Konsistenz nach R3 PASS — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr08-r3-serial-ledger-final-results-20260818T191144020Z/junit.xml`)
+- **Passed/Failed/Skipped:** R3-A JUnit 13/0/0; R3-B JUnit 65/0/0; erster R3-C JUnit 1246/0/0/20 skipped; serieller R3-C JUnit 1246/0/0/20 skipped
+- **Skip-Gründe (R3-C):** 16× `tests/e2e_cli/test_documents_cli.py` `not_in_m0` Legacy local documents CLI; 3× `tests/e2e_cli/test_documents_cli_authorization_matrix.py` `not_in_m0` Legacy CLI authorization matrix; 1× `tests/e2e_cli/test_training_cli.py` `not_in_m0` training/`documents_read`. 52 deselected: `postgres` oder `j04_final_acceptance`.
+- **Evidence-Pfade:** `build/j04-m0-closure/mr08-r3-*` (nicht gestaged)
+- **Adversarialer Review:** **PASS** (kumulativer Worktree, nach seriellem R3-C).
+  Resolver-loser Fallback nutzt `contained_path`; ausbrechende Keys → `None`;
+  callable `resolve_storage_key` bevorzugt; Legacy-Metadatenpfade unverändert;
+  MR08-R2-Autorisierung vor Create/ETag erhalten; keine neue Public API/Route/
+  API-Klasse/Port-Methode; kein neuer Service/Wrapper/Helper/Entrypoint/
+  Persistenzpfad; Backend importiert nur `modules.*.api`; keine Testabschwächung;
+  stat-only-Dateien ohne Inhaltsdiff; `docs/transition/20260818/` untracked und
+  unberührt.
+- **Nächster Schritt:** unabhängige Prüfung und ausdrückliche Freigabe für
+  kontrollierte Commits und Candidate-Freeze. MR09 nicht beginnen.
+- **Commit-SHA:** pending user approval — Freeze pending explicit user approval
+- **Abschlussbewertung:** MR08-R3 PASS. Regression PASS. Cumulative adversarial
+  review PASS. Parent MR08 bleibt IN_PROGRESS – Candidate Freeze pending explicit
+  user approval. Current checkpoint MR08. NOT_READY. CandidateSha bleibt
+  historisch `ed488ed`.
+
+### MR09 — Kontrollierten CP08-V9-Lauf ausführen
+
+- **Status:** TODO
+- **Startzeit:** —
+- **Endzeit:** —
+- **Start-SHA:** —
+- **Ziel und Scope:** Ein destruktiver Acceptance-Lauf nur nach MR08-Freeze
+  und ausdrücklicher Freigabe; read-only Guard-Preflight zuerst.
+- **Geänderte Dateien und Verantwortlichkeiten:** —
+- **Bewusst nicht geänderte Dateien:** —
+- **Implementierte Invarianten:** —
+- **Alle Testversuche:** —
+- **Genaue Befehle:** —
+- **Passed/Failed/Skipped:** —
+- **Evidence-Pfade:** —
+- **Abweichungen:** —
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** —
+
+### MR10 — Packaging, Golive, Human Gate und Merge
+
+- **Status:** TODO
+- **Startzeit:** —
+- **Endzeit:** —
+- **Start-SHA:** —
+- **Ziel und Scope:** Onedir, Golive, sichtbarer interaktiver PyQt-Smoke,
+  danach Git-Aktionen nur nach ausdrücklicher Freigabe. `Accepted` nur durch
+  einen Menschen.
+- **Geänderte Dateien und Verantwortlichkeiten:** —
+- **Bewusst nicht geänderte Dateien:** —
+- **Implementierte Invarianten:** —
+- **Alle Testversuche:** —
+- **Genaue Befehle:** —
+- **Passed/Failed/Skipped:** —
+- **Evidence-Pfade:** —
+- **Abweichungen:** —
+- **Commit-SHA:** pending user approval
+- **Abschlussbewertung:** —
 
 ## Classification legend
 
@@ -1059,10 +2059,51 @@ No repair, no retry.
 | Step | Result |
 | --- | --- |
 | PostgreSQL live | **PASS** — PG18 preflight; **51 passed**; `build/j04-m0-closure/cp08-v8-pg-live-runner.log` |
-| Full real-process E2E | **FAILED** at `training_read_receipt` — harness `version payload missing etag`. Backend: `POST .../workflow/editing-complete` **200**, then `POST .../workflow/review/accept` **403**. R8 artifacts **PASS** (`artifacts listed count=1`). Race **PASS**. Word **not reached**. Workspace `20260818T062441411509Z-3b4e870e746e4d50a646dce4e8d935a1` |
+| Full real-process E2E | **FAILED** in `training_read_receipt` before any out-of-scope read/receipt calls — harness `review/accept` was sent with the editor token and got **403**. The later `version payload missing etag` was secondary diagnostics. R8 artifacts **PASS** (`artifacts listed count=1`). Race **PASS**. Word **not reached**. Workspace `20260818T062441411509Z-3b4e870e746e4d50a646dce4e8d935a1` |
 | Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** |
 
 `ACCEPTED` is not set.
+
+CP08-V8 failed **before** any out-of-scope read / receipt calls. After successful
+`editing-complete`, the scenario step kept one client pinned to the editor token. Although the
+step passed reviewer and approver headers, `request_raw()` overwrote `Authorization` from
+`self._token`, so `review/accept` was sent as the editor and correctly rejected with **403**.
+The later `version payload missing etag` was only secondary harness diagnostics. R8,
+artifact transport, signature, and product authorization held.
+
+## CP08-R9 — Document-release actor remediation + scope cut (test-only)
+
+The realprocess scenario now uses separate authenticated clients for editor, reviewer, and
+approver in `document_release_flow`. `editing-complete`, `review/accept`, and
+`approval/accept` each fail closed through `require_version_success()` before reading an
+ETag, so future 403s surface with action, status, and redacted error code instead of
+`missing etag`. J04-M0 now proves release-state completion through public Documents-APIs only;
+training consumers and read-receipt integration remain a separate follow-up package.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-r9-$stamp"
+$Results = "build/j04-m0-closure/cp08-r9-results-$stamp"
+New-Item -ItemType Directory -Force -Path $Results | Out-Null
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/backend/test_documents_authorization_http.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp $Base `
+  --junitxml "$Results/junit.xml" 2>&1 |
+  Tee-Object -FilePath "$Results/pytest.log"
+```
+
+Result: **41 passed** (`build/j04-m0-closure/cp08-r9-scope-results-20260818T082720948Z/junit.xml`,
+`tests="41" failures="0"`). Pytest log:
+`build/j04-m0-closure/cp08-r9-scope-results-20260818T082720948Z/pytest.log`. `git diff --check`
+on the seven R9 files: exit 0.
+
+**No freeze. No CP08-V9. No commit** until explicit approval. R9 is now scope-corrected and
+technically ready for the controlled commit sequence. Overall **`NOT_READY`**.
+Word still **not reached**. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 
@@ -1108,7 +2149,7 @@ Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
 | Health/OpenAPI | `health_and_openapi` | Dev `/health`, `/openapi.json` |
 | Artifacts | `artifacts_transport` | No `storage_key` in list/metadata |
 | Signature | `signature_verify_password` | Import PNG + `/signature/verify-password` |
-| Training read | `training_read_receipt` | Approve → open-released → confirm receipt |
+| Document release | `document_release_flow` | Approve to `APPROVED`; no training/read-receipt calls in J04-M0 gate |
 | Comments / CR / lifecycle | `comments_lifecycle_change_requests` | Comment, change request, archive |
 | Document baseline | `document_baseline_flow` | Create → import PDF → assign → start |
 

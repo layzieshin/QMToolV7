@@ -34,8 +34,10 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
   der Quermodule bleiben ein separates Folgepaket ausserhalb AP-028.
 - Naechster aktiv freigegebener Schwerpunkt: **J04** als Dachpaket
   - **J04-M0**: vollstaendige Documents-Transportmigration fuer den aktiven PyQt-Client
-    (Documents, Artefakte, Signaturen, Documents-Read fuer Training; siehe
+    (Documents, Artefakte, Signaturen; siehe
     `docs/J04_M0_PATH_MATRIX.md`, `docs/J04_M0_ACCEPTANCE_REPORT.md`).
+    Training-Consumer, Trainingsstatus und Read-Receipt-Integration bleiben ein separates
+    Folgepaket und sind kein J04-M0-Acceptance-Gate.
   - **J04-M1**: spaetere relationale Normalisierung von Workflowinstanzen, Assignments
     und Decisions (`docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/JSON_TO_DATABASE_MIGRATION_PLAN.md`
     Abschnitt J04 = J04-M1). Startet erst nach abgeschlossenem M0.

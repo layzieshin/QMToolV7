@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR14 freeze `ed488ed`; CP08-V8 FAILED at `training_read_receipt`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **MR00–MR07 PASS (uncommitted); MR08-R3 PASS; parent MR08 IN_PROGRESS – Candidate Freeze pending explicit user approval; freeze not approved; FR14 freeze `ed488ed`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -13,13 +13,18 @@ gesetzt werden.
 > **Historische Evidence:** Abschnitte „Verification (Meilenstein 0)“ bis „Verification (M2R)“
 > unten dokumentieren frühere Teilläufe (2026-08-06/07) mit teils widersprüchlichen oder
 > unvollständigen Rohlogs unter `.j04_*_evidence/`. Diese Zahlen sind **nicht** der aktuelle
-> Closure-Lauf. Aktuelle Evidence entsteht erst unter `build/j04-m0-closure/` ab CP00.
+> Closure-Lauf. Aktuelle Evidence entsteht unter `build/j04-m0-closure/` ab CP00.
+> `build/` enthält Evidence und Pytest-Basetemps; sie sind nicht gestaged und kein
+> Produktcode.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)** includes R8
-(`31dc273`, docs `83b7b1a`). Overall **`NOT_READY`**: CP08-V8 was not fully green. Artifacts
-**held**. Word not reached. `ACCEPTED` is not set.
+`$CandidateSha` — **`ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)** remains the last
+freeze until a later freeze is approved. MR00–MR07 are implemented in the working
+tree (uncommitted). Overall **`NOT_READY`**: CP08-V8 was not fully green; CP08-V9
+has not been executed. Current checkpoint: **MR08** (MR08-R3 PASS; regression
+PASS; cumulative adversarial review PASS; Candidate Freeze pending explicit
+user approval). `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -534,10 +539,12 @@ Lauf-SHA at gate start: `0cb4179`. Gate policy: no repair and no continuation af
 failed mandatory step. Realprocess via `--j04-final-acceptance`. Word COM live opt-in was set;
 the Word step was **not reached**.
 
-R8 artifacts held: `artifacts listed count=1`. Race **held**. Signature **held**. Stop at
-`training_read_receipt`: harness `version payload missing etag`. Backend log:
-`POST /documents/versions/J04-ACCEPT-DOC/1/workflow/editing-complete` **200**, then
-`POST /documents/versions/J04-ACCEPT-DOC/1/workflow/review/accept` **403**. Word COM was
+R8 artifacts held: `artifacts listed count=1`. Race **held**. Signature **held**. Stop inside
+`training_read_receipt`, but **before** any out-of-scope training read / receipt calls. After successful
+`editing-complete`, the scenario step kept one client pinned to the editor token. Although it
+passed reviewer and approver headers, `request_raw()` overwrote `Authorization` from
+`self._token`, so `review/accept` was sent as the editor and correctly rejected with **403**.
+The later `version payload missing etag` was only secondary harness diagnostics. Word COM was
 **not reached**.
 
 | Step | Result |
@@ -546,7 +553,143 @@ R8 artifacts held: `artifacts listed count=1`. Race **held**. Signature **held**
 | 2. Full real-process E2E | **FAILED** at `training_read_receipt` (`review/accept` 403; harness missing etag). Workspace `build/j04-m0-closure/cp08-realprocess-ws/20260818T062441411509Z-3b4e870e746e4d50a646dce4e8d935a1` |
 | 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2; Word not reached) |
 
-Overall **`NOT_READY`**. R8 artifacts are proven in this run. **`ACCEPTED` was not set.**
+Overall **`NOT_READY`**. R8 artifacts and product authorization are proven in this run.
+**`ACCEPTED` was not set.**
+
+## Verification (CP08-R9 — scope-corrected release flow)
+
+Test-only. The realprocess gate now proves document release flow only: separate authenticated
+clients for editor, reviewer, and approver, ending at `APPROVED`. `editing-complete`,
+`review/accept`, and `approval/accept` each fail closed through `require_version_success()`
+before ETag parsing, so a 403 now surfaces with action, HTTP status, and redacted error code
+instead of `missing etag`. Training consumers and read-receipt integration are explicitly out
+of scope for J04-M0 acceptance.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R9-SCOPE | scenario unit + documents authorization HTTP; fresh `--basetemp`; JUnit + log outside basetemp; J04/Word opt-ins unset | **41 passed** (`cp08-r9-scope-results-20260818T082720948Z/junit.xml`, `tests="41" failures="0"`) |
+| CP08R9-DIFFCHECK | `git diff --check` on the seven R9 files | **Exit 0** |
+
+An earlier actor-only verification hit an environmental `WinError 10053` in a local test HTTP
+handler before the retry succeeded; the current scope-corrected run above is green.
+
+R9 is now technically ready for the controlled commit sequence. Word remains not reached.
+
+## Verification (MR07 — Realprocess harness M0 catalog)
+
+Test- and documentation-only. The acceptance catalog is now exactly 18 M0 steps.
+Training, `/documents/reads/*`, read receipts, change requests, archive, and the
+Word COM live boundary are gone from catalog and handlers. Workflow transitions
+require signatures. Artifact content is downloaded and hashed. Restart expects
+`APPROVED`. The CP08-R9 actor split (separate editor/reviewer/approver clients)
+is kept.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| MR07-GATE-1 | focused MR07 pytest; stamp `20260818T121816713Z` | **FAILED (1)** — `WinError 10053` in bootstrap HTTP handler (`mr07-results-20260818T121816713Z/junit.xml`, `tests="73" failures="1"`) |
+| MR07-GATE-2 | same command; stamp `20260818T121957135Z` | **73 passed** (`mr07-results-20260818T121957135Z/junit.xml`, `tests="73" failures="0"`) |
+| MR07-LEDGER | docs-consistency + scenario-unit after ledger PASS; stamp `20260818T122324312Z` | **43 passed** (`mr07-ledger-results-20260818T122324312Z/junit.xml`, `tests="43" failures="0"`) |
+| MR07-DIFFCHECK | `git diff --check` | **Exit 0** |
+
+Not run in MR07: PostgreSQL reset, CP08-V9, Word COM conversion, packaging, freeze, commit, push, PR.
+
+Known remainder (not an MR07 product change): live `import-docx` still depends on the existing backend converter-capability check. Native `word/comments.xml` sync is covered over HTTP in the harness; a real Word-COM conversion run stays outside MR07 (MR09/MR10). `DocumentsPoolApi.get_header_for_actor()` remains an MR03 extension of an existing public surface. Internal legacy storage-key reads remain a limited compatibility remainder.
+
+## Verification (MR07-R1 — signature passwords under require_password=True)
+
+MR07 catalog evidence above is retained. Review found that `_sign_intent_body` sent
+`password: None` while production signature settings default to `require_password=True`.
+`SignatureExecuteOps` rejects a missing password. The MR07 HTTP mock only checked that
+`sign_intent` existed; the same-process backend test had set `require_password=False`.
+
+Remediation is test-only: required `_sign_intent_body(password: str)`, actor passwords on
+editor/reviewer/approver transitions, `X-Signature-Password` on asset activation, mocks
+assert the password per actor, and the backend signed-transition tests run with
+`require_password=True`. Signature policy is not weakened.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| MR07-R1-1 | focused R1 pytest; stamp `20260818T134857083Z` | **FAILED (1)** — inspect hit verify-step instead of `_activate_signature_asset` (`mr07-r1-results-20260818T134857083Z/junit.xml`, `tests="53" failures="1"`) |
+| MR07-R1-2 | same R1 command; stamp `20260818T134943927Z` | **53 passed** (`mr07-r1-results-20260818T134943927Z/junit.xml`, `tests="53" failures="0"`) |
+| MR07-GATE-RERUN | original MR07 gate; stamp `20260818T135020994Z` | **75 passed** (`mr07-results-20260818T135020994Z/junit.xml`, `tests="75" failures="0"`) |
+| MR07-R1-DIFFCHECK | `git diff --check` | **Exit 0** |
+
+Not run in MR07-R1: PostgreSQL reset, CP08-V9, Word COM, packaging, freeze, commit, push, PR, MR08.
+
+## Verification (MR08 — non-destructive regression; freeze not approved)
+
+MR08 started 2026-08-18T14:07:28Z and ended 2026-08-18T14:30:27Z on HEAD `3bf6518`.
+Scope was contracts, CLI-E2E, and full non-live regression plus diff/scope review.
+No product change. Gate 3 failed; candidate freeze is **not** approved. Overall
+status remains **`NOT_READY`**. Adversarial review was not started (fail-fast).
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| MR08-LEDGER | docs-consistency after IN_PROGRESS; stamp `20260818T140815286Z` | **6 passed** (`mr08-ledger-results-20260818T140815286Z/junit.xml`, `tests="6" failures="0"`) |
+| MR08-G1 | contracts/architecture; stamp `20260818T140907659Z` | **53 passed / 0 failed / 0 skipped** (`mr08-contract-results-20260818T140907659Z/junit.xml`) |
+| MR08-G2 | CLI-E2E `tests/e2e_cli`; stamp `20260818T140950379Z` | **31 passed / 0 failed / 20 skipped** (`mr08-cli-results-20260818T140950379Z/junit.xml`); skips: 16 legacy documents CLI, 3 auth matrix, 1 training `not_in_m0` |
+| MR08-G3 | full non-live `pytest -m "not postgres and not j04_final_acceptance"`; stamp `20260818T141720756Z` | **FAILED** 1208 passed / 1 failed / 20 skipped (`mr08-regression-results-20260818T141720756Z/junit.xml`); `test_open_source_reauthorization_on_artifact_read_path` → `DocumentConflictError` |
+| MR08-FAILED-LEDGER | docs-consistency after FAILED; stamp `20260818T143406754Z` | **6 passed** (`mr08-failed-ledger-results-20260818T143406754Z/junit.xml`); not a Gate-3 retry |
+
+Classification: **test error** (stale `state` after MR04 import CAS).
+
+## Verification (MR08-R1 — test-only ETag remediation; freeze not approved)
+
+**Regression PASS after MR08-R1 – Candidate Freeze pending explicit user approval.**
+Overall status remains **`NOT_READY`**. Product CAS, import, and workflow were
+not changed. The test now uses the import return value and asserts the ETag
+advanced. Adversarial review of the 36-file diff: **PASS** with two P3
+remainders outside R1 scope (unsandboxed `storage_key` join fallback;
+template-create mutate without `owner_or_privileged` on the lock). Freeze is
+**not** approved.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| MR08-R1-LEDGER | docs-consistency after R1 IN_PROGRESS; stamp `20260818T144714476Z` | **6 passed** (`mr08-r1-ledger-results-20260818T144714476Z/junit.xml`) |
+| MR08-R1-A | single previously red test; stamp `20260818T144754849Z` | **1 passed / 0 failed / 0 skipped** (`mr08-r1-target-results-20260818T144754849Z/junit.xml`) |
+| MR08-R1-B | authorization + infrastructure; stamp `20260818T144816993Z` | **71 passed / 0 failed / 0 skipped** (`mr08-r1-focused-results-20260818T144816993Z/junit.xml`) |
+| MR08-R1-G3 | full non-live regression; stamp `20260818T144851070Z` | **1209 passed / 0 failed / 20 skipped** (`mr08-r1-regression-results-20260818T144851070Z/junit.xml`); skips: 16 legacy documents CLI, 3 auth matrix, 1 training `not_in_m0` |
+| MR08-R1-FINAL-LEDGER | docs-consistency after R1 closeout; stamp `20260818T151044314Z` | **6 passed** (`mr08-r1-final-ledger-results-20260818T151044314Z/junit.xml`) |
+
+## Verification (MR08-R2 — template-create authorization; freeze not approved)
+
+**MR08-R2 PASS.** Template-create authorization now runs in
+`DocumentsWorkflowApi.create_from_template` before missing-target create and,
+for existing targets, under the lock via `owner_or_privileged=True` before the
+ETag compare. Adversarial review of the R2 diff is PASS; the overall review
+stays open until MR08-R3. No candidate freeze. Overall **`NOT_READY`**.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| MR08-R2-LEDGER | docs-consistency after R2 IN_PROGRESS; stamp `20260818T152445755Z` | **6 passed** (`mr08-r2-ledger-results-20260818T152445755Z/junit.xml`) |
+| MR08-R2-A1 | template/create_from_template; stamp `20260818T152657988Z` | **FAILED** 1 failed (module success path missing storage_port) |
+| MR08-R2-A2 | template/create_from_template retry; stamp `20260818T152746610Z` | **4 passed / 0 failed / 0 skipped** (`mr08-r2-target-results-20260818T152746610Z/junit.xml`) |
+| MR08-R2-B | authorization + concurrency + OpenAPI + matrix; stamp `20260818T152830890Z` | **110 passed / 0 failed / 0 skipped** (`mr08-r2-focused-results-20260818T152830890Z/junit.xml`) |
+| MR08-R2-C | docs-consistency after R2 closeout; stamp `20260818T153303900Z` | **6 passed** (`mr08-r2-ledger-final-results-20260818T153303900Z/junit.xml`) |
+
+## Verification (MR08-R3 — resolver-less artifact storage fallback; freeze not approved)
+
+**MR08-R3 PASS.** Resolver-less fallback uses existing `contained_path`. The first
+complete R3-C run (`20260818T172223274Z`) is PASS. The later red run
+(`20260818T173505528Z`) overlapped that PASS by **172.425 s** and is not a serial
+gate result. Serial confirmation (`20260818T185750907Z`) is PASS. Cumulative
+adversarial review PASS. Parent MR08 remains IN_PROGRESS. Candidate Freeze
+pending explicit user approval. CandidateSha remains historical `ed488ed`.
+Overall **`NOT_READY`**.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| MR08-R3-LEDGER | docs-consistency after R3 IN_PROGRESS; stamp `20260818T171938978Z` | **6 passed** (`mr08-r3-ledger-results-20260818T171938978Z/junit.xml`) |
+| MR08-R3-A | `-k resolverless_artifact_path`; stamp `20260818T172123561Z` | **PASS** 5 passed / 8 subtests; JUnit `tests="13" failures="0" errors="0"` (`mr08-r3-target-results-20260818T172123561Z/junit.xml`) |
+| MR08-R3-B | artifact/storage/signature; stamp `20260818T172135322Z` | **PASS** 57 passed / 8 subtests; JUnit `tests="65" failures="0" errors="0"` (`mr08-r3-artifact-results-20260818T172135322Z/junit.xml`) |
+| MR08-R3-C1 | first complete non-live regression; stamp `20260818T172223274Z` | **PASS** JUnit `tests="1246" failures="0" errors="0" skipped="20" time="935.721"` (`mr08-r3-regression-results-20260818T172223274Z/junit.xml`); previously omitted from the BLOCKED report |
+| MR08-R3-C2 | overlapping second full run; stamp `20260818T173505528Z` | **not serial** overlap 172.425 s with C1; JUnit `tests="1246" failures="2" errors="0" skipped="20" time="1028.502"` (`mr08-r3-regression-results-20260818T173505528Z/junit.xml`); WinError 10053; not the first complete attempt |
+| MR08-R3-C-ISO | isolate the two overlapping failures; stamp `20260818T175336276Z` | **2 passed** (`mr08-r3-c-isolate-results-20260818T175336276Z/junit.xml`); no product/test change |
+| MR08-R3-LEDGER-BLOCKED | docs-consistency after mistaken R3 BLOCKED; stamp `20260818T175701619Z` | **6 passed** (`mr08-r3-ledger-blocked-results-20260818T175701619Z/junit.xml`) |
+| MR08-R3-LEDGER-FINAL | docs-consistency after BLOCKED closeout note; stamp `20260818T175729687Z` | **6 passed** (`mr08-r3-ledger-final-results-20260818T175729687Z/junit.xml`) |
+| MR08-R3-SERIAL-LEDGER | docs-consistency after history correction; stamp `20260818T185736086Z` | **6 passed** (`mr08-r3-serial-ledger-results-20260818T185736086Z/junit.xml`) |
+| MR08-R3-C-SERIAL | serial confirmation non-live regression; stamp `20260818T185750907Z` | **PASS** 988 passed / 20 skipped / 52 deselected / 238 subtests; JUnit `tests="1246" failures="0" errors="0" skipped="20" time="705.366"` (`mr08-r3-serial-regression-results-20260818T185750907Z/junit.xml`); no concurrent pytest |
+| MR08-R3-SERIAL-LEDGER-FINAL | docs-consistency after R3 PASS; stamp `20260818T191144020Z` | **6 passed** (`mr08-r3-serial-ledger-final-results-20260818T191144020Z/junit.xml`) |
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -586,6 +729,7 @@ Overall **`NOT_READY`**. R8 artifacts are proven in this run. **`ACCEPTED` was n
 | CP08-R8 | PASS | `31dc273` workflow assignments use `/auth/me` user_id | `83b7b1a` |
 | FR14 | PASS | `ed488ed` freeze R1–R8 | `0cb4179` |
 | CP08-V8 | FAILED | — (training_read_receipt; review/accept 403; artifacts PASS; Word not reached) | this documentation |
+| CP08-R9 | PASS | _(uncommitted)_ scope-corrected document release flow | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
@@ -593,7 +737,7 @@ Overall **`NOT_READY`**. R8 artifacts are proven in this run. **`ACCEPTED` was n
 | --- | --- |
 | Isolated PostgreSQL live (Slot-2 PG18 local / CI PG16) | **CP04-R PASS** (guard+runner); full live suites **NOT RUN** (CP08) |
 | M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
-| Full `j04_final_acceptance` real-process E2E | **FAILED** (CP08-V8) at `training_read_receipt` |
+| Full `j04_final_acceptance` real-process E2E | **FAILED** (CP08-V8) at `training_read_receipt` before out-of-scope reads |
 | Real Word COM document conversion E2E | **NOT RUN** |
 | Word COM `DispatchEx` readiness probe | **BLOCKED** — `CO_E_SERVER_EXEC_FAILURE` (0x80080005) in agent session |
 | `packaging/build_onedir.py` | **Packaging NOT RUN** |
@@ -809,7 +953,7 @@ Abnahmeziel für J04-M0:
 | **P3** | Core Workflow + Concurrency | **Remediated Execute / unaccepted** | Policy-on-Lock-`current` + Tokenfortschreibung (M1/G1); OpenAPI If-Match/428 + `current_state` (**M2**); kein Zwei-Prozess-Live |
 | **P3A** | Artefakttransport | **Remediated Execute / unaccepted** | Reads/Downloads Same-Process; Open/Edit/Default-Open an Backend-`open_source` gebunden (**M2**); Live offen |
 | **P3B** | Backend-Signatur | **Remediated Execute / unaccepted** | Assets/Standalone Same-Process; Signed Transitions Policy-on-`current` (M1/G1); Live offen |
-| **P3C** | Training Documents-Read | **Done (HTTP Same-Process)** | Training-Read-HTTP im Backend-Lauf |
+| **P3C** | Training Documents-Read | **Done (HTTP Same-Process, follow-up only)** | Nicht Teil des J04-M0-Acceptance-Gates |
 | **P4** | Workflow-Kommentare | **Remediated Execute / unaccepted** | Mutationen tokengebunden (M1R3); UI/Sync nur mit Backend-Action `comments` (**M2**); Status-CAS prozesslokal (F4) |
 | **P5** | Header / Metadaten | **Remediated Execute / unaccepted** | Metadata/Header Execute (M1R1/M1R3); UI an Backend-Actions `update_metadata`/`update_header`/`assign_roles` (**M2**); Live offen |
 | **P6** | DOCX / Template | **Partial** | Route/Port vorhanden; create-from-template If-Match konditional dokumentiert (**M2**); **Word-COM Live NOT RUN** |

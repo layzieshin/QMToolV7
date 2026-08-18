@@ -25,6 +25,9 @@ Geltungsbereich: `modules/training`, betroffene GUI in `interfaces/pyqt/*`, erfo
   - Dokument-Metadaten
   - Released-Artefakte
   - dokumentbezogene Lese-/Öffnungsbestätigung
+- J04-M0 beweist nur die Bereitstellung freigegebener Dokumentversionen, Metadaten und
+  Artefakte über öffentliche Documents-APIs. Training-Consumer, Trainingsstatus und
+  Read-Receipt-Integration sind ein separates Folgepaket und kein J04-M0-Acceptance-Gate.
 - Das Usermanagement bleibt **fachlicher Owner** für:
   - Benutzeridentität
   - Rolle
