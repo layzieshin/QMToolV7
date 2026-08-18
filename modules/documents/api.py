@@ -205,6 +205,14 @@ class DocumentsPoolApi:
     def get_header(self, document_id: str) -> DocumentHeader | None:
         return self._service.get_document_header(document_id)
 
+    def get_header_for_actor(self, document_id: str, actor: UserContext) -> DocumentHeader | None:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.get_document_header_for_actor(
+            document_id,
+            actor_user_id=user_id,
+            actor_role=role,
+        )
+
     def list_tasks_for_user(self, user_id: str, role: str, scope: str | None = None) -> list[DocumentTaskItem]:
         return self._service.list_tasks_for_user(user_id, role, scope=scope)
 
@@ -388,16 +396,14 @@ class DocumentsWorkflowApi:
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
         action: str | None = None,
+        owner_or_privileged: bool = False,
     ):
         """Apply a public optimistic-lock boundary for a version mutation.
 
-        When ``action`` is set, workflow policy is evaluated on the locked
-        ``current`` state after the ETag compare.
-
-        ``_NO_PRECONDITION`` is a legacy compatibility default that remaps to
-        ``state.last_event_id`` and still uses the locked current path (no
-        policy-on-caller-state skip). Import helpers keep their own sentinel
-        branches and are not routed through this remap.
+        Visibility and authorization run on the locked ``current`` state before
+        the ETag compare. When ``action`` is set, workflow policy remains the
+        fachliche owner. Import uses ``owner_or_privileged`` for the existing
+        Owner/QMB rule.
         """
         if actor is not None:
             actor_user_id, actor_role = actor_user_and_role(actor)
@@ -411,6 +417,7 @@ class DocumentsWorkflowApi:
             actor_user_id=actor_user_id,
             actor_role=actor_role,
             action=action,
+            owner_or_privileged=owner_or_privileged,
         )
 
     def _assert_workflow_policy(self, state, *, actor_user_id: str, actor_role: SystemRole, action: str) -> None:
@@ -491,6 +498,9 @@ class DocumentsWorkflowApi:
             version,
             expected_last_event_id,
             operation,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            owner_or_privileged=True,
         )
 
     def import_existing_docx(
@@ -522,6 +532,9 @@ class DocumentsWorkflowApi:
             version,
             expected_last_event_id,
             operation,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            owner_or_privileged=True,
         )
 
     def create_from_template(
@@ -530,9 +543,21 @@ class DocumentsWorkflowApi:
         version: int,
         template_path: Path,
         *,
-        actor_user_id: str,
-        actor_role: SystemRole,
+        actor: UserContext | None = None,
+        actor_user_id: str | None = None,
+        actor_role: SystemRole | None = None,
+        delegated_create_allowed: bool = False,
     ) -> DocumentVersionState:
+        if actor is not None:
+            actor_user_id, actor_role = actor_user_and_role(actor)
+        if actor_user_id is None or actor_role is None:
+            raise PermissionDeniedError("confirmed UserContext is required")
+        existing = self._service.get_document_version(document_id, version)
+        if existing is None:
+            if actor is None:
+                raise PermissionDeniedError("confirmed UserContext is required")
+            if actor_role != SystemRole.QMB and not delegated_create_allowed:
+                raise PermissionDeniedError("effective QMB or delegated create permission required")
         return self._service.create_from_template(
             document_id,
             version,

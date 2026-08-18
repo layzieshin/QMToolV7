@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.backend.api import create_app
@@ -13,6 +14,9 @@ from tests.backend.test_documents_http_api import (
     _minimal_pdf_bytes,
     _mutation_headers,
 )
+
+_TEMPLATE_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
+_MINIMAL_DOTX = b"PK\x03\x04minimal-dotx-stub"
 
 
 def test_observer_cannot_create_or_spoof_owner(tmp_path: Path) -> None:
@@ -140,7 +144,9 @@ def test_non_qmb_cannot_archive_or_new_version(tmp_path: Path) -> None:
         headers=_mutation_headers(plain_admin, archived),
         json={"next_version": 2},
     )
-    assert denied_new.status_code == 403, denied_new.text
+    assert denied_new.status_code == 404, denied_new.text
+    assert "current_state" not in denied_new.text
+    assert "current_etag" not in denied_new.text
 
     allowed_new = client.post(
         "/documents/versions/DOC-AUTH-LIFE/1/lifecycle/new-version-after-archive",
@@ -307,7 +313,9 @@ def test_assign_start_abort_http_public_boundaries(tmp_path: Path) -> None:
         headers=_mutation_headers(editor, imported),
         json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
     )
-    assert denied_assign.status_code == 403, denied_assign.text
+    assert denied_assign.status_code == 404, denied_assign.text
+    assert "current_state" not in denied_assign.text
+    assert "current_etag" not in denied_assign.text
     assigned = client.post(
         "/documents/versions/DOC-AUTH-ASA/1/workflow/assign-roles",
         headers=_mutation_headers(admin, imported),
@@ -383,3 +391,185 @@ def test_review_and_approval_reject_http(tmp_path: Path) -> None:
     )
     assert approval_rejected.status_code == 200, approval_rejected.text
     assert approval_rejected.json()["state"]["status"] == "IN_PROGRESS"
+
+
+def test_hidden_header_is_404_for_observer(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    qmb = _login(client, "qmb", "qmbpass001")
+    observer = _login(client, "observer", "observerpass01")
+    created = client.post(
+        "/documents/versions/create",
+        headers=_auth(qmb),
+        json={"document_id": "DOC-AUTH-HIDDEN-HDR", "version": 1},
+    )
+    assert created.status_code == 200, created.text
+    assert client.get("/documents/headers/DOC-AUTH-HIDDEN-HDR", headers=_auth(qmb)).status_code == 200
+    hidden = client.get("/documents/headers/DOC-AUTH-HIDDEN-HDR", headers=_auth(observer))
+    assert hidden.status_code == 404, hidden.text
+    assert "current_state" not in hidden.text
+    assert "current_etag" not in hidden.text
+
+
+def test_unauthorized_stale_mutations_are_404_without_current_state(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-AUTH-STALE-HIDE")
+    observer = _login(client, "observer", "observerpass01")
+    stale = tokens["state_response"].json()["etag"]
+    headers = {**_auth(observer), "If-Match": stale}
+    assign = client.post(
+        "/documents/versions/DOC-AUTH-STALE-HIDE/1/workflow/assign-roles",
+        headers=headers,
+        json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
+    )
+    imported = client.post(
+        "/documents/versions/DOC-AUTH-STALE-HIDE/1/import-pdf",
+        headers={**headers, "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    commented = client.post(
+        "/documents/versions/DOC-AUTH-STALE-HIDE/1/comments",
+        headers=headers,
+        json={"context": "PDF", "page_number": 1, "comment_text": "secret"},
+    )
+    started = client.post(
+        "/documents/versions/DOC-AUTH-STALE-HIDE/1/workflow/start",
+        headers=headers,
+        json={"profile_id": "http_flow_profile"},
+    )
+    for response in (assign, imported, commented, started):
+        assert response.status_code == 404, response.text
+        assert "current_state" not in response.text
+        assert "current_etag" not in response.text
+
+
+def test_authorized_stale_mutation_still_returns_409(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    created = client.post(
+        "/documents/versions/create",
+        headers=_auth(admin),
+        json={"document_id": "DOC-AUTH-STALE-OK", "version": 1, "workflow_profile_id": "http_flow_profile"},
+    )
+    first = client.post(
+        "/documents/versions/DOC-AUTH-STALE-OK/1/workflow/assign-roles",
+        headers=_mutation_headers(admin, created),
+        json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
+    )
+    assert first.status_code == 200, first.text
+    stale = client.post(
+        "/documents/versions/DOC-AUTH-STALE-OK/1/workflow/assign-roles",
+        headers=_mutation_headers(admin, created),
+        json={"editors": ["observer"], "reviewers": ["reviewer"], "approvers": ["approver"]},
+    )
+    assert stale.status_code == 409, stale.text
+    detail = stale.json()["detail"]
+    assert detail["error"] == "document_conflict"
+    assert detail["current_etag"] == first.json()["etag"]
+    assert detail["current_state"]["assignments"]["editors"] == ["editor"]
+
+
+def test_observer_cannot_create_from_template_when_target_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("src.backend.documents_routes.docx_conversion_available", lambda: True)
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    observer = _login(client, "observer", "observerpass01")
+    qmb = _login(client, "qmb", "qmbpass001")
+
+    denied = client.post(
+        "/documents/versions/DOC-TPL-MISS/1/create-from-template",
+        headers={**_auth(observer), "Content-Type": _TEMPLATE_CT},
+        content=_MINIMAL_DOTX,
+    )
+    assert denied.status_code == 403, denied.text
+    assert client.get("/documents/versions/DOC-TPL-MISS/1", headers=_auth(observer)).status_code == 404
+    assert client.get("/documents/versions/DOC-TPL-MISS/1", headers=_auth(qmb)).status_code == 404
+
+
+def test_visible_non_owner_create_from_template_hides_stale_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("src.backend.documents_routes.docx_conversion_available", lambda: True)
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    qmb = _login(client, "qmb", "qmbpass001")
+    editor = _login(client, "editor", "editorpass01")
+    created = client.post(
+        "/documents/versions/create",
+        headers=_auth(qmb),
+        json={"document_id": "DOC-TPL-VIS", "version": 1, "workflow_profile_id": "http_flow_profile"},
+    )
+    assert created.status_code == 200, created.text
+    assigned = client.post(
+        "/documents/versions/DOC-TPL-VIS/1/workflow/assign-roles",
+        headers=_mutation_headers(qmb, created),
+        json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
+    )
+    assert assigned.status_code == 200, assigned.text
+    imported = client.post(
+        "/documents/versions/DOC-TPL-VIS/1/import-pdf",
+        headers={**_mutation_headers(qmb, assigned), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert imported.status_code == 200, imported.text
+
+    stale = client.post(
+        "/documents/versions/DOC-TPL-VIS/1/create-from-template",
+        headers={**_mutation_headers(editor, assigned), "Content-Type": _TEMPLATE_CT},
+        content=_MINIMAL_DOTX,
+    )
+    assert stale.status_code == 404, stale.text
+    assert "current_state" not in stale.text
+    assert "current_etag" not in stale.text
+
+    current = client.post(
+        "/documents/versions/DOC-TPL-VIS/1/create-from-template",
+        headers={**_mutation_headers(editor, imported), "Content-Type": _TEMPLATE_CT},
+        content=_MINIMAL_DOTX,
+    )
+    assert current.status_code == 403, current.text
+
+
+def test_authorized_create_from_template_stale_still_returns_409(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("src.backend.documents_routes.docx_conversion_available", lambda: True)
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    qmb = _login(client, "qmb", "qmbpass001")
+    created = client.post(
+        "/documents/versions/create",
+        headers=_auth(qmb),
+        json={"document_id": "DOC-TPL-OWN", "version": 1, "workflow_profile_id": "http_flow_profile"},
+    )
+    assert created.status_code == 200, created.text
+    assigned = client.post(
+        "/documents/versions/DOC-TPL-OWN/1/workflow/assign-roles",
+        headers=_mutation_headers(qmb, created),
+        json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
+    )
+    assert assigned.status_code == 200, assigned.text
+
+    stale = client.post(
+        "/documents/versions/DOC-TPL-OWN/1/create-from-template",
+        headers={**_mutation_headers(qmb, created), "Content-Type": _TEMPLATE_CT},
+        content=_MINIMAL_DOTX,
+    )
+    assert stale.status_code == 409, stale.text
+    detail = stale.json()["detail"]
+    assert detail["error"] == "document_conflict"
+    assert "current_etag" in detail
+    assert "current_state" in detail
+    assert detail["current_etag"] == assigned.json()["etag"]
+
+    success = client.post(
+        "/documents/versions/DOC-TPL-OWN/1/create-from-template",
+        headers={**_mutation_headers(qmb, assigned), "Content-Type": _TEMPLATE_CT},
+        content=_MINIMAL_DOTX,
+    )
+    assert success.status_code == 200, success.text
+    assert success.json()["state"]["document_id"] == "DOC-TPL-OWN"

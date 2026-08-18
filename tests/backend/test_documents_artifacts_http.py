@@ -113,3 +113,15 @@ def test_oversized_pdf_upload_rejected(tmp_path: Path, monkeypatch) -> None:
         content=body,
     )
     assert response.status_code in {400, 413}
+
+
+def test_import_scratch_target_stays_in_scratch_root(tmp_path: Path) -> None:
+    from src.backend.documents_routes import _import_scratch_target
+
+    root = tmp_path / "scratch" / "imports"
+    target = _import_scratch_target(root, ".pdf")
+    assert target.is_relative_to(root.resolve())
+    assert target.parent == root.resolve()
+    assert target.suffix == ".pdf"
+    assert target.stem.isalnum()
+    assert len(target.stem) == 32

@@ -126,3 +126,94 @@ def test_standalone_sign_upload_handle(tmp_path: Path) -> None:
     )
     assert signed.status_code == 200, signed.text
     assert signed.content.startswith(b"%PDF")
+    leftover = [
+        path
+        for path in tmp_path.joinpath("scratch").rglob("*")
+        if path.is_file() and path.suffix.lower() in {".pdf", ".png"}
+    ]
+    assert leftover == []
+
+
+def test_export_active_content_leaves_no_export_file(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    png = tmp_path / "sig.png"
+    _create_signature_png(png)
+    assert client.post(
+        "/signature/assets/import-and-activate",
+        headers={**_auth(editor), "Content-Type": "image/png"},
+        content=png.read_bytes(),
+    ).status_code == 200
+    exported = client.get("/signature/assets/active/content", headers=_auth(editor))
+    assert exported.status_code == 200, exported.text
+    assert exported.content.startswith(b"\x89PNG")
+    export_dir = tmp_path / "scratch" / "signature-export"
+    leftover = [path for path in export_dir.rglob("*") if path.is_file()] if export_dir.exists() else []
+    assert leftover == []
+
+
+def test_standalone_sign_error_cleans_scratch(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    upload = client.post(
+        "/signature/standalone/upload",
+        headers={**_auth(editor), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert upload.status_code == 200, upload.text
+    failed = client.post(
+        "/signature/standalone/sign",
+        headers=_auth(editor),
+        json={
+            "upload_handle": upload.json()["upload_handle"],
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": True},
+            "reason": "missing-active",
+        },
+    )
+    assert failed.status_code != 200, failed.text
+    leftover = [
+        path
+        for path in tmp_path.joinpath("scratch").rglob("*")
+        if path.is_file() and path.suffix.lower() in {".pdf", ".png"}
+    ]
+    assert leftover == []
+
+
+def test_upload_store_purges_only_own_root(tmp_path: Path) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    container, _users = _build_signature_backend(tmp_path)
+    app = create_app(container)
+    client = TestClient(app)
+    editor = _login(client, "editor", "editorpass01")
+    first = client.post(
+        "/signature/standalone/upload",
+        headers={**_auth(editor), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert first.status_code == 200, first.text
+    uploads = tmp_path / "scratch" / "signature-uploads"
+    orphan = uploads / "orphan.pdf"
+    orphan.write_bytes(b"%PDF-orphan")
+    foreign = tmp_path / "foreign.pdf"
+    foreign.write_bytes(b"%PDF-foreign")
+    handle = first.json()["upload_handle"]
+    path, owner, _expires = app.state.signature_upload_handles[handle]
+    app.state.signature_upload_handles[handle] = (
+        path,
+        owner,
+        datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+    second = client.post(
+        "/signature/standalone/upload",
+        headers={**_auth(editor), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert second.status_code == 200, second.text
+    assert not orphan.exists()
+    assert not path.exists()
+    assert foreign.exists()
+    assert handle not in app.state.signature_upload_handles

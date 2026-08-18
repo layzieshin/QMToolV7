@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 
 from modules.documents.contracts import DocumentStatus, SystemRole, WorkflowProfile
-from modules.documents.errors import DocumentConflictError, PermissionDeniedError
+from modules.documents.errors import DocumentConflictError, PermissionDeniedError, ValidationError
 from modules.documents.service import DocumentsService
 from tests.database_helpers import make_documents_service_with_profiles
 
@@ -274,7 +274,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
         service, archived = self._archive_approved_version("DOC-NEW-VER")
         api = DocumentsWorkflowApi(service)
         source_token = archived.last_event_id
-        with self.assertRaises(PermissionDeniedError):
+        with self.assertRaises(ValidationError) as hidden_admin:
             api.create_new_version_after_archive(
                 archived,
                 2,
@@ -282,6 +282,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 actor_user_id="admin-user",
                 actor_role=SystemRole.ADMIN,
             )
+        self.assertEqual(str(hidden_admin.exception), "document version not found")
         self.assertIsNone(service.get_document_version(archived.document_id, 2))
         unchanged = service.get_document_version(archived.document_id, archived.version)
         self.assertEqual(unchanged.last_event_id, source_token)
@@ -444,7 +445,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
         self.assertEqual(still.title, "Retitled")
         self.assertEqual(still.last_event_id, updated.last_event_id)
 
-        with self.assertRaises(PermissionDeniedError):
+        with self.assertRaises(ValidationError) as hidden_admin:
             api.mutate_version_if_current(
                 updated,
                 updated.last_event_id,
@@ -458,6 +459,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 actor_role=SystemRole.ADMIN,
                 action="update_metadata",
             )
+        self.assertEqual(str(hidden_admin.exception), "document version not found")
         denied = service.get_document_version(state.document_id, state.version)
         self.assertEqual(denied.title, "Retitled")
         self.assertEqual(denied.last_event_id, updated.last_event_id)
@@ -530,13 +532,14 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 actor_role=SystemRole.USER,
                 sign_request={"step": "review_accept"},
             )
-        with self.assertRaises(PermissionDeniedError):
+        with self.assertRaises(ValidationError) as hidden_admin:
             api.accept_review(
                 in_review,
                 actor_user_id="admin-user",
                 actor_role=SystemRole.ADMIN,
                 sign_request={"step": "review_accept"},
             )
+        self.assertEqual(str(hidden_admin.exception), "document version not found")
         with self.assertRaises(PermissionDeniedError):
             api.reject_review(
                 in_review,
@@ -558,13 +561,14 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 actor_role=SystemRole.USER,
                 sign_request={"step": "approve"},
             )
-        with self.assertRaises(PermissionDeniedError):
+        with self.assertRaises(ValidationError) as hidden_admin_reject:
             api.reject_approval(
                 accepted,
                 RejectionReason(template_id="T1", template_text="missing", free_text="x"),
                 actor_user_id="admin-user",
                 actor_role=SystemRole.ADMIN,
             )
+        self.assertEqual(str(hidden_admin_reject.exception), "document version not found")
         approved = api.accept_approval(
             accepted,
             actor_user_id="approver-1",
@@ -612,7 +616,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
         )
         self.assertEqual(rejected_approval.status, DocumentStatus.IN_PROGRESS)
         self.assertNotEqual(rejected_approval.last_event_id, token_before_approval_reject)
-        with self.assertRaises(DocumentConflictError):
+        with self.assertRaises(ValidationError) as stale_hidden:
             api.reject_approval(
                 in_approval,
                 reason,
@@ -620,6 +624,10 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 actor_role=SystemRole.USER,
                 expected_last_event_id=token_before_approval_reject,
             )
+        self.assertEqual(str(stale_hidden.exception), "document version not found")
+        still_rejected = _service.get_document_version("DOC-REV-REJ", 1)
+        self.assertEqual(still_rejected.status, DocumentStatus.IN_PROGRESS)
+        self.assertEqual(still_rejected.last_event_id, rejected_approval.last_event_id)
 
     def test_assign_start_abort_execute_on_public_api(self) -> None:
         """Positive and negative Public-API execution for assign_roles, start, abort."""
@@ -627,7 +635,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
 
         service, state = self._base_state(document_id="DOC-ASA-API")
         api = DocumentsWorkflowApi(service)
-        with self.assertRaises(PermissionDeniedError):
+        with self.assertRaises(ValidationError) as hidden_admin:
             api.assign_workflow_roles(
                 state,
                 editors={"editor-1"},
@@ -637,6 +645,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 actor_role=SystemRole.ADMIN,
                 expected_last_event_id=state.last_event_id,
             )
+        self.assertEqual(str(hidden_admin.exception), "document version not found")
         assigned = api.assign_workflow_roles(
             state,
             editors={"editor-2"},
@@ -649,7 +658,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
         self.assertEqual(assigned.assignments.editors, frozenset({"editor-2"}))
         self.assertNotEqual(assigned.last_event_id, state.last_event_id)
 
-        with self.assertRaises(PermissionDeniedError):
+        with self.assertRaises(ValidationError) as hidden_admin_start:
             api.start_workflow(
                 assigned,
                 WorkflowProfile.long_release_path(),
@@ -657,6 +666,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 actor_role=SystemRole.ADMIN,
                 expected_last_event_id=assigned.last_event_id,
             )
+        self.assertEqual(str(hidden_admin_start.exception), "document version not found")
         started = api.start_workflow(
             assigned,
             WorkflowProfile.long_release_path(),
@@ -875,12 +885,20 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
             actor_user_id="owner-1",
             actor_role=SystemRole.USER,
         )
-        service.import_existing_pdf(
-            "DOC-OPEN", 1, pdf, actor_user_id="owner-1", actor_role=SystemRole.USER
+        imported = service.import_existing_pdf(
+            "DOC-OPEN",
+            1,
+            pdf,
+            actor_user_id="owner-1",
+            actor_role=SystemRole.USER,
         )
+        self.assertNotEqual(imported.last_event_id, state.last_event_id)
         api = DocumentsWorkflowApi(service)
         api.start_workflow(
-            state, WorkflowProfile.long_release_path(), actor_user_id="owner-1", actor_role=SystemRole.USER
+            imported,
+            WorkflowProfile.long_release_path(),
+            actor_user_id="owner-1",
+            actor_role=SystemRole.USER,
         )
         artifacts = [a for a in service.list_artifacts("DOC-OPEN", 1) if a.artifact_type == ArtifactType.SOURCE_PDF]
         self.assertTrue(artifacts)
@@ -1015,6 +1033,152 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
             comment_text="note",
         )
         self.assertEqual(created.document_id, in_review.document_id)
+
+    def test_header_and_stale_mutate_are_actor_aware(self) -> None:
+        from datetime import datetime, timezone
+
+        from modules.documents.api import DocumentsPoolApi, DocumentsWorkflowApi
+        from modules.documents.errors import ValidationError
+        from modules.usermanagement.contracts import issue_user_context
+
+        service, _state = self._base_state(document_id="DOC-HDR-ACTOR")
+        pool = DocumentsPoolApi(service)
+
+        def _actor(user_id: str, *, is_qmb: bool = False) -> object:
+            return issue_user_context(
+                user_id=user_id,
+                session_id=f"{user_id}-session",
+                request_id=f"{user_id}-request",
+                username=user_id,
+                global_roles=frozenset({"QMB"} if is_qmb else {"USER"}),
+                is_qmb=is_qmb,
+                authenticated_at=datetime.now(timezone.utc),
+            )
+
+        self.assertIsNotNone(pool.get_header_for_actor("DOC-HDR-ACTOR", _actor("owner-1")))
+        self.assertIsNone(pool.get_header_for_actor("DOC-HDR-ACTOR", _actor("observer-1")))
+        self.assertIsNone(
+            service.get_document_version_for_actor(
+                "DOC-HDR-ACTOR",
+                1,
+                actor_user_id="observer-1",
+                actor_role=SystemRole.USER,
+            )
+        )
+        with self.assertRaises(ValidationError) as raised:
+            service.mutate_version_if_current(
+                "DOC-HDR-ACTOR",
+                1,
+                "stale-etag",
+                lambda current: current,
+                actor_user_id="observer-1",
+                actor_role=SystemRole.USER,
+                action="assign_roles",
+            )
+        self.assertEqual(str(raised.exception), "document version not found")
+
+        approved_service, _approved_state = self._base_state(document_id="DOC-OBS-OK")
+        workflow = DocumentsWorkflowApi(approved_service)
+        started = workflow.start_workflow(
+            _approved_state,
+            WorkflowProfile.long_release_path(),
+            actor_user_id="owner-1",
+            actor_role=SystemRole.USER,
+        )
+        edited = workflow.complete_editing(
+            started,
+            sign_request={"step": "edit_complete"},
+            actor_user_id="owner-1",
+            actor_role=SystemRole.USER,
+        )
+        reviewed = workflow.accept_review(
+            edited,
+            actor_user_id="reviewer-1",
+            actor_role=SystemRole.USER,
+            sign_request={"step": "review_accept"},
+        )
+        approved = workflow.accept_approval(
+            reviewed,
+            actor_user_id="approver-1",
+            actor_role=SystemRole.USER,
+            sign_request={"step": "approve"},
+        )
+        self.assertEqual(approved.status, DocumentStatus.APPROVED)
+        visible = approved_service.get_document_version_for_actor(
+            "DOC-OBS-OK",
+            1,
+            actor_user_id="observer-1",
+            actor_role=SystemRole.USER,
+        )
+        self.assertIsNotNone(visible)
+        self.assertEqual(visible.status, DocumentStatus.APPROVED)
+
+    def test_create_from_template_missing_target_requires_qmb_or_delegated_actor(self) -> None:
+        from datetime import datetime, timezone
+
+        from modules.documents.api import DocumentsWorkflowApi
+        from modules.documents.storage import FileSystemDocumentsStorage
+        from modules.usermanagement.contracts import issue_user_context
+
+        root = Path(tempfile.mkdtemp(prefix="qmtool-docs-tpl-"))
+        storage = FileSystemDocumentsStorage(root / "artifacts")
+        service = make_documents_service_with_profiles(
+            root / "documents.db",
+            signature_api=_FakeSignatureApi(),
+            storage_port=storage,
+        )[0]
+        api = DocumentsWorkflowApi(service)
+        template = root / "template.dotx"
+        template.write_bytes(b"dotx-bytes")
+
+        def _actor(user_id: str, *, is_qmb: bool = False) -> object:
+            return issue_user_context(
+                user_id=user_id,
+                session_id=f"{user_id}-session",
+                request_id=f"{user_id}-request",
+                username=user_id,
+                global_roles=frozenset({"QMB"} if is_qmb else {"USER"}),
+                is_qmb=is_qmb,
+                authenticated_at=datetime.now(timezone.utc),
+            )
+
+        with self.assertRaises(PermissionDeniedError) as missing_actor:
+            api.create_from_template(
+                "DOC-TPL-NO-ACTOR",
+                1,
+                template,
+                actor_user_id="owner-1",
+                actor_role=SystemRole.USER,
+            )
+        self.assertEqual(str(missing_actor.exception), "confirmed UserContext is required")
+        self.assertIsNone(service.get_document_version("DOC-TPL-NO-ACTOR", 1))
+
+        with self.assertRaises(PermissionDeniedError) as observer_denied:
+            api.create_from_template("DOC-TPL-OBS", 1, template, actor=_actor("observer-1"))
+        self.assertEqual(
+            str(observer_denied.exception),
+            "effective QMB or delegated create permission required",
+        )
+        self.assertIsNone(service.get_document_version("DOC-TPL-OBS", 1))
+
+        qmb_created = api.create_from_template(
+            "DOC-TPL-QMB",
+            1,
+            template,
+            actor=_actor("qmb-1", is_qmb=True),
+        )
+        self.assertEqual(qmb_created.document_id, "DOC-TPL-QMB")
+        self.assertEqual(qmb_created.owner_user_id, "qmb-1")
+
+        delegated = api.create_from_template(
+            "DOC-TPL-DEL",
+            1,
+            template,
+            actor=_actor("delegate-1"),
+            delegated_create_allowed=True,
+        )
+        self.assertEqual(delegated.document_id, "DOC-TPL-DEL")
+        self.assertEqual(delegated.owner_user_id, "delegate-1")
 
 
 if __name__ == "__main__":

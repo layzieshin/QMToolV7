@@ -19,7 +19,7 @@ from .contracts import (
 )
 from .errors import ValidationError
 from .repository import DocumentsRepository
-from .storage import DocumentsStoragePort
+from .storage import DocumentsStoragePort, contained_path
 
 from typing import Callable
 
@@ -36,8 +36,17 @@ def resolve_artifact_path(artifact: DocumentArtifact, storage_port: DocumentsSto
             if candidate.exists():
                 return candidate
     root = getattr(storage_port, "_root_path", None)
-    if isinstance(root, Path):
-        return root / artifact.storage_key
+    resolver = getattr(storage_port, "resolve_storage_key", None)
+    if callable(resolver) and artifact.storage_key:
+        try:
+            return resolver(artifact.storage_key)
+        except ValueError:
+            return None
+    if isinstance(root, Path) and artifact.storage_key:
+        try:
+            return contained_path(root, artifact.storage_key)
+        except ValueError:
+            return None
     return None
 
 
@@ -80,7 +89,7 @@ def convert_docx_to_temp_pdf(
     source_docx: Path,
     docx_to_pdf_converter: Callable[[Path, Path], None] | None = None,
 ) -> Path:
-    output_name = f"{state.document_id}_{state.version}_source.pdf"
+    output_name = f"{uuid.uuid4().hex}_source.pdf"
     with tempfile.TemporaryDirectory(prefix="qmtool-docx2pdf-") as tmp_dir:
         out_path = Path(tmp_dir) / output_name
         try:

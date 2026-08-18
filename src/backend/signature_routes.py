@@ -93,11 +93,57 @@ def _map_signature_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail={"error": "internal", "message": "signature request failed"})
 
 
+def _contained_in_root(root: Path, path: Path) -> bool:
+    try:
+        return path.resolve().is_relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def _unlink_quiet(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _signature_upload_root(request: Request) -> Path:
+    app_home = Path(get_container(request).get_port("app_home"))
+    root = app_home / "scratch" / "signature-uploads"
+    root.mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def _purge_signature_uploads(store: dict[str, tuple[Path, str, datetime]], root: Path) -> None:
+    now = datetime.now(timezone.utc)
+    known: set[Path] = set()
+    for handle, (path, _owner, expires_at) in list(store.items()):
+        contained = _contained_in_root(root, path)
+        expired = now >= expires_at
+        missing = not path.exists()
+        if not contained or expired or missing:
+            store.pop(handle, None)
+            if contained:
+                _unlink_quiet(path)
+            continue
+        known.add(path.resolve())
+    for child in root.iterdir():
+        if not child.is_file():
+            continue
+        try:
+            resolved = child.resolve()
+        except OSError:
+            continue
+        if resolved not in known:
+            _unlink_quiet(child)
+
+
 def _upload_store(request: Request) -> dict[str, tuple[Path, str, datetime]]:
     store = getattr(request.app.state, "signature_upload_handles", None)
     if store is None:
         store = {}
         request.app.state.signature_upload_handles = store
+    _purge_signature_uploads(store, _signature_upload_root(request))
     return store
 
 
@@ -314,13 +360,15 @@ def export_active_asset(
     app_home = Path(get_container(request).get_port("app_home"))
     scratch = app_home / "scratch" / "signature-export"
     scratch.mkdir(parents=True, exist_ok=True)
-    target = scratch / f"{actor.user_id}-{uuid4().hex}.png"
+    target = scratch / f"{uuid4().hex}.png"
     api = _signature_api(request)
     try:
         exported = api.export_active_signature(actor.user_id, target)
+        content = exported.read_bytes()
     except Exception as exc:
         raise _map_signature_error(exc) from exc
-    content = exported.read_bytes()
+    finally:
+        _unlink_quiet(target)
     headers = {"Content-Length": str(len(content)), "Content-Disposition": 'attachment; filename="active-signature.png"'}
     return StreamingResponse(BytesIO(content), media_type="image/png", headers=headers)
 
@@ -339,8 +387,9 @@ async def standalone_upload_pdf(
     scratch.mkdir(parents=True, exist_ok=True)
     handle = uuid4().hex
     path = scratch / f"{handle}.pdf"
+    store = _upload_store(request)
+    store[handle] = (path, actor.user_id, datetime.now(timezone.utc) + timedelta(minutes=10))
     path.write_bytes(raw)
-    _upload_store(request)[handle] = (path, actor.user_id, datetime.now(timezone.utc) + timedelta(minutes=10))
     return {"upload_handle": handle}
 
 
@@ -373,6 +422,8 @@ def standalone_sign(
     signature_png = scratch / f"active-{uuid4().hex}.png"
     output_pdf = scratch / f"signed-{uuid4().hex}.pdf"
     api = _signature_api(request)
+    content = b""
+    sha256 = ""
     try:
         exported = api.export_active_signature(actor.user_id, signature_png)
         placement = placement_from_payload(body.placement)
@@ -392,20 +443,20 @@ def standalone_sign(
             reason=body.reason,
         )
         result = api.sign_with_fixed_position(sign_request)
+        content = result.output_pdf.read_bytes()
+        sha256 = result.sha256
     except Exception as exc:
         raise _map_signature_error(exc) from exc
     finally:
         store.pop(body.upload_handle, None)
-        try:
-            input_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        _unlink_quiet(input_path)
+        _unlink_quiet(signature_png)
+        _unlink_quiet(output_pdf)
 
-    content = result.output_pdf.read_bytes()
     headers = {
         "Content-Length": str(len(content)),
         "Content-Disposition": 'attachment; filename="signed.pdf"',
-        "X-Signature-SHA256": result.sha256,
+        "X-Signature-SHA256": sha256,
     }
     return StreamingResponse(BytesIO(content), media_type="application/pdf", headers=headers)
 

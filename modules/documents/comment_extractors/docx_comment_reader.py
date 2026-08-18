@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,23 +17,30 @@ class DocxCommentData:
     source_comment_key: str
 
 
+class DocxCommentReadError(ValueError):
+    """Deterministic DOCX comment extraction failure."""
+
+
 class DocxCommentReader:
     _NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 
     def read_comments(self, artifact_path: Path, *, context: str) -> list[DocxCommentData]:
         if not artifact_path.exists():
-            return []
+            raise DocxCommentReadError("docx artifact not found")
         try:
             with zipfile.ZipFile(artifact_path, "r") as zf:
-                if "word/comments.xml" not in zf.namelist():
-                    return []
+                names = zf.namelist()
+                if "word/comments.xml" not in names:
+                    raise DocxCommentReadError("word/comments.xml is missing")
                 xml_raw = zf.read("word/comments.xml")
-        except Exception:
-            return []
+        except DocxCommentReadError:
+            raise
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise DocxCommentReadError("invalid docx zip") from exc
         try:
             root = ET.fromstring(xml_raw)
-        except Exception:
-            return []
+        except ET.ParseError as exc:
+            raise DocxCommentReadError("invalid word/comments.xml") from exc
 
         result: list[DocxCommentData] = []
         for node in root.findall(".//w:comment", self._NS):
@@ -45,16 +51,8 @@ class DocxCommentReader:
             dt_raw = str(node.attrib.get(f"{{{self._NS['w']}}}date", "")).strip()
             created_at = _parse_w_datetime(dt_raw)
             text = self._extract_comment_text(node).strip()
-            if not text:
-                continue
             preview = text if len(text) <= 160 else f"{text[:157]}..."
-            key = build_source_comment_key(
-                context=context,
-                docx_comment_id=comment_id,
-                author=author,
-                created_at=created_at,
-                text=text,
-            )
+            key = build_source_comment_key(context=context, docx_comment_id=comment_id)
             result.append(
                 DocxCommentData(
                     docx_comment_id=comment_id,
@@ -86,16 +84,16 @@ def _parse_w_datetime(raw: str) -> datetime | None:
         return None
 
 
-def build_source_comment_key(
-    *,
-    context: str,
-    docx_comment_id: str,
-    author: str | None,
-    created_at: datetime | None,
-    text: str,
-) -> str:
-    normalized = " ".join(text.split()).strip()
-    text_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
-    author_token = (author or "").strip() or "unknown"
-    created_token = (created_at or datetime.now(timezone.utc)).isoformat()
-    return f"{context}|{docx_comment_id}|{author_token}|{created_token}|{text_hash}"
+def build_source_comment_key(*, context: str, docx_comment_id: str) -> str:
+    return f"{context}|{docx_comment_id}"
+
+
+def source_comment_identity(source_comment_key: str) -> tuple[str, str] | None:
+    parts = str(source_comment_key or "").split("|")
+    if len(parts) < 2:
+        return None
+    context = parts[0].strip()
+    docx_comment_id = parts[1].strip()
+    if not context or not docx_comment_id:
+        return None
+    return context, docx_comment_id

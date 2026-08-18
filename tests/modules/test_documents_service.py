@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
 import tempfile
@@ -12,7 +13,7 @@ from modules.documents.contracts import (
     ValidityExtensionOutcome,
     WorkflowProfile,
 )
-from modules.documents.errors import InvalidTransitionError, PermissionDeniedError, SignatureTransitionError, ValidationError
+from modules.documents.errors import DocumentConflictError, InvalidTransitionError, PermissionDeniedError, SignatureTransitionError, ValidationError
 from modules.documents.service import DocumentsService
 from tests.database_helpers import make_documents_service_with_profiles
 from pathlib import Path
@@ -511,6 +512,76 @@ class DocumentsServiceTest(unittest.TestCase):
             )
             with self.assertRaises(SignatureTransitionError):
                 service.complete_editing(state, sign_request=request)
+
+    def test_duplicate_create_raises_conflict_and_keeps_original_state(self) -> None:
+        service = make_documents_service_with_profiles(
+            Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db",
+            signature_api=_FakeSignatureApi(),
+        )[0]
+        first = service.create_document_version("DOC-DUP-SERIAL", 1, owner_user_id="owner-1", title="Original")
+        with self.assertRaises(DocumentConflictError) as captured:
+            service.create_document_version("DOC-DUP-SERIAL", 1, owner_user_id="other", title="Reset")
+        current = captured.exception.current_state
+        loaded = service.get_document_version("DOC-DUP-SERIAL", 1)
+        assert loaded is not None
+        self.assertEqual(loaded.status, DocumentStatus.PLANNED)
+        self.assertEqual(loaded.title, "Original")
+        self.assertEqual(loaded.owner_user_id, "owner-1")
+        self.assertEqual(loaded.last_event_id, first.last_event_id)
+        self.assertEqual(current.last_event_id, first.last_event_id)
+        self.assertEqual(current.status, first.status)
+
+    def test_duplicate_create_after_workflow_start_keeps_status_etag_and_assignments(self) -> None:
+        service = make_documents_service_with_profiles(
+            Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db",
+            signature_api=_FakeSignatureApi(),
+        )[0]
+        state = service.create_document_version("DOC-DUP-STARTED", 1, owner_user_id="owner-1")
+        state = service.assign_workflow_roles(
+            state,
+            editors={"editor-1"},
+            reviewers={"reviewer-1"},
+            approvers={"approver-1"},
+        )
+        started = service.start_workflow(state, WorkflowProfile.long_release_path())
+        with self.assertRaises(DocumentConflictError) as captured:
+            service.create_document_version("DOC-DUP-STARTED", 1, owner_user_id="intruder", title="rewind")
+        loaded = service.get_document_version("DOC-DUP-STARTED", 1)
+        assert loaded is not None
+        self.assertEqual(loaded.status, started.status)
+        self.assertEqual(loaded.last_event_id, started.last_event_id)
+        self.assertEqual(loaded.assignments.editors, started.assignments.editors)
+        self.assertEqual(loaded.assignments.reviewers, started.assignments.reviewers)
+        self.assertEqual(loaded.assignments.approvers, started.assignments.approvers)
+        self.assertEqual(captured.exception.current_state.last_event_id, started.last_event_id)
+        self.assertNotEqual(loaded.status, DocumentStatus.PLANNED)
+
+    def test_parallel_create_has_exactly_one_winner_and_one_conflict(self) -> None:
+        service = make_documents_service_with_profiles(
+            Path(tempfile.mkdtemp(prefix="qmtool-docs-t-")) / "documents.db",
+            signature_api=_FakeSignatureApi(),
+        )[0]
+
+        def _create():
+            try:
+                return service.create_document_version("DOC-DUP-RACE", 1, owner_user_id="owner-1")
+            except DocumentConflictError as exc:
+                return exc
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(_create)
+            second = pool.submit(_create)
+            outcomes = [first.result(), second.result()]
+
+        winners = [item for item in outcomes if not isinstance(item, DocumentConflictError)]
+        conflicts = [item for item in outcomes if isinstance(item, DocumentConflictError)]
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(len(conflicts), 1)
+        loaded = service.get_document_version("DOC-DUP-RACE", 1)
+        assert loaded is not None
+        self.assertEqual(loaded.last_event_id, winners[0].last_event_id)
+        self.assertEqual(conflicts[0].current_state.last_event_id, loaded.last_event_id)
+        self.assertEqual(loaded.status, DocumentStatus.PLANNED)
 
 
 if __name__ == "__main__":

@@ -314,6 +314,70 @@ def test_flow_abort(tmp_path: Path) -> None:
     assert aborted.json()["state"]["status"] == "PLANNED"
 
 
+def test_duplicate_create_returns_409_without_resetting_etag(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    created = client.post(
+        "/documents/versions/create",
+        headers=_auth(admin),
+        json={
+            "document_id": "DOC-DUP-HTTP",
+            "version": 1,
+            "title": "Original",
+            "workflow_profile_id": "http_flow_profile",
+        },
+    )
+    assert created.status_code == 200, created.text
+    duplicate = client.post(
+        "/documents/versions/create",
+        headers=_auth(admin),
+        json={
+            "document_id": "DOC-DUP-HTTP",
+            "version": 1,
+            "title": "Reset",
+            "workflow_profile_id": "http_flow_profile",
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    detail = duplicate.json()["detail"]
+    assert detail["error"] == "document_conflict"
+    assert detail["current_etag"] == created.json()["etag"]
+    assert detail["current_state"]["title"] == "Original"
+    assert detail["current_state"]["status"] == "PLANNED"
+    current = client.get("/documents/versions/DOC-DUP-HTTP/1", headers=_auth(admin))
+    assert current.status_code == 200, current.text
+    assert current.json()["etag"] == created.json()["etag"]
+    assert current.json()["state"]["title"] == "Original"
+
+
+def test_duplicate_create_after_workflow_start_returns_409_and_keeps_in_progress(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-DUP-STARTED-HTTP")
+    started = tokens["state_response"]
+    duplicate = client.post(
+        "/documents/versions/create",
+        headers=_auth(tokens["admin"]),
+        json={
+            "document_id": "DOC-DUP-STARTED-HTTP",
+            "version": 1,
+            "title": "rewind",
+            "workflow_profile_id": "http_flow_profile",
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    detail = duplicate.json()["detail"]
+    assert detail["error"] == "document_conflict"
+    assert detail["current_etag"] == started.json()["etag"]
+    assert detail["current_state"]["status"] == started.json()["state"]["status"]
+    current = client.get("/documents/versions/DOC-DUP-STARTED-HTTP/1", headers=_auth(tokens["admin"]))
+    assert current.status_code == 200, current.text
+    assert current.json()["etag"] == started.json()["etag"]
+    assert current.json()["state"]["status"] == started.json()["state"]["status"]
+    assert current.json()["state"]["status"] != "PLANNED"
+
+
 def test_actor_tampering_ignored_for_mutations(tmp_path: Path) -> None:
     container, users = _build_documents_backend_container(tmp_path)
     client = TestClient(create_app(container))
@@ -497,6 +561,99 @@ def test_import_pdf_roundtrip(tmp_path: Path) -> None:
     )
     assert imported.status_code == 200, imported.text
     assert imported.json()["state"]["document_id"] == "DOC-PDF-OK"
+
+
+def test_import_pdf_and_docx_consume_etag_and_reject_replay(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    created_pdf = client.post(
+        "/documents/versions/create",
+        headers=_auth(admin),
+        json={"document_id": "DOC-IMP-CAS-PDF", "version": 1},
+    )
+    assert created_pdf.status_code == 200, created_pdf.text
+    prior_pdf = created_pdf.json()["etag"]
+    imported_pdf = client.post(
+        "/documents/versions/DOC-IMP-CAS-PDF/1/import-pdf",
+        headers={**_mutation_headers(admin, created_pdf), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert imported_pdf.status_code == 200, imported_pdf.text
+    assert imported_pdf.json()["etag"] != prior_pdf
+    replay_pdf = client.post(
+        "/documents/versions/DOC-IMP-CAS-PDF/1/import-pdf",
+        headers={**_mutation_headers(admin, created_pdf), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert replay_pdf.status_code == 409, replay_pdf.text
+    assert replay_pdf.json()["detail"]["current_etag"] == imported_pdf.json()["etag"]
+
+    created_docx = client.post(
+        "/documents/versions/create",
+        headers=_auth(admin),
+        json={"document_id": "DOC-IMP-CAS-DOCX", "version": 1},
+    )
+    assert created_docx.status_code == 200, created_docx.text
+    prior_docx = created_docx.json()["etag"]
+    imported_docx = client.post(
+        "/documents/versions/DOC-IMP-CAS-DOCX/1/import-docx",
+        headers={
+            **_mutation_headers(admin, created_docx),
+            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+        content=b"PK\x03\x04docx-stub",
+    )
+    assert imported_docx.status_code == 200, imported_docx.text
+    assert imported_docx.json()["etag"] != prior_docx
+    replay_docx = client.post(
+        "/documents/versions/DOC-IMP-CAS-DOCX/1/import-docx",
+        headers={
+            **_mutation_headers(admin, created_docx),
+            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+        content=b"PK\x03\x04docx-stub",
+    )
+    assert replay_docx.status_code == 409, replay_docx.text
+    assert replay_docx.json()["detail"]["current_etag"] == imported_docx.json()["etag"]
+
+
+def test_unusual_document_id_remains_fachlich_and_omits_storage_paths(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    weird_id = "DOC-WEIRD..ID"
+    created = client.post(
+        "/documents/versions/create",
+        headers=_auth(admin),
+        json={"document_id": weird_id, "version": 1, "title": weird_id},
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["state"]["document_id"] == weird_id
+    imported = client.post(
+        f"/documents/versions/{weird_id}/1/import-pdf",
+        headers={**_mutation_headers(admin, created), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["state"]["document_id"] == weird_id
+    listed = client.get(f"/documents/versions/{weird_id}/1/artifacts", headers=_auth(admin))
+    assert listed.status_code == 200, listed.text
+    payload = listed.json()
+    assert payload
+    serialized = str(payload).lower()
+    assert "storage_key" not in serialized
+    assert "scratch" not in serialized
+    assert ":\\" not in str(payload)
+    assert "/objects/" not in serialized
+    scratch_root = tmp_path / "scratch" / "imports"
+    leftover = list(scratch_root.glob("*")) if scratch_root.exists() else []
+    assert leftover == []
+    stored_files = [path for path in tmp_path.rglob("*.pdf") if path.is_file()]
+    assert stored_files
+    for path in stored_files:
+        assert "WEIRD" not in path.as_posix()
+        assert ".." not in path.as_posix()
 
 
 def test_pool_list_by_status(tmp_path: Path) -> None:

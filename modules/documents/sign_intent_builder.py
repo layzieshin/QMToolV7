@@ -46,7 +46,7 @@ def build_workflow_sign_request_from_intent(
         raise ValueError("active signature could not be exported on the server")
 
     resolved_layout = signature_api.resolve_runtime_layout(layout, signer_user=actor.username)
-    output_pdf = scratch_root / f"{state.document_id}-v{state.version}-signed-{uuid4().hex}.pdf"
+    output_pdf = scratch_root / f"signed-{uuid4().hex}.pdf"
 
     return SignRequest(
         input_pdf=input_pdf,

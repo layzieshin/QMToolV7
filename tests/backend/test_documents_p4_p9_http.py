@@ -201,4 +201,67 @@ def test_comments_are_hidden_from_unassigned_observer(tmp_path: Path) -> None:
         "/documents/versions/DOC-CMT-AUTH/1/comments?context=PDF_REVIEW",
         headers=_auth(observer),
     )
-    assert response.status_code == 403, response.text
+    assert response.status_code == 404, response.text
+    assert "current_state" not in response.text
+
+
+def _comments_docx_bytes(comments: list[tuple[str, str, str | None, str]]) -> bytes:
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    nodes = []
+    for cid, author, date, text in comments:
+        attrs = f'w:id="{cid}" w:author="{author}"'
+        if date:
+            attrs += f' w:date="{date}"'
+        nodes.append(f'<w:comment {attrs}><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:comment>')
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><w:comments xmlns:w="{ns}">{"".join(nodes)}</w:comments>'
+    buf = BytesIO()
+    with ZipFile(buf, "w") as zf:
+        zf.writestr("word/comments.xml", xml)
+    return buf.getvalue()
+
+
+def test_http_docx_comment_sync_in_review_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.backend.documents_routes.docx_conversion_available", lambda: True)
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-CMT-SYNC-HTTP")
+    imported = client.post(
+        "/documents/versions/DOC-CMT-SYNC-HTTP/1/import-docx",
+        headers={
+            **_mutation_headers(tokens["admin"], tokens["state_response"]),
+            "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+        content=_comments_docx_bytes([("1", "Ann", "2026-01-01T00:00:00Z", "hello")]),
+    )
+    assert imported.status_code == 200, imported.text
+    edited = client.post(
+        "/documents/versions/DOC-CMT-SYNC-HTTP/1/workflow/editing-complete",
+        headers=_mutation_headers(tokens["editor"], imported),
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["state"]["status"] == "IN_REVIEW"
+    first = client.post(
+        "/documents/versions/DOC-CMT-SYNC-HTTP/1/comments/sync-docx",
+        headers=_mutation_headers(tokens["editor"], edited),
+    )
+    assert first.status_code == 200, first.text
+    rows = first.json()
+    assert len(rows) == 1
+    comment_id = rows[0]["comment_id"]
+    second = client.post(
+        "/documents/versions/DOC-CMT-SYNC-HTTP/1/comments/sync-docx",
+        headers=_mutation_headers(tokens["editor"], edited),
+    )
+    assert second.status_code == 200, second.text
+    assert len(second.json()) == 1
+    assert second.json()[0]["comment_id"] == comment_id
+    observer = _login(client, "observer", "observerpass01")
+    hidden = client.post(
+        "/documents/versions/DOC-CMT-SYNC-HTTP/1/comments/sync-docx",
+        headers={**_auth(observer), "If-Match": edited.json()["etag"]},
+    )
+    assert hidden.status_code == 404, hidden.text
+    assert "current_state" not in hidden.text

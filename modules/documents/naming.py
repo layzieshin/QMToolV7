@@ -9,11 +9,16 @@ from .contracts import DocumentVersionState
 
 
 def build_released_filename(state: DocumentVersionState) -> str:
-    title = transliterate_umlauts((state.title or "").strip().replace(" ", "_"))
-    safe_title = "".join(ch for ch in title if ch.isalnum() or ch in ("_", "-")).strip("_-")
-    if not safe_title:
-        safe_title = "Dokument"
-    return f"{state.document_id}_{safe_title}.pdf"
+    doc_part = _safe_filename_token(state.document_id, fallback="Dokument")
+    title_part = _safe_filename_token(state.title, fallback="Dokument")
+    return f"{doc_part}_{title_part}.pdf"
+
+
+def _safe_filename_token(raw: str, *, fallback: str) -> str:
+    text = transliterate_umlauts((raw or "").strip().replace(" ", "_"))
+    text = text.replace("/", "_").replace("\\", "_").replace(":", "_").replace("..", "_")
+    safe = "".join(ch for ch in text if ch.isalnum() or ch in ("_", "-")).strip("_-")
+    return safe or fallback
 
 
 def transliterate_umlauts(raw: str) -> str:
@@ -26,4 +31,3 @@ def transliterate_umlauts(raw: str) -> str:
         .replace("Ü", "Ue")
         .replace("ß", "ss")
     )
-

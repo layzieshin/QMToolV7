@@ -248,6 +248,11 @@ def _map_documents_error(exc: Exception) -> HTTPException:
     if isinstance(exc, PermissionDeniedError):
         return HTTPException(status_code=403, detail={"error": "forbidden", "message": str(exc)})
     if isinstance(exc, (DocumentWorkflowError, ValidationError)):
+        if str(exc) == "document version not found":
+            return HTTPException(
+                status_code=404,
+                detail={"error": "not_found", "message": str(exc)},
+            )
         return HTTPException(status_code=400, detail={"error": "documents_workflow", "message": str(exc)})
     return HTTPException(status_code=500, detail={"error": "internal", "message": "documents request failed"})
 
@@ -368,6 +373,7 @@ def _mutate_version_state(
     *,
     actor: UserContext | None = None,
     action: str | None = None,
+    owner_or_privileged: bool = False,
 ):
     api = _workflow_api(request)
     return api.mutate_version_if_current(
@@ -376,7 +382,36 @@ def _mutate_version_state(
         operation,
         actor=actor,
         action=action,
+        owner_or_privileged=owner_or_privileged,
     )
+
+
+_IMPORT_SCRATCH_SUFFIXES = {".pdf", ".docx", ".dotx"}
+
+
+def _import_scratch_target(root: Path, suffix: str) -> Path:
+    if suffix not in _IMPORT_SCRATCH_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_content_type", "message": "unsupported import scratch suffix"},
+        )
+    root.mkdir(parents=True, exist_ok=True)
+    root_resolved = root.resolve(strict=False)
+    name = f"{uuid4().hex}{suffix}"
+    candidate = (root_resolved / name).resolve(strict=False)
+    if not candidate.is_relative_to(root_resolved):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "documents_workflow", "message": "import scratch escapes backend scratch root"},
+        )
+    return candidate
+
+
+def _write_import_scratch(request: Request, raw_body: bytes, suffix: str) -> Path:
+    app_home = Path(get_container(request).get_port("app_home"))
+    target = _import_scratch_target(app_home / "scratch" / "imports", suffix)
+    target.write_bytes(raw_body)
+    return target
 
 
 async def _read_upload(request: Request, *, magic: bytes, label: str) -> bytes:
@@ -448,8 +483,8 @@ def _required_if_match(raw: str | None) -> str | None:
     return None if value == "none" else value
 
 
-def _load_state(request: Request, document_id: str, version: int):
-    state = _pool_api(request).get_document_version(document_id, version)
+def _load_state(request: Request, document_id: str, version: int, actor: UserContext):
+    state = _pool_api(request).get_document_version_for_actor(document_id, version, actor)
     if state is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "document version not found"})
     return state
@@ -541,7 +576,7 @@ def get_header(
     response: Response,
     _actor: Annotated[UserContext, Depends(require_user_context_normal)],
 ):
-    header = _pool_api(request).get_header(document_id)
+    header = _pool_api(request).get_header_for_actor(document_id, _actor)
     if header is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "document header not found"})
     response.headers["ETag"] = header.updated_at.isoformat()
@@ -794,7 +829,7 @@ def assign_roles(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -821,7 +856,7 @@ def start_workflow(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -846,7 +881,7 @@ def editing_complete(
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
     body: WorkflowSignBody | None = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -867,7 +902,7 @@ def review_accept(
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
     body: WorkflowSignBody | None = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -888,7 +923,7 @@ def review_reject(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -917,7 +952,7 @@ def approval_accept(
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
     body: WorkflowSignBody | None = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -938,7 +973,7 @@ def approval_reject(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -966,7 +1001,7 @@ def abort_workflow(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -985,7 +1020,7 @@ async def import_pdf(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    _load_state(request, document_id, version)
+    _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     content_type = request.headers.get("Content-Type", "").strip().lower()
@@ -995,14 +1030,7 @@ async def import_pdf(
             detail={"error": "invalid_content_type", "message": "Content-Type must be application/pdf"},
         )
     raw_body = await _read_upload(request, magic=b"%PDF", label="PDF")
-    tmp = (
-        Path(get_container(request).get_port("app_home"))
-        / "scratch"
-        / "imports"
-        / f"{document_id}-{version}-{uuid4().hex}.pdf"
-    )
-    tmp.parent.mkdir(parents=True, exist_ok=True)
-    tmp.write_bytes(raw_body)
+    tmp = _write_import_scratch(request, raw_body, ".pdf")
     try:
         updated = api.import_existing_pdf(
             document_id,
@@ -1033,7 +1061,7 @@ def ensure_source_pdf_for_signing_route(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> EnsureSourcePdfResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -1083,7 +1111,7 @@ async def import_docx(
         raise _map_documents_error(
             DocumentsFeatureUnavailableError("DOCX conversion is not available on this backend host")
         )
-    _load_state(request, document_id, version)
+    _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     content_type = request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
     if content_type != "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -1092,14 +1120,7 @@ async def import_docx(
             detail={"error": "invalid_content_type", "message": "Content-Type must be DOCX"},
         )
     raw_body = await _read_upload(request, magic=b"PK\x03\x04", label="DOCX")
-    tmp = (
-        Path(get_container(request).get_port("app_home"))
-        / "scratch"
-        / "imports"
-        / f"{document_id}-{version}-{uuid4().hex}.docx"
-    )
-    tmp.parent.mkdir(parents=True, exist_ok=True)
-    tmp.write_bytes(raw_body)
+    tmp = _write_import_scratch(request, raw_body, ".docx")
     try:
         updated = _workflow_api(request).import_existing_docx(
             document_id,
@@ -1163,7 +1184,7 @@ def patch_version_metadata(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
     api = _workflow_api(request)
@@ -1198,7 +1219,7 @@ def list_workflow_comments(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     context: str = WorkflowCommentContext.PDF_REVIEW.value,
 ) -> list[dict[str, object]]:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     user_id, role = actor_user_and_role(actor)
     try:
         parsed_context = WorkflowCommentContext(context)
@@ -1240,7 +1261,7 @@ def sync_docx_comments(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> list[dict[str, object]]:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
     api = _comments_api(request)
@@ -1262,7 +1283,7 @@ def create_pdf_workflow_comment(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> dict[str, object]:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
     try:
@@ -1331,7 +1352,7 @@ def archive_approved_version(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
     api = _workflow_api(request)
@@ -1359,7 +1380,7 @@ def extend_annual_validity_route(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> ExtendAnnualResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     try:
         review_outcome = ValidityExtensionOutcome(body.review_outcome)
@@ -1401,7 +1422,7 @@ def new_version_after_archive(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     api = _workflow_api(request)
     try:
@@ -1424,7 +1445,7 @@ def list_change_requests(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
 ) -> list[dict[str, object]]:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     api = _workflow_api(request)
     try:
         return api.list_change_requests(state)
@@ -1442,7 +1463,7 @@ def add_change_request(
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> VersionStateResponse:
-    state = _load_state(request, document_id, version)
+    state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
     api = _workflow_api(request)
@@ -1480,7 +1501,16 @@ async def create_from_template(
         raise _map_documents_error(
             DocumentsFeatureUnavailableError("DOCX conversion is not available on this backend host")
         )
-    pool_state = _pool_api(request).get_document_version(document_id, version)
+    existing = _pool_api(request).get_document_version(document_id, version)
+    if existing is not None:
+        pool_state = _pool_api(request).get_document_version_for_actor(document_id, version, actor)
+        if pool_state is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "not_found", "message": "document version not found"},
+            )
+    else:
+        pool_state = None
     expected = _required_if_match(if_match) if pool_state is not None else None
     content_type = request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
     allowed = {
@@ -1494,15 +1524,7 @@ async def create_from_template(
         )
     raw_body = await _read_upload(request, magic=b"PK\x03\x04", label="template")
     suffix = ".dotx" if "template" in content_type else ".docx"
-    tmp = (
-        Path(get_container(request).get_port("app_home"))
-        / "scratch"
-        / "imports"
-        / f"{document_id}-{version}-{uuid4().hex}{suffix}"
-    )
-    tmp.parent.mkdir(parents=True, exist_ok=True)
-    tmp.write_bytes(raw_body)
-    user_id, role = actor_user_and_role(actor)
+    tmp = _write_import_scratch(request, raw_body, suffix)
     api = _workflow_api(request)
     try:
         if pool_state is None:
@@ -1510,8 +1532,8 @@ async def create_from_template(
                 document_id,
                 version,
                 tmp,
-                actor_user_id=user_id,
-                actor_role=role,
+                actor=actor,
+                delegated_create_allowed=_delegated_create_allowed(request, actor),
             )
         else:
             updated = _mutate_version_state(
@@ -1522,9 +1544,10 @@ async def create_from_template(
                     document_id,
                     version,
                     tmp,
-                    actor_user_id=user_id,
-                    actor_role=role,
+                    actor=actor,
                 ),
+                actor=actor,
+                owner_or_privileged=True,
             )
     except Exception as exc:
         raise _map_documents_error(exc) from exc

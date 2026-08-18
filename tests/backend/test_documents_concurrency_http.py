@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -240,6 +241,81 @@ def test_two_writers_with_same_if_match_have_one_winner(tmp_path: Path) -> None:
         == first.json()["state"]["assignments"]
     )
     assert "state" not in second.json()["detail"]
+
+
+def test_parallel_duplicate_create_has_one_200_and_one_409(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    app = create_app(container)
+    client = TestClient(app)
+    admin = _login(client, "admin", "adminpass01")
+    payload = {
+        "document_id": "DOC-DUP-RACE-HTTP",
+        "version": 1,
+        "title": "Race",
+        "workflow_profile_id": "http_flow_profile",
+    }
+
+    def _create():
+        worker = TestClient(app)
+        return worker.post(
+            "/documents/versions/create",
+            headers=_auth(admin),
+            json=payload,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(_create)
+        second = pool.submit(_create)
+        responses = [first.result(), second.result()]
+
+    statuses = sorted(response.status_code for response in responses)
+    assert statuses == [200, 409], [response.text for response in responses]
+    winner = next(response for response in responses if response.status_code == 200)
+    conflict = next(response for response in responses if response.status_code == 409)
+    detail = conflict.json()["detail"]
+    assert detail["error"] == "document_conflict"
+    assert detail["current_etag"] == winner.json()["etag"]
+    assert detail["current_state"]["status"] == winner.json()["state"]["status"]
+    current = client.get("/documents/versions/DOC-DUP-RACE-HTTP/1", headers=_auth(admin))
+    assert current.status_code == 200, current.text
+    assert current.json()["etag"] == winner.json()["etag"]
+    assert current.json()["state"]["status"] == "PLANNED"
+
+
+def test_parallel_import_pdf_has_one_200_and_one_409(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    app = create_app(container)
+    client = TestClient(app)
+    admin = _login(client, "admin", "adminpass01")
+    created = _create(client, admin, "DOC-IMP-RACE")
+    headers = {
+        **_mutation_headers(admin, created),
+        "Content-Type": "application/pdf",
+    }
+
+    def _import():
+        worker = TestClient(app)
+        return worker.post(
+            "/documents/versions/DOC-IMP-RACE/1/import-pdf",
+            headers=headers,
+            content=b"%PDF-1.4\n%%EOF\n",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(_import)
+        second = pool.submit(_import)
+        responses = [first.result(), second.result()]
+
+    statuses = sorted(response.status_code for response in responses)
+    assert statuses == [200, 409], [response.text for response in responses]
+    winner = next(response for response in responses if response.status_code == 200)
+    conflict = next(response for response in responses if response.status_code == 409)
+    detail = conflict.json()["detail"]
+    assert detail["error"] == "document_conflict"
+    assert detail["current_etag"] == winner.json()["etag"]
+    current = client.get("/documents/versions/DOC-IMP-RACE/1", headers=_auth(admin))
+    assert current.status_code == 200, current.text
+    assert current.json()["etag"] == winner.json()["etag"]
 
 
 def test_documents_http_client_sends_if_match_and_maps_conflict() -> None:

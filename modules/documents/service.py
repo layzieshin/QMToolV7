@@ -390,31 +390,36 @@ class DocumentsService:
             workflow_profile_id=workflow_profile_id,
             control_class=resolved_control,
         )
-        created = DocumentVersionState(
-            document_id=document_id,
-            version=version,
-            title=normalized_title,
-            description=description,
-            doc_type=doc_type,
-            control_class=resolved_control,
-            workflow_profile_id=resolved_profile_id,
-            owner_user_id=owner_user_id,
-            custom_fields=fields,
-            created_at=datetime.now(timezone.utc),
-            created_by=owner_user_id,
-        )
-        self._store_header(
-            DocumentHeader(
-                document_id=document_id,
-                doc_type=doc_type,
-                control_class=created.control_class,
-                workflow_profile_id=resolved_profile_id,
-                register_binding=True,
-            )
-        )
-        self._store_state(created)
-        self._sync_registry(created, None)
-        return created
+        with self._mutation_lock:
+            with self._write_transaction():
+                existing = self.get_document_version(document_id, version)
+                if existing is not None:
+                    raise DocumentConflictError(existing)
+                created = DocumentVersionState(
+                    document_id=document_id,
+                    version=version,
+                    title=normalized_title,
+                    description=description,
+                    doc_type=doc_type,
+                    control_class=resolved_control,
+                    workflow_profile_id=resolved_profile_id,
+                    owner_user_id=owner_user_id,
+                    custom_fields=fields,
+                    created_at=datetime.now(timezone.utc),
+                    created_by=owner_user_id,
+                )
+                self._store_header(
+                    DocumentHeader(
+                        document_id=document_id,
+                        doc_type=doc_type,
+                        control_class=created.control_class,
+                        workflow_profile_id=resolved_profile_id,
+                        register_binding=True,
+                    )
+                )
+                self._store_state(created)
+                self._sync_registry(created, None)
+                return created
 
     def list_by_status(self, status: DocumentStatus) -> list[DocumentVersionState]:
         if self._repository is not None:
@@ -461,6 +466,32 @@ class DocumentsService:
         if self._repository is None:
             return None
         return self._repository.get_header(document_id)
+
+    def get_document_header_for_actor(
+        self,
+        document_id: str,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> DocumentHeader | None:
+        header = self.get_document_header(document_id)
+        if header is None:
+            return None
+        versions: list[DocumentVersionState] = []
+        if self._repository is not None:
+            versions = list(self._repository.list_versions(document_id))
+        else:
+            versions = [
+                state
+                for (doc_id, _version), state in self._states.items()
+                if doc_id == document_id
+            ]
+        if not any(
+            self._has_read_access(state, actor_user_id=actor_user_id, actor_role=actor_role)
+            for state in versions
+        ):
+            return None
+        return header
 
     def update_document_header(
         self,
@@ -881,18 +912,21 @@ class DocumentsService:
             workflow_profile_id=None,
         )
         self._ensure_owner_or_privileged(state, actor_user_id, actor_role)
-        artifact = self._create_artifact(
-            state=state, source_path=source_path,
-            artifact_type=ArtifactType.SOURCE_PDF,
-            source_type=ArtifactSourceType.IMPORT_PDF,
-            metadata={"intake_mode": "import_pdf"},
-        )
-        event = self._publish(
-            "domain.documents.artifact.imported.v1", state,
-            {"artifact_id": artifact.artifact_id}, actor_user_id=actor_user_id,
-        )
-        self._sync_registry(state, event)
-        return state
+        with self._write_transaction():
+            artifact = self._create_artifact(
+                state=state, source_path=source_path,
+                artifact_type=ArtifactType.SOURCE_PDF,
+                source_type=ArtifactSourceType.IMPORT_PDF,
+                metadata={"intake_mode": "import_pdf"},
+            )
+            event = self._publish(
+                "domain.documents.artifact.imported.v1", state,
+                {"artifact_id": artifact.artifact_id}, actor_user_id=actor_user_id,
+            )
+            updated = eventing.stamp_event_on_state(state, event, actor_user_id)
+            self._store_state(updated)
+            self._sync_registry(updated, event)
+        return updated
 
     def import_existing_docx(
         self,
@@ -910,18 +944,21 @@ class DocumentsService:
             workflow_profile_id=None,
         )
         self._ensure_owner_or_privileged(state, actor_user_id, actor_role)
-        artifact = self._create_artifact(
-            state=state, source_path=source_path,
-            artifact_type=ArtifactType.SOURCE_DOCX,
-            source_type=ArtifactSourceType.IMPORT_DOCX,
-            metadata={"intake_mode": "import_docx"},
-        )
-        event = self._publish(
-            "domain.documents.artifact.imported.v1", state,
-            {"artifact_id": artifact.artifact_id}, actor_user_id=actor_user_id,
-        )
-        self._sync_registry(state, event)
-        return state
+        with self._write_transaction():
+            artifact = self._create_artifact(
+                state=state, source_path=source_path,
+                artifact_type=ArtifactType.SOURCE_DOCX,
+                source_type=ArtifactSourceType.IMPORT_DOCX,
+                metadata={"intake_mode": "import_docx"},
+            )
+            event = self._publish(
+                "domain.documents.artifact.imported.v1", state,
+                {"artifact_id": artifact.artifact_id}, actor_user_id=actor_user_id,
+            )
+            updated = eventing.stamp_event_on_state(state, event, actor_user_id)
+            self._store_state(updated)
+            self._sync_registry(updated, event)
+        return updated
 
     def create_from_template(
         self,
@@ -1047,20 +1084,45 @@ class DocumentsService:
         sign = getattr(self._signature_api, "sign_with_fixed_position", None)
         if not callable(sign):
             raise ValidationError("signature_api does not provide sign_with_fixed_position")
-        try:
-            sign(sign_request)
-        except Exception as exc:
-            raise ValidationError(f"signature step failed: {exc}") from exc
+        signature_png = getattr(sign_request, "signature_png", None)
         output_pdf = getattr(sign_request, "output_pdf", None)
-        if not isinstance(output_pdf, Path) or not output_pdf.is_file() or output_pdf.suffix.lower() != ".pdf":
-            raise ValidationError(f"signature transition '{transition}' did not produce a valid signed PDF output")
-        return self._create_artifact(
-            state=state,
-            source_path=output_pdf,
-            artifact_type=ArtifactType.SIGNED_PDF,
-            source_type=ArtifactSourceType.GENERATED,
-            metadata={"transition": transition, "generated_from": str(getattr(sign_request, "input_pdf", ""))},
-        )
+        input_pdf = getattr(sign_request, "input_pdf", None)
+        try:
+            try:
+                sign(sign_request)
+            except Exception as exc:
+                raise ValidationError(f"signature step failed: {exc}") from exc
+            if not isinstance(output_pdf, Path) or not output_pdf.is_file() or output_pdf.suffix.lower() != ".pdf":
+                raise ValidationError(f"signature transition '{transition}' did not produce a valid signed PDF output")
+            return self._create_artifact(
+                state=state,
+                source_path=output_pdf,
+                artifact_type=ArtifactType.SIGNED_PDF,
+                source_type=ArtifactSourceType.GENERATED,
+                metadata={"transition": transition, "generated_from": str(input_pdf or "")},
+            )
+        finally:
+            import gc
+            import time
+
+            gc.collect()
+            for path in (signature_png, output_pdf):
+                if not isinstance(path, Path):
+                    continue
+                skip = False
+                if isinstance(input_pdf, Path):
+                    try:
+                        skip = path.resolve() == input_pdf.resolve()
+                    except OSError:
+                        skip = False
+                if skip:
+                    continue
+                for attempt in range(8):
+                    try:
+                        path.unlink(missing_ok=True)
+                        break
+                    except OSError:
+                        time.sleep(0.05 * (attempt + 1))
 
     def delete_artifact(self, artifact: DocumentArtifact) -> None:
         if self._storage_port is not None:
@@ -1086,28 +1148,52 @@ class DocumentsService:
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
         action: str | None = None,
+        owner_or_privileged: bool = False,
     ) -> object:
-        """Atomically compare the persisted event token, re-check policy, mutate.
+        """Atomically authorize the locked state, then compare the event token, then mutate.
 
-        When ``action`` is set, ``assert_workflow_action`` runs on the locked
-        ``current`` state after the ETag compare and before ``operation``.
+        Visibility and workflow/owner authorization run on the locked ``current``
+        state before the ETag compare so a stale token cannot leak ``current_state``.
+        When ``action`` is set, ``assert_workflow_action`` remains the fachliche owner.
         """
         with self._mutation_lock:
             with self._write_transaction():
                 current = self.get_document_version(document_id, version)
                 if current is None:
                     raise ValidationError("document version not found")
-                if current.last_event_id != expected_last_event_id:
-                    raise DocumentConflictError(current)
+                actor_present = actor_user_id is not None and actor_role is not None
+                if actor_present and not self._has_read_access(
+                    current,
+                    actor_user_id=actor_user_id,
+                    actor_role=actor_role,
+                ):
+                    raise ValidationError("document version not found")
+                authorization_error: PermissionDeniedError | None = None
                 if action is not None:
-                    if actor_user_id is None or actor_role is None:
+                    if not actor_present:
                         raise PermissionDeniedError("confirmed UserContext is required")
-                    self.assert_workflow_action(
-                        current,
-                        actor_user_id=actor_user_id,
-                        actor_role=actor_role,
-                        action=action,
-                    )
+                    try:
+                        self.assert_workflow_action(
+                            current,
+                            actor_user_id=actor_user_id,
+                            actor_role=actor_role,
+                            action=action,
+                        )
+                    except PermissionDeniedError as exc:
+                        authorization_error = exc
+                elif owner_or_privileged:
+                    if not actor_present:
+                        raise PermissionDeniedError("confirmed UserContext is required")
+                    try:
+                        self._ensure_owner_or_privileged(current, actor_user_id, actor_role)
+                    except PermissionDeniedError as exc:
+                        authorization_error = exc
+                if current.last_event_id != expected_last_event_id:
+                    if authorization_error is not None:
+                        raise ValidationError("document version not found")
+                    raise DocumentConflictError(current)
+                if authorization_error is not None:
+                    raise authorization_error
                 return operation(current)
 
     def version_state_for_document_policy(self, document_id: str) -> DocumentVersionState:
@@ -1157,11 +1243,17 @@ class DocumentsService:
         state = self.get_document_version(document_id, version)
         if state is not None:
             return state
-        return self.create_document_version(
-            document_id, version, owner_user_id=owner_user_id,
-            doc_type=doc_type, control_class=control_class,
-            workflow_profile_id=workflow_profile_id, title=document_id,
-        )
+        try:
+            return self.create_document_version(
+                document_id, version, owner_user_id=owner_user_id,
+                doc_type=doc_type, control_class=control_class,
+                workflow_profile_id=workflow_profile_id, title=document_id,
+            )
+        except DocumentConflictError as exc:
+            current = exc.current_state
+            if isinstance(current, DocumentVersionState):
+                return current
+            raise
 
     def _iter_all_states(self) -> list[DocumentVersionState]:
         if self._repository is None:

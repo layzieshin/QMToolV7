@@ -68,6 +68,10 @@ class DocumentsEventContractsTest(unittest.TestCase):
 
             service.import_existing_pdf("DOC-EVT-1", 1, pdf, actor_user_id="owner-1", actor_role=SystemRole.USER)
             service.create_from_template("DOC-EVT-2", 1, dotx, actor_user_id="owner-2", actor_role=SystemRole.USER)
+            stamped = service.get_document_version("DOC-EVT-1", 1)
+            assert stamped is not None
+            self.assertIsNotNone(stamped.last_event_id)
+            self.assertEqual(stamped.last_actor_user_id, "owner-1")
 
             imported = [e for e in events if e.name == "domain.documents.artifact.imported.v1"]
             created = [e for e in events if e.name == "domain.documents.template.created.v1"]
