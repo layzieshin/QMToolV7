@@ -41,7 +41,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR11 | Freeze R1–R5 acceptance candidate | PASS | `c263ff5` | 93 focused gates; `$CandidateSha` below; CP08-V5 failed |
 | CP08-V5 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `document_baseline_flow`; bootstrap handshake **PASS**; Word **NOT REACHED** |
 | CP08-R6 | Document-create 403 (QMB actor + diagnostics) | PASS | `e28a44d` | Harness-only; Create/Race/Comments/Word-Token use seeded QMB; `require_version_success`; included in FR12 freeze |
-| FR12 | Freeze R1–R6 acceptance candidate | PASS | _(pending)_ | 108 focused gates; `$CandidateSha` next; CP08-V6 not started |
+| FR12 | Freeze R1–R6 acceptance candidate | PASS | `b63d9a1` | 108 focused gates; `$CandidateSha` below; CP08-V6 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -896,10 +896,10 @@ This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`523
 `63dda17`), R5 (`34f39c0` / docs `164a7c9`), R6 (`e28a44d` / docs `1f72451`), WR05
 documentation (`034425f`), and the freeze documentation. Focused gates are **108 passed**
 (`build/j04-m0-closure/freeze-r6-20260818T042711993Z`): FR11 set plus R6 handshake/create tests
-and `tests/backend/test_documents_authorization_http.py`. The frozen candidate SHA is recorded
-immediately after this checkpoint commit. No product or test changes are allowed after this
-freeze. CP08-V6 remains **NOT STARTED**. Overall **`NOT_READY`**: there is not yet a successful
-CP08 run. `ACCEPTED` is not set.
+and `tests/backend/test_documents_authorization_http.py`. The frozen candidate is
+`b63d9a16f87e8e9a12942d41101ee793d1fbb209` (`b63d9a1`). No product or test changes are
+allowed after this freeze. CP08-V6 remains **NOT STARTED**. Overall **`NOT_READY`**: there is
+not yet a successful CP08 run. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR12 freeze pending SHA; CP08-R6 included; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR12 freeze `b63d9a1`; CP08-V6 not started; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,7 +17,7 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — recorded immediately after the FR12 freeze commit. The freeze tree contains
+`$CandidateSha` — **`b63d9a16f87e8e9a12942d41101ee793d1fbb209` (`b63d9a1`)**. The freeze tree contains
 R1–R5 plus R6 (`e28a44d` / docs `1f72451`). Last superseded freeze was `c263ff5` (FR11, before
 R6). Overall **`NOT_READY`**: there is not yet a successful CP08 run. `ACCEPTED` is not set.
 
@@ -408,7 +408,7 @@ after this freeze.
 | --- | --- |
 | Focused gates | **108 passed** (`build/j04-m0-closure/freeze-r6-20260818T042711993Z`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
-| Candidate SHA | **pending freeze commit** |
+| Candidate SHA | **`b63d9a16f87e8e9a12942d41101ee793d1fbb209` (`b63d9a1`)** |
 | CP08-V6 | **NOT STARTED** |
 | `ACCEPTED` | **not set** |
 
@@ -442,7 +442,7 @@ after this freeze.
 | FR11 | PASS | `c263ff5` freeze R1–R5 | `05aed9f` |
 | CP08-V5 | FAILED | — (document_baseline_flow; create 403 / missing etag; Word not reached) | `eb968d6` |
 | CP08-R6 | PASS | `e28a44d` QMB actor + create 403 diagnostics | `1f72451` |
-| FR12 | PASS | _(pending)_ freeze R1–R6 | this documentation |
+| FR12 | PASS | `b63d9a1` freeze R1–R6 | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
