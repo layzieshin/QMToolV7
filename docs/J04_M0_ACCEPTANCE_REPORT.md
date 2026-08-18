@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR13 freeze `cd3a376`; CP08-V7 FAILED at `artifacts_transport`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **CP08-R8 PASS (`31dc273`); FR13 freeze `cd3a376`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,9 +17,10 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`cd3a3769c4d3b470f227bb25464785926b9584db` (`cd3a376`)** includes R7
-(`f5dcfa8`, docs `ae5be41`). Overall **`NOT_READY`**: CP08-V7 was not fully green. ETag race
-**held**. Word not reached. `ACCEPTED` is not set.
+`$CandidateSha` — **`cd3a3769c4d3b470f227bb25464785926b9584db` (`cd3a376`)** remains the last
+freeze until a new freeze after R8 (`31dc273`) is approved. Overall **`NOT_READY`**: CP08-V7
+was not fully green. The V7 abort was a harness identity error (usernames assigned where
+user ids are required). Word not reached. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -488,6 +489,28 @@ R7 etag race held: backend assign-roles **200** then **409**; harness detail
 
 Overall **`NOT_READY`**. R7 race is proven in this run. **`ACCEPTED` was not set.**
 
+CP08-V7 failed **before** artifact transport on a harness identity error. Document version
+and `SOURCE_PDF` existed. Assignments stored login names `editor` / `reviewer` / `approver`.
+PostgreSQL user ids are UUIDs. Visibility compared `actor_user_id` to those values, so the
+IN_PROGRESS version was correctly invisible to the editor. The route masked that as
+`404 document version not found` and did not invoke the artifact API.
+
+## Verification (CP08-R8 — workflow user_id assignments)
+
+Test-only. After each role login the harness calls `GET /auth/me`, validates `username`, and
+stores `user_id`. Baseline and both race `assign-roles` bodies use those ids, never login
+usernames. Training receipt matches the stored editor `user_id`. Race contract remains
+`[200, 409]`. Product authorization is unchanged.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R8-IDS | scenario unit + documents authorization HTTP + documents artifacts HTTP; fresh `--basetemp`; JUnit + log outside basetemp; J04/Word opt-ins unset | **42 passed** (`cp08-r8-results-20260818T055709926Z/junit.xml`, `tests="42" failures="0"`) |
+| CP08R8-DIFFCHECK | `git diff --check` on the four R8 files | **Exit 0** |
+
+**No freeze and no CP08-V8 at this documentation checkpoint.** Word remains not reached.
+
+CP08-R8 commit: `31dc273`
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -522,7 +545,8 @@ Overall **`NOT_READY`**. R7 race is proven in this run. **`ACCEPTED` was not set
 | CP08-V6 | FAILED | — (etag_concurrency_race TypeError; create 200; Word not reached) | `bd769ba` |
 | CP08-R7 | PASS | `f5dcfa8` etag race `sorted()` + stable assignment | `ae5be41` |
 | FR13 | PASS | `cd3a376` freeze R1–R7 | `45df9d6` |
-| CP08-V7 | FAILED | — (artifacts_transport 404; race 200/409; Word not reached) | this documentation |
+| CP08-V7 | FAILED | — (harness username assignments; 404 mask; race 200/409; Word not reached) | `63a000d` |
+| CP08-R8 | PASS | `31dc273` workflow assignments use `/auth/me` user_id | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
@@ -530,7 +554,7 @@ Overall **`NOT_READY`**. R7 race is proven in this run. **`ACCEPTED` was not set
 | --- | --- |
 | Isolated PostgreSQL live (Slot-2 PG18 local / CI PG16) | **CP04-R PASS** (guard+runner); full live suites **NOT RUN** (CP08) |
 | M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
-| Full `j04_final_acceptance` real-process E2E | **FAILED** (CP08-V7) at `artifacts_transport` |
+| Full `j04_final_acceptance` real-process E2E | **FAILED** (CP08-V7) before artifacts (harness identity) |
 | Real Word COM document conversion E2E | **NOT RUN** |
 | Word COM `DispatchEx` readiness probe | **BLOCKED** — `CO_E_SERVER_EXEC_FAILURE` (0x80080005) in agent session |
 | `packaging/build_onedir.py` | **Packaging NOT RUN** |

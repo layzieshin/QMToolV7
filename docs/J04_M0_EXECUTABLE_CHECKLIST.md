@@ -45,7 +45,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-V6 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `etag_concurrency_race` (`TypeError`); document create **PASS**; Word **NOT REACHED** |
 | CP08-R7 | ETag-race harness `sorted()` + stable assignment | PASS | `f5dcfa8` | Test-only; `sorted([a, b])`; both race bodies keep editor/reviewer/approver; included in FR13 freeze |
 | FR13 | Freeze R1–R7 acceptance candidate | PASS | `cd3a376` | 137 focused gates; `$CandidateSha` below; CP08-V7 failed |
-| CP08-V7 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `artifacts_transport` (404); etag race **PASS**; Word **NOT REACHED** |
+| CP08-V7 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** before artifacts (harness assigned usernames, PG uses UUID `user_id`; route masked 404); etag race **PASS**; Word **NOT REACHED** |
+| CP08-R8 | Workflow assignments use `/auth/me` user_id | PASS | `31dc273` | Test-only; role → `user_id` from GET `/auth/me`; baseline + both race bodies; **no freeze, no CP08-V8 at this checkpoint** |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -983,6 +984,53 @@ No repair, no retry.
 
 `ACCEPTED` is not set.
 
+CP08-V7 failed **before** artifact transport on a harness identity error, not a missing
+document or a product artifact defect. Document create, PDF import, workflow start, and
+the R7 race held. `documents.db` contained `J04-ACCEPT-DOC/1` and the `SOURCE_PDF`
+artifact. Assignments stored the login names `editor` / `reviewer` / `approver`.
+PostgreSQL user ids are UUIDs. Visibility compares `actor_user_id` to those assignment
+values, so the IN_PROGRESS version was correctly invisible to the editor. The documents
+route masks that as `404 document version not found` and never calls the artifact API.
+
+## CP08-R8 — Workflow assignments use `/auth/me` user_id (test-only)
+
+After each role login the harness calls `GET /auth/me`, validates `username`, and stores
+`user_id`. Baseline `assign-roles` and both R7 race workers send those user ids. The race
+contract remains `[200, 409]`. Training receipt compares the stored editor `user_id`, not
+the login name. Product authorization, PG, Word, and packaging are unchanged.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-r8-$stamp"
+$Results = "build/j04-m0-closure/cp08-r8-results-$stamp"
+New-Item -ItemType Directory -Force -Path $Results | Out-Null
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/backend/test_documents_authorization_http.py `
+  tests/backend/test_documents_artifacts_http.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp $Base `
+  --junitxml "$Results/junit.xml" 2>&1 |
+  Tee-Object -FilePath "$Results/pytest.log"
+
+$pytestExit = $LASTEXITCODE
+if ($pytestExit -ne 0) {
+    throw "CP08-R8 focus tests failed with exit $pytestExit"
+}
+```
+
+Result: **42 passed** (`build/j04-m0-closure/cp08-r8-results-20260818T055709926Z/junit.xml`,
+`tests="42" failures="0"`). Pytest log:
+`build/j04-m0-closure/cp08-r8-results-20260818T055709926Z/pytest.log`. Ambient J04/Word
+opt-ins unset. `git diff --check` on the four R8 files: exit 0.
+
+CP08-R8 commit: `31dc273` — `test(j04-m0): use authenticated user ids in acceptance workflow`
+
+**No freeze and no CP08-V8 at this documentation checkpoint.** Overall **`NOT_READY`**.
+Word still **not reached**. `ACCEPTED` is not set.
+
 ## CP08-R2 remediation specification (real-process scenario)
 
 Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
@@ -1016,7 +1064,7 @@ Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
 | Item | Contract |
 | --- | --- |
 | Pattern | Two workers issue the same `If-Match` assign-roles mutation in parallel |
-| Bodies | Both keep seeded `editor` / `reviewer` / `approver` (CP08-R7); no `observer` |
+| Bodies | Both send `user_id` values from `GET /auth/me` (CP08-R8); not login usernames; no `observer` |
 | Expected | Exactly one HTTP **200** and one HTTP **409**; harness `sorted([status_a, status_b])` |
 | Transport | Worker `--action http` (no shared in-process `TestClient`) |
 
