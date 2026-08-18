@@ -37,6 +37,11 @@ BOOTSTRAP_ADMIN_PASSWORD = "J04Accept-Admin-Secret-1"
 BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE = "J04Accept-Admin-Secret-2"
 QMB_USERNAME = "qmb"
 QMB_PASSWORD = "QmbAccept-Secret-01"
+ETAG_RACE_STABLE_ASSIGNMENT = {
+    "editors": ["editor"],
+    "reviewers": ["reviewer"],
+    "approvers": ["approver"],
+}
 
 WORD_COM_LIVE_ENV = "QMTOOL_J04_WORD_COM_LIVE"
 WORD_COM_LIVE_OPT_IN = "I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN"
@@ -580,60 +585,58 @@ def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
     return f"document {ACCEPTANCE_DOC_ID} in progress etag={ctx.document_etag[:16]}..."
 
 
+def evaluate_etag_race_payloads(payload_a: Any, payload_b: Any) -> str:
+    """Require exactly one HTTP 200 and one HTTP 409 from the two race workers."""
+    statuses = sorted(
+        [
+            int(payload_a.get("status", 0) if isinstance(payload_a, dict) else 0),
+            int(payload_b.get("status", 0) if isinstance(payload_b, dict) else 0),
+        ]
+    )
+    if statuses != [200, 409]:
+        raise ScenarioFailure(f"etag race statuses expected [200, 409], got {statuses}")
+    return "one winner and one 409 on shared etag"
+
+
+def _etag_race_worker_args(*, etag: str, body: dict[str, object]) -> list[str]:
+    return [
+        "--action",
+        "http",
+        "--username",
+        QMB_USERNAME,
+        "--password",
+        QMB_PASSWORD,
+        "--method",
+        "POST",
+        "--path",
+        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
+        "--headers-json",
+        json.dumps({"If-Match": etag}),
+        "--body-json",
+        json.dumps(body),
+    ]
+
+
 def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
     if not ctx.document_etag:
         raise ScenarioFailure("document etag missing for concurrency race")
-    shared_headers = json.dumps({"If-Match": ctx.document_etag})
-    body_a = json.dumps({"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]})
-    body_b = json.dumps({"editors": ["observer"], "reviewers": ["reviewer"], "approvers": ["approver"]})
+    args_a = _etag_race_worker_args(etag=ctx.document_etag, body=ETAG_RACE_STABLE_ASSIGNMENT)
+    args_b = _etag_race_worker_args(etag=ctx.document_etag, body=dict(ETAG_RACE_STABLE_ASSIGNMENT))
     proc_a = ctx.harness.start_client_worker(
         home=ctx.harness.client1_home,
         label="race-a",
-        args=[
-            "--action",
-            "http",
-            "--username",
-            QMB_USERNAME,
-            "--password",
-            QMB_PASSWORD,
-            "--method",
-            "POST",
-            "--path",
-            f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
-            "--headers-json",
-            shared_headers,
-            "--body-json",
-            body_a,
-        ],
+        args=args_a,
     )
     proc_b = ctx.harness.start_client_worker(
         home=ctx.harness.client2_home,
         label="race-b",
-        args=[
-            "--action",
-            "http",
-            "--username",
-            QMB_USERNAME,
-            "--password",
-            QMB_PASSWORD,
-            "--method",
-            "POST",
-            "--path",
-            f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
-            "--headers-json",
-            shared_headers,
-            "--body-json",
-            body_b,
-        ],
+        args=args_b,
     )
     stdout_a, _ = proc_a.popen.communicate(timeout=90.0)
     stdout_b, _ = proc_b.popen.communicate(timeout=90.0)
     payload_a = json.loads(stdout_a or "{}")
     payload_b = json.loads(stdout_b or "{}")
-    statuses = sorted(int(payload_a.get("status", 0)), int(payload_b.get("status", 0)))
-    if statuses != [200, 409]:
-        raise ScenarioFailure(f"etag race statuses expected [200, 409], got {statuses}")
-    return "one winner and one 409 on shared etag"
+    return evaluate_etag_race_payloads(payload_a, payload_b)
 
 
 def _step_artifacts_transport(ctx: ScenarioContext) -> str:

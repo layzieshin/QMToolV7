@@ -5,6 +5,8 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -12,6 +14,9 @@ from tests.acceptance.j04_m0_acceptance_scenario import (
     ACCEPTANCE_DOC_ID,
     AcceptanceHttpClient,
     BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE,
+    ETAG_RACE_STABLE_ASSIGNMENT,
+    QMB_PASSWORD,
+    QMB_USERNAME,
     ScenarioContext,
     ScenarioFailure,
     StepStatus,
@@ -19,11 +24,13 @@ from tests.acceptance.j04_m0_acceptance_scenario import (
     WORD_COM_LIVE_OPT_IN,
     complete_bootstrap_admin_session,
     build_backend_extra_env,
+    evaluate_etag_race_payloads,
     post_acceptance_document_create,
     require_version_success,
     run_acceptance_scenario,
     scenario_step_catalog,
     word_com_boundary_reason,
+    _step_etag_concurrency_race,
 )
 from tests.acceptance.j04_m0_realprocess_harness import (
     HarnessBlockedError,
@@ -292,23 +299,88 @@ def test_document_baseline_and_race_use_seeded_qmb_not_bootstrap_admin() -> None
 
     from tests.acceptance.j04_m0_acceptance_scenario import (
         _step_document_baseline_flow,
-        _step_etag_concurrency_race,
         _step_comments_lifecycle_change_requests,
         _step_word_com_live_boundary,
     )
 
     baseline = inspect.getsource(_step_document_baseline_flow)
-    race = inspect.getsource(_step_etag_concurrency_race)
     comments = inspect.getsource(_step_comments_lifecycle_change_requests)
     word = inspect.getsource(_step_word_com_live_boundary)
     assert 'tokens["qmb"]' in baseline
     assert 'tokens["admin"]' not in baseline
-    assert "QMB_USERNAME" in race
-    assert "BOOTSTRAP_ADMIN_USERNAME" not in race
     assert 'tokens["qmb"]' in comments
     assert 'tokens["admin"]' not in comments
     assert 'tokens["qmb"]' in word
     assert 'tokens["admin"]' not in word
+
+
+class _FakeRaceHarness:
+    """In-process stand-in for start_client_worker; does not spawn OS processes."""
+
+    def __init__(self, tmp_path: Path, responses: list[dict[str, Any]]) -> None:
+        self.client1_home = tmp_path / "client1-home"
+        self.client2_home = tmp_path / "client2-home"
+        self.client1_home.mkdir(parents=True, exist_ok=True)
+        self.client2_home.mkdir(parents=True, exist_ok=True)
+        self._responses = list(responses)
+        self.worker_calls: list[dict[str, Any]] = []
+
+    def start_client_worker(self, *, home, args, label, extra_env=None):
+        self.worker_calls.append({"home": home, "args": list(args), "label": label})
+        payload = json.dumps(self._responses.pop(0))
+        popen = SimpleNamespace(communicate=lambda timeout=None: (payload, ""), returncode=0)
+        return SimpleNamespace(popen=popen)
+
+
+def _race_ctx(tmp_path: Path, responses: list[dict[str, Any]]) -> tuple[ScenarioContext, _FakeRaceHarness]:
+    harness = _FakeRaceHarness(tmp_path, responses)
+    ctx = ScenarioContext(harness=harness)  # type: ignore[arg-type]
+    ctx.document_etag = "etag-race-1"
+    return ctx, harness
+
+
+def _assert_stable_qmb_race_args(harness: _FakeRaceHarness) -> None:
+    assert len(harness.worker_calls) == 2
+    for call in harness.worker_calls:
+        args = call["args"]
+        assert "--username" in args
+        assert args[args.index("--username") + 1] == QMB_USERNAME
+        assert args[args.index("--password") + 1] == QMB_PASSWORD
+        body = json.loads(args[args.index("--body-json") + 1])
+        assert body == ETAG_RACE_STABLE_ASSIGNMENT
+        assert "observer" not in json.dumps(body)
+        assert "editor" in body["editors"]
+        assert "reviewer" in body["reviewers"]
+        assert "approver" in body["approvers"]
+
+
+@pytest.mark.parametrize(
+    "responses",
+    (
+        [{"status": 200}, {"status": 409}],
+        [{"status": 409}, {"status": 200}],
+    ),
+)
+def test_etag_concurrency_race_accepts_either_winner_order(
+    tmp_path: Path, responses: list[dict[str, Any]]
+) -> None:
+    ctx, harness = _race_ctx(tmp_path, responses)
+    detail = _step_etag_concurrency_race(ctx)
+    assert detail == "one winner and one 409 on shared etag"
+    _assert_stable_qmb_race_args(harness)
+
+
+def test_etag_concurrency_race_rejects_two_winners(tmp_path: Path) -> None:
+    ctx, harness = _race_ctx(tmp_path, [{"status": 200}, {"status": 200}])
+    with pytest.raises(ScenarioFailure, match=r"got \[200, 200\]"):
+        _step_etag_concurrency_race(ctx)
+    _assert_stable_qmb_race_args(harness)
+
+
+def test_evaluate_etag_race_payloads_sorts_two_statuses_as_one_iterable() -> None:
+    assert evaluate_etag_race_payloads({"status": 409}, {"status": 200}) == (
+        "one winner and one 409 on shared etag"
+    )
 
 
 def test_harness_stop_process_only_terminates_requested_label(tmp_path: Path) -> None:
