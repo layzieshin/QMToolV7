@@ -40,6 +40,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R5 | Bootstrap-admin `/auth/me` handshake | PASS | `34f39c0` | Harness-only password-change handshake; product auth unchanged; included in FR11 freeze |
 | FR11 | Freeze R1–R5 acceptance candidate | PASS | `c263ff5` | 93 focused gates; `$CandidateSha` below; CP08-V5 failed |
 | CP08-V5 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `document_baseline_flow`; bootstrap handshake **PASS**; Word **NOT REACHED** |
+| CP08-R6 | Document-create 403 (QMB actor + diagnostics) | PASS | `e28a44d` | Harness-only; Create/Race/Comments/Word-Token use seeded QMB; `require_version_success`; **no freeze** |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -854,6 +855,40 @@ No repair, no retry.
 
 `ACCEPTED` is not set.
 
+## CP08-R6 — Document-create 403 (test-only)
+
+CP08-V5 stopped at `document_baseline_flow`. Backend log: `POST /documents/versions/create` **403**.
+The fail log only said `version payload missing etag`. Investigation (read-only V5 evidence + code):
+
+| # | Check | Finding |
+| --- | --- | --- |
+| 1 | 403 body | Not in V5 fail log. Product mapping: `PermissionDeniedError` → `{"detail":{"error":"forbidden",...}}`. |
+| 2 | Actor | Create used `ctx.tokens["admin"]` (`j04acceptadmin`, Admin). QMB user was already seeded and used for the workflow profile. |
+| 3 | Owner | `documents.api.create_document_version` requires effective QMB or delegated create. `_delegated_create_allowed` is unset in the acceptance run. Transport has no domain logic. |
+| 4 | Coverage gap | HTTP fixtures call `set_user_qmb("admin", True)` then create as admin. Realprocess did not. Authorization tests create as `qmb`. |
+
+Decision: **harness actor + diagnostics, not product.** Bootstrap admin is not granted QMB. Failures now include `status=` and `error=` before etag parse.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-r6-$stamp"
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/acceptance/test_j04_m0_harness_unit.py `
+  tests/acceptance/test_j04_m0_realprocess.py `
+  tests/backend/test_documents_authorization_http.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp $Base
+```
+
+Result: **36 passed** (`build/j04-m0-closure/cp08-r6-20260818T042343176Z`). Ambient J04/Word opt-ins unset.
+
+**No freeze. No CP08 retry in this checkpoint.** Overall **`NOT_READY`** at R6 close. Word not in scope. `ACCEPTED` is not set.
+
+CP08-R6 commit: `e28a44d` — `test(j04-m0): use seeded QMB for document create and surface 403`
+
 ## CP08-R2 remediation specification (real-process scenario)
 
 Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
@@ -870,7 +905,8 @@ Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
 | Provision | `prepare_live_environment()` + `migrate_usermanagement_schema(migrator_dsn)` |
 | Runtime DSN | Backend receives `QMTOOL_PG_DSN = runtime_dsn` only (never admin DSN) |
 | Bootstrap admin | `QMTOOL_BOOTSTRAP_ADMIN_USERNAME/PASSWORD` on first backend start; first `/auth/me` is 409 `password_change_required` until `POST /auth/change-password` (CP08-R5 handshake) |
-| Directory users | Created via `POST /users` after bootstrap session is usable (`/auth/me` 200) |
+| Directory users | Created via `POST /users` after bootstrap session is usable (`/auth/me` 200); user `qmb` has `is_qmb=True` |
+| Document create | `POST /documents/versions/create` uses the seeded QMB token (CP08-R6); Admin is not treated as QMB |
 
 ### Two separate client processes and sessions
 

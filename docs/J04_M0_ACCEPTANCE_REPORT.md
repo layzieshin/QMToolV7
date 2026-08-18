@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR11 freeze `c263ff5`; CP08-V5 FAILED at `document_baseline_flow`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **CP08-R6 PASS (QMB actor + diagnostics); FR11 freeze `c263ff5` superseded pending next freeze; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,12 +17,10 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`)**. The freeze tree contains
-R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` / docs `63dda17`), R5 (`34f39c0`
-/ docs `164a7c9`), WR05 documentation, and the known unchanged stat-only files. Last superseded
-freeze was `1bd8aa0` (FR10, before R5). Overall **`NOT_READY`**: CP08-V5 was not fully green.
-Historical CP08-V3 aborted on the acceptance start contract, not Word COM. CP08-V4 start
-contract **held**; R5 handshake **held** in CP08-V5. CP08-V5 failed at
+`$CandidateSha` — **`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`)** remains the last
+freeze until the next freeze includes CP08-R6. Overall **`NOT_READY`**: after CP08-R6 there is
+not yet a new freeze and no successful CP08 run. Historical CP08-V3 aborted on the acceptance
+start contract, not Word COM. R5 handshake **held** in CP08-V5. CP08-V5 failed at
 `document_baseline_flow` (Word not reached). `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
@@ -387,6 +385,20 @@ Overall **`NOT_READY`**: after FR11 there is no successful CP08 run. Historical 
 on the acceptance start contract, not Word COM. R5 handshake is proven in this run.
 **`ACCEPTED` was not set.**
 
+## Verification (CP08-R6 — document-create QMB actor)
+
+Test-only. Product create still requires effective QMB. The realprocess step
+`document_baseline_flow` now uses the seeded `qmb` token. Non-200 version responses fail with
+`status=` and `error=` before etag parse. Product authorization is unchanged.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R6-CREATE | scenario/harness/realprocess unit + documents authorization HTTP; fresh `--basetemp`; J04/Word opt-ins unset | **36 passed** (`cp08-r6-20260818T042343176Z`) |
+
+**No freeze. No CP08 retry in this checkpoint.** Next allowed sequence: new technical freeze, then exactly one CP08 run.
+
+CP08-R6 commit: `e28a44d`
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -415,7 +427,8 @@ on the acceptance start contract, not Word COM. R5 handshake is proven in this r
 | CP08-V4 | FAILED | — (bootstrap_admin_login /auth/me 409; Word not reached) | `5aff642` |
 | CP08-R5 | PASS | `34f39c0` bootstrap-admin handshake | `164a7c9` |
 | FR11 | PASS | `c263ff5` freeze R1–R5 | `05aed9f` |
-| CP08-V5 | FAILED | — (document_baseline_flow; create 403 / missing etag; Word not reached) | this documentation |
+| CP08-V5 | FAILED | — (document_baseline_flow; create 403 / missing etag; Word not reached) | `eb968d6` |
+| CP08-R6 | PASS | `e28a44d` QMB actor + create 403 diagnostics | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
