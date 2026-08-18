@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR12 freeze `b63d9a1`; CP08-V6 FAILED at `etag_concurrency_race`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **CP08-R7 PASS (`f5dcfa8`); FR12 freeze `b63d9a1`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,10 +17,10 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`b63d9a16f87e8e9a12942d41101ee793d1fbb209` (`b63d9a1`)**. The freeze tree contains
-R1–R5 plus R6 (`e28a44d` / docs `1f72451`). Last superseded freeze was `c263ff5` (FR11, before
-R6). Overall **`NOT_READY`**: CP08-V6 was not fully green. Document create **held**. Word not
-reached. `ACCEPTED` is not set.
+`$CandidateSha` — **`b63d9a16f87e8e9a12942d41101ee793d1fbb209` (`b63d9a1`)** remains the last
+freeze until a new freeze after R7 (`f5dcfa8`) is approved. Overall **`NOT_READY`**: CP08-V6
+was not fully green. Document create **held**. The V6 abort was the etag-race harness
+`sorted()` call. Word not reached. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -434,6 +434,26 @@ except stores `type(exc).__name__`. Word COM was **not reached**.
 
 Overall **`NOT_READY`**. R6 create is proven in this run. **`ACCEPTED` was not set.**
 
+## Verification (CP08-R7 — etag race harness)
+
+Test-only. Product race in V6 already returned HTTP 200 and 409. The abort was
+`sorted(int, int)`. Both race bodies now keep the seeded editor/reviewer/approver assignment.
+Unit tests drive `_step_etag_concurrency_race` with fake workers for 200/409, 409/200, and
+200/200. Product authorization is unchanged.
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| CP08R7-RACE | scenario/harness unit + documents concurrency HTTP; fresh `--basetemp`; J04/Word opt-ins unset | **54 passed** (`cp08-r7-20260818T045911092Z`) |
+| CP08R7-DIFFCHECK | `git diff --check` on the two R7 test files | **Exit 0** |
+
+Independent review confirmed the R7 content diff and code. Evidence contents were ACL-blocked
+in that review session; **54 passed** is recorded from the generated R7 evidence path.
+
+CP08-R7 commit: `f5dcfa8`
+
+**No freeze yet.** Next allowed sequence: new technical freeze, then exactly one CP08 run.
+Word remains not reached. Overall **`NOT_READY`**. `ACCEPTED` is not set.
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -465,7 +485,8 @@ Overall **`NOT_READY`**. R6 create is proven in this run. **`ACCEPTED` was not s
 | CP08-V5 | FAILED | — (document_baseline_flow; create 403 / missing etag; Word not reached) | `eb968d6` |
 | CP08-R6 | PASS | `e28a44d` QMB actor + create 403 diagnostics | `1f72451` |
 | FR12 | PASS | `b63d9a1` freeze R1–R6 | `049c0fd` |
-| CP08-V6 | FAILED | — (etag_concurrency_race TypeError; create 200; Word not reached) | this documentation |
+| CP08-V6 | FAILED | — (etag_concurrency_race TypeError; create 200; Word not reached) | `bd769ba` |
+| CP08-R7 | PASS | `f5dcfa8` etag race `sorted()` + stable assignment | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 

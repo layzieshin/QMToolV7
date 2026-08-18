@@ -43,6 +43,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R6 | Document-create 403 (QMB actor + diagnostics) | PASS | `e28a44d` | Harness-only; Create/Race/Comments/Word-Token use seeded QMB; `require_version_success`; included in FR12 freeze |
 | FR12 | Freeze R1–R6 acceptance candidate | PASS | `b63d9a1` | 108 focused gates; `$CandidateSha` below; CP08-V6 failed |
 | CP08-V6 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `etag_concurrency_race` (`TypeError`); document create **PASS**; Word **NOT REACHED** |
+| CP08-R7 | ETag-race harness `sorted()` + stable assignment | PASS | `f5dcfa8` | Test-only; `sorted([a, b])`; both race bodies keep editor/reviewer/approver; next: new freeze, then one CP08 |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -917,6 +918,40 @@ No repair, no retry.
 
 `ACCEPTED` is not set.
 
+## CP08-R7 — ETag-race harness (test-only)
+
+CP08-V6 reached `etag_concurrency_race`. Backend assign-roles race was **200** then **409**.
+The harness then raised `TypeError`: `sorted expected 1 argument, got 2` from
+`sorted(int, int)`. That is a harness bug, not a product deviation. The fail detail was only
+`TypeError` because the generic except stores `type(exc).__name__`.
+
+Fix: `evaluate_etag_race_payloads()` passes both statuses as one iterable to `sorted()`.
+Contract remains `[200, 409]`. Both worker bodies use `ETAG_RACE_STABLE_ASSIGNMENT`
+(`editor` / `reviewer` / `approver`); `observer` is no longer a race winner. Product auth,
+PG, Word, and packaging are unchanged.
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$env:PYTHONPATH = "."
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+$Base = "build/j04-m0-closure/cp08-r7-$stamp"
+$Py -m pytest `
+  tests/acceptance/test_j04_m0_acceptance_scenario_unit.py `
+  tests/acceptance/test_j04_m0_harness_unit.py `
+  tests/backend/test_documents_concurrency_http.py `
+  -m "not postgres and not j04_final_acceptance" -q `
+  --basetemp $Base
+```
+
+Result: **54 passed** (`build/j04-m0-closure/cp08-r7-20260818T045911092Z`). Ambient J04/Word
+opt-ins unset. `git diff --check` on the two test files: exit 0. Independent review confirmed
+the R7 content diff and code; evidence contents were ACL-blocked in that review session.
+
+CP08-R7 commit: `f5dcfa8` — `test(j04-m0): fix etag race harness evaluation`
+
+**No freeze yet.** Next allowed sequence: new technical freeze, then exactly one CP08 run.
+Overall **`NOT_READY`**. Word still **not reached**. `ACCEPTED` is not set.
+
 ## CP08-R2 remediation specification (real-process scenario)
 
 Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
@@ -950,7 +985,8 @@ Test-only scope. Replaces the `pytest.skip` stub with an ordered scenario in
 | Item | Contract |
 | --- | --- |
 | Pattern | Two workers issue the same `If-Match` assign-roles mutation in parallel |
-| Expected | Exactly one HTTP **200** and one HTTP **409** with current etag in body |
+| Bodies | Both keep seeded `editor` / `reviewer` / `approver` (CP08-R7); no `observer` |
+| Expected | Exactly one HTTP **200** and one HTTP **409**; harness `sorted([status_a, status_b])` |
 | Transport | Worker `--action http` (no shared in-process `TestClient`) |
 
 ### M0 HTTP coverage (orchestrator + workers)
