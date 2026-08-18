@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **CP08-R6 PASS (QMB actor + diagnostics); FR11 freeze `c263ff5` superseded pending next freeze; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR12 freeze pending SHA; CP08-R6 included; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -17,11 +17,9 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`c263ff550a81eccfc5bb68f2ffd2e030e8e51427` (`c263ff5`)** remains the last
-freeze until the next freeze includes CP08-R6. Overall **`NOT_READY`**: after CP08-R6 there is
-not yet a new freeze and no successful CP08 run. Historical CP08-V3 aborted on the acceptance
-start contract, not Word COM. R5 handshake **held** in CP08-V5. CP08-V5 failed at
-`document_baseline_flow` (Word not reached). `ACCEPTED` is not set.
+`$CandidateSha` — recorded immediately after the FR12 freeze commit. The freeze tree contains
+R1–R5 plus R6 (`e28a44d` / docs `1f72451`). Last superseded freeze was `c263ff5` (FR11, before
+R6). Overall **`NOT_READY`**: there is not yet a successful CP08 run. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -399,6 +397,21 @@ Test-only. Product create still requires effective QMB. The realprocess step
 
 CP08-R6 commit: `e28a44d`
 
+## FR12 — R1–R6 technical freeze
+
+The freeze tree contains R1–R5 plus R6 (`e28a44d`, docs `1f72451`), WR05 documentation, and the
+known unchanged stat-only files. The following checkpoint commit freezes this technical
+candidate; its full SHA is recorded immediately after. No product or test changes are permitted
+after this freeze.
+
+| Item | Status |
+| --- | --- |
+| Focused gates | **108 passed** (`build/j04-m0-closure/freeze-r6-20260818T042711993Z`) |
+| Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
+| Candidate SHA | **pending freeze commit** |
+| CP08-V6 | **NOT STARTED** |
+| `ACCEPTED` | **not set** |
+
 ## Technical acceptance candidate (CP07 freeze — historical)
 
 `$CandidateSha` was `d19e8b999c126dbc3ecbfeecd1d807a109d60edd` (`d19e8b9`) until remediation `8c273de`.
@@ -428,7 +441,8 @@ CP08-R6 commit: `e28a44d`
 | CP08-R5 | PASS | `34f39c0` bootstrap-admin handshake | `164a7c9` |
 | FR11 | PASS | `c263ff5` freeze R1–R5 | `05aed9f` |
 | CP08-V5 | FAILED | — (document_baseline_flow; create 403 / missing etag; Word not reached) | `eb968d6` |
-| CP08-R6 | PASS | `e28a44d` QMB actor + create 403 diagnostics | this documentation |
+| CP08-R6 | PASS | `e28a44d` QMB actor + create 403 diagnostics | `1f72451` |
+| FR12 | PASS | _(pending)_ freeze R1–R6 | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 

@@ -40,7 +40,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | CP08-R5 | Bootstrap-admin `/auth/me` handshake | PASS | `34f39c0` | Harness-only password-change handshake; product auth unchanged; included in FR11 freeze |
 | FR11 | Freeze R1–R5 acceptance candidate | PASS | `c263ff5` | 93 focused gates; `$CandidateSha` below; CP08-V5 failed |
 | CP08-V5 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `document_baseline_flow`; bootstrap handshake **PASS**; Word **NOT REACHED** |
-| CP08-R6 | Document-create 403 (QMB actor + diagnostics) | PASS | `e28a44d` | Harness-only; Create/Race/Comments/Word-Token use seeded QMB; `require_version_success`; **no freeze** |
+| CP08-R6 | Document-create 403 (QMB actor + diagnostics) | PASS | `e28a44d` | Harness-only; Create/Race/Comments/Word-Token use seeded QMB; `require_version_success`; included in FR12 freeze |
+| FR12 | Freeze R1–R6 acceptance candidate | PASS | _(pending)_ | 108 focused gates; `$CandidateSha` next; CP08-V6 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -888,6 +889,17 @@ Result: **36 passed** (`build/j04-m0-closure/cp08-r6-20260818T042343176Z`). Ambi
 **No freeze. No CP08 retry in this checkpoint.** Overall **`NOT_READY`** at R6 close. Word not in scope. `ACCEPTED` is not set.
 
 CP08-R6 commit: `e28a44d` — `test(j04-m0): use seeded QMB for document create and surface 403`
+
+## FR12 — R1–R6 technical freeze
+
+This checkpoint freezes R1 (`fbea360`), R2 (`30b73e9`), R3 (`c3d6587`), R4 (`5233b5d` /
+`63dda17`), R5 (`34f39c0` / docs `164a7c9`), R6 (`e28a44d` / docs `1f72451`), WR05
+documentation (`034425f`), and the freeze documentation. Focused gates are **108 passed**
+(`build/j04-m0-closure/freeze-r6-20260818T042711993Z`): FR11 set plus R6 handshake/create tests
+and `tests/backend/test_documents_authorization_http.py`. The frozen candidate SHA is recorded
+immediately after this checkpoint commit. No product or test changes are allowed after this
+freeze. CP08-V6 remains **NOT STARTED**. Overall **`NOT_READY`**: there is not yet a successful
+CP08 run. `ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 
