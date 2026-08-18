@@ -76,7 +76,7 @@ run. CP08-V9 has **not** been executed.
 
 <!-- J04_M0_MERGE_LEDGER_START -->
 
-Current checkpoint: MR08
+Current checkpoint: MR09
 
 | ID | Titel | Status | Start-SHA | Ergebnis/Evidence | Commit |
 | --- | --- | --- | --- | --- | --- |
@@ -88,7 +88,7 @@ Current checkpoint: MR08
 | MR05 | Signature-Dateien und Scratch-Lebenszyklus härten | PASS | `3bf6518` | 25 passed; `build/j04-m0-closure/mr05-results-20260818T112018936Z/junit.xml` | pending user approval |
 | MR06 | DOCX-Kommentarsynchronisation stabilisieren | PASS | `3bf6518` | 71 passed; `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml` | pending user approval |
 | MR07 | Realprocess-Harness auf verbindlichen M0-Scope bringen | PASS | `3bf6518` | 75 passed; `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml` | pending user approval |
-| MR08 | Gesamte Regression und Candidate Freeze | IN_PROGRESS | `3bf6518` | MR08-R3 PASS serial R3-C 1246 tests 0 failed `build/j04-m0-closure/mr08-r3-serial-regression-results-20260818T185750907Z/junit.xml`; first complete R3-C PASS `build/j04-m0-closure/mr08-r3-regression-results-20260818T172223274Z/junit.xml`; freeze pending user approval | pending user approval |
+| MR08 | Gesamte Regression und Candidate Freeze | PASS | `3bf6518` | 988 passed / 20 skipped; freeze regression `build/j04-m0-closure/mr08-freeze-regression-results-20260818T193330926Z/junit.xml`; CandidateSha `4db97ea72ffcb18823cd610599752cc1c8e8716d` | `4db97ea` |
 | MR09 | Kontrollierten CP08-V9-Lauf ausführen | TODO | — | — | — |
 | MR10 | Packaging, Golive, Human Gate und Merge | TODO | — | — | — |
 
@@ -611,9 +611,9 @@ $stamp = "20260818T104608124Z"
 
 ### MR08 — Gesamte Regression und Candidate Freeze
 
-- **Status:** IN_PROGRESS
+- **Status:** PASS
 - **Startzeit:** 2026-08-18T14:07:28Z
-- **Endzeit:** — (ursprüngliches Gate 3 FAILED 2026-08-18T14:30:27Z; MR08-R1 offen)
+- **Endzeit:** 2026-08-18T19:45:28Z
 - **Start-SHA:** `3bf651865c4da2c665d53f2fa83a3672b91b57ef` (`3bf6518`)
 - **Ziel und Scope:** Nicht-destruktive Regression, CLI-E2E, Architektur-/OpenAPI-
   Verträge und Diff-/Scopeprüfung des uncommitted J04-M0-Standes. Keine
@@ -729,6 +729,12 @@ $stamp = "20260818T104608124Z"
   4. `20260818T143406754Z` — Ledger-Konsistenz nach FAILED — **6 passed / 0 failed / 0 skipped**
      (`build/j04-m0-closure/mr08-failed-ledger-results-20260818T143406754Z/junit.xml`)
      Kein Retry von Gate 3; nur Dokumentationsintegrität.
+  5. `20260818T193258134Z` — Ledger-Konsistenz vor Freeze-Docs-Commit — **6 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr08-freeze-pre-docs-results-20260818T193258134Z/junit.xml`)
+  6. `20260818T193330926Z` — Candidate-Freeze-Regression — **PASS**
+     Konsole: 988 passed / 20 skipped / 52 deselected / 238 subtests passed.
+     JUnit: `tests="1246" failures="0" errors="0" skipped="20" time="697.037"`
+     (`build/j04-m0-closure/mr08-freeze-regression-results-20260818T193330926Z/junit.xml`)
 - **Genaue Befehle:**
 
 ```powershell
@@ -768,10 +774,15 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
 - **Adversarial Review:** nicht ausgeführt im ursprünglichen MR08 (Fail-fast nach
   Gate 3). Nach MR08-R1 Gate 3 ausgeführt — siehe Unterabschnitt.
 - **Abweichungen:** Ursprüngliches Gate 3 rot; Freeze nicht gesetzt; MR09 nicht begonnen.
-- **Commit-SHA:** pending user approval — Freeze pending explicit user approval
-- **Abschlussbewertung:** **Regression PASS after MR08-R1 – Candidate Freeze pending explicit user approval.**
-  Current checkpoint bleibt MR08. Gesamtstatus NOT_READY. MR09/MR10 TODO.
-  Kein CandidateSha, kein Commit, kein Freeze.
+- **Commit-SHA:**
+  - ProductCommit `$ProductCommit` = `70d4f4c11529b9539856dbdcc7456ea18689bf27` (`70d4f4c`)
+  - AcceptanceCommit `$AcceptanceCommit` = `6195637897588ae305f05617659899e9b9a51431` (`6195637`)
+  - FreezeCommit / MR08 CandidateSha `$CandidateSha` = `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`)
+  - CandidateDocsCommit folgt nach diesem SHA-Eintrag und darf nur die zwei Dokumentdateien enthalten
+- **Abschlussbewertung:** **MR08 PASS.** Freeze-Regression PASS. Cumulative review PASS.
+  Candidate-Freeze gilt ab `$CandidateSha` `4db97ea`. Nach dem Freeze keine Code-/Teständerung.
+  Current checkpoint MR09. MR09 bleibt TODO und ist nicht begonnen. Gesamtstatus NOT_READY.
+  Historischer FR14-Candidate `ed488ed` bleibt Historie. `Accepted` ist nicht gesetzt.
 
 #### MR08-R1 — Import-ETag im Artifact-Reautorisierungstest fortschreiben
 
@@ -1004,13 +1015,15 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
   Persistenzpfad; Backend importiert nur `modules.*.api`; keine Testabschwächung;
   stat-only-Dateien ohne Inhaltsdiff; `docs/transition/20260818/` untracked und
   unberührt.
-- **Nächster Schritt:** unabhängige Prüfung und ausdrückliche Freigabe für
-  kontrollierte Commits und Candidate-Freeze. MR09 nicht beginnen.
-- **Commit-SHA:** pending user approval — Freeze pending explicit user approval
-- **Abschlussbewertung:** MR08-R3 PASS. Regression PASS. Cumulative adversarial
-  review PASS. Parent MR08 bleibt IN_PROGRESS – Candidate Freeze pending explicit
-  user approval. Current checkpoint MR08. NOT_READY. CandidateSha bleibt
-  historisch `ed488ed`.
+- **Nächster Schritt:** unabhängige Prüfung des Freeze-Berichts und danach
+  separate ausdrückliche Freigabe für den destruktiven MR09-/CP08-V9-Lauf.
+  MR09 nicht begonnen.
+- **Commit-SHA:** ProductCommit `70d4f4c`; AcceptanceCommit `6195637`;
+  MR08 CandidateSha `4db97ea72ffcb18823cd610599752cc1c8e8716d`
+- **Abschlussbewertung:** MR08-R3 PASS. Parent MR08 PASS. Candidate-Freeze
+  `4db97ea` (MR08-Freeze). Current checkpoint MR09. MR09 TODO. NOT_READY.
+  Historischer FR14-Candidate bleibt `ed488ed`. Nach Candidate-Freeze keine
+  Code-/Teständerung.
 
 ### MR09 — Kontrollierten CP08-V9-Lauf ausführen
 

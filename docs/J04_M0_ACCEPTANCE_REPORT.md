@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **MR00–MR07 PASS (uncommitted); MR08-R3 PASS; parent MR08 IN_PROGRESS – Candidate Freeze pending explicit user approval; freeze not approved; FR14 freeze `ed488ed`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR08 Candidate-Freeze `4db97ea`; Current checkpoint MR09 TODO (not started); FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -19,12 +19,13 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)** remains the last
-freeze until a later freeze is approved. MR00–MR07 are implemented in the working
-tree (uncommitted). Overall **`NOT_READY`**: CP08-V8 was not fully green; CP08-V9
-has not been executed. Current checkpoint: **MR08** (MR08-R3 PASS; regression
-PASS; cumulative adversarial review PASS; Candidate Freeze pending explicit
-user approval). `ACCEPTED` is not set.
+`$CandidateSha` — **`4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`)** is the
+**MR08 Candidate-Freeze**. No product, backend, acceptance, or test file may change
+after this SHA. The follow-up docs commit that records this SHA is not the
+candidate. Historical FR14 freeze **`ed488ede47063c22ec0b8b9d2a72be25224f6098`
+(`ed488ed`)** remains history only. Overall **`NOT_READY`**: CP08-V8 was not fully
+green; CP08-V9 / MR09 has **not** been executed. Current checkpoint: **MR09**
+(TODO; not started). `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -669,13 +670,9 @@ stays open until MR08-R3. No candidate freeze. Overall **`NOT_READY`**.
 
 ## Verification (MR08-R3 — resolver-less artifact storage fallback; freeze not approved)
 
-**MR08-R3 PASS.** Resolver-less fallback uses existing `contained_path`. The first
-complete R3-C run (`20260818T172223274Z`) is PASS. The later red run
-(`20260818T173505528Z`) overlapped that PASS by **172.425 s** and is not a serial
-gate result. Serial confirmation (`20260818T185750907Z`) is PASS. Cumulative
-adversarial review PASS. Parent MR08 remains IN_PROGRESS. Candidate Freeze
-pending explicit user approval. CandidateSha remains historical `ed488ed`.
-Overall **`NOT_READY`**.
+**MR08-R3 PASS.** Parent **MR08 PASS.** Candidate-Freeze is `4db97ea72ffcb18823cd610599752cc1c8e8716d`
+(`4db97ea`). Historical FR14 candidate remains `ed488ed`. Current checkpoint **MR09**
+(TODO, not started). Overall **`NOT_READY`**. After Candidate-Freeze no code/test change.
 
 | # | Befehl | Ergebnis |
 | --- | --- | --- |
@@ -690,6 +687,12 @@ Overall **`NOT_READY`**.
 | MR08-R3-SERIAL-LEDGER | docs-consistency after history correction; stamp `20260818T185736086Z` | **6 passed** (`mr08-r3-serial-ledger-results-20260818T185736086Z/junit.xml`) |
 | MR08-R3-C-SERIAL | serial confirmation non-live regression; stamp `20260818T185750907Z` | **PASS** 988 passed / 20 skipped / 52 deselected / 238 subtests; JUnit `tests="1246" failures="0" errors="0" skipped="20" time="705.366"` (`mr08-r3-serial-regression-results-20260818T185750907Z/junit.xml`); no concurrent pytest |
 | MR08-R3-SERIAL-LEDGER-FINAL | docs-consistency after R3 PASS; stamp `20260818T191144020Z` | **6 passed** (`mr08-r3-serial-ledger-final-results-20260818T191144020Z/junit.xml`) |
+| MR08-FREEZE-PRE-DOCS | docs-consistency before freeze docs commit; stamp `20260818T193258134Z` | **6 passed** (`mr08-freeze-pre-docs-results-20260818T193258134Z/junit.xml`) |
+| MR08-FREEZE-REGRESSION | serial candidate freeze regression; stamp `20260818T193330926Z` | **PASS** 988 passed / 20 skipped / 52 deselected / 238 subtests; JUnit `tests="1246" failures="0" errors="0" skipped="20" time="697.037"` (`mr08-freeze-regression-results-20260818T193330926Z/junit.xml`) |
+
+ProductCommit `70d4f4c11529b9539856dbdcc7456ea18689bf27`. AcceptanceCommit
+`6195637897588ae305f05617659899e9b9a51431`. FreezeCommit / CandidateSha
+`4db97ea72ffcb18823cd610599752cc1c8e8716d`.
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
