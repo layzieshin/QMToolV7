@@ -47,7 +47,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR13 | Freeze R1–R7 acceptance candidate | PASS | `cd3a376` | 137 focused gates; `$CandidateSha` below; CP08-V7 failed |
 | CP08-V7 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** before artifacts (harness assigned usernames, PG uses UUID `user_id`; route masked 404); etag race **PASS**; Word **NOT REACHED** |
 | CP08-R8 | Workflow assignments use `/auth/me` user_id | PASS | `31dc273` | Test-only; role → `user_id` from GET `/auth/me`; baseline + both race bodies; included in FR14 freeze |
-| FR14 | Freeze R1–R8 acceptance candidate | PASS | _(pending)_ | 144 focused gates; `$CandidateSha` next; CP08-V8 not started |
+| FR14 | Freeze R1–R8 acceptance candidate | PASS | `ed488ed` | 144 focused gates; `$CandidateSha` below; CP08-V8 not started |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -1040,7 +1040,7 @@ freeze documentation. Focused gates are **144 passed**
 (`build/j04-m0-closure/freeze-r8-results-20260818T061803564Z/junit.xml`, `tests="144"
 failures="0"`): FR13 set plus R8 `user_id` / race / receipt regressions. Pytest log:
 `build/j04-m0-closure/freeze-r8-results-20260818T061803564Z/pytest.log`. The frozen
-candidate SHA is recorded immediately after this checkpoint commit. No product or test
+candidate is `ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`). No product or test
 changes are allowed after this freeze. CP08-V8 remains **NOT STARTED**. Overall
 **`NOT_READY`**: there is not yet a successful CP08 run. `ACCEPTED` is not set.
 
