@@ -37,11 +37,19 @@ BOOTSTRAP_ADMIN_PASSWORD = "J04Accept-Admin-Secret-1"
 BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE = "J04Accept-Admin-Secret-2"
 QMB_USERNAME = "qmb"
 QMB_PASSWORD = "QmbAccept-Secret-01"
-ETAG_RACE_STABLE_ASSIGNMENT = {
-    "editors": ["editor"],
-    "reviewers": ["reviewer"],
-    "approvers": ["approver"],
+EDITOR_USERNAME = "editor"
+EDITOR_PASSWORD = "EditorAccept-Secret1"
+REVIEWER_USERNAME = "reviewer"
+REVIEWER_PASSWORD = "ReviewAccept-Secret1"
+APPROVER_USERNAME = "approver"
+APPROVER_PASSWORD = "ApproveAccept-Secret1"
+DIRECTORY_ROLE_PASSWORDS = {
+    QMB_USERNAME: QMB_PASSWORD,
+    EDITOR_USERNAME: EDITOR_PASSWORD,
+    REVIEWER_USERNAME: REVIEWER_PASSWORD,
+    APPROVER_USERNAME: APPROVER_PASSWORD,
 }
+WORKFLOW_ASSIGNMENT_ROLES = (EDITOR_USERNAME, REVIEWER_USERNAME, APPROVER_USERNAME)
 
 WORD_COM_LIVE_ENV = "QMTOOL_J04_WORD_COM_LIVE"
 WORD_COM_LIVE_OPT_IN = "I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN"
@@ -89,6 +97,7 @@ class ScenarioContext:
     pg_env: LivePostgresEnv | None = None
     admin_token: str = ""
     tokens: dict[str, str] = field(default_factory=dict)
+    user_ids: dict[str, str] = field(default_factory=dict)
     document_etag: str = ""
     backend_extra_env: dict[str, str] = field(default_factory=dict)
     client1_token_fingerprint: str = ""
@@ -314,6 +323,51 @@ def complete_bootstrap_admin_session(client: AcceptanceHttpClient) -> tuple[dict
     return payload, password
 
 
+def capture_authenticated_user_id(
+    client: AcceptanceHttpClient, *, expected_username: str
+) -> str:
+    """Read ``user_id`` from ``GET /auth/me`` after a role login; validate username."""
+    status, _headers, payload = client.request_raw("GET", "/auth/me")
+    if status != 200 or not isinstance(payload, dict):
+        raise ScenarioFailure(
+            f"/auth/me failed for {expected_username} "
+            f"status={status} body={_redact_http_payload(payload)}"
+        )
+    if payload.get("username") != expected_username:
+        raise ScenarioFailure(
+            f"/auth/me username expected {expected_username!r}, got {payload.get('username')!r}"
+        )
+    user_id = str(payload.get("user_id") or "").strip()
+    if not user_id:
+        raise ScenarioFailure(f"/auth/me missing user_id for {expected_username}")
+    return user_id
+
+
+def workflow_role_assignment(user_ids: dict[str, str]) -> dict[str, list[str]]:
+    """Build assign-roles bodies from stored user_ids, never from login usernames."""
+    missing = [
+        role for role in WORKFLOW_ASSIGNMENT_ROLES if not str(user_ids.get(role) or "").strip()
+    ]
+    if missing:
+        raise ScenarioFailure(
+            "role user_id missing for workflow assignment: " + ", ".join(missing)
+        )
+    return {
+        "editors": [user_ids[EDITOR_USERNAME]],
+        "reviewers": [user_ids[REVIEWER_USERNAME]],
+        "approvers": [user_ids[APPROVER_USERNAME]],
+    }
+
+
+def require_editor_read_receipt(confirmed: Any, user_ids: dict[str, str]) -> None:
+    """Accept a training receipt only when ``user_id`` matches the stored editor id."""
+    expected = str(user_ids.get(EDITOR_USERNAME) or "").strip()
+    if not expected:
+        raise ScenarioFailure("role user_id missing for training read receipt: editor")
+    if not isinstance(confirmed, dict) or confirmed.get("user_id") != expected:
+        raise ScenarioFailure("training read receipt missing editor actor")
+
+
 def _mutation_headers(token: str, etag: str, *, extra: dict[str, str] | None = None) -> dict[str, str]:
     headers = {"Authorization": f"Bearer {token}", "If-Match": etag}
     if extra:
@@ -439,21 +493,19 @@ def _step_seed_directory_users(ctx: ScenarioContext) -> str:
     client._token = ctx.admin_token
     for username, password, is_qmb in (
         (QMB_USERNAME, QMB_PASSWORD, True),
-        ("editor", "EditorAccept-Secret1", False),
-        ("reviewer", "ReviewAccept-Secret1", False),
-        ("approver", "ApproveAccept-Secret1", False),
+        (EDITOR_USERNAME, EDITOR_PASSWORD, False),
+        (REVIEWER_USERNAME, REVIEWER_PASSWORD, False),
+        (APPROVER_USERNAME, APPROVER_PASSWORD, False),
     ):
         _seed_user(client, username=username, password=password, is_qmb=is_qmb)
     ctx.tokens["admin"] = ctx.admin_token
-    for role in ("qmb", "editor", "reviewer", "approver"):
+    for role, password in DIRECTORY_ROLE_PASSWORDS.items():
         role_client = AcceptanceHttpClient(ctx.harness.backend_url)
-        role_client.login(role, {
-            "qmb": QMB_PASSWORD,
-            "editor": "EditorAccept-Secret1",
-            "reviewer": "ReviewAccept-Secret1",
-            "approver": "ApproveAccept-Secret1",
-        }[role])
+        role_client.login(role, password)
         ctx.tokens[role] = role_client._token or ""
+        ctx.user_ids[role] = capture_authenticated_user_id(
+            role_client, expected_username=role
+        )
     return "directory users seeded and login verified"
 
 
@@ -493,9 +545,9 @@ def _step_client_process_sessions(ctx: ScenarioContext) -> str:
             "--action",
             "login",
             "--username",
-            "editor",
+            EDITOR_USERNAME,
             "--password",
-            "EditorAccept-Secret1",
+            EDITOR_PASSWORD,
         ],
     )
     login_b = _run_worker(
@@ -506,9 +558,9 @@ def _step_client_process_sessions(ctx: ScenarioContext) -> str:
             "--action",
             "login",
             "--username",
-            "reviewer",
+            REVIEWER_USERNAME,
             "--password",
-            "ReviewAccept-Secret1",
+            REVIEWER_PASSWORD,
         ],
     )
     ctx.client1_token_fingerprint = str(login_a.get("token_fingerprint", ""))
@@ -559,7 +611,7 @@ def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
     status, _headers, assigned = client.request_raw(
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
-        body={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
+        body=workflow_role_assignment(ctx.user_ids),
         headers=_mutation_headers(qmb_token, etag),
     )
     etag = AcceptanceHttpClient.etag_from_version_payload(
@@ -620,8 +672,9 @@ def _etag_race_worker_args(*, etag: str, body: dict[str, object]) -> list[str]:
 def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
     if not ctx.document_etag:
         raise ScenarioFailure("document etag missing for concurrency race")
-    args_a = _etag_race_worker_args(etag=ctx.document_etag, body=ETAG_RACE_STABLE_ASSIGNMENT)
-    args_b = _etag_race_worker_args(etag=ctx.document_etag, body=dict(ETAG_RACE_STABLE_ASSIGNMENT))
+    assignment = workflow_role_assignment(ctx.user_ids)
+    args_a = _etag_race_worker_args(etag=ctx.document_etag, body=assignment)
+    args_b = _etag_race_worker_args(etag=ctx.document_etag, body=dict(assignment))
     proc_a = ctx.harness.start_client_worker(
         home=ctx.harness.client1_home,
         label="race-a",
@@ -672,7 +725,7 @@ def _step_signature_verify_password(ctx: ScenarioContext) -> str:
     verify = client.request(
         "POST",
         "/signature/verify-password",
-        body={"password": "EditorAccept-Secret1"},
+        body={"password": EDITOR_PASSWORD},
     )
     if not isinstance(verify, dict) or not verify.get("ok"):
         raise ScenarioFailure("signature verify-password failed")
@@ -718,8 +771,7 @@ def _step_training_read_receipt(ctx: ScenarioContext) -> str:
             "source": "j04-acceptance",
         },
     )
-    if not isinstance(confirmed, dict) or confirmed.get("user_id") != "editor":
-        raise ScenarioFailure("training read receipt missing editor actor")
+    require_editor_read_receipt(confirmed, ctx.user_ids)
     return "approved document training read confirmed"
 
 

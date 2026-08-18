@@ -13,24 +13,31 @@ import pytest
 from tests.acceptance.j04_m0_acceptance_scenario import (
     ACCEPTANCE_DOC_ID,
     AcceptanceHttpClient,
+    APPROVER_USERNAME,
     BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE,
-    ETAG_RACE_STABLE_ASSIGNMENT,
+    EDITOR_USERNAME,
     QMB_PASSWORD,
     QMB_USERNAME,
+    REVIEWER_USERNAME,
     ScenarioContext,
     ScenarioFailure,
     StepStatus,
     WORD_COM_LIVE_ENV,
     WORD_COM_LIVE_OPT_IN,
+    capture_authenticated_user_id,
     complete_bootstrap_admin_session,
     build_backend_extra_env,
     evaluate_etag_race_payloads,
     post_acceptance_document_create,
     require_version_success,
+    require_editor_read_receipt,
     run_acceptance_scenario,
     scenario_step_catalog,
     word_com_boundary_reason,
+    workflow_role_assignment,
+    _step_document_baseline_flow,
     _step_etag_concurrency_race,
+    _step_seed_directory_users,
 )
 from tests.acceptance.j04_m0_realprocess_harness import (
     HarnessBlockedError,
@@ -294,6 +301,18 @@ def test_acceptance_document_create_with_admin_token_surfaces_403(document_creat
     assert _DocumentCreateHandler.create_auths == ["Bearer admin-session-token"]
 
 
+EDITOR_USER_ID = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
+REVIEWER_USER_ID = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb"
+APPROVER_USER_ID = "cccccccc-3333-4333-8333-cccccccccccc"
+QMB_USER_ID = "dddddddd-4444-4444-8444-dddddddddddd"
+_ROLE_USER_IDS = {
+    EDITOR_USERNAME: EDITOR_USER_ID,
+    REVIEWER_USERNAME: REVIEWER_USER_ID,
+    APPROVER_USERNAME: APPROVER_USER_ID,
+    QMB_USERNAME: QMB_USER_ID,
+}
+
+
 def test_document_baseline_and_race_use_seeded_qmb_not_bootstrap_admin() -> None:
     import inspect
 
@@ -336,10 +355,26 @@ def _race_ctx(tmp_path: Path, responses: list[dict[str, Any]]) -> tuple[Scenario
     harness = _FakeRaceHarness(tmp_path, responses)
     ctx = ScenarioContext(harness=harness)  # type: ignore[arg-type]
     ctx.document_etag = "etag-race-1"
+    ctx.user_ids.update(_ROLE_USER_IDS)
     return ctx, harness
 
 
-def _assert_stable_qmb_race_args(harness: _FakeRaceHarness) -> None:
+def _assert_assignment_uses_user_ids_not_usernames(body: dict[str, Any]) -> None:
+    values = list(body.get("editors", [])) + list(body.get("reviewers", [])) + list(
+        body.get("approvers", [])
+    )
+    assert body == {
+        "editors": [EDITOR_USER_ID],
+        "reviewers": [REVIEWER_USER_ID],
+        "approvers": [APPROVER_USER_ID],
+    }
+    assert EDITOR_USERNAME not in values
+    assert REVIEWER_USERNAME not in values
+    assert APPROVER_USERNAME not in values
+
+
+def _assert_user_id_qmb_race_args(harness: _FakeRaceHarness) -> None:
+    expected = workflow_role_assignment(_ROLE_USER_IDS)
     assert len(harness.worker_calls) == 2
     for call in harness.worker_calls:
         args = call["args"]
@@ -347,11 +382,8 @@ def _assert_stable_qmb_race_args(harness: _FakeRaceHarness) -> None:
         assert args[args.index("--username") + 1] == QMB_USERNAME
         assert args[args.index("--password") + 1] == QMB_PASSWORD
         body = json.loads(args[args.index("--body-json") + 1])
-        assert body == ETAG_RACE_STABLE_ASSIGNMENT
-        assert "observer" not in json.dumps(body)
-        assert "editor" in body["editors"]
-        assert "reviewer" in body["reviewers"]
-        assert "approver" in body["approvers"]
+        assert body == expected
+        _assert_assignment_uses_user_ids_not_usernames(body)
 
 
 @pytest.mark.parametrize(
@@ -367,20 +399,236 @@ def test_etag_concurrency_race_accepts_either_winner_order(
     ctx, harness = _race_ctx(tmp_path, responses)
     detail = _step_etag_concurrency_race(ctx)
     assert detail == "one winner and one 409 on shared etag"
-    _assert_stable_qmb_race_args(harness)
+    _assert_user_id_qmb_race_args(harness)
 
 
 def test_etag_concurrency_race_rejects_two_winners(tmp_path: Path) -> None:
     ctx, harness = _race_ctx(tmp_path, [{"status": 200}, {"status": 200}])
     with pytest.raises(ScenarioFailure, match=r"got \[200, 200\]"):
         _step_etag_concurrency_race(ctx)
-    _assert_stable_qmb_race_args(harness)
+    _assert_user_id_qmb_race_args(harness)
 
 
 def test_evaluate_etag_race_payloads_sorts_two_statuses_as_one_iterable() -> None:
     assert evaluate_etag_race_payloads({"status": 409}, {"status": 200}) == (
         "one winner and one 409 on shared etag"
     )
+
+
+def test_workflow_role_assignment_uses_user_ids_never_usernames() -> None:
+    body = workflow_role_assignment(_ROLE_USER_IDS)
+    _assert_assignment_uses_user_ids_not_usernames(body)
+
+
+def test_workflow_role_assignment_requires_all_role_user_ids() -> None:
+    with pytest.raises(ScenarioFailure, match="role user_id missing"):
+        workflow_role_assignment({EDITOR_USERNAME: EDITOR_USER_ID})
+
+
+def test_training_read_receipt_matches_user_id_not_username() -> None:
+    require_editor_read_receipt({"user_id": EDITOR_USER_ID}, _ROLE_USER_IDS)
+    with pytest.raises(ScenarioFailure, match="training read receipt missing editor actor"):
+        require_editor_read_receipt({"user_id": EDITOR_USERNAME}, _ROLE_USER_IDS)
+
+
+class _AuthMeHandler(BaseHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        return
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path != "/auth/me":
+            self.send_response(404)
+            self.end_headers()
+            return
+        if self.headers.get("Authorization") != "Bearer role-session-token":
+            body = b'{"detail":{"error":"unauthorized"}}'
+            self.send_response(401)
+        else:
+            body = (
+                b'{"user_id":"'
+                + EDITOR_USER_ID.encode("ascii")
+                + b'","username":"editor","global_roles":[]}'
+            )
+            self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def auth_me_url() -> str:
+    server = HTTPServer(("127.0.0.1", 0), _AuthMeHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_capture_authenticated_user_id_reads_me_not_username(auth_me_url: str) -> None:
+    client = AcceptanceHttpClient(auth_me_url)
+    client._token = "role-session-token"
+    user_id = capture_authenticated_user_id(client, expected_username=EDITOR_USERNAME)
+    assert user_id == EDITOR_USER_ID
+    assert user_id != EDITOR_USERNAME
+
+
+def test_capture_authenticated_user_id_rejects_username_mismatch(auth_me_url: str) -> None:
+    client = AcceptanceHttpClient(auth_me_url)
+    client._token = "role-session-token"
+    with pytest.raises(ScenarioFailure, match="username expected 'reviewer'"):
+        capture_authenticated_user_id(client, expected_username=REVIEWER_USERNAME)
+
+
+class _DirectorySeedHandler(BaseHTTPRequestHandler):
+    """Seed users, then login + /auth/me with user_ids distinct from usernames."""
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        return
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}
+        return json.loads(raw.decode("utf-8"))
+
+    def _send(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/users":
+            self._send(201, b'{"ok":true}')
+            return
+        if self.path == "/auth/login":
+            username = str(self._read_json().get("username", ""))
+            token = f"token-{username}"
+            self._send(200, json.dumps({"token": token}).encode("utf-8"))
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path != "/auth/me":
+            self.send_response(404)
+            self.end_headers()
+            return
+        auth = self.headers.get("Authorization", "")
+        username = auth.removeprefix("Bearer token-")
+        user_id = _ROLE_USER_IDS.get(username, "")
+        if not user_id:
+            self._send(401, b'{"detail":{"error":"unauthorized"}}')
+            return
+        self._send(
+            200,
+            json.dumps({"user_id": user_id, "username": username}).encode("utf-8"),
+        )
+
+
+@pytest.fixture
+def directory_seed_url() -> str:
+    server = HTTPServer(("127.0.0.1", 0), _DirectorySeedHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_seed_directory_users_stores_user_ids_from_auth_me(
+    tmp_path: Path, directory_seed_url: str
+) -> None:
+    harness = SimpleNamespace(backend_url=directory_seed_url)
+    ctx = ScenarioContext(harness=harness)  # type: ignore[arg-type]
+    ctx.admin_token = "admin-session-token"
+    detail = _step_seed_directory_users(ctx)
+    assert detail == "directory users seeded and login verified"
+    assert ctx.user_ids[EDITOR_USERNAME] == EDITOR_USER_ID
+    assert ctx.user_ids[REVIEWER_USERNAME] == REVIEWER_USER_ID
+    assert ctx.user_ids[APPROVER_USERNAME] == APPROVER_USER_ID
+    assert ctx.user_ids[QMB_USERNAME] == QMB_USER_ID
+    assert ctx.user_ids[EDITOR_USERNAME] != EDITOR_USERNAME
+
+
+class _BaselineAssignHandler(BaseHTTPRequestHandler):
+    assign_bodies: list[dict[str, Any]] = []
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        return
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}
+        return json.loads(raw.decode("utf-8"))
+
+    def _send_version(self) -> None:
+        body = b'{"etag":"etag-next","state":{"status":"IN_PROGRESS"}}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path.endswith("/workflow/assign-roles"):
+            type(self).assign_bodies.append(self._read_json())
+            self._send_version()
+            return
+        if (
+            self.path == "/documents/versions/create"
+            or self.path.endswith("/import-pdf")
+            or self.path.endswith("/workflow/start")
+        ):
+            self._send_version()
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
+@pytest.fixture
+def baseline_assign_url() -> str:
+    _BaselineAssignHandler.assign_bodies = []
+    server = HTTPServer(("127.0.0.1", 0), _BaselineAssignHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_baseline_and_race_requests_send_user_ids_never_usernames(
+    tmp_path: Path, baseline_assign_url: str
+) -> None:
+    race_harness = _FakeRaceHarness(tmp_path, [{"status": 200}, {"status": 409}])
+    race_harness.backend_url = baseline_assign_url  # type: ignore[attr-defined]
+    ctx = ScenarioContext(harness=race_harness)  # type: ignore[arg-type]
+    ctx.tokens[QMB_USERNAME] = "qmb-session-token"
+    ctx.user_ids.update(_ROLE_USER_IDS)
+    _step_document_baseline_flow(ctx)
+    _step_etag_concurrency_race(ctx)
+
+    assert _BaselineAssignHandler.assign_bodies
+    baseline_body = _BaselineAssignHandler.assign_bodies[0]
+    expected = workflow_role_assignment(_ROLE_USER_IDS)
+    assert baseline_body == expected
+    _assert_assignment_uses_user_ids_not_usernames(baseline_body)
+    _assert_user_id_qmb_race_args(race_harness)
 
 
 def test_harness_stop_process_only_terminates_requested_label(tmp_path: Path) -> None:
@@ -425,6 +673,7 @@ def test_scenario_context_initializes_for_orchestrator(tmp_path: Path) -> None:
     harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
     ctx = ScenarioContext(harness=harness)
     assert ctx.harness.client1_home != ctx.harness.client2_home
+    assert ctx.user_ids == {}
 
 
 def test_allocate_realprocess_workspace_is_unique_and_inside_closure(tmp_path: Path) -> None:
