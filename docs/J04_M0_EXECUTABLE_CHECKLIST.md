@@ -41,7 +41,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR11 | Freeze R1–R5 acceptance candidate | PASS | `c263ff5` | 93 focused gates; `$CandidateSha` below; CP08-V5 failed |
 | CP08-V5 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `document_baseline_flow`; bootstrap handshake **PASS**; Word **NOT REACHED** |
 | CP08-R6 | Document-create 403 (QMB actor + diagnostics) | PASS | `e28a44d` | Harness-only; Create/Race/Comments/Word-Token use seeded QMB; `require_version_success`; included in FR12 freeze |
-| FR12 | Freeze R1–R6 acceptance candidate | PASS | `b63d9a1` | 108 focused gates; `$CandidateSha` below; CP08-V6 not started |
+| FR12 | Freeze R1–R6 acceptance candidate | PASS | `b63d9a1` | 108 focused gates; `$CandidateSha` below; CP08-V6 failed |
+| CP08-V6 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `etag_concurrency_race` (`TypeError`); document create **PASS**; Word **NOT REACHED** |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -898,8 +899,23 @@ documentation (`034425f`), and the freeze documentation. Focused gates are **108
 (`build/j04-m0-closure/freeze-r6-20260818T042711993Z`): FR11 set plus R6 handshake/create tests
 and `tests/backend/test_documents_authorization_http.py`. The frozen candidate is
 `b63d9a16f87e8e9a12942d41101ee793d1fbb209` (`b63d9a1`). No product or test changes are
-allowed after this freeze. CP08-V6 remains **NOT STARTED**. Overall **`NOT_READY`**: there is
-not yet a successful CP08 run. `ACCEPTED` is not set.
+allowed after this freeze. CP08-V6 was executed once and **FAILED** at
+`etag_concurrency_race`. Document create **PASS**. Word COM was **not reached**.
+Overall **`NOT_READY`**: there is not yet a successful CP08 run. `ACCEPTED` is not set.
+
+## CP08-V6 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `b63d9a16f87e8e9a12942d41101ee793d1fbb209`.
+Lauf-SHA: `049c0fd`. Realprocess via `--j04-final-acceptance`. Word COM live opt-in was set.
+No repair, no retry.
+
+| Step | Result |
+| --- | --- |
+| PostgreSQL live | **PASS** — PG18 preflight; **51 passed**; `build/j04-m0-closure/cp08-v6-pg-live-runner.log` |
+| Full real-process E2E | **FAILED** at `etag_concurrency_race` — harness `TypeError` (`sorted expected 1 argument, got 2`). R6 create **PASS** (`POST /documents/versions/create` 200, import/assign/start 200). Race HTTP on backend log: assign-roles **200** then **409**. Word **not reached**. Workspace `20260818T043346608779Z-d3a488be334042e7ab81a38da5b9ffb7` |
+| Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** |
+
+`ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 
