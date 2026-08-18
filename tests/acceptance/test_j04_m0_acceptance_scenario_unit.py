@@ -19,6 +19,8 @@ from tests.acceptance.j04_m0_acceptance_scenario import (
     WORD_COM_LIVE_OPT_IN,
     complete_bootstrap_admin_session,
     build_backend_extra_env,
+    post_acceptance_document_create,
+    require_version_success,
     run_acceptance_scenario,
     scenario_step_catalog,
     word_com_boundary_reason,
@@ -216,6 +218,97 @@ def test_bootstrap_admin_session_rejects_unexpected_409(bootstrap_auth_url: str)
 def test_etag_from_version_payload_reads_etag_and_last_event_id() -> None:
     assert AcceptanceHttpClient.etag_from_version_payload({"etag": "abc"}) == "abc"
     assert AcceptanceHttpClient.etag_from_version_payload({"state": {"last_event_id": "evt-1"}}) == "evt-1"
+
+
+def test_require_version_success_reports_403_forbidden_not_missing_etag() -> None:
+    payload = {"detail": {"error": "forbidden", "message": "effective QMB or delegated create permission required"}}
+    with pytest.raises(ScenarioFailure, match="status=403") as exc_info:
+        require_version_success(403, payload, action="POST /documents/versions/create")
+    message = str(exc_info.value)
+    assert "error=forbidden" in message
+    assert "version payload missing etag" not in message
+
+
+class _DocumentCreateHandler(BaseHTTPRequestHandler):
+    create_auths: list[str] = []
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        return
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path != "/documents/versions/create":
+            self.send_response(404)
+            self.end_headers()
+            return
+        auth = self.headers.get("Authorization", "")
+        type(self).create_auths.append(auth)
+        if auth == "Bearer qmb-session-token":
+            body = b'{"etag":"etag-qmb","state":{"status":"DRAFT"}}'
+            self.send_response(200)
+        else:
+            body = b'{"detail":{"error":"forbidden","message":"effective QMB or delegated create permission required"}}'
+            self.send_response(403)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.fixture
+def document_create_url() -> str:
+    _DocumentCreateHandler.create_auths = []
+    server = HTTPServer(("127.0.0.1", 0), _DocumentCreateHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield f"http://{host}:{port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def test_acceptance_document_create_with_qmb_token_returns_etag(document_create_url: str) -> None:
+    client = AcceptanceHttpClient(document_create_url)
+    client._token = "qmb-session-token"
+    created = post_acceptance_document_create(client)
+    assert created["etag"] == "etag-qmb"
+    assert _DocumentCreateHandler.create_auths == ["Bearer qmb-session-token"]
+
+
+def test_acceptance_document_create_with_admin_token_surfaces_403(document_create_url: str) -> None:
+    client = AcceptanceHttpClient(document_create_url)
+    client._token = "admin-session-token"
+    with pytest.raises(ScenarioFailure, match="status=403") as exc_info:
+        post_acceptance_document_create(client)
+    message = str(exc_info.value)
+    assert "error=forbidden" in message
+    assert "version payload missing etag" not in message
+    assert _DocumentCreateHandler.create_auths == ["Bearer admin-session-token"]
+
+
+def test_document_baseline_and_race_use_seeded_qmb_not_bootstrap_admin() -> None:
+    import inspect
+
+    from tests.acceptance.j04_m0_acceptance_scenario import (
+        _step_document_baseline_flow,
+        _step_etag_concurrency_race,
+        _step_comments_lifecycle_change_requests,
+        _step_word_com_live_boundary,
+    )
+
+    baseline = inspect.getsource(_step_document_baseline_flow)
+    race = inspect.getsource(_step_etag_concurrency_race)
+    comments = inspect.getsource(_step_comments_lifecycle_change_requests)
+    word = inspect.getsource(_step_word_com_live_boundary)
+    assert 'tokens["qmb"]' in baseline
+    assert 'tokens["admin"]' not in baseline
+    assert "QMB_USERNAME" in race
+    assert "BOOTSTRAP_ADMIN_USERNAME" not in race
+    assert 'tokens["qmb"]' in comments
+    assert 'tokens["admin"]' not in comments
+    assert 'tokens["qmb"]' in word
+    assert 'tokens["admin"]' not in word
 
 
 def test_harness_stop_process_only_terminates_requested_label(tmp_path: Path) -> None:

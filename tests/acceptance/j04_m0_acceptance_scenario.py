@@ -35,6 +35,8 @@ ACCEPTANCE_PROFILE_CODE = "j04_accept_flow_profile"
 BOOTSTRAP_ADMIN_USERNAME = "j04acceptadmin"
 BOOTSTRAP_ADMIN_PASSWORD = "J04Accept-Admin-Secret-1"
 BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE = "J04Accept-Admin-Secret-2"
+QMB_USERNAME = "qmb"
+QMB_PASSWORD = "QmbAccept-Secret-01"
 
 WORD_COM_LIVE_ENV = "QMTOOL_J04_WORD_COM_LIVE"
 WORD_COM_LIVE_OPT_IN = "I_UNDERSTAND_THIS_IS_A_REAL_WORD_COM_RUN"
@@ -267,6 +269,16 @@ def _redact_http_payload(payload: Any) -> str:
     return redact_log_text(text[:500])
 
 
+def require_version_success(status: int, payload: Any, *, action: str) -> dict[str, Any]:
+    """Reject non-200 version responses before reading etag from the payload."""
+    if status != 200 or not isinstance(payload, dict):
+        raise ScenarioFailure(
+            f"{action} failed status={status} error={_http_error_code(payload)} "
+            f"body={_redact_http_payload(payload)}"
+        )
+    return payload
+
+
 def complete_bootstrap_admin_session(client: AcceptanceHttpClient) -> tuple[dict[str, Any], str]:
     """Login, complete first-admin password change if required, then GET /auth/me.
 
@@ -421,7 +433,7 @@ def _step_seed_directory_users(ctx: ScenarioContext) -> str:
     client = AcceptanceHttpClient(ctx.harness.backend_url)
     client._token = ctx.admin_token
     for username, password, is_qmb in (
-        ("qmb", "QmbAccept-Secret-01", True),
+        (QMB_USERNAME, QMB_PASSWORD, True),
         ("editor", "EditorAccept-Secret1", False),
         ("reviewer", "ReviewAccept-Secret1", False),
         ("approver", "ApproveAccept-Secret1", False),
@@ -431,7 +443,7 @@ def _step_seed_directory_users(ctx: ScenarioContext) -> str:
     for role in ("qmb", "editor", "reviewer", "approver"):
         role_client = AcceptanceHttpClient(ctx.harness.backend_url)
         role_client.login(role, {
-            "qmb": "QmbAccept-Secret-01",
+            "qmb": QMB_PASSWORD,
             "editor": "EditorAccept-Secret1",
             "reviewer": "ReviewAccept-Secret1",
             "approver": "ApproveAccept-Secret1",
@@ -503,10 +515,9 @@ def _step_client_process_sessions(ctx: ScenarioContext) -> str:
     return "two client processes with distinct homes and token fingerprints"
 
 
-def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
-    client = AcceptanceHttpClient(ctx.harness.backend_url)
-    client._token = ctx.tokens["admin"]
-    _status, _headers, created = client.request_raw(
+def post_acceptance_document_create(client: AcceptanceHttpClient) -> dict[str, Any]:
+    """Create the acceptance document version; fail closed on non-200 responses."""
+    status, _headers, payload = client.request_raw(
         "POST",
         "/documents/versions/create",
         body={
@@ -518,28 +529,54 @@ def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
             "workflow_profile_id": ACCEPTANCE_PROFILE_CODE,
         },
     )
+    return require_version_success(
+        status, payload, action="POST /documents/versions/create"
+    )
+
+
+def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
+    client = AcceptanceHttpClient(ctx.harness.backend_url)
+    qmb_token = ctx.tokens["qmb"]
+    client._token = qmb_token
+    created = post_acceptance_document_create(client)
     etag = AcceptanceHttpClient.etag_from_version_payload(created)
-    _status, _headers, imported = client.request_raw(
+    status, _headers, imported = client.request_raw(
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-pdf",
         content=_MINIMAL_PDF,
-        headers=_mutation_headers(ctx.tokens["admin"], etag, extra={"Content-Type": "application/pdf"}),
+        headers=_mutation_headers(qmb_token, etag, extra={"Content-Type": "application/pdf"}),
     )
-    etag = AcceptanceHttpClient.etag_from_version_payload(imported)
-    _status, _headers, assigned = client.request_raw(
+    etag = AcceptanceHttpClient.etag_from_version_payload(
+        require_version_success(
+            status, imported, action=f"POST /documents/versions/{ACCEPTANCE_DOC_ID}/1/import-pdf"
+        )
+    )
+    status, _headers, assigned = client.request_raw(
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
         body={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
-        headers=_mutation_headers(ctx.tokens["admin"], etag),
+        headers=_mutation_headers(qmb_token, etag),
     )
-    etag = AcceptanceHttpClient.etag_from_version_payload(assigned)
-    _status, _headers, started = client.request_raw(
+    etag = AcceptanceHttpClient.etag_from_version_payload(
+        require_version_success(
+            status,
+            assigned,
+            action=f"POST /documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
+        )
+    )
+    status, _headers, started = client.request_raw(
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/start",
         body={"profile_id": ACCEPTANCE_PROFILE_CODE},
-        headers=_mutation_headers(ctx.tokens["admin"], etag),
+        headers=_mutation_headers(qmb_token, etag),
     )
-    ctx.document_etag = AcceptanceHttpClient.etag_from_version_payload(started)
+    ctx.document_etag = AcceptanceHttpClient.etag_from_version_payload(
+        require_version_success(
+            status,
+            started,
+            action=f"POST /documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/start",
+        )
+    )
     return f"document {ACCEPTANCE_DOC_ID} in progress etag={ctx.document_etag[:16]}..."
 
 
@@ -556,9 +593,9 @@ def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
             "--action",
             "http",
             "--username",
-            BOOTSTRAP_ADMIN_USERNAME,
+            QMB_USERNAME,
             "--password",
-            ctx.bootstrap_admin_password,
+            QMB_PASSWORD,
             "--method",
             "POST",
             "--path",
@@ -576,9 +613,9 @@ def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
             "--action",
             "http",
             "--username",
-            BOOTSTRAP_ADMIN_USERNAME,
+            QMB_USERNAME,
             "--password",
-            ctx.bootstrap_admin_password,
+            QMB_PASSWORD,
             "--method",
             "POST",
             "--path",
@@ -685,14 +722,15 @@ def _step_training_read_receipt(ctx: ScenarioContext) -> str:
 
 def _step_comments_lifecycle_change_requests(ctx: ScenarioContext) -> str:
     client = AcceptanceHttpClient(ctx.harness.backend_url)
-    client._token = ctx.tokens["admin"]
+    qmb_token = ctx.tokens["qmb"]
+    client._token = qmb_token
     read = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
     etag = AcceptanceHttpClient.etag_from_version_payload(read)
     created_cr = client.request_raw(
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/change-requests",
         body={"change_id": "CR-J04-1", "reason": "acceptance", "impact_refs": ["TR-1"]},
-        headers=_mutation_headers(ctx.tokens["admin"], etag),
+        headers=_mutation_headers(qmb_token, etag),
     )
     if created_cr[0] != 200:
         raise ScenarioFailure("change request create failed")
@@ -701,7 +739,7 @@ def _step_comments_lifecycle_change_requests(ctx: ScenarioContext) -> str:
         "POST",
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments",
         body={"context": "PDF_REVIEW", "page_number": 1, "comment_text": "acceptance note"},
-        headers=_mutation_headers(ctx.tokens["admin"], etag),
+        headers=_mutation_headers(qmb_token, etag),
     )
     if comment[0] != 200:
         raise ScenarioFailure("comment create failed")
@@ -753,7 +791,8 @@ def _step_word_com_live_boundary(ctx: ScenarioContext) -> str:
     if os.environ.get(WORD_COM_LIVE_ENV, "").strip() != WORD_COM_LIVE_OPT_IN:
         raise ScenarioSkip(reason)
     client = AcceptanceHttpClient(ctx.harness.backend_url)
-    client._token = ctx.tokens["admin"]
+    qmb_token = ctx.tokens["qmb"]
+    client._token = qmb_token
     read = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
     etag = AcceptanceHttpClient.etag_from_version_payload(read)
     docx_stub = b"PK\x03\x04acceptance-docx-stub"
@@ -762,7 +801,7 @@ def _step_word_com_live_boundary(ctx: ScenarioContext) -> str:
         f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-docx",
         content=docx_stub,
         headers=_mutation_headers(
-            ctx.tokens["admin"],
+            qmb_token,
             etag,
             extra={
                 "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
