@@ -47,7 +47,8 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR13 | Freeze R1–R7 acceptance candidate | PASS | `cd3a376` | 137 focused gates; `$CandidateSha` below; CP08-V7 failed |
 | CP08-V7 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** before artifacts (harness assigned usernames, PG uses UUID `user_id`; route masked 404); etag race **PASS**; Word **NOT REACHED** |
 | CP08-R8 | Workflow assignments use `/auth/me` user_id | PASS | `31dc273` | Test-only; role → `user_id` from GET `/auth/me`; baseline + both race bodies; included in FR14 freeze |
-| FR14 | Freeze R1–R8 acceptance candidate | PASS | `ed488ed` | 144 focused gates; `$CandidateSha` below; CP08-V8 not started |
+| FR14 | Freeze R1–R8 acceptance candidate | PASS | `ed488ed` | 144 focused gates; `$CandidateSha` below; CP08-V8 failed |
+| CP08-V8 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** at `training_read_receipt`; artifacts **PASS**; Word **NOT REACHED** |
 | CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
 
 ## Classification legend
@@ -1041,12 +1042,27 @@ freeze documentation. Focused gates are **144 passed**
 failures="0"`): FR13 set plus R8 `user_id` / race / receipt regressions. Pytest log:
 `build/j04-m0-closure/freeze-r8-results-20260818T061803564Z/pytest.log`. The frozen
 candidate is `ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`). No product or test
-changes are allowed after this freeze. CP08-V8 remains **NOT STARTED**. Overall
+changes are allowed after this freeze. CP08-V8 was executed once and **FAILED** at
+`training_read_receipt`. Artifacts **PASS**. Word COM was **not reached**. Overall
 **`NOT_READY`**: there is not yet a successful CP08 run. `ACCEPTED` is not set.
 
 Worktree at freeze: only the two confirmed stat-only files
 (`interfaces/pyqt/widgets/signature_placement/label_geometry.py`,
 `modules/training/wiring.py`).
+
+## CP08-V8 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `ed488ede47063c22ec0b8b9d2a72be25224f6098`.
+Lauf-SHA: `0cb4179`. Realprocess via `--j04-final-acceptance`. Word COM live opt-in was set.
+No repair, no retry.
+
+| Step | Result |
+| --- | --- |
+| PostgreSQL live | **PASS** — PG18 preflight; **51 passed**; `build/j04-m0-closure/cp08-v8-pg-live-runner.log` |
+| Full real-process E2E | **FAILED** at `training_read_receipt` — harness `version payload missing etag`. Backend: `POST .../workflow/editing-complete` **200**, then `POST .../workflow/review/accept` **403**. R8 artifacts **PASS** (`artifacts listed count=1`). Race **PASS**. Word **not reached**. Workspace `20260818T062441411509Z-3b4e870e746e4d50a646dce4e8d935a1` |
+| Word COM live / Onedir / regression / Golive / visible client | **NOT RUN** |
+
+`ACCEPTED` is not set.
 
 ## CP08-R2 remediation specification (real-process scenario)
 

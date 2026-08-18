@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **FR14 freeze `ed488ed`; CP08-R8 `31dc273`; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **FR14 freeze `ed488ed`; CP08-V8 FAILED at `training_read_receipt`; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -18,8 +18,8 @@ gesetzt werden.
 ## Technical acceptance candidate
 
 `$CandidateSha` — **`ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)** includes R8
-(`31dc273`, docs `83b7b1a`). Overall **`NOT_READY`**: CP08-V7 was not fully green. Word not
-reached. `ACCEPTED` is not set.
+(`31dc273`, docs `83b7b1a`). Overall **`NOT_READY`**: CP08-V8 was not fully green. Artifacts
+**held**. Word not reached. `ACCEPTED` is not set.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -524,8 +524,29 @@ after this freeze.
 | Focused gates | **144 passed** (`build/j04-m0-closure/freeze-r8-results-20260818T061803564Z/junit.xml`) |
 | Word readiness | **PASS** (interactive WR03/WR05); DOCX/PDF E2E **NOT RUN** |
 | Candidate SHA | **`ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)** |
-| CP08-V8 | **NOT STARTED** |
+| CP08-V8 | **FAILED** (see below) |
 | `ACCEPTED` | **not set** |
+
+## CP08-V8 — Final acceptance attempt (FAILED / NOT_READY)
+
+Executed once against CandidateSha `ed488ede47063c22ec0b8b9d2a72be25224f6098`.
+Lauf-SHA at gate start: `0cb4179`. Gate policy: no repair and no continuation after the first
+failed mandatory step. Realprocess via `--j04-final-acceptance`. Word COM live opt-in was set;
+the Word step was **not reached**.
+
+R8 artifacts held: `artifacts listed count=1`. Race **held**. Signature **held**. Stop at
+`training_read_receipt`: harness `version payload missing etag`. Backend log:
+`POST /documents/versions/J04-ACCEPT-DOC/1/workflow/editing-complete` **200**, then
+`POST /documents/versions/J04-ACCEPT-DOC/1/workflow/review/accept` **403**. Word COM was
+**not reached**.
+
+| Step | Result |
+| --- | --- |
+| 1. PostgreSQL live | **PASS** — preflight major 18; **51 passed**; `build/j04-m0-closure/cp08-v8-pg-live-runner.log` |
+| 2. Full real-process E2E | **FAILED** at `training_read_receipt` (`review/accept` 403; harness missing etag). Workspace `build/j04-m0-closure/cp08-realprocess-ws/20260818T062441411509Z-3b4e870e746e4d50a646dce4e8d935a1` |
+| 3. Word COM live, 4. Onedir, 5. Regression, 6. Golive, 7. visible client | **NOT RUN** (gate stopped at step 2; Word not reached) |
+
+Overall **`NOT_READY`**. R8 artifacts are proven in this run. **`ACCEPTED` was not set.**
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
@@ -563,7 +584,8 @@ after this freeze.
 | FR13 | PASS | `cd3a376` freeze R1–R7 | `45df9d6` |
 | CP08-V7 | FAILED | — (harness username assignments; 404 mask; race 200/409; Word not reached) | `63a000d` |
 | CP08-R8 | PASS | `31dc273` workflow assignments use `/auth/me` user_id | `83b7b1a` |
-| FR14 | PASS | `ed488ed` freeze R1–R8 | SHA record |
+| FR14 | PASS | `ed488ed` freeze R1–R8 | `0cb4179` |
+| CP08-V8 | FAILED | — (training_read_receipt; review/accept 403; artifacts PASS; Word not reached) | this documentation |
 
 ### Remaining gates (explicitly NOT RUN)
 
@@ -571,7 +593,7 @@ after this freeze.
 | --- | --- |
 | Isolated PostgreSQL live (Slot-2 PG18 local / CI PG16) | **CP04-R PASS** (guard+runner); full live suites **NOT RUN** (CP08) |
 | M8 `pg_dump`/`pg_restore` live drill | **NOT RUN** |
-| Full `j04_final_acceptance` real-process E2E | **FAILED** (CP08-V7) before artifacts (harness identity) |
+| Full `j04_final_acceptance` real-process E2E | **FAILED** (CP08-V8) at `training_read_receipt` |
 | Real Word COM document conversion E2E | **NOT RUN** |
 | Word COM `DispatchEx` readiness probe | **BLOCKED** — `CO_E_SERVER_EXEC_FAILURE` (0x80080005) in agent session |
 | `packaging/build_onedir.py` | **Packaging NOT RUN** |
