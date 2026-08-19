@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS; CandidateSha `08b04e6fe28ee86e71759440236b5ca10711fa1a`; CP08-V10 NOT RUN — benötigt neue Einmalfreigabe; Gesamtstatus NOT_READY); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS; CP08-V10 FAILED — pdf_comment_flow Schritt 14; MR09-R3 und MR09-R3-R1 PASS — Harness-Backpressure behoben; kein aktiver Candidate; neuer Freeze erforderlich; Gesamtstatus NOT_READY); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -19,8 +19,11 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-Aktiver CandidateSha: **`08b04e6fe28ee86e71759440236b5ca10711fa1a`** (`08b04e6`) —
-`docs(j04-m0): freeze MR09 retry candidate`.
+**Es existiert derzeit kein aktiver Candidate.**
+
+Durch die Harnessänderung in MR09-R3 ist der historische FreezeCommit
+`08b04e6fe28ee86e71759440236b5ca10711fa1a` für einen CP08-V11-Lauf ungültig.
+Ein neuer Commit-/Candidate-Freeze ist erforderlich, bevor CP08-V11 gestartet werden darf.
 
 `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`) ist ausschließlich der
 historische **MR08-Candidate-Freeze** und für weitere CP08-Läufe ungültig.
@@ -43,7 +46,9 @@ Verlauf seit `4db97ea`:
   1254 passed / 0 failed / 20 skipped; stamp `20260819T150534010Z`.
 - **Parent MR09** bleibt **IN_PROGRESS und nicht bestanden**.
 
-CP08-V10: **NOT RUN** — benötigt neue ausdrückliche Einmalfreigabe.
+CP08-V10: **FAILED** — Schritt 14 `pdf_comment_flow` Timeout (Lauf `a15cb3f`, Stamp `20260819T155102306Z`).
+MR09-R3 hat die Ursache (stdout-Pipe-Backpressure im Harness) behoben.
+Kein aktiver Candidate; neuer Freeze und neue Einmalfreigabe erforderlich vor CP08-V11.
 Gesamtstatus: **NOT_READY**. `ACCEPTED` ist nicht gesetzt.
 Current checkpoint: **MR09**.
 
@@ -1334,6 +1339,120 @@ Verbindliche Reihenfolge nach Freigabe:
 4. ~~**M2R**~~ — technisch abgeschlossen (Header-/Kommentar-CAS).
 5. Externe Abnahmemeilensteine: isolierte PostgreSQL-16-Testinfrastruktur → Live-Smoke →
    Zwei-Client/Restart → Word-COM → Onedir-Client gegen separaten Backenddienst → menschliche Abnahme.
+
+## MR09-R3 / MR09-R3-R1 — Harness stdout-Pipe-Backpressure behoben (PASS)
+
+**Ursachenbewertung CP08-V10:**
+- Das Backendlog von CP08-V9 ist exakt **4076 Bytes** groß.
+- Das Backendlog von CP08-V10 ist ebenfalls exakt **4076 Bytes** groß.
+- Beide Logs enden unmittelbar nach `POST /documents/versions/J04-ACCEPT-DOC/1/comments 200 OK`.
+- Der nachfolgende GET-Aufruf (`pdf_comment_flow`) timed out vor den Response-Headern.
+- Der Harness startete das Backend mit `stdout=subprocess.PIPE` — die Pipe wurde erst bei
+  `stop_process`/`cleanup` gelesen, nicht kontinuierlich.
+- Ein Windows-PIPE-Buffer läuft nach ausreichend Backend-Output (>4 KiB) voll; der Backend-
+  Prozess blockiert dann beim nächsten `write()`, kann keine neuen HTTP-Requests mehr
+  bearbeiten, und der Client erhält nie die Response-Header.
+- **Die stdout-Pipe-Backpressure im Acceptance-Harness ist die führende und konkret belegte
+  Ursache.** Die bisherige allgemeine Windows-Socket-Hypothese ist nicht mehr als abschließende
+  Erklärung gültig.
+- **Ein Produktdefekt im Kommentarpfad ist nicht nachgewiesen.**
+
+**Historischer erster R1-Fehlversuch:**
+- Gate A `20260819T171454220Z` endete rot: **9 tests / 5 failures / 0 errors**.
+- Alle fünf Failures hatten dieselbe Ursache:
+  `UnboundLocalError: cannot access local variable 'output' where it is not associated with a value`.
+- Ursache: `_drain_and_log()` fiel im Backend-Drainer-Zweig nach Join/Fehlerprüfung
+  fälschlich weiter in den Nicht-Drainer-Schreibpfad und referenzierte dort `output`,
+  obwohl Live-Logpersistenz im Drainer-Zweig bereits abgeschlossen war.
+
+**Behebung MR09-R3:**
+- `_BackendStdoutDrainer`-Klasse in `j04_m0_realprocess_harness.py` eingebaut: liest die
+  Backend-PIPE kontinuierlich in einem Daemon-Thread, redigiert jede Zeile sofort mit
+  `redact_log_text` und schreibt sie sofort in das PID-bezogene Log.
+- `start_backend` startet den Drainer unmittelbar nach `Popen`.
+- `stop_process`/`cleanup` joinen den Thread (Timeout `_READER_JOIN_TIMEOUT`), prüfen
+  `is_alive()` verbindlich und propagieren Reader-Fehler als `HarnessError`.
+- Client-Worker-Prozesse erhalten keinen Drainer; ihr `communicate()`-JSON-Protokoll bleibt
+  unverändert.
+
+**Eng begrenzte Korrektur MR09-R3-R1:**
+- `_drain_and_log()` trennt die Verantwortlichkeiten jetzt sichtbar:
+  Backend-Drainer-Zweig: Thread abschließen, Alive-/Timeout- und Readerfehler prüfen,
+  dann **sofort zurückkehren**.
+- Nur Prozesse **ohne** Drainer lesen dort verbliebene stdout und schreiben sie ins PID-Log.
+- Keine erneute oder überschreibende Backend-Logpersistenz im Drainer-Zweig.
+
+**Geänderter Dateisatz:**
+1. `tests/acceptance/j04_m0_realprocess_harness.py` — Drainer-Klasse und Harness-Erweiterung
+2. `tests/acceptance/test_j04_m0_harness_unit.py` — 9 neue/geschärfte Tests
+   (Backpressure, Live-Logsichtbarkeit, Redaction, Client-Worker-Abgrenzung,
+   Stop/Cleanup, Backend-Restart, Join-Timeout, Reader-Fehler)
+
+**Gate-Ergebnisse:**
+
+| Gate | Stamp | Ergebnis |
+| --- | --- | --- |
+| A0 – historischer erster R1-Versuch | `20260819T171454220Z` | **9 tests / 5 failures / 0 errors** — `UnboundLocalError` in `_drain_and_log()` |
+| A – kompletter R1-Fokus | `20260819T172254282Z` | **9 passed / 0 failed / 0 errors** |
+| B – Acceptance-Infrastruktur | `20260819T172314505Z` | **60 passed / 0 failed / 0 errors** |
+| C – vollständige nicht-live Regression | `20260819T172346447Z` | **1263 tests / 0 failed / 0 errors / 20 skipped** |
+
+**Status:** MR09-R3-R1 **PASS**. MR09-R3 **PASS**.
+**Aktiver Candidate:** keiner. Wegen der Harnessänderung ist `08b04e6` nur noch historisch.
+Neuer Commit-/Candidate-Freeze und neue ausdrückliche Einmalfreigabe für CP08-V11 erforderlich.
+**Parent MR09:** IN_PROGRESS. **Gesamtstatus:** NOT_READY. MR10: TODO. Accepted: unset.
+
+## CP08-V10 — Final acceptance attempt (FAILED / NOT_READY)
+
+**Lauf-SHA:** `a15cb3fbb16a277944a8c87500fea7576a1486be` (HEAD zum Laufzeitpunkt)
+**CandidateSha:** `08b04e6fe28ee86e71759440236b5ca10711fa1a`
+**Stamp:** `20260819T155102306Z`
+**Runner-Exitcode:** 1
+**Guard-Identität:** `database=qmtool_j04_destructive_test`, `major=18`, `port=5432`, `marker=j04_m0_destructive_pg16`, `reset_present=False`
+**Workspace:** `build/j04-m0-closure/cp08-realprocess-ws/20260819T135237145371Z-6fb9ce8809cd484a9c9356a33bc89731/`
+**Evidence:** `build/j04-m0-closure/mr09-cp08-v10-results-20260819T155102306Z/runner.log`
+
+| Schritt | Name | Status | Detail |
+| --- | --- | --- | --- |
+| 1 | preconditions | PASS | port free; pg preflight ok major=18 |
+| 2 | pg_bootstrap | PASS | isolated PG schema migrated |
+| 3 | backend_start | PASS | backend ready status=200 |
+| 4 | health_and_openapi | PASS | health and dev openapi reachable |
+| 5 | bootstrap_admin_login | PASS | bootstrap admin session user=j04acceptadmin |
+| 6 | seed_directory_users | PASS | directory users seeded and login verified |
+| 7 | seed_workflow_profile | PASS | workflow profile ready code=j04_accept_flow_profile |
+| 8 | client_process_sessions | PASS | two client processes with distinct homes and token fingerprints |
+| 9 | document_baseline_flow | PASS | document J04-ACCEPT-DOC in progress etag=a92036dd-b7ea-43... |
+| 10 | etag_concurrency_race | PASS | one winner and one 409 on shared etag |
+| 11 | artifacts_transport | PASS | artifact content verified id=337bd3e3... sha256=f3efecf350... |
+| 12 | signature_verify_password | PASS | editor, reviewer, and approver signature assets active and verified |
+| 13 | signed_editing_complete | PASS | signed editing-complete fail-closed then reached IN_REVIEW |
+| **14** | **pdf_comment_flow** | **FAIL** | **GET /documents/versions/J04-ACCEPT-DOC/1/comments?context=PDF_REVIEW timed out vor Response-Headern** |
+| 15 | docx_comment_sync | NOT RUN | — |
+| 16 | signed_review_approval | NOT RUN | — |
+| 17 | backend_restart | NOT RUN | — |
+| 18 | persistence_and_session_contract | NOT RUN | — |
+
+**Erste Fehlerstelle:** Schritt 14 `pdf_comment_flow` — GET auf Kommentar-Endpunkt Timeout vor Response-Headern.
+Der POST-Aufruf (Kommentar-Erstellung) hatte in MR09-R2 erfolgreich persistiert (SQLite-Diagnose bestätigt).
+Der nachfolgende GET-Aufruf zum Listen der Kommentare timed out konsistent — dies ist dieselbe Fehlerklasse
+wie in MR09-R1.
+
+**Endzustand:** FAIL. Schritte 1–13 grün, Schritt 14 ist blockierendes Fail-fast.
+APPROVED, SIGNED_PDF, RELEASED_PDF, Restart, Session-Persistenz: **NOT REACHED**.
+
+**Parent MR09:** IN_PROGRESS und nicht bestanden.
+**Current checkpoint:** MR09.
+**Gesamtstatus:** NOT_READY. MR10: TODO. Accepted: unset.
+
+**Cleanup nach Lauf:**
+- `QMTOOL_J04_FINAL_ACCEPTANCE`: entfernt aus Elternprozess ✓
+- `QMTOOL_PG_TEST_RESET`: nicht gesetzt ✓
+- Pytest-Prozesse: 0 ✓
+- Port 8000: TimeWait (kein aktiver Listener) — sachlich erwartet nach Backend-Shutdown ✓
+
+**Einmalfreigabe:** verbraucht (Runner wurde gestartet). Neue Remediation (MR09-R3) und neue
+ausdrückliche Einmalfreigabe erforderlich vor einem weiteren CP08-Lauf.
 
 ## Governance
 

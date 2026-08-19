@@ -89,7 +89,7 @@ Current checkpoint: MR09
 | MR06 | DOCX-Kommentarsynchronisation stabilisieren | PASS | `3bf6518` | 71 passed; `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml` | pending user approval |
 | MR07 | Realprocess-Harness auf verbindlichen M0-Scope bringen | PASS | `3bf6518` | 75 passed; `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml` | pending user approval |
 | MR08 | Gesamte Regression und Candidate Freeze | PASS | `3bf6518` | 988 passed / 20 skipped; freeze regression `build/j04-m0-closure/mr08-freeze-regression-results-20260818T193330926Z/junit.xml`; CandidateSha `4db97ea72ffcb18823cd610599752cc1c8e8716d` | `4db97ea` |
-| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; CandidateSha `08b04e6`; CP08-V10 NOT RUN | `08b04e6` |
+| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; CP08-V10 FAILED (Pipe-Backpressure); MR09-R3 und MR09-R3-R1 PASS (Harness-Fix); kein aktiver Candidate; neuer Freeze erforderlich | — |
 | MR10 | Packaging, Golive, Human Gate und Merge | TODO | — | — | — |
 
 <!-- J04_M0_MERGE_LEDGER_END -->
@@ -1396,6 +1396,52 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
 - **Freeze-Regression und bisherige Evidence:** unverändert
 - **Kein neuer Freeze, keine neue Candidate-Nummer, keine Code- oder Teständerung**
 - **Parent MR09:** IN_PROGRESS; CP08-V10: NOT RUN; Gesamtstatus: NOT_READY
+
+### CP08-V10 — Einmaliger destruktiver Lauf (FAILED)
+
+- **Lauf-SHA:** `a15cb3fbb16a277944a8c87500fea7576a1486be`
+- **CandidateSha:** `08b04e6fe28ee86e71759440236b5ca10711fa1a` (unverändert)
+- **Stamp:** `20260819T155102306Z`
+- **Guard-Identität:** `database=qmtool_j04_destructive_test`, `major=18`, `port=5432`, `marker=j04_m0_destructive_pg16`
+- **Runner-Exitcode:** 1
+- **Workspace:** `build/j04-m0-closure/cp08-realprocess-ws/20260819T135237145371Z-6fb9ce8809cd484a9c9356a33bc89731/`
+- **Evidence:** `build/j04-m0-closure/mr09-cp08-v10-results-20260819T155102306Z/runner.log`
+- **Schritte 1–13:** PASS
+- **Schritt 14 `pdf_comment_flow`:** **FAIL** — GET Kommentar-Endpunkt Timeout vor Response-Headern
+- **Schritte 15–18:** NOT RUN (Fail-fast)
+- **Einmalfreigabe:** verbraucht; Ergebnis: FAILED
+- **Parent MR09:** bleibt IN_PROGRESS und nicht bestanden
+- **Current checkpoint:** MR09
+- **Gesamtstatus:** NOT_READY; MR10 TODO; Accepted unset
+- **Nächster Schritt:** MR09-R3-R1 abgeschlossen (siehe unten); neuer Commit-/Candidate-Freeze erforderlich
+
+### MR09-R3 / MR09-R3-R1 — Harness stdout-Pipe-Backpressure behoben (PASS)
+
+- **Ursache CP08-V10:** Backend-stdout-Pipe wurde erst bei `cleanup` gelesen; Pipe-Buffer lief
+  voll (~4076 Bytes) → Backend blockierte → GET-Request timed out vor Response-Headern.
+- **Backendlog-Größe CP08-V9 und CP08-V10:** jeweils exakt **4076 Bytes**; beide enden nach
+  dem erfolgreichen Kommentar-POST. Dies ist der direkte Nachweis der Backpressure.
+- **Produktdefekt:** nicht nachgewiesen.
+- **Windows-Socket-Flake:** nicht mehr als abschließende Erklärung gültig.
+- **Historischer erster R1-Versuch:** Gate A `20260819T171454220Z` rot — **9 tests / 5 failures / 0 errors**;
+  gemeinsame Ursache: `UnboundLocalError` in `_drain_and_log()`.
+- **Behebung MR09-R3:** `_BackendStdoutDrainer`-Klasse in `j04_m0_realprocess_harness.py`;
+  kontinuierlicher Reader-Thread pro Backendprozess; sofortige Redaktion mit `redact_log_text`
+  und Live-Logpersistenz ins PID-Log.
+- **Enge Korrektur MR09-R3-R1:** `_drain_and_log()` kehrt im Drainer-Zweig nach Join-/Timeout-/
+  Readerfehlerprüfung sofort zurück; nur nicht gestreamte Prozesse lesen dort noch stdout und
+  schreiben einmalig ins PID-Log.
+- **Geänderter Dateisatz:**
+  - `tests/acceptance/j04_m0_realprocess_harness.py`
+  - `tests/acceptance/test_j04_m0_harness_unit.py` (9 fokussierte R1-Tests)
+- **Gate A0** (`20260819T171454220Z`): **9 tests / 5 failures / 0 errors** — historisch rot
+- **Gate A** (`20260819T172254282Z`): **9 passed / 0 failed / 0 errors**
+- **Gate B** (`20260819T172314505Z`): **60 passed / 0 failed / 0 errors**
+- **Gate C** (`20260819T172346447Z`): **1263 tests / 0 failed / 0 errors / 20 skipped**
+- **Kein Commit, kein Staging, kein Candidate-Freeze**
+- **Aktiver Candidate:** keiner — `08b04e6` ist historisch ungültig nach Harnessänderung
+- **Parent MR09:** IN_PROGRESS; Gesamtstatus: NOT_READY; MR10: TODO; Accepted: unset
+- **Nächster Schritt:** neue ausdrückliche Commit-/Candidate-Freeze-Freigabe, danach CP08-V11
 
 ### MR10 — Packaging, Golive, Human Gate und Merge
 
