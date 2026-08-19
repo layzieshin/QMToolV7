@@ -19,11 +19,11 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-**Es existiert derzeit kein aktiver Candidate.**
+Aktiver CandidateSha: **`08b04e6fe28ee86e71759440236b5ca10711fa1a`** (`08b04e6`) —
+`docs(j04-m0): freeze MR09 retry candidate`.
 
 `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`) ist ausschließlich der
-historische **MR08-Candidate-Freeze**. Seit diesem SHA wurden Acceptance- und
-Testdateien geändert; er ist damit für einen weiteren CP08-Lauf ungültig.
+historische **MR08-Candidate-Freeze** und für weitere CP08-Läufe ungültig.
 
 Verlauf seit `4db97ea`:
 
@@ -43,8 +43,6 @@ Verlauf seit `4db97ea`:
   1254 passed / 0 failed / 20 skipped; stamp `20260819T150534010Z`.
 - **Parent MR09** bleibt **IN_PROGRESS und nicht bestanden**.
 
-Aktiver CandidateSha: **`08b04e6fe28ee86e71759440236b5ca10711fa1a`** (`08b04e6`).
-Historischer MR08-Candidate `4db97ea` bleibt ausschließlich Historie.
 CP08-V10: **NOT RUN** — benötigt neue ausdrückliche Einmalfreigabe.
 Gesamtstatus: **NOT_READY**. `ACCEPTED` ist nicht gesetzt.
 Current checkpoint: **MR09**.

@@ -1384,7 +1384,18 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
 - **Freeze-Ausgangslage:** MR09-R2 bis R2-R4 PASS; Parent MR09 IN_PROGRESS; NOT_READY; kein Push, kein PR, kein CP08-Lauf
 - **CP08-V10:** NOT RUN — benötigt neue ausdrückliche Einmalfreigabe
 - **Gesamtstatus:** NOT_READY; MR10 TODO; Accepted unset
-- **Nächster Schritt:** unabhängige Prüfung; danach separate destruktive CP08-V10-Freigabe
+- **Nächster Schritt:** MR09-Freeze-R1 (docs-only Widerspruchskorrektur), danach separate destruktive CP08-V10-Freigabe
+
+### MR09-Freeze-R1 — Aktiven Candidate-Status konsolidieren
+
+- **Korrektur:** Im ersten Candidate-Abschnitt des Acceptance Reports standen gleichzeitig
+  „Es existiert derzeit kein aktiver Candidate" (veraltet) und `08b04e6` als aktiver CandidateSha.
+  Die veraltete Aussage wurde entfernt; der Abschnitt führt jetzt genau eine eindeutige
+  aktive Candidate-Erklärung.
+- **CandidateSha:** `08b04e6fe28ee86e71759440236b5ca10711fa1a` — **unverändert**
+- **Freeze-Regression und bisherige Evidence:** unverändert
+- **Kein neuer Freeze, keine neue Candidate-Nummer, keine Code- oder Teständerung**
+- **Parent MR09:** IN_PROGRESS; CP08-V10: NOT RUN; Gesamtstatus: NOT_READY
 
 ### MR10 — Packaging, Golive, Human Gate und Merge
 
