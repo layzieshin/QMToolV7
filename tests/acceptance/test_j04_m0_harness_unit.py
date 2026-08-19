@@ -1,6 +1,7 @@
 """Unit tests for the J04-M0 real-process harness (no full final acceptance run)."""
 from __future__ import annotations
 
+import io
 import json
 import socket
 import subprocess
@@ -19,7 +20,9 @@ from tests.acceptance.j04_m0_realprocess_harness import (
     FINAL_ACCEPTANCE_ENV,
     FINAL_ACCEPTANCE_OPT_IN,
     HarnessBlockedError,
+    HarnessError,
     J04M0RealProcessHarness,
+    _BackendStdoutDrainer,
     assert_backend_port_free,
     is_port_free,
     redact_log_text,
@@ -220,3 +223,348 @@ def test_harness_wait_for_health_succeeds_against_mock_server(
     finally:
         server.shutdown()
         thread.join(timeout=2.0)
+
+
+# ---------------------------------------------------------------------------
+# MR09-R3: stdout-Drain tests
+# ---------------------------------------------------------------------------
+
+# Size well above typical pipe buffer (64 KiB on Windows); 300 KiB ensures backpressure.
+_LARGE_OUTPUT_BYTES = 300 * 1024
+_SENTINEL = "DRAIN_SENTINEL_END_OF_OUTPUT"
+
+
+def _make_large_output_script() -> str:
+    """Return Python source that writes >256 KiB then the sentinel to stdout."""
+    return (
+        "import sys\n"
+        f"sys.stdout.write('X' * {_LARGE_OUTPUT_BYTES})\n"
+        f"sys.stdout.write('\\n{_SENTINEL}\\n')\n"
+        "sys.stdout.flush()\n"
+    )
+
+
+def _wait_for_log_contains(path: Path, needle: str, *, timeout: float = 5.0) -> str:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.exists():
+            content = path.read_text(encoding="utf-8")
+            if needle in content:
+                return content
+        time.sleep(0.05)
+    pytest.fail(f"log did not contain expected text within timeout: {needle}")
+
+
+def _register_backend_process(
+    harness: J04M0RealProcessHarness,
+    popen: subprocess.Popen[str],
+) -> tuple[object, Path]:
+    assert popen.pid is not None
+    log_path = harness.log_dir / f"backend-{popen.pid}.log"
+    drainer = _BackendStdoutDrainer(popen, log_path)
+    managed = harness._register_process(
+        popen,
+        label="backend",
+        drainer=drainer,
+        log_path=log_path,
+    )
+    return managed, log_path
+
+
+def test_backend_drain_handles_pipe_backpressure_without_blocking(tmp_path: Path) -> None:
+    """Backend stdout drain must consume >256 KiB without blocking the process."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    script = _make_large_output_script()
+    popen = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    managed, log_path = _register_backend_process(harness, popen)
+
+    # Wait for the subprocess to finish; without a drain it would block indefinitely.
+    try:
+        popen.wait(timeout=15.0)
+    except subprocess.TimeoutExpired:
+        popen.kill()
+        popen.wait()
+        pytest.fail(
+            "subprocess blocked: stdout PIPE not drained (pipe backpressure not resolved)"
+        )
+
+    harness.cleanup()
+
+    assert log_path.exists(), "backend log was not written"
+    content = log_path.read_text(encoding="utf-8")
+    assert _SENTINEL in content, "sentinel not found in drained log"
+    assert len(content) >= _LARGE_OUTPUT_BYTES, (
+        f"log too short: expected >={_LARGE_OUTPUT_BYTES}, got {len(content)}"
+    )
+
+
+def test_backend_drain_without_reader_blocks_on_large_output() -> None:
+    """Control: reading stdout only at cleanup (no drainer) must not complete in time.
+
+    This confirms the test above is a meaningful regression guard: without continuous
+    draining, a large write to a PIPE causes the subprocess to block.
+    """
+    script = _make_large_output_script()
+    popen = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    blocked = False
+    try:
+        popen.wait(timeout=3.0)
+    except subprocess.TimeoutExpired:
+        blocked = True
+    finally:
+        popen.kill()
+        popen.wait()
+        # Drain the pipe so the OS releases resources, but discard contents.
+        try:
+            popen.stdout.read()  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001
+            pass
+
+    assert blocked, (
+        "subprocess finished without blocking even without a drain — "
+        "pipe buffer may be unusually large on this system; test assumption violated"
+    )
+
+
+def test_backend_drain_redacts_secrets_in_log(tmp_path: Path) -> None:
+    """Output written by the backend is stored redacted; raw secrets must not appear."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    secret_bearer = "Bearer super-secret-token-abc123"
+    secret_dsn = "postgresql://admin:hunter2@127.0.0.1:5432/mydb"
+    secret_pw = "password=topsecret"
+    script = (
+        "import sys\n"
+        f"sys.stdout.write({secret_bearer!r} + '\\n')\n"
+        f"sys.stdout.write({secret_dsn!r} + '\\n')\n"
+        f"sys.stdout.write({secret_pw!r} + '\\n')\n"
+        "sys.stdout.flush()\n"
+    )
+    popen = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    managed, log_path = _register_backend_process(harness, popen)
+    content_during_run = _wait_for_log_contains(log_path, "<redacted>")
+    popen.wait(timeout=10.0)
+    harness.cleanup()
+
+    assert log_path.exists()
+    content = log_path.read_text(encoding="utf-8")
+    assert "super-secret-token-abc123" not in content_during_run
+    assert "hunter2" not in content_during_run
+    assert "topsecret" not in content_during_run
+
+    assert "super-secret-token-abc123" not in content
+    assert "hunter2" not in content
+    assert "topsecret" not in content
+    assert "<redacted>" in content
+
+
+def test_client_worker_stdout_not_consumed_by_drainer(tmp_path: Path) -> None:
+    """Client worker processes must NOT be given a drainer; their stdout must remain
+    available for communicate()-based JSON reads."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    payload = '{"ok": true, "value": 42}'
+    script = f"import sys; sys.stdout.write({payload!r}); sys.stdout.flush()"
+    popen = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    # Register WITHOUT drainer — exactly as start_client_worker does.
+    managed = harness._register_process(popen, label="client-worker", drainer=None)
+    assert managed._drainer is None, "client worker must not have a drainer"
+
+    stdout_data, _ = popen.communicate(timeout=10.0)
+    assert stdout_data == payload
+
+    harness.cleanup()
+
+
+def test_backend_drain_stop_and_cleanup_no_leaks(tmp_path: Path) -> None:
+    """stop_process joins the reader; no thread remains alive after cleanup."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    popen = subprocess.Popen(
+        [sys.executable, "-c", "import sys; sys.stdout.write('hello\\n'); sys.stdout.flush()"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    managed, _log_path = _register_backend_process(harness, popen)
+    popen.wait(timeout=10.0)
+
+    harness.stop_process("backend")
+
+    assert managed._drainer is not None
+    assert not managed._drainer.is_alive(), "reader thread still alive after stop_process"
+    assert harness._processes == [], "process list not cleared after stop_process"
+
+    # A second cleanup must be a no-op (no double-read or crash).
+    harness.cleanup()
+
+
+def test_backend_restart_separate_logs_no_old_reader_leak(tmp_path: Path) -> None:
+    """Two sequential backend starts produce separate logs; first reader is dead before second."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+
+    def _start_echo(message: str) -> tuple[subprocess.Popen[str], object, Path]:
+        script = (
+            f"import sys; sys.stdout.write({(message + chr(10))!r}); sys.stdout.flush()"
+        )
+        popen = subprocess.Popen(
+            [sys.executable, "-c", script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        managed, log_path = _register_backend_process(harness, popen)
+        return popen, managed, log_path
+
+    popen1, managed1, log1 = _start_echo("FIRST_BACKEND_OUTPUT")
+    popen1.wait(timeout=10.0)
+    pid1 = managed1.pid
+
+    harness.stop_process("backend")
+    assert managed1._drainer is not None
+    assert not managed1._drainer.is_alive(), "first reader still alive after stop"
+
+    popen2, managed2, log2 = _start_echo("SECOND_BACKEND_OUTPUT")
+    popen2.wait(timeout=10.0)
+    pid2 = managed2.pid
+
+    harness.cleanup()
+    assert managed2._drainer is not None
+    assert not managed2._drainer.is_alive(), "second reader still alive after cleanup"
+
+    assert log1.exists(), "log for first backend missing"
+    assert log2.exists(), "log for second backend missing"
+    assert "FIRST_BACKEND_OUTPUT" in log1.read_text(encoding="utf-8")
+    assert "SECOND_BACKEND_OUTPUT" in log2.read_text(encoding="utf-8")
+    assert "SECOND_BACKEND_OUTPUT" not in log1.read_text(encoding="utf-8")
+
+
+def test_backend_drain_live_log_visibility_while_process_runs(tmp_path: Path) -> None:
+    """Evidence must be visible before process exit, not only after cleanup."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    script = (
+        "import sys, time\n"
+        "sys.stdout.write('READY_SENTINEL\\n')\n"
+        "sys.stdout.flush()\n"
+        "time.sleep(1.5)\n"
+        "sys.stdout.write('END_SENTINEL\\n')\n"
+        "sys.stdout.flush()\n"
+    )
+    popen = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    _managed, log_path = _register_backend_process(harness, popen)
+
+    content_while_running = _wait_for_log_contains(log_path, "READY_SENTINEL")
+    assert "READY_SENTINEL" in content_while_running
+    assert popen.poll() is None, "process already exited; did not prove live persistence"
+
+    popen.wait(timeout=10.0)
+    harness.cleanup()
+    final_content = log_path.read_text(encoding="utf-8")
+    assert "END_SENTINEL" in final_content
+
+
+def test_backend_drain_join_timeout_raises_harness_error(tmp_path: Path) -> None:
+    """A still-alive reader after join timeout must fail cleanup/stop, not pass silently."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+
+    class _HungDrainer:
+        def join(self, timeout: float = 10.0) -> None:
+            return
+
+        def is_alive(self) -> bool:
+            return True
+
+        def get_error(self) -> Exception | None:
+            return None
+
+    popen = subprocess.Popen(
+        [sys.executable, "-c", "print('done')"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    popen.wait(timeout=10.0)
+    managed = harness._register_process(
+        popen,
+        label="backend",
+        drainer=_HungDrainer(),  # type: ignore[arg-type]
+        log_path=harness.log_dir / f"backend-{popen.pid}.log",
+    )
+
+    with pytest.raises(HarnessError, match="did not stop within timeout"):
+        harness.cleanup()
+    assert harness._processes == []
+    assert managed.popen.poll() is not None
+
+
+def test_backend_drain_reader_error_surfaces_via_cleanup(tmp_path: Path) -> None:
+    """A drainer read error must surface through cleanup() after best-effort cleanup."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+
+    # Build a mock popen whose stdout raises on read.
+    mock_stdout = MagicMock(spec=io.TextIOWrapper)
+    mock_stdout.__iter__ = MagicMock(side_effect=OSError("simulated pipe read error"))
+
+    mock_popen = MagicMock(spec=subprocess.Popen)
+    mock_popen.pid = 99999
+    mock_popen.stdout = mock_stdout
+    mock_popen.poll.return_value = 0
+
+    drainer = _BackendStdoutDrainer(
+        mock_popen,  # type: ignore[arg-type]
+        harness.log_dir / "backend-99999.log",
+    )
+    drainer.join(timeout=5.0)  # let the thread finish with the error
+
+    err = drainer.get_error()
+    assert err is not None, "drainer did not capture the simulated read error"
+    assert isinstance(err, OSError)
+
+    managed = harness._register_process(
+        mock_popen,  # type: ignore[arg-type]
+        label="backend",
+        drainer=drainer,
+        log_path=harness.log_dir / "backend-99999.log",
+    )
+    mock_popen.poll.return_value = 0  # already exited
+
+    other = subprocess.Popen(
+        [sys.executable, "-c", "print('other process')"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    other.wait(timeout=10.0)
+    harness._register_process(other, label="client-worker")
+
+    with pytest.raises(HarnessError, match="OSError") as exc_info:
+        harness.cleanup()
+
+    msg = str(exc_info.value)
+    assert "OSError" in msg
+    assert "simulated pipe read error" not in msg
+    assert harness._processes == []
+    assert managed.popen.poll() is not None
+    harness.cleanup()

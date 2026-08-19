@@ -10,6 +10,7 @@ import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 import urllib.error
@@ -124,11 +125,56 @@ def require_final_acceptance_opt_in() -> None:
         )
 
 
+_READER_JOIN_TIMEOUT = 10.0  # seconds to wait for drain thread after process ends
+
+
+class _BackendStdoutDrainer:
+    """Continuously reads a backend process's stdout PIPE into a redacted log file.
+
+    Runs in a daemon thread so it never blocks the orchestration loop. Only used for
+    backend processes; client workers keep their stdout for communicate()-based JSON reads.
+    """
+
+    def __init__(self, popen: subprocess.Popen[str], log_path: Path) -> None:
+        self._popen = popen
+        self._log_path = log_path
+        self._lock = threading.Lock()
+        self._error: Exception | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            pipe = self._popen.stdout
+            if pipe is None:
+                return
+            with self._log_path.open("w", encoding="utf-8") as handle:
+                for line in pipe:
+                    redacted = redact_log_text(line)
+                    handle.write(redacted)
+                    handle.flush()
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                self._error = exc
+
+    def join(self, timeout: float = _READER_JOIN_TIMEOUT) -> None:
+        self._thread.join(timeout=timeout)
+
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def get_error(self) -> Exception | None:
+        with self._lock:
+            return self._error
+
+
 @dataclass
 class ManagedProcess:
     pid: int
     popen: subprocess.Popen[str]
     label: str
+    _drainer: _BackendStdoutDrainer | None = field(default=None, repr=False)
+    _log_path: Path | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -163,10 +209,23 @@ class J04M0RealProcessHarness:
         path.write_text(redact_log_text(content), encoding="utf-8")
         return path
 
-    def _register_process(self, popen: subprocess.Popen[str], *, label: str) -> ManagedProcess:
+    def _register_process(
+        self,
+        popen: subprocess.Popen[str],
+        *,
+        label: str,
+        drainer: _BackendStdoutDrainer | None = None,
+        log_path: Path | None = None,
+    ) -> ManagedProcess:
         if popen.pid is None:
             raise HarnessStartupError(f"{label} subprocess did not receive a PID")
-        managed = ManagedProcess(pid=int(popen.pid), popen=popen, label=label)
+        managed = ManagedProcess(
+            pid=int(popen.pid),
+            popen=popen,
+            label=label,
+            _drainer=drainer,
+            _log_path=log_path,
+        )
         self._processes.append(managed)
         return managed
 
@@ -187,7 +246,17 @@ class J04M0RealProcessHarness:
             stderr=subprocess.STDOUT,
             text=True,
         )
-        return self._register_process(popen, label="backend")
+        assert self.log_dir is not None
+        if popen.pid is None:
+            raise HarnessStartupError("backend subprocess did not receive a PID")
+        log_path = self.log_dir / f"backend-{int(popen.pid)}.log"
+        drainer = _BackendStdoutDrainer(popen, log_path)
+        return self._register_process(
+            popen,
+            label="backend",
+            drainer=drainer,
+            log_path=log_path,
+        )
 
     def wait_for_health(self, *, timeout_seconds: float = 30.0) -> dict[str, Any]:
         url = f"{self.backend_url.rstrip('/')}/health"
@@ -235,9 +304,52 @@ class J04M0RealProcessHarness:
         )
         return self._register_process(popen, label=label)
 
+    def _drain_and_log(self, managed: ManagedProcess) -> None:
+        """Finalize process output handling.
+
+        Backend processes already stream redacted stdout into their PID log via the
+        drainer thread; here we only join that thread and surface timeout/read errors.
+        Non-streamed processes still have their remaining stdout read here and written
+        once into the PID-scoped log.
+        """
+        drainer = managed._drainer
+        if drainer is not None:
+            drainer.join(timeout=_READER_JOIN_TIMEOUT)
+            if drainer.is_alive():
+                if managed.popen.stdout is not None:
+                    try:
+                        managed.popen.stdout.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                drainer.join(timeout=1.0)
+            if drainer.is_alive():
+                raise HarnessError(
+                    f"backend stdout reader for pid={managed.pid} did not stop within timeout"
+                )
+            err = drainer.get_error()
+            if err is not None:
+                raise HarnessError(
+                    f"backend stdout reader for pid={managed.pid} "
+                    f"encountered an error: {type(err).__name__}"
+                )
+            return
+        else:
+            output = ""
+            if managed.popen.stdout is not None:
+                try:
+                    output = managed.popen.stdout.read() or ""
+                except Exception:  # noqa: BLE001
+                    output = ""
+            output = redact_log_text(output)
+        if output and self.log_dir is not None:
+            log_name = f"{managed.label}-{managed.pid}.log"
+            path = self.log_dir / log_name
+            path.write_text(output, encoding="utf-8")
+
     def stop_process(self, label: str, *, grace_seconds: float = 5.0) -> None:
         """Terminate and detach a single managed process by label."""
         remaining: list[ManagedProcess] = []
+        errors: list[HarnessError] = []
         for managed in self._processes:
             if managed.label == label:
                 popen = managed.popen
@@ -248,19 +360,18 @@ class J04M0RealProcessHarness:
                     except subprocess.TimeoutExpired:
                         popen.kill()
                         popen.wait(timeout=2.0)
-                output = ""
-                if popen.stdout is not None:
-                    try:
-                        output = popen.stdout.read() or ""
-                    except Exception:  # noqa: BLE001
-                        output = ""
-                if output and self.log_dir is not None:
-                    self.write_log(f"{managed.label}-{managed.pid}.log", output)
+                try:
+                    self._drain_and_log(managed)
+                except HarnessError as exc:
+                    errors.append(exc)
             else:
                 remaining.append(managed)
         self._processes = remaining
+        if errors:
+            raise errors[0]
 
     def cleanup(self, *, grace_seconds: float = 5.0) -> None:
+        errors: list[HarnessError] = []
         for managed in reversed(self._processes):
             popen = managed.popen
             if popen.poll() is not None:
@@ -271,22 +382,20 @@ class J04M0RealProcessHarness:
             popen = managed.popen
             if popen.poll() is not None:
                 continue
-            remaining = max(0.0, deadline - time.monotonic())
+            remaining_t = max(0.0, deadline - time.monotonic())
             try:
-                popen.wait(timeout=remaining)
+                popen.wait(timeout=remaining_t)
             except subprocess.TimeoutExpired:
                 popen.kill()
                 popen.wait(timeout=2.0)
         for managed in self._processes:
-            output = ""
-            if managed.popen.stdout is not None:
-                try:
-                    output = managed.popen.stdout.read() or ""
-                except Exception:  # noqa: BLE001
-                    output = ""
-            if output and self.log_dir is not None:
-                self.write_log(f"{managed.label}-{managed.pid}.log", output)
+            try:
+                self._drain_and_log(managed)
+            except HarnessError as exc:
+                errors.append(exc)
         self._processes.clear()
+        if errors:
+            raise errors[0]
 
     def __enter__(self) -> J04M0RealProcessHarness:
         return self
