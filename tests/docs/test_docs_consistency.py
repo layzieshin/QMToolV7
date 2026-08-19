@@ -6,6 +6,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
+J04_M0_REPORT = DOCS / "J04_M0_ACCEPTANCE_REPORT.md"
+
+# Matches the detail-section header for any MR09 remediation sub-step,
+# e.g. "### MR09-R2-R3 — …"
+_MR09_REMEDIATION_SECTION_RE = re.compile(
+    r"^###\s+(MR09-R\d+-R\d+)\s+—.*$", re.MULTILINE
+)
+# Matches "- **Status:** PASS" / "IN_PROGRESS" etc. in a detail section
+_SECTION_STATUS_RE = re.compile(r"^-\s+\*\*Status:\*\*\s+(\S+)", re.MULTILINE)
 
 P0_DOCS = [
     ROOT / "README.md",
@@ -183,3 +192,201 @@ def test_j04_m0_merge_ledger_is_consistent() -> None:
         assert all(row["status"] == "PASS" for row in rows)
     else:
         assert current == first_open
+
+
+def _last_mr09_remediation_checkpoint(checklist_text: str) -> tuple[str, str]:
+    """Return (name, status) of the last MR09-R*-R* detail section in the checklist.
+
+    The section name is e.g. "MR09-R2-R4". The status is the value on the
+    "- **Status:** …" line immediately following that header (first occurrence
+    within the section, before the next ``###`` header).
+    """
+    matches = list(_MR09_REMEDIATION_SECTION_RE.finditer(checklist_text))
+    assert matches, "no MR09 remediation detail section found in checklist"
+    last_match = matches[-1]
+    section_name = last_match.group(1)
+    # Text from the header to the next ### header (or end of file)
+    section_start = last_match.end()
+    next_header = checklist_text.find("\n###", section_start)
+    section_body = (
+        checklist_text[section_start:next_header]
+        if next_header != -1
+        else checklist_text[section_start:]
+    )
+    status_match = _SECTION_STATUS_RE.search(section_body)
+    assert status_match, (
+        f"no '- **Status:** …' line found in section {section_name!r}"
+    )
+    return section_name, status_match.group(1)
+
+
+# All status keywords that may appear in the report's status clauses.
+_ALL_STATUS_KEYWORDS = frozenset({"PASS", "IN_PROGRESS", "FAILED", "BLOCKED", "TODO"})
+
+
+def _extract_checkpoint_clause_from_top_line(top_line: str, checkpoint: str) -> str:
+    """Return the semicolon-delimited clause within *top_line* that starts with
+    *checkpoint* (or the shortest suffix starting at the checkpoint occurrence).
+
+    The top-line format is a parenthesised list of semicolon-separated clauses, e.g.:
+        … (MR09-R2-R4 IN_PROGRESS: …; MR09-R2-R3 PASS; …)
+    We want only the clause that belongs to *checkpoint*, not neighbouring ones.
+    """
+    idx = top_line.find(checkpoint)
+    assert idx != -1, (
+        f"checkpoint {checkpoint!r} not found in top status line:\n{top_line!r}"
+    )
+    # Take text from the checkpoint occurrence to the next semicolon, closing paren,
+    # or end of line – whichever comes first.
+    fragment = top_line[idx:]
+    end = len(fragment)
+    for delim in (";", ")", "\n"):
+        pos = fragment.find(delim)
+        if pos != -1 and pos < end:
+            end = pos
+    return fragment[:end]
+
+
+def _extract_checkpoint_bullet_from_candidate_section(
+    candidate_section: str, checkpoint: str
+) -> str:
+    """Return the bullet/paragraph in *candidate_section* that begins with
+    *checkpoint*, bounded to the next bullet or end of section.
+
+    Candidate-section bullet format (simplified):
+        - **MR09-R2-R4** (IN_PROGRESS) …
+        - **MR09-R2-R3** … (**PASS**).
+    We look for a line that contains *checkpoint* after a leading ``-`` or ``*``,
+    and return up to (but not including) the next such bullet line.
+    """
+    lines = candidate_section.splitlines(keepends=True)
+    start_idx: int | None = None
+    end_idx: int = len(lines)
+    bullet_re = re.compile(r"^\s*[-*]\s+\*{0,2}" + re.escape(checkpoint))
+    for i, line in enumerate(lines):
+        if bullet_re.match(line):
+            if start_idx is None:
+                start_idx = i
+            elif start_idx is not None:
+                # A second bullet starting with the same checkpoint would be odd,
+                # but we stop at the next distinct bullet if checkpoint already found.
+                end_idx = i
+                break
+        elif start_idx is not None and re.match(r"^\s*[-*]\s+\*{0,2}MR09", line):
+            # Next bullet for a different checkpoint – stop here.
+            end_idx = i
+            break
+    assert start_idx is not None, (
+        f"no bullet starting with {checkpoint!r} found in Candidate section"
+    )
+    return "".join(lines[start_idx:end_idx])
+
+
+def test_acceptance_report_remediation_checkpoint_consistent_with_checklist() -> None:
+    """The top status line and the current Candidate section of the Acceptance Report
+    must agree with the last MR09 remediation checkpoint found in the Checklist.
+
+    The check is performed on the *checkpoint-specific clause / bullet* only, so
+    a status keyword from a neighbouring checkpoint cannot satisfy the assertion.
+    """
+    checklist_text = _read(J04_M0_CHECKLIST)
+    report_text = _read(J04_M0_REPORT)
+
+    checkpoint, status = _last_mr09_remediation_checkpoint(checklist_text)
+
+    # --- top "Current status" line: isolate the checkpoint-specific clause ---
+    top_line_match = re.search(r"^Current status:.*$", report_text, re.MULTILINE)
+    assert top_line_match, "no 'Current status:' line found in Acceptance Report"
+    top_line = top_line_match.group(0)
+    assert checkpoint in top_line, (
+        f"top status line does not mention current remediation checkpoint "
+        f"{checkpoint!r}.\nLine: {top_line!r}"
+    )
+    top_clause = _extract_checkpoint_clause_from_top_line(top_line, checkpoint)
+    assert status in top_clause, (
+        f"top status line clause for {checkpoint!r} does not contain expected "
+        f"status {status!r}.\nClause: {top_clause!r}"
+    )
+    # No other status keyword may appear as the checkpoint's own status in this clause.
+    for other in _ALL_STATUS_KEYWORDS - {status}:
+        # Allow the other keyword if it belongs to a sub-description after a colon,
+        # but not as the direct <checkpoint> <STATUS> pairing.
+        direct_re = re.compile(
+            re.escape(checkpoint) + r"\s+" + re.escape(other)
+        )
+        assert not direct_re.search(top_clause), (
+            f"top status clause for {checkpoint!r} contains unexpected status "
+            f"{other!r} directly after checkpoint name.\nClause: {top_clause!r}"
+        )
+
+    # --- first "Technical acceptance candidate" section: isolate the bullet ---
+    candidate_section_match = re.search(
+        r"^## Technical acceptance candidate\b(.*?)^##\s",
+        report_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert candidate_section_match, (
+        "no 'Technical acceptance candidate' section found in Acceptance Report"
+    )
+    candidate_section = candidate_section_match.group(1)
+    assert checkpoint in candidate_section, (
+        f"Candidate section does not mention current remediation checkpoint "
+        f"{checkpoint!r}"
+    )
+    bullet = _extract_checkpoint_bullet_from_candidate_section(
+        candidate_section, checkpoint
+    )
+    assert status in bullet, (
+        f"Candidate section bullet for {checkpoint!r} does not contain expected "
+        f"status {status!r}.\nBullet: {bullet!r}"
+    )
+
+
+def test_acceptance_report_remediation_checkpoint_status_not_satisfied_by_neighbour() -> None:
+    """Regression: the status check must fail when the expected status appears only
+    in a neighbouring checkpoint's clause/bullet, not in the current checkpoint's.
+
+    Synthetic scenario (does not use real files):
+      - Last checklist section is "MR09-R2-X" with Status: IN_PROGRESS
+      - Top status line contains: "MR09-R2-X IN_PROGRESS: …; MR09-R2-W PASS"
+        (PASS belongs to neighbour MR09-R2-W, not to MR09-R2-X)
+      - Candidate section bullet: "- **MR09-R2-X** mentions nothing; neighbour bullet
+        lists MR09-R2-W PASS"
+    The clause/bullet isolation must ensure that asking for IN_PROGRESS in the
+    MR09-R2-X clause succeeds, and that PASS from the neighbouring clause does NOT
+    bleed into the assertion for MR09-R2-X.
+    """
+    # Synthetic top line: checkpoint clause ends at ";", neighbour has PASS after it.
+    top_line = (
+        "Current status: `X` — **MR09 IN_PROGRESS "
+        "(MR09-R2-X IN_PROGRESS: doing work; MR09-R2-W PASS; kein Candidate)**"
+    )
+    checkpoint = "MR09-R2-X"
+    expected_status = "IN_PROGRESS"
+
+    # The clause extracted for MR09-R2-X must contain IN_PROGRESS.
+    clause = _extract_checkpoint_clause_from_top_line(top_line, checkpoint)
+    assert expected_status in clause, (
+        f"expected {expected_status!r} in clause {clause!r}"
+    )
+    # PASS from the neighbour must NOT be in the MR09-R2-X clause.
+    assert "PASS" not in clause, (
+        f"PASS from neighbour leaked into MR09-R2-X clause: {clause!r}"
+    )
+
+    # Synthetic candidate section: MR09-R2-X bullet has no PASS, neighbour does.
+    candidate_section = (
+        "\n"
+        "- **MR09-R2-X** (IN_PROGRESS) doing work.\n"
+        "- **MR09-R2-W** hat etwas abgeschlossen (**PASS**).\n"
+    )
+    bullet = _extract_checkpoint_bullet_from_candidate_section(
+        candidate_section, checkpoint
+    )
+    assert expected_status in bullet, (
+        f"expected {expected_status!r} in bullet {bullet!r}"
+    )
+    # PASS from the neighbour bullet must not bleed into the MR09-R2-X bullet.
+    assert "PASS" not in bullet, (
+        f"PASS from neighbour leaked into MR09-R2-X bullet: {bullet!r}"
+    )

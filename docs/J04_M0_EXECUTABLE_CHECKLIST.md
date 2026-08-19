@@ -89,7 +89,7 @@ Current checkpoint: MR09
 | MR06 | DOCX-Kommentarsynchronisation stabilisieren | PASS | `3bf6518` | 71 passed; `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml` | pending user approval |
 | MR07 | Realprocess-Harness auf verbindlichen M0-Scope bringen | PASS | `3bf6518` | 75 passed; `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml` | pending user approval |
 | MR08 | Gesamte Regression und Candidate Freeze | PASS | `3bf6518` | 988 passed / 20 skipped; freeze regression `build/j04-m0-closure/mr08-freeze-regression-results-20260818T193330926Z/junit.xml`; CandidateSha `4db97ea72ffcb18823cd610599752cc1c8e8716d` | `4db97ea` |
-| MR09 | Kontrollierten CP08-V9-Lauf ausführen | TODO | — | — | — |
+| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; R2-R3 PASS; R2-R2 PASS; R2-R1 PASS; R2 PASS; R1 FAILED; kein aktiver Candidate | — |
 | MR10 | Packaging, Golive, Human Gate und Merge | TODO | — | — | — |
 
 <!-- J04_M0_MERGE_LEDGER_END -->
@@ -1027,22 +1027,346 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
 
 ### MR09 — Kontrollierten CP08-V9-Lauf ausführen
 
-- **Status:** TODO
-- **Startzeit:** —
-- **Endzeit:** —
-- **Start-SHA:** —
-- **Ziel und Scope:** Ein destruktiver Acceptance-Lauf nur nach MR08-Freeze
-  und ausdrücklicher Freigabe; read-only Guard-Preflight zuerst.
-- **Geänderte Dateien und Verantwortlichkeiten:** —
-- **Bewusst nicht geänderte Dateien:** —
-- **Implementierte Invarianten:** —
-- **Alle Testversuche:** —
-- **Genaue Befehle:** —
-- **Passed/Failed/Skipped:** —
-- **Evidence-Pfade:** —
-- **Abweichungen:** —
-- **Commit-SHA:** pending user approval
-- **Abschlussbewertung:** —
+- **Status:** BLOCKED
+- **Startzeit:** 2026-08-19T06:36:00Z
+- **Endzeit:** 2026-08-19T06:38:18Z
+- **Start-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`)
+- **CandidateSha:** `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`)
+- **Lauf-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`) als reiner SHA-Dokument-Follow-up
+- **Freigabe:** einmalige destruktive Freigabe liegt vor. Kein zweiter Lauf,
+  kein Commit, kein Push, kein PR und kein MR10.
+- **Ziel und Scope:** genau ein kontrollierter CP08-V9-Runnerlauf gegen die
+  Guard-bestätigte Datenbank `qmtool_j04_destructive_test`; 18 M0-Schritte bis
+  `APPROVED` und Restart; read-only Guard-Preflight zuerst.
+- **Runnervertrag:** genau ein Vordergrundaufruf von
+  `scripts/run_postgres_live_tests.py --j04-final-acceptance --basetemp <frisch>`;
+  kein direkter Pytest-Aufruf des Realprocess-Tests, kein zweites Terminal,
+  kein Retry bei Fehler oder Tool-Timeout.
+- **Erwartete isolierte Datenbankidentität:** database `qmtool_j04_destructive_test`,
+  major `18`, port `5432`, marker `j04_m0_destructive_pg16`, `reset_present=False`
+  im read-only Preflight; DSN bleibt geheim.
+- **Fail-fast:** bei Guard-, Zielidentitäts-, Port-, Prozess- oder Runnerfehler
+  sofort BLOCKED/FAILED; kein zweiter Lauf, keine Reparatur, keine Produkt- oder
+  Teständerung.
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — MR09-Status, Runnerplan, Evidence
+  - `docs/J04_M0_ACCEPTANCE_REPORT.md` — MR09 IN_PROGRESS, Gesamtstatus, Evidence
+- **Bewusst nicht geänderte Dateien:** alle Produkt-, Backend-, Acceptance- und
+  Testdateien; CandidateSha bleibt unverändert; MR10 bleibt TODO.
+- **Implementierte Invarianten:** Current checkpoint bleibt MR09; Gesamtstatus
+  bleibt NOT_READY; `Accepted` bleibt unset; kein neuer Freeze in diesem Auftrag.
+- **Alle Testversuche:**
+  0. `20260819T063744327Z` — Ledger-Konsistenz nach MR09 IN_PROGRESS — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr09-ledger-start-results-20260819T063744327Z/junit.xml`)
+  1. `20260819T063818073Z` — read-only Guard-Preflight **BLOCKED vor Guard-Ausführung**
+     SyntaxError im Inline-Preflight-Launcher:
+     `reset_present = bool(os.environ.get(TEST_RESET_ENV, ").strip())`
+     (`build/j04-m0-closure/mr09-cp08-v9-results-20260819T063818073Z/preflight.log`)
+- **Genaue Befehle:** kein Runner-Aufruf erfolgt; `scripts/run_postgres_live_tests.py --j04-final-acceptance`
+  wurde **nicht** gestartet.
+- **Passed/Failed/Skipped:** kein CP08-V9-Pytest-Kind gestartet; 18 Szenarioschritte **NOT RUN**
+- **Evidence-Pfade:** `build/j04-m0-closure/mr09-*`
+- **Abweichungen:** read-only Preflight scheiterte an einem Shell/Python-
+  Startfehler vor der Guard-Prüfung. Kein Reset, kein Runner, kein Port- oder
+  Prozessrest, keine Produkt-/Teständerung. Nach Fail-fast kein zweiter Lauf.
+- **Commit-SHA:** none in this Auftrag
+- **Abschlussbewertung:** MR09 BLOCKED. Erste Fehlerstelle: Preflight-Launcher
+  `SyntaxError` vor Guard-Identitätsprüfung. Danach NOT RUN:
+  `pg_bootstrap`, `backend_start`, `health_and_openapi`, `bootstrap_admin_login`,
+  `seed_directory_users`, `seed_workflow_profile`, `client_process_sessions`,
+  `document_baseline_flow`, `etag_concurrency_race`, `artifacts_transport`,
+  `signature_verify_password`, `signed_editing_complete`, `pdf_comment_flow`,
+  `docx_comment_sync`, `signed_review_approval`, `backend_restart`,
+  `persistence_and_session_contract`. Current checkpoint bleibt MR09.
+  Gesamtstatus NOT_READY. Kein Retry ohne unabhängige Prüfung.
+
+### MR09-R1 — Read-only Preflight-Launcher über Python-stdin statt `python -c`
+
+- **Status:** FAILED (R1 abgeschlossen)
+- **Startzeit:** 2026-08-19T08:21:00Z
+- **Endzeit:** 2026-08-19T08:26:16Z (R1)
+- **CandidateSha:** `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`)
+- **Lauf-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`)
+- **Ursache des ersten Fehlers:** Der in MR09 verwendete `python -c`-Einzeiler
+  enthielt ein unescaptes Anführungszeichen im Python-Ausdruck
+  `os.environ.get(TEST_RESET_ENV, "`.strip())`, das PowerShell vorzeitig aus dem
+  String-Literal herausbrechen ließ. Das erzeugte den SyntaxError auf Zeile 6 des
+  Python-Codes. Der Fehler trat im Launcher auf, **bevor** der Guard die
+  Datenbankidentität prüfte.
+- **BLOCKED-Evidence bleibt erhalten:** Versuch 1 aus MR09 (`20260819T063818073Z`)
+  wird nicht entfernt oder überschrieben.
+- **Kein Runner-Aufruf im ersten Versuch:** `scripts/run_postgres_live_tests.py`
+  wurde in MR09 nicht gestartet. Kein Pytest-Kindprozess, kein Guard-Reset,
+  kein Realprocess-Workspace, kein Szenarioschritt ausgeführt.
+- **Einmalfreigabe:** Die bestehende Freigabe
+  „Der einmalige destruktive MR09-/CP08-V9-Lauf gegen die Guard-bestätigte
+  Datenbank qmtool_j04_destructive_test ist freigegeben." ist weiterhin ungenutzt.
+- **Korrektur:** PowerShell-Single-Quoted-Here-String
+  (`$preflightSource = @' ... '@`) wird über stdin an `python -` weitergeleitet;
+  kein `python -c` mehr.
+- **Keine Produkt- oder Teständerung:** ausschließlich Dokumentation und
+  einmaliger Runner-Aufruf nach grünem Preflight.
+- **Runnerplan:** genau ein Aufruf von
+  `scripts/run_postgres_live_tests.py --j04-final-acceptance --basetemp <frisch>`
+  nach vollständig grünem Preflight; bei Fehler kein zweiter Versuch.
+- **MR10:** bleibt TODO und wurde nicht begonnen.
+- **Gesamtstatus:** NOT_READY — Current checkpoint MR09.
+- **Alle Testversuche:**
+  0. `20260819T082330286Z` — Ledger-Konsistenz nach MR09-R1 IN_PROGRESS — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr09-r1-ledger-start-results-20260819T082330286Z/junit.xml`)
+  1. `20260819T082349151Z` — korrigierter read-only Guard-Preflight über PowerShell-Here-String stdin —
+     **PASS** (exitcode 0; database=qmtool_j04_destructive_test, major=18, port=5432,
+     marker=j04_m0_destructive_pg16, reset_present=False)
+     (`build/j04-m0-closure/mr09-r1-cp08-v9-results-20260819T082349151Z/preflight.log`)
+  2. `20260819T082412Z` — einziger CP08-V9-Runner-Aufruf — **FAILED**
+     Runner-Exit 1 / pytest 1 failed / 0 skipped
+     Schritt 14 `pdf_comment_flow` TimeoutError; Schritte 1–13 pass;
+     Schritte 15–18 NOT RUN (docx_comment_sync, signed_review_approval,
+     backend_restart, persistence_and_session_contract)
+     Workspace: `build/j04-m0-closure/cp08-realprocess-ws/20260819T082412875274Z-89d0b470899242559fde43dbf6ba199c`
+     (`build/j04-m0-closure/mr09-r1-cp08-v9-results-20260819T082349151Z/runner.log`)
+  3. `20260819T082616676Z` — Ledger-Konsistenz nach MR09-R1 FAILED — **6 passed / 0 failed / 0 skipped / 0 errors**
+     (`build/j04-m0-closure/mr09-r1-ledger-final-results-20260819T082616676Z/junit.xml`)
+- **Genaue Befehle:** kein zweiter Runner-Aufruf; Einmalfreigabe verbraucht.
+- **Abschlussbewertung:** MR09-R1 FAILED. Erste Fehlerstelle: Schritt `pdf_comment_flow`.
+  `POST /documents/versions/J04-ACCEPT-DOC/1/comments` endete mit HTTP 200.
+  Danach lieferte der unmittelbar folgende GET der PDF_REVIEW-Kommentarliste innerhalb von
+  30 Sekunden keine vollständige Response. Da Uvicorn den Access-Log-Eintrag erst nach
+  abgeschlossener Response schreibt, ist anhand der bisherigen Evidence offen, ob der GET
+  nicht verbunden wurde, vor den Response-Headern blockierte oder beim Lesen des Bodys hing.
+  Fehlerklasse: „Acceptance-Interaktions-/Transporttimeout, Ursache offen" —
+  ein Produktdefekt ist noch nicht bewiesen.
+  Klassifikation: Produkt-/HTTP-/Szenarioassertion → MR09 FAILED. Kein zweiter Lauf,
+  keine Reparatur in diesem Auftrag. Current checkpoint bleibt MR09. Gesamtstatus NOT_READY.
+  MR10 bleibt TODO. Ein weiterer CP08-Lauf benötigt Remediation, neuen Freeze und neue
+  destruktive Freigabe.
+
+### MR09-R2 — pdf_comment_flow-Timeout nicht-destruktiv lokalisieren
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-19T10:55:00Z
+- **CandidateSha:** `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`) — historisch, unverändert
+- **Lauf-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`)
+- **Current checkpoint:** MR09 (Parent MR09 bleibt IN_PROGRESS und nicht bestanden)
+- **Gesamtstatus:** NOT_READY
+- **Ziel:** Timeout-Phase in `pdf_comment_flow` ohne PostgreSQL-Lauf lokalisieren;
+  fehlenden Backend-HTTP-Vertrag für POST→GET-Kommentarliste ergänzen;
+  AcceptanceHttpClient Timeout-Diagnose präzisieren; alle nicht-live Gates grün.
+- **Verbindliche Einschränkungen:**
+  - kein PostgreSQL-Reset, kein CP08-/Realprocess-Runner
+  - kein direkter Aufruf von `test_j04_m0_realprocess.py`
+  - kein Commit, Staging, Freeze, Push, PR
+  - `Accepted` bleibt unset; destruktive Freigabe verbraucht
+  - MR10 bleibt TODO
+- **Erwarteter Dateisatz:**
+  - `tests/backend/test_documents_p4_p9_http.py` — neuer Test `test_pdf_comment_create_then_immediate_list_over_http`
+  - `tests/acceptance/j04_m0_acceptance_scenario.py` — Timeout-Diagnose in `AcceptanceHttpClient.request`
+  - `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — fokussierte Timeout-Unit-Tests
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — MR09-R2-Status
+  - `docs/J04_M0_ACCEPTANCE_REPORT.md` — MR09-R2-Status
+- **Alle Testversuche:**
+  0. `20260819T085741455Z` — Gate A: Docs-Konsistenz nach MR09-R2 IN_PROGRESS — **6 passed**
+     (`build/j04-m0-closure/mr09-r2-gate-a-results-20260819T085741455Z/junit.xml`)
+  1. SQLite read-only Inspektion — **PASS**: erster Diagnoseversuch gegen `workflow_comments` → `no such table`;
+     korrigierte Abfrage gegen `document_workflow_comments` fand 1 PDF_REVIEW-Kommentar persistiert;
+     nach Prozessende kein permanenter Lock beobachtbar; transienter Lock während des Realprocess-Requests bleibt möglich
+     (`build/j04-m0-closure/mr09-r2-diagnosis-20260819T085750217Z/sqlite-check.log`)
+  2. `20260819T085946388Z` — Gate B: neue fokussierte Tests — **6 passed / 0 failed**
+     (`test_pdf_comment_create_then_immediate_list_over_http` + 4 Timeout-Unit-Tests + 1 bestehender)
+     (`build/j04-m0-closure/mr09-r2-gate-b-results-20260819T085946388Z/junit.xml`)
+  3. `20260819T090002819Z` — Gate C: Kommentar-/HTTP-Umfeld — **109 passed / 0 failed / 0 skipped**
+     (`build/j04-m0-closure/mr09-r2-gate-c-results-20260819T090002819Z/junit.xml`)
+  4. `20260819T090112728Z` — Gate D: vollständige nicht-live Regression — **1251 passed / 0 failed / 20 skipped**
+     (`build/j04-m0-closure/mr09-r2-gate-d-results-20260819T090112728Z/junit.xml`)
+  5. `20260819T091530457Z` — Gate E: Docs-Konsistenz abschließend — **6 passed**
+     (`build/j04-m0-closure/mr09-r2-gate-e-results-20260819T091530457Z/junit.xml`)
+- **Geänderte Dateien und Verantwortlichkeiten:**
+  - `tests/backend/test_documents_p4_p9_http.py` — neuer Test `test_pdf_comment_create_then_immediate_list_over_http`
+  - `tests/acceptance/j04_m0_acceptance_scenario.py` — Timeout-Diagnose in `AcceptanceHttpClient.request`
+  - `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — 4 neue Timeout-Unit-Tests
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` / `docs/J04_M0_ACCEPTANCE_REPORT.md` — MR09-R2-Status, historische Korrektur
+- **Bewusst nicht geänderte Dateien:** alle Produktdateien, Candidate-SHA, kein Commit, kein Freeze, kein Push
+- **Abschlussbewertung MR09-R2 (damaliger IN_PROGRESS-Zustand, jetzt PASS):** Diagnosestand nach R2-Gates:
+  - Erster SQLite-Diagnoseversuch verwendete irrtümlich `workflow_comments`
+    → `sqlite3.OperationalError: no such table`; danach Schema geprüft;
+    korrigierte Abfrage auf `document_workflow_comments` fand 1 PDF_REVIEW-Kommentar
+    nach Prozessende persistiert; nach Prozessende kein permanenter Lock beobachtbar;
+    transienter Lock während des Realprocess-Requests bleibt nicht ausgeschlossen.
+  - `test_pdf_comment_create_then_immediate_list_over_http` (TestClient): prüft Route,
+    Service, Autorisierung und SQLite-Persistenz in-process; kein echter Uvicorn-/TCP-/
+    PostgreSQL-Realprocess; schließt deterministischen Fehler des In-Process-Pfads aus;
+    beweist nicht die Fehlerfreiheit des vollständigen Realprocess-Pfads.
+  - Ursache weiterhin offen; Fehler nur im vollständigen urllib→Uvicorn/TCP-Realprocess
+    beobachtet; Windows-/Socketeffekt nur Hypothese; kein Produktdefekt bewiesen, aber
+    auch nicht abschließend ausgeschlossen.
+  - Der Body-Read-Timeouttest fehlte noch in R2; wird in R1 ergänzt.
+  - Aktiver CandidateSha: **keiner** — wegen Acceptance-/Teständerungen seit `4db97ea`
+    kein neuer Candidate ohne gesonderte Commit-/Freeze-Freigabe.
+
+### MR09-R2-R1 — Body-Read-Timeouttest und Dokumentationspräzisierung
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-19T11:34:00Z
+- **Lauf-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`)
+- **MR09-R2-R1 PASS; MR09-R2 PASS; Parent MR09 IN_PROGRESS und nicht bestanden**
+- **Gesamtstatus:** NOT_READY; MR10 TODO; aktiver CandidateSha: keiner
+- **Ziel:** fehlenden Body-Read-Timeouttest ergänzen; Dokumentation präzisieren
+  (SQLite-Diagnose, TestClient-Grenzen, Ursachenbewertung, Candidate-Status)
+- **Erwarteter Dateisatz (R1-Ergänzung):**
+  - `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — neuer Test
+    `test_acceptance_http_client_timeout_during_body_read_reports_method_path_and_no_secrets`
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` / `docs/J04_M0_ACCEPTANCE_REPORT.md` — R1-Status, Präzisierungen
+- **Alle Testversuche (R1):**
+  0. `20260819T093636436Z` — Gate R1-A: 5 Timeout + 2 Kommentar-Tests — **7 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r1-gate-a-results-20260819T093636436Z/junit.xml`)
+  1. `20260819T093654734Z` — Gate R1-B: Acceptance-Unit + Backend-P4-P9 + Auth-Matrix — **110 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r1-gate-b-results-20260819T093654734Z/junit.xml`)
+  2. `20260819T093801180Z` — Gate R1-C: vollständige nicht-live Regression — **1252 passed / 0 failed / 20 skipped**
+     (`build/j04-m0-closure/mr09-r2-r1-gate-c-results-20260819T093801180Z/junit.xml`)
+  3. `20260819T095101958Z` — Gate R1-D: Docs-Konsistenz — **6 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r1-gate-d-results-20260819T095101958Z/junit.xml`)
+- **Geänderte Dateien (R1):**
+  - `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — neuer Test
+    `test_acceptance_http_client_timeout_during_body_read_reports_method_path_and_no_secrets`
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` / `docs/J04_M0_ACCEPTANCE_REPORT.md` — R1-Status,
+    SQLite-Diagnose-Präzisierung, TestClient-Scope, Ursachenbewertung, Candidate-Status
+- **Abschlussbewertung MR09-R2-R1 PASS:**
+  - 5 Timeout-Unit-Tests vorhanden (war: 4); Body-Read-Phase jetzt auch abgedeckt.
+  - Ursache weiterhin offen; Fehler nur im vollständigen Realprocess beobachtet;
+    Windows-/Socketeffekt nur Hypothese; kein Produktdefekt bewiesen und nicht ausgeschlossen.
+  - Aktiver CandidateSha: **keiner** — Acceptance-/Testdateien seit `4db97ea` geändert;
+    neuer Candidate erst nach Commit-/Freeze-Freigabe.
+  - Current checkpoint: MR09. Parent MR09 IN_PROGRESS und nicht bestanden.
+  - Gesamtstatus NOT_READY. MR10 TODO.
+  - Nächster Schritt: MR09-R2-R2 (letzte Test- und Dokumentintegritätskorrektur vor Freeze).
+
+### MR09-R2-R2 — Geheimnisschutz-Volltest und Statuskonsolidierung
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-19T12:34:00Z
+- **Endzeit:** 2026-08-19T12:51:37Z
+- **Lauf-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`)
+- **MR09-R2-R2 PASS; MR09-R2-R1 PASS; MR09-R2 PASS; Parent MR09 IN_PROGRESS und nicht bestanden**
+- **Gesamtstatus:** NOT_READY; MR10 TODO; aktiver CandidateSha: keiner
+- **Ziel:** Body-Read-Timeouttest um POST-Methode und expliziten Geheimnis-Body (`password`/`request-body-secret`)
+  erweitern; Statusfelder MR09-R2 und MR09-R2-R1 auf PASS setzen; veralteten Candidate-Abschnitt ersetzen;
+  SQLite-Aussagen widerspruchsfrei machen; Pflichtgates R2-A–R2-D seriell ausführen.
+- **Verbindliche Einschränkungen:**
+  - kein Produkt- oder Harness-Implementierungscode
+  - kein PostgreSQL, Reset, CP08 oder Realprocess-Runner
+  - kein Commit, Staging, Freeze, Push, PR oder MR10
+- **Alle Testversuche (R2-R2):**
+  0. `20260819T123823536Z` — Gate R2-A: 5 Timeout + 2 Kommentar-Tests — **7 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r2-gate-a-results-20260819T123823536Z/junit.xml`)
+  1. `20260819T123839735Z` — Gate R2-B: Acceptance-Unit + Backend-P4-P9 + Auth-Matrix — **110 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r2-gate-b-results-20260819T123839735Z/junit.xml`)
+  2. `20260819T123948029Z` — Gate R2-C: vollständige nicht-live Regression — **1252 passed / 0 failed / 20 skipped**
+     (`build/j04-m0-closure/mr09-r2-r2-gate-c-results-20260819T123948029Z/junit.xml`)
+  3. `20260819T125137305Z` — Gate R2-D: Docs-Konsistenz — **6 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r2-gate-d-results-20260819T125137305Z/junit.xml`)
+- **Geänderte Dateien (R2-R2):**
+  - `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — Body-Read-Timeouttest auf POST + Request-Body-Geheimnisschutz erweitert; eine überzählige Leerzeile entfernt
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` / `docs/J04_M0_ACCEPTANCE_REPORT.md` — Statusfelder, Candidate-Abschnitt, SQLite- und Ursachenbewertung konsolidiert
+- **Abschlussbewertung MR09-R2-R2 PASS:**
+  - Erweiterter Body-Read-Test bestätigt weiter Methode, Pfad, Body-Read-Phase, kein Retry und genau einen `urlopen`-Aufruf.
+  - Zusätzlich sind `request-body-secret` und `password` (case-insensitive) nicht in der Fehlermeldung enthalten.
+  - MR09-R2-R1 und MR09-R2 stehen formal auf PASS; Parent MR09 bleibt IN_PROGRESS und nicht bestanden.
+  - Kein Produktcode, kein PG, kein CP08-Runner, kein Commit, kein Freeze, kein Push, keine PR.
+  - `git diff --check` ohne Fehler; Staging leer; aktiver CandidateSha weiterhin **keiner**; historischer MR08-Candidate bleibt `4db97ea`.
+  - Nächster Schritt: MR09-R2-R3 (verbliebene Statusinkonsistenz beseitigen + Docs-Konsistenztest).
+
+### MR09-R2-R3 — Statusinkonsistenz beseitigen und Docs-Konsistenztest ergänzen
+
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-19T13:16:00Z
+- **Endzeit:** 2026-08-19T13:22:00Z
+- **Lauf-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`)
+- **MR09-R2-R3 PASS; MR09-R2-R2 PASS; MR09-R2-R1 PASS; MR09-R2 PASS; Parent MR09 IN_PROGRESS und nicht bestanden**
+- **Gesamtstatus:** NOT_READY; MR10 TODO; aktiver CandidateSha: keiner
+- **Ziel:** Widerspruch zwischen oberer Statuszeile / Candidate-Abschnitt im Acceptance
+  Report (R2-R2 noch IN_PROGRESS) und dem Rest (R2-R2 PASS) beseitigen;
+  Docs-Konsistenztest ergänzen, der künftig denselben Widerspruch verhindert.
+- **Erlaubter Dateisatz:**
+  - `docs/J04_M0_ACCEPTANCE_REPORT.md`
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md`
+  - `tests/docs/test_docs_consistency.py`
+- **Verbindliche Einschränkungen:**
+  - kein Produkt- oder Acceptance-Harness-Code
+  - kein PostgreSQL, Reset, CP08 oder Realprocess-Runner
+  - kein Commit, Staging, Freeze, Push oder PR
+- **Alle Testversuche (R2-R3):**
+  0. `20260819T131805888Z` — Gate A Probe: Docs-Konsistenz (neuer Test fand echten Defekt → 1 failed, inline behoben)
+  1. `20260819T131822493Z` — Gate A: Docs-Konsistenz nach Fix — **7 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r3-gate-a-results-20260819T131822493Z/junit.xml`)
+  2. `20260819T131836799Z` — Gate B: Acceptance-Unit + Backend-P4-P9 + Auth-Matrix — **110 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r3-gate-b-results-20260819T131836799Z/junit.xml`)
+  3. `20260819T131951762Z` — Gate C: vollständige nicht-live Regression — **1253 passed / 0 failed / 20 skipped**
+     (`build/j04-m0-closure/mr09-r2-r3-gate-c-results-20260819T131951762Z/junit.xml`)
+- **Neuer Konsistenzvertrag:**
+  - `test_acceptance_report_remediation_checkpoint_consistent_with_checklist` in
+    `tests/docs/test_docs_consistency.py` leitet den letzten MR09-R2-R\*-Abschnitt
+    dynamisch aus der Checklist ab und prüft, dass oberste Statuszeile und erster
+    Candidate-Abschnitt des Reports denselben Checkpoint-Namen und -Status tragen
+    und kein widersprüchliches PASS/IN_PROGRESS enthalten.
+- **Geänderte Dateien (R2-R3):**
+  - `tests/docs/test_docs_consistency.py` — neuer Test `test_acceptance_report_remediation_checkpoint_consistent_with_checklist`
+  - `docs/J04_M0_ACCEPTANCE_REPORT.md` — Statuszeile und Candidate-Abschnitt auf R2-R3 PASS aktualisiert
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` — R2-R3-Abschnitt und Ledger-Zeile finalisiert
+- **Abschlussbewertung MR09-R2-R3 PASS:**
+  - Neuer Test hat den echten Defekt (R2-R3 fehlte in Statuszeile) beim ersten Lauf korrekt gefunden.
+  - Nach Korrektur alle Gates grün.
+  - MR09-R2-R2, R2-R1 und R2 bleiben PASS. Parent MR09 bleibt IN_PROGRESS.
+  - Aktiver CandidateSha: keiner; historischer MR08-Candidate: `4db97ea`.
+  - Gesamtstatus NOT_READY. MR10 TODO.
+  - Nächster Schritt: MR09-R2-R4 (Checkpoint-Status-Zuordnung im Konsistenztest härten).
+
+### MR09-R2-R4 — Checkpoint-Status-Zuordnung im Konsistenztest härten
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-19T13:45:00Z
+- **Endzeit:** 2026-08-19T14:03:00Z
+- **Lauf-SHA:** `c003dd9aa00c1c84026d9c236597c33e84289c27` (`c003dd9`)
+- **MR09-R2-R4 PASS; MR09-R2-R3 PASS; MR09-R2-R2 PASS; MR09-R2-R1 PASS; MR09-R2 PASS; Parent MR09 IN_PROGRESS und nicht bestanden**
+- **Gesamtstatus:** NOT_READY; MR10 TODO; aktiver CandidateSha: keiner
+- **Ziel:** False-positive-Lücke im Konsistenztest schließen: Checkpoint-Status-Prüfung
+  muss den Status aus dem checkpoint-spezifischen Kontext (Klausel / Bullet) isolieren,
+  damit ein Status aus einem benachbarten Checkpoint die Prüfung nicht erfüllen kann.
+  Negativen synthetischen Regressionstest ergänzen.
+- **Erlaubter Dateisatz:**
+  - `tests/docs/test_docs_consistency.py`
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md`
+  - `docs/J04_M0_ACCEPTANCE_REPORT.md`
+- **Verbindliche Einschränkungen:**
+  - kein Produkt-, Backend- oder Acceptance-Harness-Code
+  - kein PostgreSQL, CP08 oder Realprocess
+  - kein Commit, Staging, Freeze, Push oder PR
+- **Alle Testversuche (R2-R4):**
+  0. `20260819T134748986Z` — Gate A: 2 fokussierte Remediation-Tests (positiv + negativ) — **2 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r4-gate-a-results-20260819T134748986Z/junit.xml`)
+  1. `20260819T134807780Z` — Gate B: vollständige Docs-Konsistenz — **8 passed / 0 failed**
+     (`build/j04-m0-closure/mr09-r2-r4-gate-b-results-20260819T134807780Z/junit.xml`)
+  2. `20260819T134832664Z` — Gate C: vollständige nicht-live Regression — **1254 passed / 0 failed / 20 skipped**
+     (`build/j04-m0-closure/mr09-r2-r4-gate-c-results-20260819T134832664Z/junit.xml`)
+- **Geänderte Dateien (R2-R4):**
+  - `tests/docs/test_docs_consistency.py` — Hilfsfunktionen `_extract_checkpoint_clause_from_top_line`,
+    `_extract_checkpoint_bullet_from_candidate_section`; Test `test_acceptance_report_remediation_checkpoint_consistent_with_checklist`
+    auf Kontext-Isolation umgestellt; neuer negativer Regressionstest
+    `test_acceptance_report_remediation_checkpoint_status_not_satisfied_by_neighbour`
+  - `docs/J04_M0_EXECUTABLE_CHECKLIST.md` / `docs/J04_M0_ACCEPTANCE_REPORT.md` — R2-R4-Status und Evidence
+- **Abschlussbewertung MR09-R2-R4 PASS:**
+  - False-positive-Lücke: vorher prüfte der Test `checkpoint in text` und `status in text` getrennt;
+    ein Status aus einem benachbarten Bullet konnte die Assertion erfüllen, auch wenn der aktuelle
+    Checkpoint keinen eigenen Status trug.
+  - Schließung: `_extract_checkpoint_clause_from_top_line` isoliert den semicolonbegrenzten Kontext
+    des aktuellen Checkpoints in der Statuszeile; `_extract_checkpoint_bullet_from_candidate_section`
+    isoliert den Bullet des aktuellen Checkpoints bis zum nächsten MR09-Bullet. Status wird nur
+    innerhalb des isolierten Kontexts geprüft.
+  - Synthetischer Negativtest bestätigt, dass PASS aus einem Nachbarbullet die Prüfung für
+    MR09-R2-X (IN_PROGRESS) nicht erfüllt.
+  - Aktiver CandidateSha: keiner; historischer MR08-Candidate: `4db97ea`.
+  - Gesamtstatus NOT_READY. MR10 TODO.
+  - Nächster Schritt: unabhängige Prüfung; danach separate Commit-/Candidate-Freeze-Freigabe.
 
 ### MR10 — Packaging, Golive, Human Gate und Merge
 

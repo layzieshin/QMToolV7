@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR08 Candidate-Freeze `4db97ea`; Current checkpoint MR09 TODO (not started); FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS: Konsistenztest gehärtet + Regressionstest grün; MR09-R2-R3 PASS; MR09-R2-R2 PASS; MR09-R2-R1 PASS; MR09-R2 PASS; Ursache offen; kein aktiver Candidate; Freeze pending); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -19,13 +19,33 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-`$CandidateSha` — **`4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`)** is the
-**MR08 Candidate-Freeze**. No product, backend, acceptance, or test file may change
-after this SHA. The follow-up docs commit that records this SHA is not the
-candidate. Historical FR14 freeze **`ed488ede47063c22ec0b8b9d2a72be25224f6098`
-(`ed488ed`)** remains history only. Overall **`NOT_READY`**: CP08-V8 was not fully
-green; CP08-V9 / MR09 has **not** been executed. Current checkpoint: **MR09**
-(TODO; not started). `ACCEPTED` is not set.
+**Es existiert derzeit kein aktiver Candidate.**
+
+`4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`) ist ausschließlich der
+historische **MR08-Candidate-Freeze**. Seit diesem SHA wurden Acceptance- und
+Testdateien geändert; er ist damit für einen weiteren CP08-Lauf ungültig.
+
+Verlauf seit `4db97ea`:
+
+- **MR09-R1** hat den Guard-Preflight erfolgreich passiert und genau einen
+  destruktiven Runner gestartet. Dieser Runner ist bei Schritt 14 `pdf_comment_flow`
+  mit einem `TimeoutError` fehlgeschlagen.
+- **MR09-R2** und **MR09-R2-R1** haben die nicht-destruktive Diagnose und
+  Instrumentierung abgeschlossen (**PASS**).
+- **MR09-R2-R2** hat Test- und Dokumentintegritätskorrekturen abgeschlossen (**PASS**).
+- **MR09-R2-R3** hat verbliebene Statusinkonsistenz beseitigt und durch einen
+  Docs-Konsistenztest abgesichert (**PASS**).
+- **MR09-R2-R4** hat die Checkpoint-Status-Zuordnung im Konsistenztest gehärtet
+  und die False-positive-Lücke durch einen synthetischen Regressionstest geschlossen
+  (**PASS**).
+- **Parent MR09** bleibt **IN_PROGRESS und nicht bestanden**.
+
+Ein neuer Candidate entsteht erst nach ausdrücklicher Commit-/Freeze-Freigabe durch
+den Nutzer. Gesamtstatus: **NOT_READY**. `ACCEPTED` ist nicht gesetzt.
+Current checkpoint: **MR09**.
+
+Historical FR14 freeze `ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)
+remains history only.
 
 ### CP04-R — PostgreSQL test infrastructure (adopted PASS)
 
@@ -693,6 +713,133 @@ stays open until MR08-R3. No candidate freeze. Overall **`NOT_READY`**.
 ProductCommit `70d4f4c11529b9539856dbdcc7456ea18689bf27`. AcceptanceCommit
 `6195637897588ae305f05617659899e9b9a51431`. FreezeCommit / CandidateSha
 `4db97ea72ffcb18823cd610599752cc1c8e8716d`.
+
+## Verification (MR09 / CP08-V9 — destructive real acceptance, once only)
+
+**MR09 IN_PROGRESS (R1).** CandidateSha stays `4db97ea72ffcb18823cd610599752cc1c8e8716d`
+and follow-up SHA remains `c003dd9aa00c1c84026d9c236597c33e84289c27`. The single
+authorized destructive run did **not** start in MR09: the read-only preflight
+launcher hit a local `SyntaxError` (unescaped quote in `python -c`) before the
+guard identity check could complete. No reset was injected, no runner child was
+started, port 8000 stayed free, and no pytest process remained. Fail-fast: no
+retry, no product/test change, no MR10.
+
+**MR09-R1** corrected the launcher to use a PowerShell single-quoted here-string
+piped to `python -` (stdin). Preflight passed (exitcode 0, all 5 identity fields
+confirmed). The single authorized runner was invoked exactly once. Runner exited 1:
+step 14 `pdf_comment_flow` failed with `TimeoutError`. Steps 1–13 passed; steps
+15–18 (`docx_comment_sync`, `signed_review_approval`, `backend_restart`,
+`persistence_and_session_contract`) are NOT RUN. Einmalfreigabe is now consumed.
+No second run, no product/test fix, no MR10. Classification: Produkt-/HTTP-/
+Szenarioassertion → **MR09 FAILED (R1)**. Current checkpoint MR09-R2 (parent MR09
+IN_PROGRESS). A further CP08 run requires remediation, new freeze, and new explicit
+destructive authorization.
+
+**Precision correction (MR09-R2):** The prior summary stated "Backend-Log endet nach
+diesem Request — kein weiterer HTTP-Aufruf ankam vor dem Timeout." That statement
+is not supported by evidence. `POST .../comments` completed with HTTP 200. The
+immediately following `GET .../comments?context=PDF_REVIEW` did not deliver a
+complete response within 30 seconds. Because Uvicorn writes an access-log entry only
+after the response is fully sent, the absence of a log entry does not prove that the
+GET never reached the server; the GET may have connected but blocked before response
+headers, or it may have timed out while reading the body. The failure class is
+therefore: **"Acceptance-Interaktions-/Transporttimeout, Ursache offen"** — a product
+defect is not yet proven.
+
+**MR09-R2 (PASS):** non-destructive localisation completed.
+
+SQLite read-only inspection (`documents.db` from workspace
+`20260819T082412875274Z-...`): first attempt queried `workflow_comments` →
+`sqlite3.OperationalError: no such table`. After schema inspection via `sqlite_master`,
+corrected query against `document_workflow_comments` found 1 `PDF_REVIEW` comment
+persisted for J04-ACCEPT-DOC v1 (`select_completed_ok`). After process end: no
+permanent lock observable. A transient lock or blockade during the live Realprocess
+request cannot be excluded.
+
+New backend contract test `test_pdf_comment_create_then_immediate_list_over_http`
+(TestClient, no mocks for service/repository): POST comment → HTTP 200 with comment_id;
+immediate GET list → HTTP 200 with same comment_id and PDF_REVIEW context — passes
+reliably in-process. This confirms the route and service path are correct.
+
+`AcceptanceHttpClient.request` extended: `TimeoutError` and `URLError(TimeoutError)`
+before response headers → `ScenarioFailure` with method, path, "vor Response-Headern";
+`TimeoutError` during `response.read` → "beim Lesen des Response-Bodys"; no secrets
+in message; timeout remains 30s; no retry. Four new unit tests pass.
+
+All Gates passed: A (6), B (6), C (109), D (1251 / 0 failed / 20 skipped), E (6).
+
+**SQLite diagnosis — full account (including first failed attempt):**
+First attempt queried `workflow_comments` → `sqlite3.OperationalError: no such table:
+workflow_comments`. Schema was then inspected (`sqlite_master`). Corrected query used
+`document_workflow_comments`, found 1 PDF_REVIEW comment for J04-ACCEPT-DOC v1,
+completed without blockade after process end. This rules out a **permanent** lock
+after process exit. A **transient** lock during the live Realprocess request cannot
+be excluded.
+
+**TestClient scope:** `test_pdf_comment_create_then_immediate_list_over_http` exercises
+route, service, authorization, and SQLite persistence in-process. It does not use a
+real uvicorn process, TCP socket, or PostgreSQL. It rules out a deterministic defect
+in the tested in-process code path. It does **not** prove correctness of the complete
+real-process product path.
+
+**Cause assessment:** Cause remains open. The failure was observed only in the full
+urllib→uvicorn/TCP Realprocess scenario. A Windows/socket effect is a hypothesis
+only. A product defect is not proven, but is also not conclusively excluded. The new
+timeout-phase instrumentation in `AcceptanceHttpClient.request` will localise the
+failure to "vor Response-Headern" or "beim Lesen des Response-Bodys" in a future
+Realprocess run.
+
+**Candidate status:** `4db97ea` remains the historical MR08 CandidateSha. Because
+Acceptance and test files have been modified since `4db97ea`, there is currently
+**no active Candidate** for a further CP08 run. A new CandidateSha requires a
+separate Commit/Freeze authorization.
+
+**MR09-R2-R1 (PASS):** added missing Body-Read-Timeout unit test
+(`test_acceptance_http_client_timeout_during_body_read_reports_method_path_and_no_secrets`).
+Five timeout unit tests now present (was: four). All R1 gates passed:
+A (7), B (110), C (1252 / 0 failed / 20 skipped), D (6).
+No product code changed, no PG, no CP08, no commit, no freeze.
+Active CandidateSha: **none** — Acceptance and test files modified since `4db97ea`;
+new Candidate requires separate Commit/Freeze authorization.
+
+**MR09-R2-R2 (PASS):** extended the Body-Read-Timeout test to use POST method with
+secret body `{"password": "request-body-secret"}`; asserted neither `request-body-secret`
+nor `password` (case-insensitive) appear in the error message while preserving the
+existing assertions for method, path, body-read phase, token secrecy, Authorization,
+Bearer, and exactly one `urlopen` call. Status fields are now consistent
+(MR09-R2 PASS, MR09-R2-R1 PASS; parent MR09 still IN_PROGRESS / not passed).
+
+| # | Befehl | Ergebnis |
+| --- | --- | --- |
+| MR09-LEDGER-START | docs-consistency after MR09 IN_PROGRESS; stamp `20260819T063744327Z` | **6 passed** (`mr09-ledger-start-results-20260819T063744327Z/junit.xml`) |
+| MR09-PREFLIGHT | read-only guard preflight; stamp `20260819T063818073Z` | **BLOCKED before guard** (`mr09-cp08-v9-results-20260819T063818073Z/preflight.log`); local preflight launcher `SyntaxError`, no reset, no runner |
+| MR09-R1-LEDGER-START | docs-consistency after MR09-R1 IN_PROGRESS; stamp `20260819T082330286Z` | **6 passed** (`mr09-r1-ledger-start-results-20260819T082330286Z/junit.xml`) |
+| MR09-R1-PREFLIGHT | corrected read-only guard preflight via stdin; stamp `20260819T082349151Z` | **PASS** exitcode 0; database=qmtool_j04_destructive_test, major=18, port=5432, marker=j04_m0_destructive_pg16, reset_present=False (`mr09-r1-cp08-v9-results-20260819T082349151Z/preflight.log`) |
+| MR09-R1-RUNNER | single CP08-V9 runner call; stamp `20260819T082412Z` | **FAILED** exit 1 / 1 failed; step 14 `pdf_comment_flow` TimeoutError; steps 1–13 pass; steps 15–18 NOT RUN; workspace `cp08-realprocess-ws/20260819T082412875274Z-89d0b470899242559fde43dbf6ba199c` (`mr09-r1-cp08-v9-results-20260819T082349151Z/runner.log`) |
+| MR09-R1-LEDGER-FINAL | docs-consistency after runner; stamp `20260819T082616676Z` | **6 passed** (`mr09-r1-ledger-final-results-20260819T082616676Z/junit.xml`) |
+| MR09-R2-GATE-A | docs-consistency after R2 IN_PROGRESS; stamp `20260819T085741455Z` | **6 passed** (`mr09-r2-gate-a-results-20260819T085741455Z/junit.xml`) |
+| MR09-R2-SQLITE | read-only SQLite inspection of persisted workspace; stamp `20260819T085750217Z` | **PASS** — first query `workflow_comments` → no such table; corrected query `document_workflow_comments` found 1 PDF_REVIEW comment; after process end: no permanent lock; transient lock not excluded (`mr09-r2-diagnosis-20260819T085750217Z/sqlite-check.log`) |
+| MR09-R2-GATE-B | focused new tests; stamp `20260819T085946388Z` | **6 passed** (`mr09-r2-gate-b-results-20260819T085946388Z/junit.xml`) |
+| MR09-R2-GATE-C | comment/HTTP environment suite; stamp `20260819T090002819Z` | **109 passed / 0 failed** (`mr09-r2-gate-c-results-20260819T090002819Z/junit.xml`) |
+| MR09-R2-GATE-D | full non-live regression; stamp `20260819T090112728Z` | **1251 passed / 0 failed / 20 skipped** (`mr09-r2-gate-d-results-20260819T090112728Z/junit.xml`) |
+| MR09-R2-GATE-E | final docs-consistency; stamp `20260819T091530457Z` | **6 passed** (`mr09-r2-gate-e-results-20260819T091530457Z/junit.xml`) |
+| MR09-R2-R1-GATE-A | focused: 5 timeout + 1 backend + 1 comment; stamp `20260819T093636436Z` | **7 passed** (`mr09-r2-r1-gate-a-results-20260819T093636436Z/junit.xml`) |
+| MR09-R2-R1-GATE-B | acceptance unit + backend p4-p9 + auth matrix; stamp `20260819T093654734Z` | **110 passed / 0 failed** (`mr09-r2-r1-gate-b-results-20260819T093654734Z/junit.xml`) |
+| MR09-R2-R1-GATE-C | full non-live regression; stamp `20260819T093801180Z` | **1252 passed / 0 failed / 20 skipped** (`mr09-r2-r1-gate-c-results-20260819T093801180Z/junit.xml`) |
+| MR09-R2-R1-GATE-D | docs-consistency; stamp `20260819T095101958Z` | **6 passed** (`mr09-r2-r1-gate-d-results-20260819T095101958Z/junit.xml`) |
+| MR09-R2-R2-GATE-A | focused: 5 timeout + 2 comment tests; stamp `20260819T123823536Z` | **7 passed / 0 failed** (`mr09-r2-r2-gate-a-results-20260819T123823536Z/junit.xml`) |
+| MR09-R2-R2-GATE-B | acceptance unit + backend p4-p9 + auth matrix; stamp `20260819T123839735Z` | **110 passed / 0 failed** (`mr09-r2-r2-gate-b-results-20260819T123839735Z/junit.xml`) |
+| MR09-R2-R2-GATE-C | full non-live regression; stamp `20260819T123948029Z` | **1252 passed / 0 failed / 20 skipped** (`mr09-r2-r2-gate-c-results-20260819T123948029Z/junit.xml`) |
+| MR09-R2-R2-GATE-D | docs-consistency; stamp `20260819T125137305Z` | **6 passed / 0 failed** (`mr09-r2-r2-gate-d-results-20260819T125137305Z/junit.xml`) |
+| MR09-R2-R3-GATE-A-PROBE | docs-consistency probe (test found real defect, then fixed); stamp `20260819T131805888Z` | **1 failed** (new test correctly caught R2-R3 absent from top status line; fixed inline) |
+| MR09-R2-R3-GATE-A | docs-consistency after fix; stamp `20260819T131822493Z` | **7 passed / 0 failed** (`mr09-r2-r3-gate-a-results-20260819T131822493Z/junit.xml`) |
+| MR09-R2-R3-GATE-B | acceptance unit + backend p4-p9 + auth matrix; stamp `20260819T131836799Z` | **110 passed / 0 failed** (`mr09-r2-r3-gate-b-results-20260819T131836799Z/junit.xml`) |
+| MR09-R2-R3-GATE-C | full non-live regression; stamp `20260819T131951762Z` | **1253 passed / 0 failed / 20 skipped** (`mr09-r2-r3-gate-c-results-20260819T131951762Z/junit.xml`) |
+| MR09-R2-R3-GATE-D | docs-consistency after PASS finalization; stamp `20260819T133304090Z` | **7 passed / 0 failed** (`mr09-r2-r3-gate-d-results-20260819T133304090Z/junit.xml`) |
+| MR09-R2-R4-GATE-A | focused remediation tests (positive + negative); stamp `20260819T134748986Z` | **2 passed / 0 failed** (`mr09-r2-r4-gate-a-results-20260819T134748986Z/junit.xml`) |
+| MR09-R2-R4-GATE-B | full docs-consistency (8 tests); stamp `20260819T134807780Z` | **8 passed / 0 failed** (`mr09-r2-r4-gate-b-results-20260819T134807780Z/junit.xml`) |
+| MR09-R2-R4-GATE-C | full non-live regression; stamp `20260819T134832664Z` | **1254 passed / 0 failed / 20 skipped** (`mr09-r2-r4-gate-c-results-20260819T134832664Z/junit.xml`) |
+| MR09-R2-R4-GATE-D | docs-consistency after PASS finalization; stamp `20260819T140502984Z` | **8 passed / 0 failed** (`mr09-r2-r4-gate-d-results-20260819T140502984Z/junit.xml`) |
 
 ## Technical acceptance candidate (CP07 freeze — historical)
 
