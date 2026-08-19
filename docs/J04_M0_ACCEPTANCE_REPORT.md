@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS; CP08-V10 FAILED — pdf_comment_flow Schritt 14; MR09-R3 und MR09-R3-R1 PASS — Harness-Backpressure behoben; kein aktiver Candidate; neuer Freeze erforderlich; Gesamtstatus NOT_READY); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS; CP08-V10 FAILED — pdf_comment_flow Schritt 14; MR09-R3 und MR09-R3-R1 PASS — Harness-Backpressure behoben; aktiver CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`; CP08-V11 NOT RUN; Gesamtstatus NOT_READY); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -19,11 +19,12 @@ gesetzt werden.
 
 ## Technical acceptance candidate
 
-**Es existiert derzeit kein aktiver Candidate.**
+Aktiver CandidateSha: **`254c8ea8147130c02b5661e2e467b2641ca83885`** (`254c8ea`) —
+`docs(j04-m0): freeze MR09 R3 candidate`.
 
-Durch die Harnessänderung in MR09-R3 ist der historische FreezeCommit
-`08b04e6fe28ee86e71759440236b5ca10711fa1a` für einen CP08-V11-Lauf ungültig.
-Ein neuer Commit-/Candidate-Freeze ist erforderlich, bevor CP08-V11 gestartet werden darf.
+Dieser Freeze ersetzt den historischen CP08-V10-Candidate `08b04e6` für künftige
+nicht-destruktive Bewertung. Ein destruktiver CP08-V11-Lauf bleibt dennoch **NOT RUN**
+und erfordert eine eigene ausdrückliche Einmalfreigabe.
 
 `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`) ist ausschließlich der
 historische **MR08-Candidate-Freeze** und für weitere CP08-Läufe ungültig.
@@ -48,7 +49,7 @@ Verlauf seit `4db97ea`:
 
 CP08-V10: **FAILED** — Schritt 14 `pdf_comment_flow` Timeout (Lauf `a15cb3f`, Stamp `20260819T155102306Z`).
 MR09-R3 hat die Ursache (stdout-Pipe-Backpressure im Harness) behoben.
-Kein aktiver Candidate; neuer Freeze und neue Einmalfreigabe erforderlich vor CP08-V11.
+CP08-V11: **NOT RUN** — aktiver CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`; destruktive Einmalfreigabe weiterhin ausstehend.
 Gesamtstatus: **NOT_READY**. `ACCEPTED` ist nicht gesetzt.
 Current checkpoint: **MR09**.
 
@@ -1397,9 +1398,21 @@ Verbindliche Reihenfolge nach Freigabe:
 | B – Acceptance-Infrastruktur | `20260819T172314505Z` | **60 passed / 0 failed / 0 errors** |
 | C – vollständige nicht-live Regression | `20260819T172346447Z` | **1263 tests / 0 failed / 0 errors / 20 skipped** |
 
+**Freeze-Commits und technische Candidate-Evidence:**
+- HarnessCommit: `810f8975284f3d792153b902917e8faf24f3f00f` —
+  `test(j04-m0): stream backend acceptance logs`
+- FreezeCommit / aktiver CandidateSha: `254c8ea8147130c02b5661e2e467b2641ca83885` —
+  `docs(j04-m0): freeze MR09 R3 candidate`
+- Pre-Freeze-Docs-Gate: `20260819T191917758Z` — **8 passed / 0 failed / 0 errors**
+- Freeze-Regression: `20260819T192016485Z` —
+  **1263 tests / 0 failed / 0 errors / 20 skipped**,
+  `1005 passed, 20 skipped, 52 deselected, 238 subtests passed`, Laufzeit `0:17:55`,
+  JUnit `build/j04-m0-closure/mr09-r3-freeze-regression-20260819T192016485Z/junit.xml`
+
 **Status:** MR09-R3-R1 **PASS**. MR09-R3 **PASS**.
-**Aktiver Candidate:** keiner. Wegen der Harnessänderung ist `08b04e6` nur noch historisch.
-Neuer Commit-/Candidate-Freeze und neue ausdrückliche Einmalfreigabe für CP08-V11 erforderlich.
+**Aktiver Candidate:** `254c8ea8147130c02b5661e2e467b2641ca83885` (`254c8ea`).
+`08b04e6` bleibt ausschließlich historischer CP08-V10-Candidate.
+CP08-V11 bleibt **NOT RUN** und benötigt weiter eine ausdrückliche Einmalfreigabe.
 **Parent MR09:** IN_PROGRESS. **Gesamtstatus:** NOT_READY. MR10: TODO. Accepted: unset.
 
 ## CP08-V10 — Final acceptance attempt (FAILED / NOT_READY)

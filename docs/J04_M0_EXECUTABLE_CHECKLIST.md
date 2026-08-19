@@ -89,7 +89,7 @@ Current checkpoint: MR09
 | MR06 | DOCX-Kommentarsynchronisation stabilisieren | PASS | `3bf6518` | 71 passed; `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml` | pending user approval |
 | MR07 | Realprocess-Harness auf verbindlichen M0-Scope bringen | PASS | `3bf6518` | 75 passed; `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml` | pending user approval |
 | MR08 | Gesamte Regression und Candidate Freeze | PASS | `3bf6518` | 988 passed / 20 skipped; freeze regression `build/j04-m0-closure/mr08-freeze-regression-results-20260818T193330926Z/junit.xml`; CandidateSha `4db97ea72ffcb18823cd610599752cc1c8e8716d` | `4db97ea` |
-| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; CP08-V10 FAILED (Pipe-Backpressure); MR09-R3 und MR09-R3-R1 PASS (Harness-Fix); kein aktiver Candidate; neuer Freeze erforderlich | — |
+| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; CP08-V10 FAILED (Pipe-Backpressure); MR09-R3 und MR09-R3-R1 PASS; CandidateSha `254c8ea`; CP08-V11 NOT RUN | `254c8ea` |
 | MR10 | Packaging, Golive, Human Gate und Merge | TODO | — | — | — |
 
 <!-- J04_M0_MERGE_LEDGER_END -->
@@ -1442,6 +1442,22 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
 - **Aktiver Candidate:** keiner — `08b04e6` ist historisch ungültig nach Harnessänderung
 - **Parent MR09:** IN_PROGRESS; Gesamtstatus: NOT_READY; MR10: TODO; Accepted: unset
 - **Nächster Schritt:** neue ausdrückliche Commit-/Candidate-Freeze-Freigabe, danach CP08-V11
+
+### MR09-Freeze-R3 — Candidate-Freeze nach MR09-R3/R1
+
+- **HarnessCommit:** `810f8975284f3d792153b902917e8faf24f3f00f`
+  (`test(j04-m0): stream backend acceptance logs`)
+- **Pre-Freeze-Docs-Gate:** `20260819T191917758Z` — **8 passed / 0 failed / 0 errors**
+- **FreezeCommit / CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885`
+  (`docs(j04-m0): freeze MR09 R3 candidate`)
+- **Freeze-Regression:** `20260819T192016485Z` — **1263 tests / 0 failed / 0 errors / 20 skipped**
+  (`1005 passed, 20 skipped, 52 deselected, 238 subtests passed`)
+- **JUnit:** `build/j04-m0-closure/mr09-r3-freeze-regression-20260819T192016485Z/junit.xml`
+- **Aktiver CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` (`254c8ea`)
+- **Historischer CP08-V10-Candidate:** `08b04e6` bleibt ausschließlich Historie
+- **CP08-V11:** NOT RUN
+- **Parent MR09:** IN_PROGRESS und nicht bestanden
+- **Gesamtstatus:** NOT_READY; MR10 TODO; Accepted unset
 
 ### MR10 — Packaging, Golive, Human Gate und Merge
 
