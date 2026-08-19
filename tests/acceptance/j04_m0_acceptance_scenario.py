@@ -209,12 +209,30 @@ class AcceptanceHttpClient:
         request = urllib.request.Request(url, data=data, headers=req_headers, method=method.upper())
         try:
             with urllib.request.urlopen(request, timeout=30.0) as response:
-                return self._parse_response(response)
+                try:
+                    return self._parse_response(response)
+                except TimeoutError as exc:
+                    raise ScenarioFailure(
+                        f"{method.upper()} {path} timed out beim Lesen des Response-Bodys"
+                    ) from exc
         except urllib.error.HTTPError as exc:
             parsed = self._parse_response(exc)
             raise ScenarioFailure(
                 f"{method.upper()} {path} failed with HTTP {exc.code}: "
                 f"{redact_log_text(json.dumps(parsed, ensure_ascii=True)[:500])}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            cause = exc.reason
+            if isinstance(cause, TimeoutError) or isinstance(cause, OSError) and "timed out" in str(cause).lower():
+                raise ScenarioFailure(
+                    f"{method.upper()} {path} timed out vor Response-Headern"
+                ) from exc
+            raise ScenarioFailure(
+                f"{method.upper()} {path} transport error: {type(cause).__name__}"
+            ) from exc
+        except TimeoutError as exc:
+            raise ScenarioFailure(
+                f"{method.upper()} {path} timed out vor Response-Headern"
             ) from exc
 
     def request_raw(

@@ -180,6 +180,38 @@ def test_profile_create_over_http_by_qmb(tmp_path: Path) -> None:
     assert len(versions.json()) >= 1
 
 
+def test_pdf_comment_create_then_immediate_list_over_http(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-CMT-IMMED")
+    edited = client.post(
+        "/documents/versions/DOC-CMT-IMMED/1/workflow/editing-complete",
+        headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["state"]["status"] == "IN_REVIEW"
+    reviewer = tokens["reviewer"]
+    created = client.post(
+        "/documents/versions/DOC-CMT-IMMED/1/comments",
+        headers=_mutation_headers(reviewer, edited),
+        json={"context": "PDF_REVIEW", "page_number": 1, "comment_text": "immediate list test"},
+    )
+    assert created.status_code == 200, created.text
+    comment_id = created.json().get("comment_id")
+    assert comment_id, "comment_id missing from create response"
+    listed = client.get(
+        "/documents/versions/DOC-CMT-IMMED/1/comments?context=PDF_REVIEW",
+        headers=_auth(reviewer),
+    )
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()
+    assert isinstance(rows, list) and rows, "comment list is empty after create"
+    ids = [row.get("comment_id") for row in rows if isinstance(row, dict)]
+    assert comment_id in ids, f"created comment_id {comment_id!r} not found in list {ids}"
+    matching = next(row for row in rows if isinstance(row, dict) and row.get("comment_id") == comment_id)
+    assert matching.get("context") == "PDF_REVIEW"
+
+
 def test_comments_list_requires_auth_context(tmp_path: Path) -> None:
     container, users = _build_documents_backend_container(tmp_path)
     client = TestClient(create_app(container))

@@ -1270,6 +1270,114 @@ def test_require_inside_closure_evidence_rejects_paths_outside_build() -> None:
     assert require_inside_closure_evidence(allowed) == allowed.resolve()
 
 
+def test_acceptance_http_client_timeout_before_headers_reports_method_and_path() -> None:
+    import unittest.mock as mock
+    import urllib.error
+
+    client = AcceptanceHttpClient("http://127.0.0.1:19999")
+    client._token = "test-token"
+    timeout_exc = urllib.error.URLError(TimeoutError("timed out"))
+    with mock.patch("urllib.request.urlopen", side_effect=timeout_exc):
+        with pytest.raises(ScenarioFailure) as exc_info:
+            client.request("GET", "/some/path")
+    msg = str(exc_info.value)
+    assert "GET" in msg
+    assert "/some/path" in msg
+    assert "vor Response-Headern" in msg
+    assert "password" not in msg.lower()
+    assert "Authorization" not in msg
+    assert "Bearer" not in msg
+
+
+def test_acceptance_http_client_timeout_phase_label_before_headers_via_urlerror() -> None:
+    import unittest.mock as mock
+    import urllib.error
+
+    client = AcceptanceHttpClient("http://127.0.0.1:19999")
+    client._token = "test-token"
+    # OSError wrapping with "timed out" in message is the other common shape
+    inner = OSError("timed out")
+    timeout_exc = urllib.error.URLError(inner)
+    with mock.patch("urllib.request.urlopen", side_effect=timeout_exc):
+        with pytest.raises(ScenarioFailure, match="vor Response-Headern"):
+            client.request("POST", "/action", body={"x": 1})
+
+
+def test_acceptance_http_client_timeout_direct_raises_before_headers() -> None:
+    import unittest.mock as mock
+
+    client = AcceptanceHttpClient("http://127.0.0.1:19999")
+    client._token = "test-token"
+    with mock.patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+        with pytest.raises(ScenarioFailure, match="vor Response-Headern"):
+            client.request("GET", "/check")
+
+
+def test_acceptance_http_client_no_retry_on_timeout() -> None:
+    import unittest.mock as mock
+    import urllib.error
+
+    client = AcceptanceHttpClient("http://127.0.0.1:19999")
+    client._token = "tok"
+    call_count = 0
+    timeout_exc = urllib.error.URLError(TimeoutError("timed out"))
+
+    def once_then_nothing(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        raise timeout_exc
+
+    with mock.patch("urllib.request.urlopen", side_effect=once_then_nothing):
+        with pytest.raises(ScenarioFailure):
+            client.request("GET", "/once")
+    assert call_count == 1, f"expected exactly 1 request, got {call_count}"
+
+
+def test_acceptance_http_client_timeout_during_body_read_reports_method_path_and_no_secrets() -> None:
+    import unittest.mock as mock
+
+    class _FakeResponse:
+        """Fake HTTP response whose read() raises TimeoutError."""
+
+        status = 200
+        headers: dict[str, str] = {}
+
+        def read(self) -> bytes:
+            raise TimeoutError("socket timed out during body read")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    call_count = 0
+
+    def fake_urlopen(req, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        return _FakeResponse()
+
+    client = AcceptanceHttpClient("http://127.0.0.1:19999")
+    client._token = "secret-bearer-token"
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with pytest.raises(ScenarioFailure) as exc_info:
+            client.request("POST", "/documents/versions/DOC-1/1/comments", body={"password": "request-body-secret"})
+
+    msg = str(exc_info.value)
+    assert "POST" in msg
+    assert "/documents/versions/DOC-1/1/comments" in msg
+    assert "beim Lesen des Response-Bodys" in msg
+    # no tokens, auth headers, or request body values in the message
+    assert "secret-bearer-token" not in msg
+    assert "Authorization" not in msg
+    assert "Bearer" not in msg
+    assert "request-body-secret" not in msg
+    assert "password" not in msg.lower()
+    # exactly one request, no retry
+    assert call_count == 1, f"expected exactly 1 urlopen call, got {call_count}"
+
+
 def test_full_gate_test_does_not_use_tmp_path_parameter() -> None:
     import inspect
 
