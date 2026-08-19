@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS: Konsistenztest gehärtet + Regressionstest grün; MR09-R2-R3 PASS; MR09-R2-R2 PASS; MR09-R2-R1 PASS; MR09-R2 PASS; Ursache offen; kein aktiver Candidate; Freeze pending); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
+Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS; FreezeCommit pending — Freeze-Gate 1254/0/20 grün; CandidateSha wird nach FreezeCommit in Commit 4 eingetragen; kein aktiver Candidate bis Commit 4 abgeschlossen); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -38,10 +38,13 @@ Verlauf seit `4db97ea`:
 - **MR09-R2-R4** hat die Checkpoint-Status-Zuordnung im Konsistenztest gehärtet
   und die False-positive-Lücke durch einen synthetischen Regressionstest geschlossen
   (**PASS**).
+- **FreezeCommit** (Commit 3 in Bearbeitung): Freeze-Regression-Gate grün —
+  1254 passed / 0 failed / 20 skipped; stamp `20260819T150534010Z`.
+  CandidateSha wird nach dem FreezeCommit durch Commit 4 eingetragen.
 - **Parent MR09** bleibt **IN_PROGRESS und nicht bestanden**.
 
-Ein neuer Candidate entsteht erst nach ausdrücklicher Commit-/Freeze-Freigabe durch
-den Nutzer. Gesamtstatus: **NOT_READY**. `ACCEPTED` ist nicht gesetzt.
+Aktiver CandidateSha: **keiner bis Commit 4 abgeschlossen**.
+Gesamtstatus: **NOT_READY**. `ACCEPTED` ist nicht gesetzt.
 Current checkpoint: **MR09**.
 
 Historical FR14 freeze `ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)
