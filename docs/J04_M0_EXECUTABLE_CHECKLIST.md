@@ -89,7 +89,7 @@ Current checkpoint: MR09
 | MR06 | DOCX-Kommentarsynchronisation stabilisieren | PASS | `3bf6518` | 71 passed; `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml` | pending user approval |
 | MR07 | Realprocess-Harness auf verbindlichen M0-Scope bringen | PASS | `3bf6518` | 75 passed; `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml` | pending user approval |
 | MR08 | Gesamte Regression und Candidate Freeze | PASS | `3bf6518` | 988 passed / 20 skipped; freeze regression `build/j04-m0-closure/mr08-freeze-regression-results-20260818T193330926Z/junit.xml`; CandidateSha `4db97ea72ffcb18823cd610599752cc1c8e8716d` | `4db97ea` |
-| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; FreezeCommit pending; kein aktiver Candidate bis Commit 4 | — |
+| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; CandidateSha `08b04e6`; CP08-V10 NOT RUN | `08b04e6` |
 | MR10 | Packaging, Golive, Human Gate und Merge | TODO | — | — | — |
 
 <!-- J04_M0_MERGE_LEDGER_END -->
@@ -1378,9 +1378,13 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
   (`build/j04-m0-closure/mr09-freeze-pre-docs-results-20260819T150513189Z/junit.xml`)
 - **Freeze-Regression-Gate:** `20260819T150534010Z` — **1254 passed / 0 failed / 20 skipped** — Exit 0
   (`build/j04-m0-closure/mr09-freeze-regression-results-20260819T150534010Z/junit.xml`)
-- **FreezeCommit:** `docs(j04-m0): freeze MR09 retry candidate` — SHA wird durch diesen Commit selbst bestimmt
-- **CandidateSha:** wird nach FreezeCommit durch Commit 4 eingetragen
+- **FreezeCommit:** `08b04e6fe28ee86e71759440236b5ca10711fa1a`
+  (`docs(j04-m0): freeze MR09 retry candidate`)
+- **CandidateSha:** `08b04e6fe28ee86e71759440236b5ca10711fa1a` (`08b04e6`)
 - **Freeze-Ausgangslage:** MR09-R2 bis R2-R4 PASS; Parent MR09 IN_PROGRESS; NOT_READY; kein Push, kein PR, kein CP08-Lauf
+- **CP08-V10:** NOT RUN — benötigt neue ausdrückliche Einmalfreigabe
+- **Gesamtstatus:** NOT_READY; MR10 TODO; Accepted unset
+- **Nächster Schritt:** unabhängige Prüfung; danach separate destruktive CP08-V10-Freigabe
 
 ### MR10 — Packaging, Golive, Human Gate und Merge
 
