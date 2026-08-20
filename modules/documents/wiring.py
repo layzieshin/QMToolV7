@@ -17,8 +17,46 @@ from .service import DocumentsService
 from .sqlite_repository import SQLiteDocumentsRepository
 from .storage import FileSystemDocumentsStorage
 
+# Explicit in-process opt-in for tests/dev harnesses. Never a free product env var.
+DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT = "documents_allow_inprocess_sqlite"
+
+
+def _should_register_sqlite(container) -> bool:
+    if container.has_port("documents_runtime_owner"):
+        if container.get_port("documents_runtime_owner") == "backend":
+            return True
+    if container.has_port("documents_allow_inprocess_sqlite"):
+        return bool(container.get_port("documents_allow_inprocess_sqlite"))
+    return False
+
 
 def register_documents_ports(container) -> None:
+    """Register documents ports.
+
+    Backend/in-process SQLite ownership uses ``_register_documents_sqlite_ports``.
+    Client/HTTP ownership must be injected by the composition root via port
+    ``documents_client_ports_registrar`` (callable). Domain code must never
+    import adapter implementation packages.
+    """
+    if _should_register_sqlite(container):
+        _register_documents_sqlite_ports(container)
+        return
+    if not container.has_port("documents_client_ports_registrar"):
+        raise RuntimeError(
+            "documents client ports registrar missing; "
+            "composition root must register documents_client_ports_registrar "
+            "before activating the documents client module"
+        )
+    if container.has_port("documents_client_ports_registrar"):
+        registrar = container.get_port("documents_client_ports_registrar")
+    else:
+        raise RuntimeError("documents client ports registrar missing")
+    if not callable(registrar):
+        raise RuntimeError("documents_client_ports_registrar must be callable")
+    registrar(container)
+
+
+def _register_documents_sqlite_ports(container) -> None:
     app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
     module_root = Path(__file__).resolve().parents[2]
     resource_root = container.get_port("resource_root") if container.has_port("resource_root") else module_root

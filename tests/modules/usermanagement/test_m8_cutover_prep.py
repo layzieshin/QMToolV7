@@ -33,17 +33,20 @@ from modules.usermanagement.password_crypto import hash_password
 from qm_platform.persistence.database_evolution import DatabaseEvolutionService
 from qm_platform.runtime.container import RuntimeContainer
 from tests.database_helpers import prepare_test_database, user_repository
-from tests.modules.usermanagement.test_postgres_schema_live import (
-    MIGRATOR_LOGIN,
-    LOGIN_PASSWORD,
-    _cleanup_all,
-    _dsn_with_user,
-    _prepare_environment,
-    _require_dsn,
+from tests.postgres_destructive_guard import DestructivePostgresGuardError
+from tests.postgres_live_support import (
+    RESTORE_DB,
+    WRONG_RESTORE_DB,
+    LivePostgresEnv,
+    cleanup_live_environment,
+    drop_restore_database,
+    os_environ_required,
+    prepare_live_environment,
+    prepare_restore_database,
 )
 
-RESTORE_DB = "qmtool_um_restore_drill"
-WRONG_RESTORE_DB = "qmtool_um_wrong_restore_target"
+RESTORE_DB_NAME = RESTORE_DB
+WRONG_RESTORE_DB_NAME = WRONG_RESTORE_DB
 
 
 @pytest.fixture(autouse=True)
@@ -88,43 +91,27 @@ def _dsn_with_db(dsn: str, dbname: str) -> str:
     return psycopg.conninfo.make_conninfo(**info)
 
 
-def _drop_restore_db(admin_dsn: str, database_name: str = RESTORE_DB) -> None:
-    with psycopg.connect(admin_dsn, autocommit=True) as admin:
-        admin.execute(
-            """
-            SELECT pg_terminate_backend(pid)
-            FROM pg_stat_activity
-            WHERE datname = %s AND pid <> pg_backend_pid()
-            """,
-            (database_name,),
-        )
-        admin.execute(
-            psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
-                psycopg.sql.Identifier(database_name)
-            )
-        )
+def _prepare_or_skip() -> LivePostgresEnv:
+    try:
+        return prepare_live_environment()
+    except DestructivePostgresGuardError as exc:
+        if os_environ_required():
+            pytest.fail(str(exc))
+        pytest.skip(str(exc))
 
 
-def _prepare_restore_db(admin_dsn: str, database_name: str = RESTORE_DB) -> str:
-    _drop_restore_db(admin_dsn, database_name)
-    with psycopg.connect(admin_dsn, autocommit=True) as admin:
-        database = psycopg.sql.Identifier(database_name)
-        admin.execute(psycopg.sql.SQL("CREATE DATABASE {}").format(database))
-        admin.execute(
-            psycopg.sql.SQL("GRANT CONNECT, CREATE ON DATABASE {} TO {}").format(
-                database,
-                psycopg.sql.Identifier(MIGRATOR_LOGIN),
-            )
-        )
-        admin.execute(
-            psycopg.sql.SQL("GRANT CONNECT, CREATE ON DATABASE {} TO {}").format(
-                database,
-                psycopg.sql.Identifier(pgs.MIGRATOR_ROLE),
-            )
-        )
-    return _dsn_with_db(
-        _dsn_with_user(admin_dsn, MIGRATOR_LOGIN, LOGIN_PASSWORD),
+def _drop_restore_db(admin_dsn: str, database_name: str = RESTORE_DB_NAME) -> None:
+    drop_restore_database(database_name, admin_dsn=admin_dsn)
+
+
+def _prepare_restore_db(
+    env: LivePostgresEnv,
+    database_name: str = RESTORE_DB_NAME,
+) -> str:
+    return prepare_restore_database(
         database_name,
+        migrator_password=env.migrator_password,
+        admin_dsn=env.admin_dsn,
     )
 
 
@@ -311,8 +298,10 @@ def test_nonempty_cross_module_refs_block(tmp_path: Path) -> None:
 
 @pytest.mark.postgres
 def test_postgres_wrong_role_blocks_readiness(tmp_path: Path) -> None:
-    admin_dsn = _require_dsn()
-    migrator_dsn, runtime_dsn = _prepare_environment(admin_dsn)
+    env = _prepare_or_skip()
+    admin_dsn = env.admin_dsn
+    migrator_dsn = env.migrator_dsn
+    runtime_dsn = env.runtime_dsn
     try:
         from modules.usermanagement import postgres_schema as pgs
 
@@ -329,20 +318,20 @@ def test_postgres_wrong_role_blocks_readiness(tmp_path: Path) -> None:
         assert result.status == STATUS_BLOCKED
         assert "postgres_migrator_role_required" in result.blocker_codes
     finally:
-        _cleanup_all(admin_dsn)
+        cleanup_live_environment(admin_dsn=admin_dsn)
 
 
 @pytest.mark.postgres
 def test_postgres_readiness_and_ready_for_remapping(tmp_path: Path) -> None:
     _require_pg_tools()
-    admin_dsn = _require_dsn()
-    migrator_dsn, _runtime_dsn = _prepare_environment(admin_dsn)
-    restore_dsn = ""
+    env = _prepare_or_skip()
+    admin_dsn = env.admin_dsn
+    migrator_dsn = env.migrator_dsn
     try:
         from modules.usermanagement import postgres_schema as pgs
 
         pgs.migrate_usermanagement_schema(migrator_dsn)
-        restore_dsn = _prepare_restore_db(admin_dsn)
+        restore_dsn = _prepare_restore_db(env)
         users_db = _hashed_users_db(tmp_path)
         cross = _empty_cross(tmp_path)
         result = prepare_postgres_cutover(
@@ -365,7 +354,7 @@ def test_postgres_readiness_and_ready_for_remapping(tmp_path: Path) -> None:
         assert report["status"] != "cutover_ready"
     finally:
         _drop_restore_db(admin_dsn)
-        _cleanup_all(admin_dsn)
+        cleanup_live_environment(admin_dsn=admin_dsn)
 
 
 def test_api_wrapper_matches_internal(tmp_path: Path) -> None:
@@ -463,8 +452,9 @@ def test_cli_technical_failure_redacts_exception_message(
 
 @pytest.mark.postgres
 def test_same_database_with_different_dsn_blocks_before_restore(tmp_path: Path) -> None:
-    admin_dsn = _require_dsn()
-    migrator_dsn, _runtime_dsn = _prepare_environment(admin_dsn)
+    env = _prepare_or_skip()
+    admin_dsn = env.admin_dsn
+    migrator_dsn = env.migrator_dsn
     try:
         pgs.migrate_usermanagement_schema(migrator_dsn)
         alias_params = psycopg.conninfo.conninfo_to_dict(migrator_dsn)
@@ -480,18 +470,18 @@ def test_same_database_with_different_dsn_blocks_before_restore(tmp_path: Path) 
         assert "drill_source_equals_target" in result.blocker_codes
         assert "pg_restore_exit_code" not in result.section
     finally:
-        _cleanup_all(admin_dsn)
+        cleanup_live_environment(admin_dsn=admin_dsn)
 
 
 @pytest.mark.postgres
 def test_nonempty_restore_target_blocks_without_mutation(tmp_path: Path) -> None:
-    admin_dsn = _require_dsn()
-    migrator_dsn, _runtime_dsn = _prepare_environment(admin_dsn)
-    restore_dsn = ""
+    env = _prepare_or_skip()
+    admin_dsn = env.admin_dsn
+    migrator_dsn = env.migrator_dsn
     try:
         pgs.migrate_usermanagement_schema(migrator_dsn)
-        restore_dsn = _prepare_restore_db(admin_dsn)
-        with psycopg.connect(_dsn_with_db(admin_dsn, RESTORE_DB), autocommit=True) as admin:
+        restore_dsn = _prepare_restore_db(env)
+        with psycopg.connect(_dsn_with_db(admin_dsn, RESTORE_DB_NAME), autocommit=True) as admin:
             admin.execute("CREATE TABLE public.keep_me(value integer)")
         result = run_postgres_backup_restore_drill(
             source_migrator_dsn=migrator_dsn,
@@ -502,21 +492,21 @@ def test_nonempty_restore_target_blocks_without_mutation(tmp_path: Path) -> None
         assert result.ok is False
         assert "drill_target_not_empty" in result.blocker_codes
         assert "pg_restore_exit_code" not in result.section
-        with psycopg.connect(_dsn_with_db(admin_dsn, RESTORE_DB)) as admin:
+        with psycopg.connect(_dsn_with_db(admin_dsn, RESTORE_DB_NAME)) as admin:
             assert admin.execute("SELECT to_regclass('public.keep_me')").fetchone()[0]
     finally:
         _drop_restore_db(admin_dsn)
-        _cleanup_all(admin_dsn)
+        cleanup_live_environment(admin_dsn=admin_dsn)
 
 
 @pytest.mark.postgres
 def test_wrong_restore_target_name_blocks_before_restore(tmp_path: Path) -> None:
-    admin_dsn = _require_dsn()
-    migrator_dsn, _runtime_dsn = _prepare_environment(admin_dsn)
-    restore_dsn = ""
+    env = _prepare_or_skip()
+    admin_dsn = env.admin_dsn
+    migrator_dsn = env.migrator_dsn
     try:
         pgs.migrate_usermanagement_schema(migrator_dsn)
-        restore_dsn = _prepare_restore_db(admin_dsn, WRONG_RESTORE_DB)
+        restore_dsn = _prepare_restore_db(env, WRONG_RESTORE_DB_NAME)
         result = run_postgres_backup_restore_drill(
             source_migrator_dsn=migrator_dsn,
             restore_target_dsn=restore_dsn,
@@ -527,5 +517,5 @@ def test_wrong_restore_target_name_blocks_before_restore(tmp_path: Path) -> None
         assert "drill_target_name_invalid" in result.blocker_codes
         assert "pg_restore_exit_code" not in result.section
     finally:
-        _drop_restore_db(admin_dsn, WRONG_RESTORE_DB)
-        _cleanup_all(admin_dsn)
+        _drop_restore_db(admin_dsn, WRONG_RESTORE_DB_NAME)
+        cleanup_live_environment(admin_dsn=admin_dsn)

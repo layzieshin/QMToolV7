@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from modules.usermanagement import api as um_api
 from modules.usermanagement.api import AuthenticatedUser, UserContext
 
-from src.backend.auth_dependencies import get_container, map_auth_error, require_admin_context
+from src.backend.auth_dependencies import get_container, map_auth_error, require_admin_context, require_user_context_normal
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -35,6 +35,33 @@ class UserAccessResponse(BaseModel):
     is_active: bool
     is_qmb: bool
     must_change_password: bool
+
+
+class UserDirectoryItem(BaseModel):
+    user_id: str
+    username: str
+    role: str
+    is_active: bool
+    is_qmb: bool
+
+
+@router.get("/directory", response_model=list[UserDirectoryItem])
+def list_directory(
+    request: Request,
+    _actor: Annotated[UserContext, Depends(require_user_context_normal)],
+) -> list[UserDirectoryItem]:
+    container = get_container(request)
+    entries = um_api.list_users_for_assignment(container)
+    return [
+        UserDirectoryItem(
+            user_id=item.user_id,
+            username=item.username,
+            role=item.role,
+            is_active=item.is_active,
+            is_qmb=item.is_qmb,
+        )
+        for item in entries
+    ]
 
 
 def _user_payload(user: AuthenticatedUser) -> UserAccessResponse:

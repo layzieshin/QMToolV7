@@ -113,3 +113,89 @@ def wire_backend_usermanagement(container: RuntimeContainer) -> LifecycleManager
     _ensure_users_or_bootstrap(container)
     lifecycle.start(strict=True)
     return lifecycle
+
+
+def wire_backend_documents(
+    container: RuntimeContainer,
+    lifecycle: LifecycleManager | None = None,
+) -> LifecycleManager:
+    """Wire signature, registry, and documents; backend is sole documents.db owner (J04-M0).
+
+    When ``lifecycle`` is provided (typical after ``wire_backend_usermanagement``),
+    capabilities such as ``auth.authenticate`` remain available for signature.
+    """
+    from pathlib import Path
+    from types import MappingProxyType
+
+    from modules.documents.module import create_documents_module_contract
+    from modules.registry.module import create_registry_module_contract
+    from modules.signature.module import create_signature_module_contract
+    from qm_platform.persistence.database_evolution import (
+        DATABASE_PREFLIGHT_STATUSES_PORT,
+        DataValidationQuery,
+        DatabaseEvolutionService,
+        DatabaseSpec,
+        MigrationStep,
+    )
+    from qm_platform.persistence.path_resolver import (
+        resolve_database_absolute_path,
+        resolve_platform_settings_db_path,
+    )
+    from qm_platform.persistence.platform_settings_contribution import (
+        PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
+    )
+
+    container.register_port("documents_runtime_owner", "backend")
+    container.register_port("signature_runtime_owner", "backend")
+    if lifecycle is None:
+        lifecycle = LifecycleManager(container)
+    contracts = (
+        create_signature_module_contract(),
+        create_registry_module_contract(),
+        create_documents_module_contract(),
+    )
+    for contract in contracts:
+        if contract.module_id not in {c.module_id for c in lifecycle.contracts()}:
+            lifecycle.prepare(contract)
+
+    app_home = Path(container.get_port("app_home"))
+    evolution = DatabaseEvolutionService(app_home=app_home)
+
+    def _spec_for(contribution) -> DatabaseSpec:
+        if contribution.database_id == PLATFORM_SETTINGS_DATABASE_CONTRIBUTION.database_id:
+            path = resolve_platform_settings_db_path(app_home)
+        else:
+            path = resolve_database_absolute_path(app_home, contribution)
+        return DatabaseSpec(
+            database_id=contribution.database_id,
+            path=path,
+            migrations=tuple(
+                MigrationStep(
+                    version=migration.version,
+                    name=migration.name,
+                    sql_path=migration.sql_path,
+                )
+                for migration in contribution.migrations
+            ),
+            validation_queries=tuple(
+                DataValidationQuery(name=query.name, sql=query.sql)
+                for query in contribution.validation_queries
+            ),
+        )
+
+    # Include platform_settings so pre-migrate backups with residual archive are valid.
+    contributions = (
+        PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
+        *(c for contract in contracts for c in contract.database_contributions),
+    )
+    specs = tuple(sorted((_spec_for(item) for item in contributions), key=lambda spec: spec.database_id))
+
+    if not container.has_port(DATABASE_PREFLIGHT_STATUSES_PORT):
+        preflight = {status.database_id: status for status in evolution.statuses(specs)}
+        container.register_port(DATABASE_PREFLIGHT_STATUSES_PORT, MappingProxyType(preflight))
+
+    evolution.migrate(specs, reason="backend_documents")
+    for contract in contracts:
+        lifecycle.wire(contract.module_id)
+    lifecycle.start(strict=True)
+    return lifecycle

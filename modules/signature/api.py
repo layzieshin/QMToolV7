@@ -4,16 +4,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import SignRequest, SignResult, SignatureAsset, SignaturePlacementInput, UserSignatureTemplate, LabelLayoutInput
-from .errors import SignatureError
+from .errors import PasswordInvalidError, PasswordRequiredError, SignatureError, SignatureTemplateError
 from .layout_math import compute_target_height, resolve_label_pdf_anchor
 from .service import SignatureServiceV2
+from .transport_dto import (
+    asset_to_payload,
+    layout_from_payload,
+    layout_to_payload,
+    placement_from_payload,
+    placement_to_payload,
+    template_to_payload,
+)
 
 __all__ = [
     "SignatureApi",
     "SignatureError",
+    "PasswordInvalidError", "PasswordRequiredError", "SignatureTemplateError",
     "compute_target_height", "resolve_label_pdf_anchor",
     "SignRequest", "SignResult", "SignatureAsset",
     "SignaturePlacementInput", "UserSignatureTemplate", "LabelLayoutInput",
+    "asset_to_payload", "layout_from_payload", "layout_to_payload",
+    "placement_from_payload", "placement_to_payload", "template_to_payload",
 ]
 
 
@@ -48,6 +59,9 @@ class SignatureApi:
             scope=scope,
         )
 
+    def create_user_signature_template_for_actor(self, actor, **kwargs):
+        return self.service.create_user_signature_template_for_actor(actor=actor, **kwargs)
+
     def list_user_signature_templates(self, owner_user_id: str) -> list[UserSignatureTemplate]:
         return self.service.list_user_signature_templates(owner_user_id)
 
@@ -56,6 +70,9 @@ class SignatureApi:
 
     def delete_signature_template(self, template_id: str) -> None:
         self.service.delete_signature_template(template_id)
+
+    def delete_signature_template_for_actor(self, template_id: str, actor) -> None:
+        self.service.delete_signature_template_for_actor(template_id, actor)
 
     def update_signature_template(
         self,
@@ -76,8 +93,14 @@ class SignatureApi:
             signature_asset_id=signature_asset_id,
         )
 
+    def update_signature_template_for_actor(self, actor, **kwargs):
+        return self.service.update_signature_template_for_actor(actor=actor, **kwargs)
+
     def copy_global_template_to_user(self, template_id: str, owner_user_id: str, name: str | None = None) -> UserSignatureTemplate:
         return self.service.copy_global_template_to_user(template_id, owner_user_id, name=name)
+
+    def copy_global_template_for_actor(self, template_id: str, actor, name: str | None = None):
+        return self.service.copy_global_template_for_actor(template_id, actor, name=name)
 
     def set_active_signature_asset(self, owner_user_id: str, asset_id: str, password: str | None = None) -> None:
         self.service.set_active_signature_asset(owner_user_id, asset_id, password=password)

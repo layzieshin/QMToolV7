@@ -1,7 +1,6 @@
 """Live PostgreSQL repository tests for AP-028 M4."""
 from __future__ import annotations
 
-import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -20,13 +19,7 @@ from modules.usermanagement.module import register_usermanagement_ports
 from modules.usermanagement.service import UserManagementService
 from qm_platform.runtime.container import RuntimeContainer
 
-from tests.modules.usermanagement.test_postgres_schema_live import (
-    _cleanup_all,
-    _require_dsn,
-)
-from tests.modules.usermanagement.test_postgres_schema_live import (
-    _prepare_environment as _prepare_schema_environment,
-)
+from tests.postgres_live_support import LivePostgresEnv
 
 pytestmark = pytest.mark.postgres
 
@@ -36,14 +29,16 @@ def _utc() -> datetime:
 
 
 @pytest.fixture
-def repositories() -> tuple[str, str, str, PostgresUserRepository, PostgresSessionRepository]:
-    admin_dsn = _require_dsn()
-    migrator_dsn, runtime_dsn = _prepare_schema_environment(admin_dsn)
+def repositories(
+    live_postgres_env: LivePostgresEnv,
+) -> tuple[str, str, str, PostgresUserRepository, PostgresSessionRepository]:
+    admin_dsn = live_postgres_env.admin_dsn
+    migrator_dsn = live_postgres_env.migrator_dsn
+    runtime_dsn = live_postgres_env.runtime_dsn
     pgs.migrate_usermanagement_schema(migrator_dsn)
     user_repository = PostgresUserRepository(runtime_dsn)
     session_repository = PostgresSessionRepository(runtime_dsn)
     yield admin_dsn, migrator_dsn, runtime_dsn, user_repository, session_repository
-    _cleanup_all(admin_dsn)
 
 
 def _new_user(repository: PostgresUserRepository, username: str = "alice") -> AuthenticatedUser:

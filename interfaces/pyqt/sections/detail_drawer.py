@@ -71,10 +71,13 @@ def build_metadata_tab(
     layout.addLayout(form)
     row = QHBoxLayout()
     btn_meta = QPushButton("Metadaten speichern")
+    btn_meta.setProperty("qmtool_action_key", "update_metadata")
     btn_meta.clicked.connect(on_save_metadata)
     btn_header = QPushButton("Header speichern")
+    btn_header.setProperty("qmtool_action_key", "update_header")
     btn_header.clicked.connect(on_save_header)
     btn_change = QPushButton("Change Request hinzufuegen")
+    btn_change.setProperty("qmtool_action_key", "change_requests")
     if on_add_change_request is not None:
         btn_change.clicked.connect(on_add_change_request)
     else:
@@ -107,6 +110,7 @@ def build_roles_tab(
     layout.addLayout(assignments)
     row = QHBoxLayout()
     btn_roles = QPushButton("Rollen speichern")
+    btn_roles.setProperty("qmtool_action_key", "assign_roles")
     btn_roles.clicked.connect(on_save_roles)
     roles_buttons.append(btn_roles)
     row.addWidget(btn_roles)
@@ -126,6 +130,7 @@ def build_extension_tab(
     extension_remaining_label: QLabel,
     on_extend: Callable[[], None],
     on_new_version: Callable[[], None],
+    extension_buttons: list[QPushButton] | None = None,
 ) -> QWidget:
     """Build the annual extension tab."""
     tab = QWidget()
@@ -139,12 +144,15 @@ def build_extension_tab(
     form.addRow("Naechste Version", next_version)
     layout.addLayout(form)
     row = QHBoxLayout()
-    for label, handler in [
-        ("Verlaengern (mit Signatur)", on_extend),
-        ("Neue Version nach Archiv", on_new_version),
+    for key, label, handler in [
+        ("extend_validity", "Verlaengern (mit Signatur)", on_extend),
+        ("new_version", "Neue Version nach Archiv", on_new_version),
     ]:
         b = QPushButton(label)
+        b.setProperty("qmtool_action_key", key)
         b.clicked.connect(handler)
+        if extension_buttons is not None:
+            extension_buttons.append(b)
         row.addWidget(b)
     row.addStretch(1)
     layout.addLayout(row)

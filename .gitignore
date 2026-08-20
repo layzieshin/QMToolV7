@@ -46,3 +46,7 @@ storage/
 # OS
 .DS_Store
 Thumbs.db
+
+# J04 local evidence / pytest basetemps (never commit)
+.j04*_evidence/
+.j04*basetemp/

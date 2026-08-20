@@ -48,9 +48,20 @@ def _divergent_local_profiles(path: Path) -> None:
 
 
 def _prepare_runtime(tmp_path: Path, monkeypatch):
+    from modules.documents.module import create_documents_module_contract
+    from qm_platform.runtime.lifecycle import LifecycleManager
+
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.delenv("QMTOOL_DOCUMENTS_LOCAL_WIRING", raising=False)
     container = build_container()
-    lifecycle = runtime_bootstrap.prepare_core_modules(container)
+    lifecycle = LifecycleManager(container)
+    # Replace client HTTP documents contract with backend SQLite ownership for provenance.
+    for contract in runtime_bootstrap.core_module_contracts():
+        if contract.module_id == "documents":
+            lifecycle.prepare(create_documents_module_contract())
+        else:
+            lifecycle.prepare(contract)
+    container.register_port("documents_runtime_owner", "backend")
     return container, lifecycle
 
 

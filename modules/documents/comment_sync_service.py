@@ -6,7 +6,11 @@ from uuid import uuid4
 
 from qm_platform.events.event_envelope import EventEnvelope
 
-from .comment_extractors.docx_comment_reader import DocxCommentReader
+from .comment_extractors.docx_comment_reader import (
+    DocxCommentReadError,
+    DocxCommentReader,
+    source_comment_identity,
+)
 from .comment_repository import WorkflowCommentRepository
 from .contracts import (
     DocumentVersionState,
@@ -16,6 +20,7 @@ from .contracts import (
     WorkflowCommentSourceKind,
     WorkflowCommentStatus,
 )
+from .errors import ValidationError
 
 
 class CommentSyncService:
@@ -34,18 +39,37 @@ class CommentSyncService:
         self, state: DocumentVersionState, *, docx_path: Path, actor_user_id: str
     ) -> list[WorkflowCommentListItem]:
         context = WorkflowCommentContext.DOCX_EDIT
-        extracted = self._reader.read_comments(docx_path, context=context.value)
-        existing = {
-            c.source_comment_key: c
-            for c in self._comments.list_for_context(state.document_id, state.version, context)
-        }
+        try:
+            extracted = self._reader.read_comments(docx_path, context=context.value)
+        except DocxCommentReadError as exc:
+            raise ValidationError(str(exc)) from exc
+        existing_rows = list(self._comments.list_for_context(state.document_id, state.version, context))
+        remaining = {row.source_comment_key: row for row in existing_rows}
+        next_ref = _next_docx_ref_index(state.document_id, state.version, existing_rows)
         now = datetime.now(timezone.utc)
         for item in extracted:
-            current = existing.get(item.source_comment_key)
-            status = current.status if current else WorkflowCommentStatus.ACTIVE
+            current = _match_existing_comment(item.source_comment_key, remaining)
+            if current is None:
+                ref_no = f"{state.document_id}-v{state.version}-DOCX-{next_ref:04d}"
+                next_ref += 1
+                comment_id = uuid4().hex
+                created_at = now
+                status = WorkflowCommentStatus.ACTIVE
+                status_note = None
+                status_changed_by = None
+                status_changed_at = None
+            else:
+                remaining.pop(current.source_comment_key, None)
+                ref_no = current.ref_no
+                comment_id = current.comment_id
+                created_at = current.created_at
+                status = current.status
+                status_note = current.status_note
+                status_changed_by = current.status_changed_by
+                status_changed_at = current.status_changed_at
             record = WorkflowCommentRecord(
-                comment_id=current.comment_id if current else uuid4().hex,
-                ref_no=current.ref_no if current else f"{state.document_id}-v{state.version}-DOCX-{len(existing)+1:04d}",
+                comment_id=comment_id,
+                ref_no=ref_no,
                 document_id=state.document_id,
                 version=state.version,
                 context=context,
@@ -59,10 +83,10 @@ class CommentSyncService:
                 preview_text=item.preview_text,
                 full_text=item.text,
                 status=status,
-                status_note=current.status_note if current else None,
-                status_changed_by=current.status_changed_by if current else None,
-                status_changed_at=current.status_changed_at if current else None,
-                created_at=current.created_at if current else now,
+                status_note=status_note,
+                status_changed_by=status_changed_by,
+                status_changed_at=status_changed_at,
+                created_at=created_at,
                 updated_at=now,
             )
             self._comments.upsert(record)
@@ -84,6 +108,7 @@ class CommentSyncService:
                 created_at=r.source_created_at or r.created_at,
                 preview_text=r.preview_text,
                 status=r.status,
+                updated_at=r.updated_at,
             )
             for r in records
         ]
@@ -94,3 +119,35 @@ class CommentSyncService:
         publish = getattr(self._event_bus, "publish", None)
         if callable(publish):
             publish(EventEnvelope.create(name=name, module_id="documents", payload=payload))
+
+
+def _match_existing_comment(source_key: str, remaining: dict[str, WorkflowCommentRecord]):
+    direct = remaining.get(source_key)
+    if direct is not None:
+        return direct
+    wanted = source_comment_identity(source_key)
+    if wanted is None:
+        return None
+    matches = [
+        row
+        for row in remaining.values()
+        if source_comment_identity(row.source_comment_key) == wanted
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _next_docx_ref_index(document_id: str, version: int, existing_rows: list[WorkflowCommentRecord]) -> int:
+    prefix = f"{document_id}-v{version}-DOCX-"
+    highest = 0
+    for row in existing_rows:
+        ref_no = str(row.ref_no or "")
+        if not ref_no.startswith(prefix):
+            continue
+        suffix = ref_no[len(prefix) :]
+        try:
+            highest = max(highest, int(suffix))
+        except ValueError:
+            continue
+    return highest + 1

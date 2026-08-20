@@ -33,7 +33,7 @@ from interfaces.pyqt.widgets.access_guards import require_admin_or_qmb
 from interfaces.pyqt.widgets.signature_canvas_dialog import SignatureCanvasDialog
 from interfaces.pyqt.widgets.signature_placement_dialog import SignaturePlacementDialog
 from interfaces.pyqt.widgets.signature_preview_panel import render_signature_settings_preview
-from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
+from modules.signature.api import LabelLayoutInput, SignaturePlacementInput
 from qm_platform.runtime.container import RuntimeContainer
 
 

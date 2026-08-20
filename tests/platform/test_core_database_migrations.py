@@ -54,14 +54,14 @@ def _snapshot_restore_targets(
     )
 
 
-def test_all_seven_databases_build_from_empty_and_wire_after_preflight(
+def test_all_six_client_databases_build_from_empty_and_wire_after_preflight(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    """Client runtime owns six DBs; documents.db is backend-only (J04-M0 Option A)."""
     _container, lifecycle, service, specs = _runtime(tmp_path, monkeypatch)
 
     assert [spec.database_id for spec in specs] == [
-        "documents",
         "incidents",
         "platform_settings",
         "registry",
@@ -96,46 +96,17 @@ def test_all_seven_databases_build_from_empty_and_wire_after_preflight(
                     (1, "platform_settings"),
                     (2, "platform_settings_integrity"),
                 ]
-            elif spec.database_id == "documents":
-                assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
-                assert conn.execute(
-                    "SELECT version, name FROM _qm_schema_migrations ORDER BY version"
-                ).fetchall() == [
-                    (1, "initial"),
-                    (2, "workflow_profiles"),
-                ]
             else:
                 assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
                 assert conn.execute(
                     "SELECT version, name FROM _qm_schema_migrations"
                 ).fetchall() == [(1, "initial")]
-    from qm_platform.persistence.database_evolution import (
-        DATABASE_PREFLIGHT_STATUSES_PORT,
-        DatabaseStatus,
-    )
-    from types import MappingProxyType
-
-    docs_spec = next(spec for spec in specs if spec.database_id == "documents")
-    _container.register_port(
-        DATABASE_PREFLIGHT_STATUSES_PORT,
-        MappingProxyType(
-            {
-                "documents": DatabaseStatus(
-                    database_id="documents",
-                    path=str(docs_spec.path),
-                    state="missing",
-                    current_version=0,
-                    target_version=docs_spec.target_version,
-                    pending_versions=tuple(step.version for step in docs_spec.migrations),
-                    integrity="not_run",
-                )
-            }
-        ),
-    )
     lifecycle.wire_all()
+    assert _container.has_port("documents_pool_api")
+    assert not _container.has_port("documents_service")
 
 
-def test_complete_seven_database_backup_restore_is_byte_exact(
+def test_complete_client_database_backup_restore_is_byte_exact(
     tmp_path: Path,
     monkeypatch,
 ) -> None:

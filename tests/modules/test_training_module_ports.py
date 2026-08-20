@@ -37,6 +37,9 @@ class TrainingModulePortsTest(unittest.TestCase):
             container.register_port("license_service", _LicenseAllowAll())
             container.register_port("app_home", root)
             container.register_port("resource_root", root)
+            # This is an explicit full in-process test composition, not a
+            # client runtime profile.
+            container.register_port("documents_runtime_owner", "backend")
             lifecycle = LifecycleManager(container)
             for contract in (
                 create_usermanagement_module_contract(),

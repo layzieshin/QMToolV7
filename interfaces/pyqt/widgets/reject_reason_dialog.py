@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QVBoxLayout
 
-from modules.documents.contracts import RejectionReason
+from modules.documents.api import RejectionReason
 
 
 class RejectReasonDialog(QDialog):

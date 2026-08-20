@@ -61,6 +61,9 @@ def update_action_visibility(
         button.setEnabled(allowed)
         if not allowed:
             button.setToolTip("")
-    top_buttons["profile_manager"].setVisible(profile_manager_allowed)
-    top_buttons["profile_manager"].setEnabled(profile_manager_allowed)
+    # Profile manager is CLI-only since J03; the button may be absent from the top bar.
+    profile_btn = top_buttons.get("profile_manager")
+    if profile_btn is not None:
+        profile_btn.setVisible(profile_manager_allowed)
+        profile_btn.setEnabled(profile_manager_allowed)
 

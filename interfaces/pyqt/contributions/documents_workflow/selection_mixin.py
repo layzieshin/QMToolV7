@@ -11,7 +11,7 @@ from interfaces.pyqt.presenters.documents_detail_presenter import DocumentsDetai
 from interfaces.pyqt.sections.action_bar import update_action_visibility
 from interfaces.pyqt.widgets.comment_detail_dialog import CommentDetailDialog
 from interfaces.pyqt.widgets.pdf_viewer_dialog import PdfViewerDialog, PdfViewerRequest
-from modules.documents.contracts import ArtifactType, DocumentStatus, SystemRole, WorkflowCommentStatus
+from modules.documents.api import ArtifactType, DocumentStatus, SystemRole, WorkflowCommentStatus
 
 
 class DocumentsWorkflowSelectionMixin:
@@ -33,11 +33,9 @@ class DocumentsWorkflowSelectionMixin:
     def _update_action_visibility(self) -> None:
         user = self._um.get_current_user()
         user_id = str(user.user_id) if user is not None else None
-        user_role = user_to_system_role(user) if user is not None else None
         visible_for = self._presenter.visible_actions_for_context(
             self._current_state,
             user_id=user_id,
-            user_role=user_role,
             can_create_new_documents=self._can_current_user_create_documents(),
         )
         update_action_visibility(
@@ -46,26 +44,19 @@ class DocumentsWorkflowSelectionMixin:
             visible_for,
             self._is_profile_manager_allowed(),
         )
-        self._apply_editor_permissions()
+        self._apply_editor_permissions(visible_for)
 
     def _can_current_user_create_documents(self) -> bool:
-        user = self._um.get_current_user()
-        if user is None:
+        """Create capability only from backend ``get_capabilities``; fail-closed otherwise."""
+        get_capabilities = getattr(self._pool, "get_capabilities", None)
+        if not callable(get_capabilities):
             return False
         try:
-            role = user_to_system_role(user)
-        except Exception as exc:  # noqa: BLE001
-            self._log.exception("Cannot resolve current user role")
+            capabilities = get_capabilities()
+        except Exception:  # noqa: BLE001
+            self._log.exception("Cannot load documents capabilities for create gate")
             return False
-        if role == SystemRole.QMB:
-            return True
-        if not self._container.has_port("settings_service"):
-            return False
-        docs_settings = self._container.get_port("settings_service").get_module_settings("documents")
-        mapping = docs_settings.get("can_create_new_documents", {})
-        if not isinstance(mapping, dict):
-            return False
-        return bool(mapping.get(str(user.user_id), False))
+        return isinstance(capabilities, dict) and capabilities.get("can_create_new_documents") is True
 
     def _open_details_from_table(self) -> None:
         if self._current_state is None:
@@ -76,6 +67,17 @@ class DocumentsWorkflowSelectionMixin:
     def _run_default_table_action(self) -> None:
         if self._current_state is None:
             return
+        user = self._um.get_current_user()
+        user_id = str(user.user_id) if user is not None else None
+        visible = self._presenter.visible_actions_for_context(
+            self._current_state,
+            user_id=user_id,
+            can_create_new_documents=self._can_current_user_create_documents(),
+        )
+        if "edit" not in visible:
+            self._open_details_from_table()
+            self._inline_notice.setText("Source-Öffnen nicht erlaubt. Details wurden geöffnet.")
+            return
         status = self._current_state.status
         priorities = self._presenter.default_artifact_priority(status)
         if priorities:
@@ -85,11 +87,16 @@ class DocumentsWorkflowSelectionMixin:
 
     def _open_readable_artifact(self, preferred_types: list[ArtifactType]) -> None:
         state = self._state_from_selection()
-        for artifact_type in preferred_types:
-            if self._sig_ops.open_artifact(state, artifact_type):
-                self._append("ARTEFAKT_GEOEFFNET", {"type": artifact_type.value})
-                self._inline_notice.setText(f"Standardaktion ausgeführt: {artifact_type.value} geöffnet.")
-                return
+        try:
+            for artifact_type in preferred_types:
+                if self._sig_ops.open_artifact(state, artifact_type):
+                    self._append("ARTEFAKT_GEOEFFNET", {"type": artifact_type.value})
+                    self._inline_notice.setText(f"Standardaktion ausgeführt: {artifact_type.value} geöffnet.")
+                    return
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc, critical=True)
+            self._open_details_from_table()
+            return
         self._open_details_from_table()
         self._inline_notice.setText("Keine lesbare Datei gefunden. Details wurden geöffnet.")
 
@@ -120,9 +127,14 @@ class DocumentsWorkflowSelectionMixin:
         self._reviewers.setText(", ".join(sorted(state.assignments.reviewers)))
         self._approvers.setText(", ".join(sorted(state.assignments.approvers)))
         if header is not None:
+            self._current_header = header
             self._department.setText(header.department or "")
             self._site.setText(header.site or "")
             self._regulatory_scope.setText(header.regulatory_scope or "")
+            if header.workflow_profile_id:
+                self._profile.setText(header.workflow_profile_id)
+        else:
+            self._current_header = None
         self._refresh_workflow_comments(state)
         self._extension_valid_from.setText(self._format_dt(state.valid_from))
         self._extension_valid_until.setText(self._format_dt(state.valid_until))
@@ -141,15 +153,15 @@ class DocumentsWorkflowSelectionMixin:
 
     def _resolve_comment_context(self, state) -> object | None:
         if state.status in {DocumentStatus.PLANNED, DocumentStatus.IN_PROGRESS}:
-            from modules.documents.contracts import WorkflowCommentContext
+            from modules.documents.api import WorkflowCommentContext
 
             return WorkflowCommentContext.DOCX_EDIT
         if state.status == DocumentStatus.IN_REVIEW:
-            from modules.documents.contracts import WorkflowCommentContext
+            from modules.documents.api import WorkflowCommentContext
 
             return WorkflowCommentContext.PDF_REVIEW
         if state.status == DocumentStatus.IN_APPROVAL:
-            from modules.documents.contracts import WorkflowCommentContext
+            from modules.documents.api import WorkflowCommentContext
 
             return WorkflowCommentContext.PDF_APPROVAL
         return None
@@ -158,22 +170,39 @@ class DocumentsWorkflowSelectionMixin:
         self._tab_comments.setRowCount(0)
         context = self._resolve_comment_context(state)
         self._comments_context_label.setText(f"Kontext: {getattr(context, 'value', '-')}")
-        self._add_comment_btn.setEnabled(context is not None and getattr(context, "value", "").startswith("PDF_"))
         if context is None or self._comments_api is None:
+            self._add_comment_btn.setEnabled(False)
+            self._update_comment_action_state()
             return
+        user = self._um.get_current_user()
+        user_id = str(user.user_id) if user is not None else None
+        visible = self._presenter.visible_actions_for_context(
+            state,
+            user_id=user_id,
+            can_create_new_documents=self._can_current_user_create_documents(),
+        )
+        comments_allowed = "comments" in visible
+        self._add_comment_btn.setEnabled(
+            comments_allowed and getattr(context, "value", "").startswith("PDF_")
+        )
         user, role = self._current_user_role()
-        if getattr(context, "value", "") == "DOCX_EDIT":
-            self._comments_api.sync_docx_comments(
+        try:
+            if comments_allowed and getattr(context, "value", "") == "DOCX_EDIT":
+                self._comments_api.sync_docx_comments(
+                    state,
+                    actor_user_id=user.user_id,
+                    actor_role=role,
+                )
+            rows = self._comments_api.list_workflow_comments(
                 state,
+                context=context,
                 actor_user_id=user.user_id,
                 actor_role=role,
             )
-        rows = self._comments_api.list_workflow_comments(
-            state,
-            context=context,
-            actor_user_id=user.user_id,
-            actor_role=role,
-        )
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
+            self._update_comment_action_state()
+            return
         self._tab_comments.setRowCount(len(rows))
         for i, row in enumerate(rows):
             self._tab_comments.setItem(i, 0, QTableWidgetItem(row.ref_no))
@@ -184,7 +213,28 @@ class DocumentsWorkflowSelectionMixin:
             self._tab_comments.setItem(i, 5, QTableWidgetItem(row.preview_text))
             self._tab_comments.item(i, 0).setData(0x0100, row.comment_id)
             self._tab_comments.item(i, 1).setData(0x0101, row.status.value)
+            self._tab_comments.item(i, 0).setData(0x0102, row.updated_at.isoformat())
         self._update_comment_action_state()
+
+    def _update_comment_action_state(self) -> None:
+        user = self._um.get_current_user()
+        user_id = str(user.user_id) if user is not None else None
+        visible = self._presenter.visible_actions_for_context(
+            self._current_state,
+            user_id=user_id,
+            can_create_new_documents=self._can_current_user_create_documents(),
+        )
+        comments_allowed = "comments" in visible
+        row_idx = self._tab_comments.currentRow()
+        token = self._selected_comment_token() if row_idx >= 0 else None
+        if not comments_allowed or row_idx < 0 or not token:
+            self._resolve_comment_btn.setEnabled(False)
+            self._activate_comment_btn.setEnabled(False)
+            return
+        status_item = self._tab_comments.item(row_idx, 1)
+        current_status = str(status_item.data(0x0101) if status_item is not None else "")
+        self._resolve_comment_btn.setEnabled(current_status != WorkflowCommentStatus.RESOLVED.value)
+        self._activate_comment_btn.setEnabled(current_status != WorkflowCommentStatus.ACTIVE.value)
 
     def _open_comment_detail(self, item) -> None:
         comment_id = item.data(0x0100) if item is not None else None
@@ -205,20 +255,34 @@ class DocumentsWorkflowSelectionMixin:
         value = item.data(0x0100)
         return str(value) if value else None
 
-    def _update_comment_action_state(self) -> None:
+    def _selected_comment_token(self) -> str | None:
         row_idx = self._tab_comments.currentRow()
         if row_idx < 0:
-            self._resolve_comment_btn.setEnabled(False)
-            self._activate_comment_btn.setEnabled(False)
-            return
-        status_item = self._tab_comments.item(row_idx, 1)
-        current_status = str(status_item.data(0x0101) if status_item is not None else "")
-        self._resolve_comment_btn.setEnabled(current_status != WorkflowCommentStatus.RESOLVED.value)
-        self._activate_comment_btn.setEnabled(current_status != WorkflowCommentStatus.ACTIVE.value)
+            return None
+        item = self._tab_comments.item(row_idx, 0)
+        if item is None:
+            return None
+        value = item.data(0x0102)
+        text = str(value).strip() if value is not None else ""
+        return text or None
 
     def _resolve_selected_comment(self) -> None:
         comment_id = self._selected_comment_id()
+        token = self._selected_comment_token()
         if not comment_id or self._comments_api is None:
+            return
+        if not token:
+            self._show_error(RuntimeError("Kommentar-ETag fehlt; bitte Kommentare neu laden."))
+            return
+        user = self._um.get_current_user()
+        user_id = str(user.user_id) if user is not None else None
+        visible = self._presenter.visible_actions_for_context(
+            self._current_state,
+            user_id=user_id,
+            can_create_new_documents=self._can_current_user_create_documents(),
+        )
+        if "comments" not in visible:
+            self._inline_notice.setText("Kommentaraktionen nicht erlaubt.")
             return
         try:
             user, role = self._current_user_role()
@@ -228,6 +292,7 @@ class DocumentsWorkflowSelectionMixin:
                 actor_user_id=user.user_id,
                 actor_role=role,
                 note="resolved in workflow details",
+                expected_updated_at=token,
             )
             state = self._state_from_selection()
             self._refresh_workflow_comments(state)
@@ -236,7 +301,21 @@ class DocumentsWorkflowSelectionMixin:
 
     def _activate_selected_comment(self) -> None:
         comment_id = self._selected_comment_id()
+        token = self._selected_comment_token()
         if not comment_id or self._comments_api is None:
+            return
+        if not token:
+            self._show_error(RuntimeError("Kommentar-ETag fehlt; bitte Kommentare neu laden."))
+            return
+        user = self._um.get_current_user()
+        user_id = str(user.user_id) if user is not None else None
+        visible = self._presenter.visible_actions_for_context(
+            self._current_state,
+            user_id=user_id,
+            can_create_new_documents=self._can_current_user_create_documents(),
+        )
+        if "comments" not in visible:
+            self._inline_notice.setText("Kommentaraktionen nicht erlaubt.")
             return
         try:
             user, role = self._current_user_role()
@@ -246,6 +325,7 @@ class DocumentsWorkflowSelectionMixin:
                 actor_user_id=user.user_id,
                 actor_role=role,
                 note="re-activated in workflow details",
+                expected_updated_at=token,
             )
             state = self._state_from_selection()
             self._refresh_workflow_comments(state)
@@ -254,6 +334,16 @@ class DocumentsWorkflowSelectionMixin:
 
     def _open_comment_viewer(self) -> None:
         state = self._state_from_selection()
+        user = self._um.get_current_user()
+        user_id = str(user.user_id) if user is not None else None
+        visible = self._presenter.visible_actions_for_context(
+            state,
+            user_id=user_id,
+            can_create_new_documents=self._can_current_user_create_documents(),
+        )
+        if "comments" not in visible:
+            self._inline_notice.setText("Kommentaraktionen nicht erlaubt.")
+            return
         context = self._resolve_comment_context(state)
         path = self._sig_ops.resolve_openable_path_from_state(state)
         if path is None:

@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 
-from modules.documents.module import create_documents_module_contract
+from modules.documents.module import create_documents_client_module_contract, create_documents_module_contract
 from modules.incident_management.module import create_incident_management_module_contract
 from modules.registry.module import create_registry_module_contract
-from modules.signature.module import create_signature_module_contract
+from modules.signature.module import create_signature_client_module_contract, create_signature_module_contract
 from modules.training.module import create_training_module_contract
 from modules.usermanagement.module import create_usermanagement_module_contract
 
@@ -19,6 +19,7 @@ from ..persistence.database_evolution import (
 )
 from ..sdk.module_contract import ModuleContract
 from ..settings.settings_service import SettingsService
+from .client_runtime_profile import CLIENT_RUNTIME_PROFILE_PORT, PROFILE_BACKEND
 from .container import RuntimeContainer
 from .lifecycle import LifecycleManager
 
@@ -29,8 +30,14 @@ class BootstrapResult:
     lifecycle: LifecycleManager
 
 
-def core_module_contracts() -> list[ModuleContract]:
-    return [
+def core_module_contracts(
+    module_ids: set[str] | None = None,
+    *,
+    client_profile: str | None = None,
+) -> list[ModuleContract]:
+    # The default catalogue is the complete migration registry. Composition
+    # roots explicitly select client contracts for a runtime profile.
+    contracts = [
         create_usermanagement_module_contract(),
         create_signature_module_contract(),
         create_registry_module_contract(),
@@ -38,6 +45,19 @@ def core_module_contracts() -> list[ModuleContract]:
         create_training_module_contract(),
         create_incident_management_module_contract(),
     ]
+    if client_profile in {"backend", "legacy"}:
+        replacements = {
+            "documents": create_documents_client_module_contract(),
+            "signature": (
+                create_signature_client_module_contract()
+                if client_profile == "backend"
+                else create_signature_module_contract()
+            ),
+        }
+        contracts = [replacements.get(contract.module_id, contract) for contract in contracts]
+    if module_ids is None:
+        return contracts
+    return [contract for contract in contracts if contract.module_id in module_ids]
 
 
 def core_license_tags() -> list[str]:
@@ -53,15 +73,27 @@ def core_licensed_modules() -> list[tuple[str, str]]:
     ]
 
 
-def register_core_modules(container: RuntimeContainer) -> LifecycleManager:
-    lifecycle = prepare_core_modules(container)
+def register_core_modules(
+    container: RuntimeContainer,
+    *,
+    module_ids: set[str] | None = None,
+) -> LifecycleManager:
+    lifecycle = prepare_core_modules(container, module_ids=module_ids)
     activate_core_modules(container, lifecycle)
     return lifecycle
 
 
-def prepare_core_modules(container: RuntimeContainer) -> LifecycleManager:
+def prepare_core_modules(
+    container: RuntimeContainer,
+    *,
+    module_ids: set[str] | None = None,
+) -> LifecycleManager:
     lifecycle = LifecycleManager(container)
-    for contract in core_module_contracts():
+    profile = (
+        container.has_port(CLIENT_RUNTIME_PROFILE_PORT)
+        and str(container.get_port(CLIENT_RUNTIME_PROFILE_PORT)).strip().lower()
+    )
+    for contract in core_module_contracts(module_ids, client_profile=profile or None):
         lifecycle.prepare(contract)
     return lifecycle
 

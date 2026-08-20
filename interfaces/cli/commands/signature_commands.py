@@ -5,8 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
-from modules.signature.api import SignatureError
+from modules.signature.api import LabelLayoutInput, SignRequest, SignatureError, SignaturePlacementInput
 from qm_platform.runtime import bootstrap as runtime_bootstrap
 
 from interfaces.cli.bootstrap import build_container

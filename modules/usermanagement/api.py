@@ -13,6 +13,7 @@ postgres_connection.py, cutover_prep.py, cutover_drill.py, cutover_reference_cat
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
@@ -84,7 +85,35 @@ __all__ = [
     "prepare_postgres_cutover",
     "is_effective_qmb",
     "normalize_base_role",
+    "UserDirectoryEntry",
+    "list_users_for_assignment",
 ]
+
+
+@dataclass(frozen=True)
+class UserDirectoryEntry:
+    user_id: str
+    username: str
+    role: str
+    is_active: bool
+    is_qmb: bool
+
+
+def list_users_for_assignment(container) -> list[UserDirectoryEntry]:
+    """Minimal user directory for assignment pickers (UUID + display fields only)."""
+    svc = get_usermanagement_service(container)
+    rows = svc.list_users()
+    return [
+        UserDirectoryEntry(
+            user_id=str(user.user_id),
+            username=str(user.username),
+            role=str(user.role),
+            is_active=bool(user.is_active),
+            is_qmb=bool(user.is_qmb),
+        )
+        for user in rows
+        if user.is_active
+    ]
 
 
 def get_usermanagement_service(container):

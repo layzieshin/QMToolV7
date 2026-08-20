@@ -74,6 +74,7 @@ class ArtifactSourceType(str, Enum):
     IMPORT_PDF = "IMPORT_PDF"
     IMPORT_DOCX = "IMPORT_DOCX"
     TEMPLATE_DOTX = "TEMPLATE_DOTX"
+    TEMPLATE_DOCX = "TEMPLATE_DOCX"
     TEMPLATE_DOCT = "TEMPLATE_DOCT"
     GENERATED = "GENERATED"
 
@@ -221,6 +222,9 @@ class DocumentVersionState:
     last_actor_user_id: str | None = None
     created_at: datetime | None = None
     created_by: str | None = None
+    # Transport-enriched server authority. ``None`` means no capability
+    # projection was supplied (for example in an in-process module test).
+    available_actions: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -372,6 +376,7 @@ class WorkflowCommentListItem:
     created_at: datetime | None
     preview_text: str
     status: WorkflowCommentStatus
+    updated_at: datetime
 
 
 @dataclass(frozen=True)

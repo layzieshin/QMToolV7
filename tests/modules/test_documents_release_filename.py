@@ -27,6 +27,20 @@ class DocumentsReleaseFilenameTest(unittest.TestCase):
         filename = DocumentsService._build_released_filename(state)
         self.assertEqual(filename, "VA-103_AeOeUe_Pruefliste_ss_v2.pdf")
 
+    def test_build_released_filename_strips_document_id_separators_drive_and_parent_refs(self) -> None:
+        state = DocumentVersionState(
+            document_id=r"..\I:\evil/doc",
+            version=1,
+            title="Plan",
+        )
+        filename = DocumentsService._build_released_filename(state)
+        self.assertEqual(filename, "I__evil_doc_Plan.pdf")
+        self.assertNotIn("..", filename)
+        self.assertNotIn("/", filename)
+        self.assertNotIn("\\", filename)
+        self.assertNotIn(":", filename)
+        self.assertEqual(state.document_id, r"..\I:\evil/doc")
+
 
 if __name__ == "__main__":
     unittest.main()

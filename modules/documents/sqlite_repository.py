@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,7 +32,7 @@ from .repository import DocumentsRepository
 class SQLiteDocumentsRepository(DocumentsRepository):
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
-        self._transaction_conn: sqlite3.Connection | None = None
+        self._txn_local = threading.local()
 
     @staticmethod
     def _utcnow_iso() -> str:
@@ -269,6 +270,19 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             ).fetchall()
         return [self._row_to_artifact(row) for row in rows]
 
+    def get_artifact_by_id(self, artifact_id: str) -> DocumentArtifact | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM document_artifacts WHERE artifact_id = ?",
+                (artifact_id,),
+            ).fetchone()
+        return self._row_to_artifact(row) if row is not None else None
+
+    def delete_artifact(self, artifact_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM document_artifacts WHERE artifact_id = ?", (artifact_id,))
+            self._commit_if_needed(conn)
+
     def mark_current_artifact(
         self,
         document_id: str,
@@ -295,29 +309,40 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             )
             self._commit_if_needed(conn)
 
+    def _txn_conn(self) -> sqlite3.Connection | None:
+        return getattr(self._txn_local, "conn", None)
+
+    def _set_txn_conn(self, conn: sqlite3.Connection | None) -> None:
+        if conn is None:
+            if hasattr(self._txn_local, "conn"):
+                delattr(self._txn_local, "conn")
+            return
+        self._txn_local.conn = conn
+
     @contextmanager
     def write_transaction(self):
-        if self._transaction_conn is not None:
+        if self._txn_conn() is not None:
             yield
             return
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("BEGIN IMMEDIATE")
-            self._transaction_conn = conn
+            self._set_txn_conn(conn)
             yield
             conn.commit()
         except Exception:
             conn.rollback()
             raise
         finally:
-            self._transaction_conn = None
+            self._set_txn_conn(None)
             conn.close()
 
     @contextmanager
     def _connect(self):
-        if self._transaction_conn is not None:
-            yield self._transaction_conn
+        existing = self._txn_conn()
+        if existing is not None:
+            yield existing
             return
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
@@ -327,7 +352,8 @@ class SQLiteDocumentsRepository(DocumentsRepository):
             conn.close()
 
     def _commit_if_needed(self, conn: sqlite3.Connection) -> None:
-        if self._transaction_conn is None or conn is not self._transaction_conn:
+        txn = self._txn_conn()
+        if txn is None or conn is not txn:
             conn.commit()
 
     @staticmethod
@@ -551,7 +577,9 @@ class SQLiteDocumentsRepository(DocumentsRepository):
                     status, status_note, status_changed_by, status_changed_at, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(comment_id) DO UPDATE SET
-                    ref_no = excluded.ref_no,
+                    source_comment_key = excluded.source_comment_key,
+                    author_display = excluded.author_display,
+                    source_created_at = excluded.source_created_at,
                     preview_text = excluded.preview_text,
                     full_text = excluded.full_text,
                     page_number = excluded.page_number,

@@ -163,6 +163,36 @@ class SignatureTemplatesTest(unittest.TestCase):
             service.clear_active_signature("admin", password="admin")
             self.assertIsNone(service.get_active_signature_asset_id("admin"))
 
+    def test_filename_hint_cannot_escape_temp_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = build_settings_service_for_tests(root)
+            settings.registry.register(SIGNATURE_SETTINGS_CONTRIBUTION)
+            settings.set_module_settings(
+                "signature",
+                {"require_password": False, "default_mode": "visual"},
+                acknowledge_governance_change=True,
+                actor=SYSTEM_BACKEND_BOOTSTRAP_ACTOR,
+            )
+            service = SignatureServiceV2(
+                settings_service=settings,
+                logger=LoggerService(root / "logs.jsonl"),
+                audit_logger=AuditLogger(root / "audit.jsonl"),
+                password_verifier=lambda u, p: True,
+                repository=SQLiteSignatureRepository(db_path=root / "templates.db"),
+                secure_store=EncryptedSignatureBlobStore(root=root / "assets", key_file=root / "key.bin"),
+            )
+            png = root / "ok.png"
+            Image.new("RGBA", (16, 8), (0, 0, 0, 255)).save(png, format="PNG")
+            escaped = root / "escaped.png"
+            asset = service.import_signature_asset_bytes(
+                "admin",
+                png.read_bytes(),
+                filename_hint=r"..\..\escaped.png",
+            )
+            self.assertFalse(escaped.exists())
+            self.assertTrue(asset.asset_id)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 """Reads released documents from the documents module (§3.1)."""
 from __future__ import annotations
 
-from modules.documents.contracts import DocumentStatus
+from modules.documents.api import DocumentStatus
 
 from .contracts import TrainingDocumentRef
 

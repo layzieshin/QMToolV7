@@ -34,7 +34,7 @@ from interfaces.pyqt.sections.filter_bar import build_top_filter_bar
 from interfaces.pyqt.contributions.documents_workflow.actions_mixin import DocumentsWorkflowActionsMixin
 from interfaces.pyqt.contributions.documents_workflow.core_mixin import DocumentsWorkflowCoreMixin
 from interfaces.pyqt.contributions.documents_workflow.selection_mixin import DocumentsWorkflowSelectionMixin
-from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType
+from modules.documents.api import ControlClass, DocumentStatus, DocumentType
 from qm_platform.runtime.container import RuntimeContainer
 
 
@@ -178,12 +178,14 @@ class DocumentsWorkflowWidget(
         ]
         self._role_inputs = [self._editors, self._reviewers, self._approvers]
         self._metadata_buttons: list[QPushButton] = []
+        self._extension_buttons: list[QPushButton] = []
         self._roles_buttons: list[QPushButton] = []
 
         self._top_actions = build_top_filter_bar(
             on_refresh=self._reload_table,
             on_advanced_filter=self._open_advanced_filter,
             on_apply_filter=self._reload_table,
+            on_profile_manager=self._open_workflow_profile_manager,
         )
         self._workflow_actions = build_workflow_action_bar(
             on_new=self._new_import,
@@ -229,7 +231,7 @@ class DocumentsWorkflowWidget(
             custom_fields=self._custom_fields,
             on_save_metadata=self._update_metadata,
             on_save_header=self._update_header,
-            on_add_change_request=None,
+            on_add_change_request=self._add_change_request,
             metadata_buttons=self._metadata_buttons,
         )
         roles_tab = build_roles_tab(
@@ -249,6 +251,7 @@ class DocumentsWorkflowWidget(
             extension_remaining_label=self._extension_remaining_days,
             on_extend=self._extend_validity,
             on_new_version=self._new_version_after_archive,
+            extension_buttons=self._extension_buttons,
         )
         self._details, self._detail_tabs, self._history_tab_index = DetailDrawerBuilder.build(
             tab_overview=self._tab_overview,

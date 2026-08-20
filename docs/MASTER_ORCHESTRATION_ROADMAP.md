@@ -32,8 +32,21 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
   gleichbedeutend mit „Gesamtrepo release-green“ (bekannter unabhaengiger Fehler
   `tests/e2e_cli/test_training_cli.py`). Produktiver PG-Cutover und UUID-Remapping
   der Quermodule bleiben ein separates Folgepaket ausserhalb AP-028.
-- Naechster separat freizugebender Schwerpunkt nach AP-028: Documents-Multiuser-MVP
-  (setzt bestaetigten UserContext/Sessions voraus).
+- Naechster aktiv freigegebener Schwerpunkt: **J04** als Dachpaket
+  - **J04-M0**: vollstaendige Documents-Transportmigration fuer den aktiven PyQt-Client
+    (Documents, Artefakte, Signaturen; siehe
+    `docs/J04_M0_PATH_MATRIX.md`, `docs/J04_M0_ACCEPTANCE_REPORT.md`).
+    Training-Consumer, Trainingsstatus und Read-Receipt-Integration bleiben ein separates
+    Folgepaket und sind kein J04-M0-Acceptance-Gate.
+  - **J04-M1**: spaetere relationale Normalisierung von Workflowinstanzen, Assignments
+    und Decisions (`docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/JSON_TO_DATABASE_MIGRATION_PLAN.md`
+    Abschnitt J04 = J04-M1). Startet erst nach abgeschlossenem M0.
+- Die Aufteilung **J04-M0 / J04-M1** ist verbindlich; M0 ersetzt den relationalen Kern
+  nicht, sondern staffelt Transport vor Persistenznormalisierung.
+- Frueheres Lab-Ziel `J04-M0-DESKTOP-SMOKE` und Soft-Degrade-Interim sind **superseded**
+  und zaehlen nicht als M0-Abnahme.
+- J04-M0 acceptance status: `Rejected / follow-up required` until the remediation
+  gates in `docs/J04_M0_ACCEPTANCE_REPORT.md` and `docs/J04_M0_PATH_MATRIX.md` are green.
 
 ## Zielarchitektur
 ```mermaid
@@ -192,8 +205,9 @@ Konflikte markieren statt aendern:
 - Trainingsspezifikation enthaelt Detailarchitektur; fuer diese Roadmap nur Charter-/Priorisierungsebene nutzen.
 
 ## Naechste freigegebene Aktion
-AP-028 ist im vereinbarten Scope abgeschlossen (M0–M9). Naechster separat
-freizugebender Schwerpunkt: Documents-Multiuser-MVP.
+AP-028 ist im vereinbarten Scope abgeschlossen (M0–M9). Aktiver Schwerpunkt:
+**J04-M0** (vollstaendige Documents-/Artefakt-/Signatur-/Training-Read-Transportmigration).
+**J04-M1** (relationale Workflowinstanzen) bleibt gesondert und startet erst nach M0.
 
 Planungsartefakte (AP-028, historisch/abgeschlossen):
 - `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md`
@@ -218,11 +232,14 @@ Folgepakete ausserhalb AP-028 (nicht automatisch freigegeben):
   (ausserhalb AP-028; M8 war Prep-only, siehe `docs/AP-028_M8_CUTOVER_PREP.md`)
 - Training-CLI-Reparatur (`tests/e2e_cli/test_training_cli.py`; unabhaengig von AP-028 M9)
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
-- Documents-Multiuser-MVP (nach AP-028, separate Freigabe)
+- Documents-Multiuser-MVP / J04-M0 Transportvollstaendigkeit (aktiv; siehe
+  `docs/J04_M0_ACCEPTANCE_REPORT.md`)
+- J04-M1 relationale Workflowinstanzen (nach M0; JSON-Migrationsplan Abschnitt J04)
 - Incident-Modul Cleanup Admin=QMB (bekannte Abweichung; ausserhalb AP-028)
 - JSON→DB-Folgepakete J03–J10 (Documents-/Incident-/Training-Persistenzumbauten);
   J00 Baseline, J01 Schutzgate in `main`, J02 Settings freigegeben zur Umsetzung
   (OQ-04 entschieden; Supervisor-Abnahme nach Implementierung)
+  Hinweis: Abschnitt „J04“ im Documents-JSON-Migrationsplan meint **J04-M1**.
 - J01-/J02-Supervisor-Abnahmen gesondert von der technischen Umsetzung
 
 Im Rahmen von AP-028 freigegeben und milestone-weise umgesetzt (M0–M9):

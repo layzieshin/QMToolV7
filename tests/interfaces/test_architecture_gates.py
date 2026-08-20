@@ -468,6 +468,22 @@ def test_boundary_gate_documents_pyqt_no_storage_key_path_logic() -> None:
         assert "artifacts_root" not in content, f"{path.relative_to(ROOT)} still references Documents artifacts_root"
 
 
+def test_boundary_gate_pyqt_never_reads_qmtool_session_token_env() -> None:
+    """PyQt product code must use backend_session bearer provider, not QMTOOL_SESSION_TOKEN."""
+    offenders: list[str] = []
+    for path in _pyqt_production_files():
+        content = path.read_text(encoding="utf-8")
+        if "QMTOOL_SESSION_TOKEN" in content:
+            offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []
+
+
+def test_boundary_gate_pyqt_runtime_wires_backend_session_for_documents() -> None:
+    content = _read("interfaces/pyqt/runtime/host.py")
+    assert "bind_pyqt_session_token_provider(session.bearer_token)" in content
+    assert "register_port(\"backend_session_api\", session)" in content
+
+
 def test_documents_signature_ops_extracted() -> None:
     """Phase 3A: No PDF/artifact/signature logic in the workflow view."""
     content = _read("interfaces/pyqt/contributions/documents_workflow_view.py")
@@ -547,6 +563,69 @@ def test_backend_uses_only_usermanagement_public_api() -> None:
         if "from modules.usermanagement." in content and "modules.usermanagement.api" not in content:
             if "from modules.usermanagement import api" not in content:
                 offenders.append(f"{rel} -> non-api usermanagement import")
+    assert offenders == [], offenders
+
+
+def test_backend_uses_only_documents_public_api() -> None:
+    """src/backend may import modules.documents.api only — no documents internals."""
+    forbidden_markers = (
+        "modules.documents.errors",
+        "modules.documents.contracts",
+        "modules.documents.state_transport",
+        "modules.documents.service",
+        "modules.documents.sqlite_repository",
+        "modules.documents.storage",
+        "modules.documents.wiring",
+        "modules.documents.module",
+        "modules.documents.actor_context",
+        "DocumentsService",
+        "SQLiteDocumentsRepository",
+    )
+    offenders: list[str] = []
+    backend_root = ROOT / "src" / "backend"
+    for path in sorted(backend_root.rglob("*.py")):
+        content = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        for marker in forbidden_markers:
+            if marker in content:
+                offenders.append(f"{rel} -> {marker}")
+        if "from modules.documents." in content and "modules.documents.api" not in content:
+            if "from modules.documents import api" not in content:
+                offenders.append(f"{rel} -> non-api documents import")
+        if "import modules.documents." in content and "modules.documents.api" not in content:
+            offenders.append(f"{rel} -> non-api documents import")
+    assert offenders == [], offenders
+
+
+def test_product_adapters_use_public_module_imports_per_ast_node() -> None:
+    """Transport and interface adapters must not bypass module API boundaries."""
+    allowed = {
+        "modules.documents.api",
+        "modules.signature.api",
+        "modules.usermanagement.api",
+    }
+    roots = [ROOT / "src" / "backend", ROOT / "interfaces", ROOT / "modules" / "training"]
+    offenders: list[str] = []
+    for root in roots:
+        for path in sorted(root.rglob("*.py")):
+            if "interfaces" in path.parts and "gui" in path.parts:
+                continue  # frozen legacy GUI has an explicit compatibility exception
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            rel = path.relative_to(ROOT).as_posix()
+            for node in ast.walk(tree):
+                module = None
+                if isinstance(node, ast.ImportFrom):
+                    module = node.module
+                    if module == "modules.usermanagement" and any(alias.name == "api" for alias in node.names):
+                        continue
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        module = alias.name
+                        if module.startswith(("modules.documents", "modules.signature", "modules.usermanagement")) and module not in allowed:
+                            offenders.append(f"{rel}:{node.lineno} -> {module}")
+                    continue
+                if module and module.startswith(("modules.documents", "modules.signature", "modules.usermanagement")) and module not in allowed:
+                    offenders.append(f"{rel}:{node.lineno} -> {module}")
     assert offenders == [], offenders
 
 

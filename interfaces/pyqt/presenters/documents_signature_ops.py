@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,8 +24,16 @@ from PyQt6.QtWidgets import (
 )
 
 from interfaces.pyqt.presenters.formatting import format_local, now_utc_aware
-from modules.documents.contracts import ArtifactType
-from modules.signature.contracts import LabelLayoutInput, SignRequest, SignaturePlacementInput
+from modules.documents.api import ArtifactType
+from modules.signature.api import LabelLayoutInput, SignaturePlacementInput
+
+
+@dataclass(frozen=True)
+class DocumentSignIntent:
+    placement: SignaturePlacementInput
+    layout: LabelLayoutInput
+    password: str | None
+    reason: str
 
 
 class DocumentsSignatureOps:
@@ -72,12 +80,20 @@ class DocumentsSignatureOps:
     # Signature building
     # ------------------------------------------------------------------
 
+    def build_sign_intent_or_none(
+        self,
+        state: object,
+        transition: str,
+        parent_widget: QWidget,
+    ) -> DocumentSignIntent | None:
+        return self.build_sign_request_or_none(state, transition, parent_widget)
+
     def build_sign_request_or_none(
         self,
         state: object,
         transition: str,
         parent_widget: QWidget,
-    ) -> SignRequest | None:
+    ) -> DocumentSignIntent | None:
         profile = getattr(state, "workflow_profile", None)
         if profile is None or transition not in set(profile.signature_required_transitions):
             return None
@@ -160,29 +176,26 @@ class DocumentsSignatureOps:
             )
             return None
 
-        safe_title = self.safe_document_title_token(getattr(state, "title", None))
-        output_name = f"{state.document_id}_{safe_title}_signed.pdf"
-        output_path = Path(tempfile.gettempdir()) / output_name
         reason = self._REASON_BY_TRANSITION.get(transition.strip().upper(), "WORKFLOW_TRANSITION")
-        return SignRequest(
-            input_pdf=input_path,
-            output_pdf=output_path,
-            signature_png=signature_png,
+        return DocumentSignIntent(
             placement=placement,
             layout=layout_result,
-            overwrite_output=True,
-            dry_run=False,
-            sign_mode="visual",
-            signer_user=str(user.user_id),
             password=password.text().strip() or None,
             reason=reason,
         )
+
+    def build_extension_sign_intent(
+        self,
+        state: object,
+        parent_widget: QWidget,
+    ) -> DocumentSignIntent | None:
+        return self.build_extension_sign_request(state, parent_widget)
 
     def build_extension_sign_request(
         self,
         state: object,
         parent_widget: QWidget,
-    ) -> SignRequest | None:
+    ) -> DocumentSignIntent | None:
         """Build a sign request specifically for the annual validity extension flow."""
         user = self._um.get_current_user()
         if user is None:
@@ -234,29 +247,35 @@ class DocumentsSignatureOps:
         if pwd_dialog.exec() != QDialog.DialogCode.Accepted:
             return None
 
-        safe_title = self.safe_document_title_token(getattr(state, "title", None))
-        output_name = f"{state.document_id}_{safe_title}_extended.pdf"
-        output_path = Path(tempfile.gettempdir()) / output_name
-
-        return SignRequest(
-            input_pdf=input_path,
-            output_pdf=output_path,
-            signature_png=signature_png,
+        return DocumentSignIntent(
             placement=placement,
             layout=layout_result,
-            overwrite_output=True,
-            dry_run=False,
-            sign_mode="visual",
-            signer_user=str(user.user_id),
             password=password.text().strip() or None,
             reason=self._REASON_BY_TRANSITION["EXTEND_VALIDITY"],
         )
 
-    def require_signature_call(self, sign_request: SignRequest) -> None:
+    def require_signature_call(self, sign_intent: DocumentSignIntent, *, input_pdf: Path, output_pdf: Path, signer_user: str) -> None:
+        from modules.signature.api import SignRequest
+
         sign = getattr(self._signature_api, "sign_with_fixed_position", None)
         if not callable(sign):
             raise RuntimeError("signature_api ist nicht verfuegbar oder unterstuetzt sign_with_fixed_position nicht")
-        sign(sign_request)
+        signature_png = self.export_active_signature_png(signer_user)
+        sign(
+            SignRequest(
+                input_pdf=input_pdf,
+                output_pdf=output_pdf,
+                signature_png=signature_png,
+                placement=sign_intent.placement,
+                layout=sign_intent.layout,
+                overwrite_output=True,
+                dry_run=False,
+                sign_mode="visual",
+                signer_user=signer_user,
+                password=sign_intent.password,
+                reason=sign_intent.reason,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Signature templates

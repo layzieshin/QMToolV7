@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from modules.signature.contracts import LabelLayoutInput
+from modules.signature.api import LabelLayoutInput
 
 
 class SignaturePlacementOptionsMixin:

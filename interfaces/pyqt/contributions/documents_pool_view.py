@@ -159,7 +159,11 @@ class DocumentsPoolWidget(QWidget):
             self._error.setText("Bitte zuerst ein Dokument auswählen.")
             return
         row = self._model._rows[selected[0].row()]
-        ref = self._artifacts.get_released_pdf_for_reading(row.document_id, row.version)
+        try:
+            ref = self._artifacts.get_released_pdf_for_reading(row.document_id, row.version)
+        except Exception as exc:  # noqa: BLE001
+            self._error.setText(str(exc))
+            return
         if ref is not None and hasattr(os, "startfile"):
             os.startfile(str(ref.path))  # type: ignore[attr-defined]
             self._error.setText(f"Geöffnet: {ref.path}")

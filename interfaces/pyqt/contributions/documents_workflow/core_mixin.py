@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QThread
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox, QDialog
 
 from interfaces.pyqt.contributions.common import user_to_system_role
 from interfaces.pyqt.presenters.documents_detail_presenter import DocumentsDetailPresenter
 from interfaces.pyqt.sections.filter_bar import open_advanced_filter_dialog
 from interfaces.pyqt.widgets.table_helpers import fill_table
 from interfaces.pyqt.workers import TableReloadResult, TableReloadWorker
-from modules.documents.contracts import ControlClass, DocumentStatus, DocumentType, SystemRole, control_class_for
+from modules.documents.api import ControlClass, DocumentStatus, DocumentType, control_class_for
 
 from .table_row import WorkflowTableRow
 
@@ -46,24 +46,82 @@ class DocumentsWorkflowCoreMixin:
     def _set_details_open(self, open_state: bool) -> None:
         self._details.set_open(open_state)
 
-    def _is_qmb(self) -> bool:
-        user = self._um.get_current_user()
-        return bool(user and user_to_system_role(user) == SystemRole.QMB)
+    def _set_widgets_editable(self, widgets: list[object], allowed: bool) -> None:
+        for widget in widgets:
+            if hasattr(widget, "setReadOnly"):
+                widget.setReadOnly(not allowed)
+            else:
+                widget.setEnabled(allowed)
 
-    def _apply_editor_permissions(self) -> None:
-        can_edit = self._is_qmb()
+    def _gate_buttons_by_action_key(self, buttons: list[object], *, allowed_keys: set[str]) -> None:
+        for button in buttons:
+            key = button.property("qmtool_action_key") if hasattr(button, "property") else None
+            allowed = str(key or "") in allowed_keys
+            button.setVisible(allowed)
+            button.setEnabled(allowed)
+
+    def _apply_editor_permissions(self, visible_actions: set[str] | None = None) -> None:
+        """Gate mutation controls by backend-derived UI keys, not local QMB role."""
+        if visible_actions is None:
+            user = self._um.get_current_user()
+            user_id = str(user.user_id) if user is not None else None
+            visible_actions = self._presenter.visible_actions_for_context(
+                self._current_state,
+                user_id=user_id,
+                can_create_new_documents=self._can_current_user_create_documents(),
+            )
+        can_meta = "update_metadata" in visible_actions
+        header = getattr(self, "_current_header", None)
+        header_token = getattr(header, "updated_at", None) if header is not None else None
+        can_header = "update_header" in visible_actions and header_token is not None
+        can_roles = "assign_roles" in visible_actions
+        can_cr = "change_requests" in visible_actions
+        can_extend = "extend_validity" in visible_actions
+        can_new_version = "new_version" in visible_actions
+
         self._doc_id.setReadOnly(True)
         self._version.setReadOnly(True)
-        for widget in self._metadata_inputs:
-            if hasattr(widget, "setReadOnly"):
-                widget.setReadOnly(not can_edit)
-            else:
-                widget.setEnabled(can_edit)
-        for widget in self._role_inputs:
-            widget.setReadOnly(not can_edit)
-        for button in self._metadata_buttons + self._roles_buttons:
-            button.setVisible(can_edit)
-            button.setEnabled(can_edit)
+        # Identity fields stay permanently readonly after create.
+        self._set_widgets_editable([self._doc_type, self._control_class], False)
+
+        metadata_field_widgets = [
+            self._title,
+            self._description,
+            self._valid_until,
+            self._next_review,
+            self._custom_fields,
+        ]
+        header_field_widgets = [
+            self._profile,
+            self._department,
+            self._site,
+            self._regulatory_scope,
+        ]
+        self._set_widgets_editable(metadata_field_widgets, can_meta)
+        self._set_widgets_editable(header_field_widgets, can_header)
+        self._set_widgets_editable(list(self._role_inputs), can_roles)
+
+        allowed_meta_keys = set()
+        if can_meta:
+            allowed_meta_keys.add("update_metadata")
+        if can_header:
+            allowed_meta_keys.add("update_header")
+        if can_cr:
+            allowed_meta_keys.add("change_requests")
+        self._gate_buttons_by_action_key(self._metadata_buttons, allowed_keys=allowed_meta_keys)
+
+        role_keys = {"assign_roles"} if can_roles else set()
+        self._gate_buttons_by_action_key(self._roles_buttons, allowed_keys=role_keys)
+
+        extension_keys = set()
+        if can_extend:
+            extension_keys.add("extend_validity")
+        if can_new_version:
+            extension_keys.add("new_version")
+        self._gate_buttons_by_action_key(
+            getattr(self, "_extension_buttons", []),
+            allowed_keys=extension_keys,
+        )
 
     def _show_error(self, exc: Exception, *, critical: bool = False) -> None:
         if critical:
@@ -123,8 +181,107 @@ class DocumentsWorkflowCoreMixin:
             "available_profiles": sorted(set(available)),
         }
 
+    def _is_profile_manager_allowed(self) -> bool:
+        """Whether the profile-manager action may be shown for the current user.
+
+        GUI editing remains CLI-only; this only gates button visibility/enablement.
+        """
+        user = self._um.get_current_user()
+        if user is None:
+            return False
+        get_capabilities = getattr(getattr(self, "_pool", None), "get_capabilities", None)
+        if callable(get_capabilities):
+            capabilities = get_capabilities()
+            if isinstance(capabilities, dict):
+                return capabilities.get("can_administer_workflow_profiles") is True
+        return False
+
     def _open_workflow_profile_manager(self) -> None:
-        self._show_error(RuntimeError("Workflowprofil-Verwaltung ist in J03 nur ueber die CLI verfuegbar"), critical=True)
+        from interfaces.pyqt.widgets.workflow_profile_wizard import WorkflowProfileWizardDialog
+        from modules.documents.api import DocumentStatus
+
+        dialog = WorkflowProfileWizardDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        wizard = dialog.payload()
+        transitions: list[dict[str, object]] = []
+        transition_no = 1
+        if DocumentStatus.IN_REVIEW in wizard.phases:
+            transitions.append(
+                {
+                    "transition_no": transition_no,
+                    "from_status": "DRAFT",
+                    "to_status": "IN_REVIEW",
+                    "required_role": "EDITOR",
+                    "decision_policy": "ONE_OF_POOL",
+                    "signature_required": "IN_PROGRESS->IN_REVIEW" in wizard.signature_required_transitions,
+                    "four_eyes_required": wizard.four_eyes_required,
+                }
+            )
+            transition_no += 1
+            transitions.append(
+                {
+                    "transition_no": transition_no,
+                    "from_status": "IN_REVIEW",
+                    "to_status": "IN_APPROVAL" if DocumentStatus.IN_APPROVAL in wizard.phases else "APPROVED",
+                    "required_role": "REVIEWER",
+                    "decision_policy": "ONE_OF_POOL",
+                    "signature_required": False,
+                    "four_eyes_required": wizard.four_eyes_required,
+                }
+            )
+            transition_no += 1
+        if DocumentStatus.IN_APPROVAL in wizard.phases:
+            transitions.append(
+                {
+                    "transition_no": transition_no,
+                    "from_status": "IN_APPROVAL",
+                    "to_status": "APPROVED",
+                    "required_role": "APPROVER",
+                    "decision_policy": "ONE_OF_POOL",
+                    "signature_required": "IN_APPROVAL->APPROVED" in wizard.signature_required_transitions,
+                    "four_eyes_required": wizard.four_eyes_required,
+                }
+            )
+        payload = {
+            "profile_code": wizard.profile_id,
+            "label": wizard.label,
+            "control_class": wizard.control_class.value,
+            "requires_editors": wizard.requires_editors,
+            "requires_reviewers": wizard.requires_reviewers,
+            "requires_approvers": wizard.requires_approvers,
+            "allows_content_changes": True,
+            "release_evidence_mode": "WORKFLOW",
+            "transitions": transitions,
+        }
+        try:
+            operation = wizard.operation
+            reason = wizard.change_reason
+            if operation == "create":
+                created = self._wf.create_workflow_profile_definition(payload, change_reason=reason)
+                event = "WORKFLOWPROFIL_ERSTELLT"
+            elif operation == "create_version":
+                created = self._wf.create_workflow_profile_version(wizard.profile_id, payload, change_reason=reason)
+                event = "WORKFLOWPROFIL_VERSION_ERSTELLT"
+            elif operation == "activate":
+                created = self._wf.activate_workflow_profile_definition(wizard.profile_id, change_reason=reason)
+                event = "WORKFLOWPROFIL_AKTIVIERT"
+            elif operation == "deactivate":
+                created = self._wf.deactivate_workflow_profile_definition(wizard.profile_id, change_reason=reason)
+                event = "WORKFLOWPROFIL_DEAKTIVIERT"
+            else:
+                created = self._wf.bind_document_type_default_profile(
+                    wizard.doc_type.value, wizard.profile_id, change_reason=reason
+                )
+                event = "WORKFLOWPROFIL_DOKUMENTTYP_GEBUNDEN"
+            self._append(event, created)
+            QMessageBox.information(
+                self,
+                "Workflowprofil",
+                f"Profilaktion für '{created.get('profile_code', wizard.profile_id)}' wurde ausgeführt.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._show_error(exc)
 
     def _available_profiles_for_control_class(self, control_class: ControlClass) -> list[str]:
         try:
@@ -169,8 +326,19 @@ class DocumentsWorkflowCoreMixin:
         self._reload_progress = None
         self._inline_notice.setText("Tabellenaktualisierung laeuft ...")
 
+        # Snapshot UI state on the GUI thread — never touch QWidgets from the worker.
+        status_filter = self._status_filter.currentData()
+        scope = str(self._scope_filter.currentData())
+        advanced_filters = dict(self._advanced_filters)
+
         self._reload_thread = QThread(self)
-        self._reload_worker = TableReloadWorker(self._build_reload_result)
+        self._reload_worker = TableReloadWorker(
+            lambda: self._build_reload_result(
+                status_filter=status_filter,
+                scope=scope,
+                advanced_filters=advanced_filters,
+            )
+        )
         self._reload_worker.moveToThread(self._reload_thread)
         self._reload_thread.started.connect(self._reload_worker.run)
         self._reload_worker.finished.connect(self._on_reload_finished)
@@ -183,12 +351,21 @@ class DocumentsWorkflowCoreMixin:
         self._reload_cancelled = True
         self._inline_notice.setText("Tabellenaktualisierung abgebrochen.")
 
-    def _build_reload_result(self) -> TableReloadResult:
+    def _build_reload_result(
+        self,
+        *,
+        status_filter: object,
+        scope: str,
+        advanced_filters: dict[str, object],
+    ) -> TableReloadResult:
         rows: list[object] = []
-        status_filter = self._status_filter.currentData()
         statuses = list(DocumentStatus) if status_filter == "ALL" else [status_filter]
         for status in statuses:
-            rows.extend(self._pool.list_by_status(status))
+            try:
+                rows.extend(self._pool.list_by_status(status))
+            except Exception as exc:  # noqa: BLE001
+                # Fail-closed M0 / missing session token must not kill the worker thread.
+                raise RuntimeError(str(exc)) from exc
         registry_versions: dict[str, int | None] = {}
         if self._registry is not None:
             for row in rows:
@@ -205,21 +382,20 @@ class DocumentsWorkflowCoreMixin:
             for row in rows
         ]
         user = self._um.get_current_user()
-        scope = str(self._scope_filter.currentData())
         rows = self._filter_presenter.filter_rows(
             rows,
             scope=scope,
             user_id=str(user.user_id) if user is not None else None,
-            owner_contains=str(self._advanced_filters["owner_contains"]),
-            title_contains=str(self._advanced_filters["title_contains"]),
-            workflow_active=str(self._advanced_filters["workflow_active"]),
-            active_version=str(self._advanced_filters["active_version"]),
+            owner_contains=str(advanced_filters["owner_contains"]),
+            title_contains=str(advanced_filters["title_contains"]),
+            workflow_active=str(advanced_filters["workflow_active"]),
+            active_version=str(advanced_filters["active_version"]),
         )
         return TableReloadResult(
             rows=rows,
             scope=scope,
             status_filter=str(status_filter),
-            advanced_filters=dict(self._advanced_filters),
+            advanced_filters=dict(advanced_filters),
         )
 
     def _on_reload_finished(self, result: object) -> None:

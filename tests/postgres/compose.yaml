@@ -1,0 +1,36 @@
+# OPTIONAL, NOT-YET-APPROVED convenience sketch for an isolated J04-M0
+# destructive PostgreSQL 16 test cluster. Docker/Compose is NOT a M3
+# prerequisite; operators may use native PG16, a VM, or a dedicated server.
+#
+# Password MUST come from the local environment:
+#   QMTOOL_PG_TEST_ADMIN_PASSWORD  (Compose-specific only)
+# Never commit passwords. Never print secrets.
+#
+# Project/volume are dedicated and must not reuse runtime/lab volumes.
+
+name: qmtool-j04-destructive-pg16
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: qmtool-j04-destructive-pg16
+    restart: "no"
+    ports:
+      - "127.0.0.1:55432:5432"
+    environment:
+      POSTGRES_USER: qmtool_j04_test_admin
+      POSTGRES_PASSWORD: ${QMTOOL_PG_TEST_ADMIN_PASSWORD:?QMTOOL_PG_TEST_ADMIN_PASSWORD is required}
+      POSTGRES_DB: qmtool_j04_destructive_test
+    volumes:
+      - qmtool_j04_destructive_pg16_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qmtool_j04_test_admin -d qmtool_j04_destructive_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  qmtool_j04_destructive_pg16_data:
+    name: qmtool_j04_destructive_pg16_data

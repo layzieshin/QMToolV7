@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 from interfaces.pyqt.logging_adapter import get_logger
 from interfaces.pyqt.widgets.pdf_rendering import get_page_count, pixmap_to_qpixmap, render_page
 from modules.signature.api import compute_target_height, resolve_label_pdf_anchor
-from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
+from modules.signature.api import LabelLayoutInput, SignaturePlacementInput
 
 from .graphics_views import DraggableSignaturePixmapItem, ZoomablePlacementView
 from .options_mixin import SignaturePlacementOptionsMixin

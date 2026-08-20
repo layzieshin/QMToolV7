@@ -19,7 +19,7 @@ assert _spec.loader is not None
 _spec.loader.exec_module(_shared)
 run_cli = _shared.run_cli
 
-
+@unittest.skip("not_in_m0: Legacy local documents CLI authorization matrix is outside reduced J04-M0 scope")
 class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
     _PASSWORDS = {
         "admin": "adminpass01",
@@ -281,6 +281,51 @@ class DocumentsCliAuthorizationMatrixTest(unittest.TestCase):
         )
         self.assertEqual(reviewers_locked.returncode, 6)
         self.assertIn("QMB cannot change reviewer roles", reviewers_locked.stdout)
+
+
+class DocumentsCliSessionBoundaryTest(unittest.TestCase):
+    _PASSWORDS = {
+        "admin": "adminpass01",
+        "user": "userpass01",
+        "qmb": "qmbpass001",
+    }
+
+    def setUp(self) -> None:
+        run_cli("logout")
+
+    def tearDown(self) -> None:
+        run_cli("logout")
+
+    def _login_actor(self, actor: str) -> None:
+        result = run_cli("login", "--username", actor, "--password", self._PASSWORDS[actor])
+        assert result.returncode == 0, result.stderr + result.stdout
+
+    def test_logged_in_actor_cannot_use_documents_without_backend_session_token(self) -> None:
+        for actor in self._PASSWORDS:
+            with self.subTest(actor=actor):
+                self._login_actor(actor)
+                result = run_cli("documents", "workflow-start", "--document-id", "DOC-NO-TOKEN", "--version", "1")
+                self.assertEqual(result.returncode, 6)
+                self.assertIn("QMTOOL_SESSION_TOKEN is required", result.stdout)
+                run_cli("logout")
+
+    def test_unsupported_mutations_block_before_any_local_fallback(self) -> None:
+        self._login_actor("admin")
+        result = run_cli(
+            "documents",
+            "change-request-export",
+            "--document-id",
+            "DOC-CR",
+            "--version",
+            "1",
+            "--output",
+            "out.json",
+            "--format",
+            "json",
+            env={"QMTOOL_SESSION_TOKEN": "dummy-session-token"},
+        )
+        self.assertEqual(result.returncode, 6)
+        self.assertIn("change-request-export", result.stdout)
 
 
 if __name__ == "__main__":

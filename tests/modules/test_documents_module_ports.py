@@ -37,6 +37,8 @@ class DocumentsModulePortsTest(unittest.TestCase):
             container.register_port("app_home", root)
             container.register_port("signature_api", object())
             container.register_port("registry_projection_api", object())
+            # Explicit in-process opt-in (not a free product env var).
+            container.register_port("documents_runtime_owner", "backend")
 
             lifecycle = LifecycleManager(container)
             lifecycle.prepare(create_documents_module_contract())

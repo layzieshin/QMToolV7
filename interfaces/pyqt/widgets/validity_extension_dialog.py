@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from modules.documents.contracts import ValidityExtensionOutcome
+from modules.documents.api import ValidityExtensionOutcome
 
 
 @dataclass(frozen=True)

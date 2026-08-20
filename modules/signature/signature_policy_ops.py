@@ -17,6 +17,22 @@ from .secure_store import EncryptedSignatureBlobStore
 from .sqlite_repository import SQLiteSignatureRepository
 
 
+def _safe_png_basename(filename_hint: str) -> str:
+    raw = str(filename_hint or "").replace("\\", "/").strip()
+    if not raw:
+        return "canvas.png"
+    first = raw.split("/", 1)[0]
+    if raw.startswith("/") or raw.startswith("~") or ":" in first:
+        return "canvas.png"
+    parts = [part for part in raw.split("/") if part not in ("", ".")]
+    if not parts or any(part == ".." for part in parts):
+        return "canvas.png"
+    name = parts[-1]
+    stem = Path(name).stem
+    safe = "".join(ch for ch in stem if ch.isalnum() or ch in "-_") or "canvas"
+    return f"{safe}.png"
+
+
 @dataclass
 class SignaturePolicyOps:
     repository: SQLiteSignatureRepository | None
@@ -67,8 +83,12 @@ class SignaturePolicyOps:
     def import_signature_asset_bytes(self, owner_user_id: str, png_bytes: bytes, *, filename_hint: str = "canvas.png", import_fn: Callable | None = None) -> SignatureAsset:
         if self.repository is None or self.secure_store is None:
             raise SignatureAssetError("signature template storage is not configured")
+        basename = _safe_png_basename(filename_hint)
         with tempfile.TemporaryDirectory() as tmp:
-            temp = Path(tmp) / filename_hint
+            tmp_root = Path(tmp).resolve()
+            temp = (tmp_root / basename).resolve()
+            if not temp.is_relative_to(tmp_root) or temp.suffix.lower() != ".png":
+                raise SignatureAssetError("unsafe signature temp path")
             temp.write_bytes(png_bytes)
             if import_fn is not None:
                 return import_fn(owner_user_id, temp)
@@ -88,12 +108,8 @@ class SignaturePolicyOps:
 
     def resolve_runtime_layout(self, layout: LabelLayoutInput, *, signer_user: str | None = None) -> LabelLayoutInput:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        resolved_name = layout.name_text
-        resolved_date = layout.date_text
-        if layout.show_name and not resolved_name:
-            resolved_name = signer_user or ""
-        if layout.show_date and not resolved_date:
-            resolved_date = timestamp
+        resolved_name = (signer_user or "") if layout.show_name else layout.name_text
+        resolved_date = timestamp if layout.show_date else layout.date_text
         return LabelLayoutInput(
             show_signature=layout.show_signature,
             show_name=layout.show_name,

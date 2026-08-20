@@ -107,3 +107,28 @@ def create_signature_module_contract() -> ModuleContract:
         database_contributions=(SIGNATURE_DATABASE_CONTRIBUTION,),
     )
 
+
+def create_signature_client_module_contract() -> ModuleContract:
+    """Backend-client signature contract: no local signature DB/assets."""
+    return ModuleContract(
+        module_id="signature",
+        version="1.0.0",
+        min_platform_version="1.0.0",
+        max_platform_version=None,
+        required_ports=[
+            "logger",
+            "audit_logger",
+            "event_bus",
+            "settings_service",
+        ],
+        provided_ports=["signature_service", "signature_api"],
+        required_capabilities=[],
+        provided_capabilities=["signature.visual.sign", "signature.api.fixed_position"],
+        settings_contribution=SIGNATURE_SETTINGS_CONTRIBUTION,
+        license_tag=None,
+        register=register_signature_ports,
+        start=start_signature_module,
+        stop=stop_signature_module,
+        database_contributions=(),
+    )
+

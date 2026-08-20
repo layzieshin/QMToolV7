@@ -25,6 +25,17 @@ _FORBIDDEN_CUSTOM_FIELD_KEYS = {
 }
 _FORBIDDEN_CUSTOM_FIELD_PREFIXES = ("status.", "assignments.", "workflow.", "registry.")
 _ALLOWED_CUSTOM_FIELD_KEY_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
+_PUBLIC_DOCUMENT_ID_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
+
+
+def assert_new_document_id_safe(document_id: str) -> None:
+    if not document_id.strip():
+        raise ValidationError("document_id is required")
+    if not _PUBLIC_DOCUMENT_ID_RE.fullmatch(document_id):
+        raise ValidationError(
+            "new document_id must contain only URL-unreserved ASCII characters "
+            "(letters, digits, '.', '_', '~', or '-')"
+        )
 
 
 def assert_custom_fields_safe(custom_fields: dict[str, object]) -> None:
@@ -111,21 +122,21 @@ def assert_assignments_for_profile(state: DocumentVersionState, profile: Workflo
 
 
 def ensure_owner_or_privileged(state: DocumentVersionState, actor_user_id: str, actor_role: SystemRole) -> None:
-    if actor_role in (SystemRole.ADMIN, SystemRole.QMB):
+    if actor_role == SystemRole.QMB:
         return
     if state.owner_user_id == actor_user_id:
         return
-    raise PermissionDeniedError("only owner, QMB, or ADMIN may execute this action")
+    raise PermissionDeniedError("only owner or QMB may execute this action")
 
 
 def ensure_editor_or_owner_or_privileged(state: DocumentVersionState, actor_user_id: str, actor_role: SystemRole) -> None:
-    if actor_role in (SystemRole.ADMIN, SystemRole.QMB):
+    if actor_role == SystemRole.QMB:
         return
     if state.owner_user_id == actor_user_id:
         return
     if actor_user_id in state.assignments.editors:
         return
-    raise PermissionDeniedError("only assigned editors, owner, QMB, or ADMIN may complete editing")
+    raise PermissionDeniedError("only assigned editors, owner, or QMB may complete editing")
 
 
 def ensure_assignment_update_allowed(
@@ -137,8 +148,6 @@ def ensure_assignment_update_allowed(
     new_reviewers: frozenset[str],
     new_approvers: frozenset[str],
 ) -> None:
-    if actor_role == SystemRole.ADMIN:
-        return
     if actor_role == SystemRole.USER:
         if state.owner_user_id != actor_user_id:
             raise PermissionDeniedError("owner required for role updates")

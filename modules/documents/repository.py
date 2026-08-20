@@ -50,6 +50,14 @@ class DocumentsRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def get_artifact_by_id(self, artifact_id: str) -> DocumentArtifact | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_artifact(self, artifact_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def mark_current_artifact(
         self,
         document_id: str,

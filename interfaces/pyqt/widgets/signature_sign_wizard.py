@@ -24,7 +24,7 @@ from interfaces.pyqt.widgets.signature_actions import SignatureActions
 from interfaces.pyqt.presenters.formatting import format_local, now_utc_aware
 from interfaces.pyqt.widgets.signature_placement_dialog import SignaturePlacementDialog
 from interfaces.pyqt.widgets.signature_request_form import SignatureRequestForm
-from modules.signature.contracts import LabelLayoutInput, SignaturePlacementInput
+from modules.signature.api import LabelLayoutInput, SignaturePlacementInput
 
 
 class SignatureSignWizard(QDialog):

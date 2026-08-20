@@ -189,3 +189,44 @@ def test_get_source_docx_for_conversion(tmp_path: Path) -> None:
 
     assert ref is not None
     assert ref.path == docx
+
+
+def test_legacy_and_object_storage_keys_are_both_readable(tmp_path: Path) -> None:
+    app_home = tmp_path / "app"
+    artifacts_root = app_home / "storage" / "documents" / "artifacts"
+    legacy = artifacts_root / "DOC-1" / "v1" / "SOURCE_PDF" / "source.pdf"
+    modern = artifacts_root / "objects" / "aa" / "aabbccddeeff00112233445566778899.pdf"
+    legacy.parent.mkdir(parents=True)
+    modern.parent.mkdir(parents=True)
+    legacy.write_bytes(b"%PDF-1.4\nlegacy\n")
+    modern.write_bytes(b"%PDF-1.4\nmodern\n")
+    api = DocumentsArtifactsApi(
+        _FakeDocumentsService(
+            [
+                _artifact(
+                    artifact_id="legacy",
+                    artifact_type=ArtifactType.SOURCE_PDF,
+                    storage_key="DOC-1/v1/SOURCE_PDF/source.pdf",
+                ),
+                _artifact(
+                    artifact_id="modern",
+                    artifact_type=ArtifactType.RELEASED_PDF,
+                    storage_key="objects/aa/aabbccddeeff00112233445566778899.pdf",
+                ),
+            ]
+        ),
+        app_home=app_home,
+        artifacts_root=artifacts_root,
+    )
+
+    legacy_refs = api.get_openable_artifact_refs(
+        "DOC-1",
+        1,
+        artifact_types=(ArtifactType.SOURCE_PDF,),
+        suffixes=(".pdf",),
+    )
+    modern_ref = api.get_released_pdf_for_reading("DOC-1", 1)
+
+    assert [ref.path for ref in legacy_refs] == [legacy]
+    assert modern_ref is not None
+    assert modern_ref.path == modern

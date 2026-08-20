@@ -35,6 +35,24 @@ class BundleExcludesSecretsTest(unittest.TestCase):
             errors = verify_bundle(root)
             self.assertGreater(len(errors), 0)
 
+    def test_detects_env_db_and_evidence_artifacts(self) -> None:
+        verify_bundle = _load_verify().verify_bundle
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_file = root / ".env"
+            env_file.write_text("QMTOOL_PG_PASSWORD=secret\n", encoding="utf-8")
+            db_file = root / "storage/documents/documents.db"
+            db_file.parent.mkdir(parents=True, exist_ok=True)
+            db_file.write_bytes(b"sqlite")
+            evidence = root / ".j04_g3_evidence/run.txt"
+            evidence.parent.mkdir(parents=True, exist_ok=True)
+            evidence.write_text("log", encoding="utf-8")
+            errors = verify_bundle(root)
+            joined = "\n".join(errors)
+            self.assertIn(".env", joined)
+            self.assertIn(".db", joined)
+            self.assertIn("evidence", joined)
+
     def test_clean_bundle_passes(self) -> None:
         verify_bundle = _load_verify().verify_bundle
         with tempfile.TemporaryDirectory() as tmp:

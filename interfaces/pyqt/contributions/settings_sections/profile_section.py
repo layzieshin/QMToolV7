@@ -106,8 +106,8 @@ class ProfileWidget(QWidget):
                 last = " ".join(parts[1:]) if len(parts) > 1 else ""
         self._first_name.setText(first)
         self._last_name.setText(last)
-        self._email.setText(self._session_user.email or "")
-        self._department.setText(self._session_user.department or "")
+        self._email.setText(getattr(self._session_user, "email", None) or "")
+        self._department.setText(getattr(self._session_user, "department", None) or "")
         self._out.setPlainText(self._presenter.describe_session(self._session_user))
 
     def _save_all(self) -> None:
@@ -124,7 +124,7 @@ class ProfileWidget(QWidget):
             profile_changed = (
                 (getattr(self._session_user, "first_name", None) or None) != first_name
                 or (getattr(self._session_user, "last_name", None) or None) != last_name
-                or (self._session_user.email or None) != email
+                or (getattr(self._session_user, "email", None) or None) != email
             )
             pw_changed = bool(current_pw or new_pw or confirm_pw)
 

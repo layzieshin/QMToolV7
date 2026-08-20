@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from interfaces.pyqt.presenters.storage_paths import platform_logs_root
-from modules.documents.contracts import DocumentStatus
+from modules.documents.api import DocumentStatus
 from qm_platform.runtime.container import RuntimeContainer
 
 

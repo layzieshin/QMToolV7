@@ -48,40 +48,71 @@ def enforce_signature_transition(
     if canonical_input is not None and hasattr(sign_request, "input_pdf"):
         sign_request = replace(sign_request, input_pdf=canonical_input)
 
-    sign = getattr(signature_api, "sign_with_fixed_position", None)
-    if not callable(sign):
-        raise SignatureTransitionError("signature_api does not provide sign_with_fixed_position")
-    try:
-        sign(sign_request)
-    except SignatureError as exc:
-        raise SignatureTransitionError(f"signature step failed: {exc}") from exc
-
+    signature_png = getattr(sign_request, "signature_png", None)
     output_pdf = getattr(sign_request, "output_pdf", None)
-    if repository is None or storage_port is None:
-        return
-    if not isinstance(output_pdf, Path) or not output_pdf.exists() or output_pdf.suffix.lower() != ".pdf":
-        raise SignatureTransitionError(
-            f"signature transition '{transition}' did not produce a valid signed PDF output"
+    input_pdf = getattr(sign_request, "input_pdf", None)
+    try:
+        sign = getattr(signature_api, "sign_with_fixed_position", None)
+        if not callable(sign):
+            raise SignatureTransitionError("signature_api does not provide sign_with_fixed_position")
+        try:
+            sign(sign_request)
+        except SignatureError as exc:
+            raise SignatureTransitionError(f"signature step failed: {exc}") from exc
+
+        output_pdf = getattr(sign_request, "output_pdf", None)
+        if repository is None or storage_port is None:
+            return
+        if not isinstance(output_pdf, Path) or not output_pdf.exists() or output_pdf.suffix.lower() != ".pdf":
+            raise SignatureTransitionError(
+                f"signature transition '{transition}' did not produce a valid signed PDF output"
+            )
+        create_artifact_fn(
+            state=state,
+            source_path=output_pdf,
+            artifact_type=ArtifactType.SIGNED_PDF,
+            source_type=ArtifactSourceType.GENERATED,
+            metadata={
+                "transition": transition,
+                "generated_from": str(getattr(sign_request, "input_pdf", "")),
+            },
         )
-    create_artifact_fn(
-        state=state,
-        source_path=output_pdf,
-        artifact_type=ArtifactType.SIGNED_PDF,
-        source_type=ArtifactSourceType.GENERATED,
-        metadata={
-            "transition": transition,
-            "generated_from": str(getattr(sign_request, "input_pdf", "")),
-        },
-    )
-    signed_artifacts = repository.list_artifacts(state.document_id, state.version)
-    has_current_signed = any(
-        item.artifact_type == ArtifactType.SIGNED_PDF and bool(item.is_current)
-        for item in signed_artifacts
-    )
-    if not has_current_signed:
-        raise SignatureTransitionError(
-            f"signature transition '{transition}' did not persist a current SIGNED_PDF artifact"
+        signed_artifacts = repository.list_artifacts(state.document_id, state.version)
+        has_current_signed = any(
+            item.artifact_type == ArtifactType.SIGNED_PDF and bool(item.is_current)
+            for item in signed_artifacts
         )
+        if not has_current_signed:
+            raise SignatureTransitionError(
+                f"signature transition '{transition}' did not persist a current SIGNED_PDF artifact"
+            )
+    finally:
+        import gc
+        import time
+
+        gc.collect()
+        protected = []
+        for candidate in (canonical_input, input_pdf):
+            if isinstance(candidate, Path):
+                try:
+                    protected.append(candidate.resolve())
+                except OSError:
+                    protected.append(candidate)
+        for path in (signature_png, output_pdf):
+            if not isinstance(path, Path):
+                continue
+            try:
+                resolved = path.resolve()
+            except OSError:
+                resolved = path
+            if resolved in protected:
+                continue
+            for attempt in range(8):
+                try:
+                    path.unlink(missing_ok=True)
+                    break
+                except OSError:
+                    time.sleep(0.05 * (attempt + 1))
 
 
 def is_signature_required(state: DocumentVersionState, transition: str) -> bool:

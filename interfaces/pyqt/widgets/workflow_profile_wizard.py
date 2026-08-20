@@ -4,20 +4,23 @@ from dataclasses import dataclass
 
 from PyQt6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QVBoxLayout
 
-from modules.documents.contracts import ControlClass, DocumentStatus
+from modules.documents.api import ControlClass, DocumentStatus, DocumentType
 
 
 @dataclass
 class WorkflowProfileWizardPayload:
+    operation: str
     profile_id: str
     label: str
     control_class: ControlClass
+    doc_type: DocumentType
     phases: tuple[DocumentStatus, ...]
     signature_required_transitions: tuple[str, ...]
     four_eyes_required: bool
     requires_editors: bool
     requires_reviewers: bool
     requires_approvers: bool
+    change_reason: str
 
     def as_json_dict(self) -> dict[str, object]:
         return {
@@ -44,9 +47,19 @@ class WorkflowProfileWizardDialog(QDialog):
 
         self._profile_id = QLineEdit()
         self._label = QLineEdit()
+        self._operation = QComboBox()
+        self._operation.addItem("Definition anlegen", "create")
+        self._operation.addItem("Neue Version anlegen", "create_version")
+        self._operation.addItem("Aktivieren", "activate")
+        self._operation.addItem("Deaktivieren", "deactivate")
+        self._operation.addItem("Dokumenttyp binden", "bind")
+        self._change_reason = QLineEdit("PyQt workflow profile manager")
         self._control_class = QComboBox()
         for control_class in ControlClass:
             self._control_class.addItem(control_class.value, control_class)
+        self._doc_type = QComboBox()
+        for doc_type in DocumentType:
+            self._doc_type.addItem(doc_type.value, doc_type)
 
         self._phase_review = QCheckBox("Phase Pruefung (IN_REVIEW)")
         self._phase_review.setChecked(True)
@@ -73,9 +86,12 @@ class WorkflowProfileWizardDialog(QDialog):
         self._sync_phase_requirements()
 
         form = QFormLayout()
+        form.addRow("Aktion", self._operation)
         form.addRow("Profil-ID", self._profile_id)
         form.addRow("Bezeichnung", self._label)
+        form.addRow("Änderungsgrund", self._change_reason)
         form.addRow("Kontrollklasse", self._control_class)
+        form.addRow("Dokumenttyp", self._doc_type)
         form.addRow("", self._phase_review)
         form.addRow("", self._phase_approval)
         form.addRow("", self._sign_edit_to_review)
@@ -124,14 +140,17 @@ class WorkflowProfileWizardDialog(QDialog):
             transitions.append("IN_APPROVAL->APPROVED")
 
         return WorkflowProfileWizardPayload(
+            operation=str(self._operation.currentData()),
             profile_id=self._profile_id.text().strip(),
             label=self._label.text().strip() or self._profile_id.text().strip(),
             control_class=self._control_class.currentData(),
+            doc_type=self._doc_type.currentData(),
             phases=tuple(phases),
             signature_required_transitions=tuple(transitions),
             four_eyes_required=self._four_eyes.isChecked(),
             requires_editors=self._requires_editors.isChecked(),
             requires_reviewers=self._requires_reviewers.isChecked(),
             requires_approvers=self._requires_approvers.isChecked(),
+            change_reason=self._change_reason.text().strip() or "PyQt workflow profile manager",
         )
 

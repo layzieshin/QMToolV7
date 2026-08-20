@@ -26,6 +26,17 @@ PROD_PUBLIC_KEY = ROOT / "qm_platform" / "licensing" / "keys" / "prod_ed25519_pu
 _HIDDEN_IMPORTS: list[str] = [
     "fitz",  # PyMuPDF — PDF preview
     "pypdf",
+    "pythoncom",  # Word COM isolation (documents DOCX→PDF)
+    "win32com.client",
+    "interfaces.clients.backend_session",
+    "interfaces.clients.backend_identity",
+    "interfaces.clients.documents_http",
+    "interfaces.clients.documents_http_ports",
+    "interfaces.clients.signature_http",
+    "interfaces.clients.signature_http_ports",
+    "interfaces.clients.http_transport",
+    "interfaces.clients.auth_messages",
+    "qm_platform.runtime.client_runtime_profile",
 ]
 _COLLECT_ALL: list[str] = [
     "pymupdf",  # native mupdf DLLs for fitz

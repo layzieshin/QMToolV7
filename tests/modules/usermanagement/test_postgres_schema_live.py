@@ -1,7 +1,6 @@
 """Live PostgreSQL checks for AP-028 M3 schema applicator."""
 from __future__ import annotations
 
-import os
 import uuid
 from pathlib import Path
 
@@ -9,78 +8,18 @@ import psycopg
 import pytest
 
 from modules.usermanagement import postgres_schema as pgs
-
-DSN = os.environ.get("QMTOOL_PG_DSN", "").strip()
-REQUIRED = os.environ.get("QMTOOL_PG_REQUIRED", "").strip() == "1"
+from tests.postgres_live_support import LivePostgresEnv, guarded_drop_usermanagement_schema
 
 pytestmark = pytest.mark.postgres
 
-MIGRATOR_LOGIN = "qmtool_migrator_login_m3"
-RUNTIME_LOGIN = "qmtool_runtime_login_m3"
-LOGIN_PASSWORD = "m3-ci-only-secret"
-
-
-def _require_dsn() -> str:
-    if not DSN:
-        if REQUIRED:
-            pytest.fail("QMTOOL_PG_DSN is required when QMTOOL_PG_REQUIRED=1")
-        pytest.skip("QMTOOL_PG_DSN not set")
-    return DSN
-
-
-def _dsn_with_user(dsn: str, user: str, password: str) -> str:
-    conninfo = psycopg.conninfo.conninfo_to_dict(dsn)
-    conninfo["user"] = user
-    conninfo["password"] = password
-    return psycopg.conninfo.make_conninfo(**conninfo)
-
-
-def _drop_role_if_exists(conn: psycopg.Connection, role: str) -> None:
-    exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
-    if not exists:
-        return
-    conn.execute(f'DROP OWNED BY "{role}" CASCADE')
-    conn.execute(f'DROP ROLE "{role}"')
-
-
-def _cleanup_all(admin_dsn: str) -> None:
-    with psycopg.connect(admin_dsn, autocommit=True) as conn:
-        conn.execute("DROP SCHEMA IF EXISTS usermanagement CASCADE")
-        for role in (MIGRATOR_LOGIN, RUNTIME_LOGIN, "qmtool_runtime", "qmtool_migrator"):
-            _drop_role_if_exists(conn, role)
-
-
-def _prepare_environment(admin_dsn: str) -> tuple[str, str]:
-    _cleanup_all(admin_dsn)
-    pgs.provision_usermanagement_roles(admin_dsn)
-    with psycopg.connect(admin_dsn, autocommit=True) as admin:
-        dbname = admin.execute("SELECT current_database()").fetchone()[0]
-        admin.execute(
-            f"""
-            CREATE ROLE {MIGRATOR_LOGIN} LOGIN PASSWORD '{LOGIN_PASSWORD}'
-                IN ROLE {pgs.MIGRATOR_ROLE}
-            """
-        )
-        admin.execute(
-            f"""
-            CREATE ROLE {RUNTIME_LOGIN} LOGIN PASSWORD '{LOGIN_PASSWORD}'
-                IN ROLE {pgs.RUNTIME_ROLE}
-            """
-        )
-        admin.execute(f'GRANT CONNECT ON DATABASE "{dbname}" TO {MIGRATOR_LOGIN}')
-        admin.execute(f'GRANT CONNECT ON DATABASE "{dbname}" TO {RUNTIME_LOGIN}')
-    return (
-        _dsn_with_user(admin_dsn, MIGRATOR_LOGIN, LOGIN_PASSWORD),
-        _dsn_with_user(admin_dsn, RUNTIME_LOGIN, LOGIN_PASSWORD),
-    )
-
 
 @pytest.fixture
-def env() -> tuple[str, str, str]:
-    admin_dsn = _require_dsn()
-    migrator_dsn, runtime_dsn = _prepare_environment(admin_dsn)
-    yield admin_dsn, migrator_dsn, runtime_dsn
-    _cleanup_all(admin_dsn)
+def env(live_postgres_env: LivePostgresEnv) -> tuple[str, str, str]:
+    return (
+        live_postgres_env.admin_dsn,
+        live_postgres_env.migrator_dsn,
+        live_postgres_env.runtime_dsn,
+    )
 
 
 def test_provision_is_idempotent(env: tuple[str, str, str]) -> None:
@@ -403,8 +342,8 @@ def test_parallel_migration_lock_rejected(env: tuple[str, str, str]) -> None:
 
 def test_unversioned_populated_schema_refused(env: tuple[str, str, str]) -> None:
     admin_dsn, migrator_dsn, _runtime_dsn = env
+    guarded_drop_usermanagement_schema(admin_dsn=admin_dsn)
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
-        admin.execute("DROP SCHEMA IF EXISTS usermanagement CASCADE")
         admin.execute("CREATE SCHEMA usermanagement AUTHORIZATION qmtool_migrator")
         admin.execute("SET ROLE qmtool_migrator")
         admin.execute("CREATE TABLE usermanagement.orphan (id int)")
