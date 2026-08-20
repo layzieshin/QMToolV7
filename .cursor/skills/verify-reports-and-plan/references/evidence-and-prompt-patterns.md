@@ -17,8 +17,15 @@
 - `FAILED`: a product, contract, test, or scenario assertion is red.
 - `BLOCKED`: execution cannot safely continue because a prerequisite or environment is unavailable.
 - `IN_PROGRESS`: valid work remains and no terminal status applies.
-- `NOT RUN`: the step was never reached; never convert it to pass or fail.
+- `NOT RUN`: the step was never started or never reached. Use only when there is no primary evidence that the step ran. Never convert an observed result into `NOT RUN`, and never convert `NOT RUN` into pass or fail.
 - `NOT_READY`: any mandatory parent condition is missing, red, blocked, or unaccepted.
+
+When gates run in parallel or a report continues after an earlier failure:
+
+- Stop starting further gates after the first mandatory red or blocked gate.
+- Keep the parent checkpoint `FAILED` or `BLOCKED`.
+- Report already-running gates with primary evidence by their actual observed outcomes.
+- Document any fail-fast sequence violation separately from those outcomes.
 
 ## Bounded checkpoint template
 
@@ -47,8 +54,11 @@ Steps:
 5. Documentation and evidence update
 
 Fail-fast:
-- Stop on the first red mandatory gate.
-- Record the first error and mark later steps NOT RUN.
+- Stop starting further gates on the first red or blocked mandatory gate.
+- Record the first error and keep the parent checkpoint FAILED or BLOCKED.
+- Report later gates that already have primary evidence with their actual outcomes.
+- Mark only never-started or never-reached steps NOT RUN.
+- Document any fail-fast sequence violation separately.
 
 Definition of Done:
 - behavior and ownership contract
@@ -89,7 +99,8 @@ When exact wording is required, quote one sentence that authorizes only the next
 - Does the evidence belong to the reported SHA?
 - Were failed attempts preserved rather than overwritten?
 - Are skips and deselections explained?
-- Are later steps correctly marked NOT RUN after first red?
+- After first red, are unstarted later steps marked NOT RUN while already-run gates keep their observed outcomes?
+- Is any fail-fast sequence violation documented separately from gate outcomes?
 - Does the fix preserve service and API ownership?
 - Are new routes, APIs, services, helpers, entrypoints, persistence paths, or user actions disclosed?
 - Is the PR head current and are its checks terminal?

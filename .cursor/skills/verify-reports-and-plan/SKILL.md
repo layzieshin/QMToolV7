@@ -44,8 +44,11 @@ Do not repeat expensive, destructive, live, or human-interactive gates merely to
 
 ### 4. Apply first-red and evidence semantics
 
-- Stop the claimed sequence at the first mandatory red or blocked gate.
-- Mark every later mandatory step `NOT RUN`; do not infer its outcome.
+- After the first mandatory red or blocked gate, do not start any further gates.
+- Keep the parent checkpoint `FAILED` or `BLOCKED`; do not promote it because a later gate is green.
+- Report every later mandatory gate that already ran in parallel and has primary evidence with its actual observed outcome (`PASS`, `FAILED`, or `BLOCKED`). Do not relabel that evidence as `NOT RUN`.
+- Mark only never-started or never-reached steps `NOT RUN`; do not infer an unobserved outcome.
+- If later gates were started after the first red or blocked mandatory gate, document that fail-fast violation separately from the gate outcomes.
 - Preserve historical red evidence when a later remediation passes.
 - Do not hide failures with retries, longer timeouts, skipped tests, weakened policy, broad exception handling, or changed assertions.
 - Classify an environmental failure only with concrete evidence such as an unchanged code path, isolated pass, no overlapping process, fresh workspace, and a matching OS or tool error. Otherwise leave the cause open.
