@@ -1687,6 +1687,14 @@ MR-FIX-R1 sowie Post-Merge-CI für `e003b37` und `f7b867d`.
 **Außerhalb dieser Acceptance:** Word-COM-E2E, Produktionslizenz-/Deploymentprüfung,
 Branch-Cleanup.
 
+### MR-ACCEPT-R1 — Steuerungsquellen synchronisiert
+
+**Status:** PASS
+**Scope:** aktuelle Statusstellen in `docs/MASTER_ORCHESTRATION_ROADMAP.md` und
+`docs/J04_M0_PATH_MATRIX.md` sowie Schutztest in `tests/docs/test_docs_consistency.py`.
+**Ergebnis:** Roadmap und Path Matrix tragen denselben package-weiten Status `Accepted`
+wie dieser Report; historische Statusabschnitte unverändert.
+
 ## Governance
 
 - `docs/J04_M0_PATH_MATRIX.md` (kanonische Pfad-SoT)

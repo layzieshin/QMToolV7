@@ -45,8 +45,10 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
   nicht, sondern staffelt Transport vor Persistenznormalisierung.
 - Frueheres Lab-Ziel `J04-M0-DESKTOP-SMOKE` und Soft-Degrade-Interim sind **superseded**
   und zaehlen nicht als M0-Abnahme.
-- J04-M0 acceptance status: `Rejected / follow-up required` until the remediation
-  gates in `docs/J04_M0_ACCEPTANCE_REPORT.md` and `docs/J04_M0_PATH_MATRIX.md` are green.
+- J04-M0 acceptance status: `Accepted` (formale menschliche Freigabe 2026-08-20;
+  Produkt-Merge `e003b37`; aktuelle Main-Basis `f7b867d` mit ausschließlich Skill-Merge dazwischen).
+  Word-COM-E2E und Produktionslizenz-/Deploymentprüfung bleiben optionale Folgepakete und
+  sind kein Grund, den Acceptance-Status erneut auf `Rejected / follow-up required` zu setzen.
 
 ## Zielarchitektur
 ```mermaid

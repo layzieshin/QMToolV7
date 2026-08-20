@@ -76,6 +76,8 @@ def test_canonical_index_exists_and_lists_p0() -> None:
 
 
 J04_M0_CHECKLIST = DOCS / "J04_M0_EXECUTABLE_CHECKLIST.md"
+J04_M0_PATH_MATRIX = DOCS / "J04_M0_PATH_MATRIX.md"
+MASTER_ORCHESTRATION_ROADMAP = DOCS / "MASTER_ORCHESTRATION_ROADMAP.md"
 MERGE_LEDGER_START = "<!-- J04_M0_MERGE_LEDGER_START -->"
 MERGE_LEDGER_END = "<!-- J04_M0_MERGE_LEDGER_END -->"
 MERGE_LEDGER_STATUSES = frozenset({"TODO", "IN_PROGRESS", "PASS", "FAILED", "BLOCKED"})
@@ -389,4 +391,58 @@ def test_acceptance_report_remediation_checkpoint_status_not_satisfied_by_neighb
     # PASS from the neighbour bullet must not bleed into the MR09-R2-X bullet.
     assert "PASS" not in bullet, (
         f"PASS from neighbour leaked into MR09-R2-X bullet: {bullet!r}"
+    )
+
+
+def test_j04_m0_formal_acceptance_status_sources_agree() -> None:
+    """Current J04-M0 steering sources must agree on formal Acceptance.
+
+    When the Acceptance Report current status is ``Accepted``, the roadmap
+    acceptance line and the Path Matrix Final Green Gate must not still claim
+    rejection or an unrun final gate. Historical snapshots elsewhere remain
+    out of scope for this check.
+    """
+    report_text = _read(J04_M0_REPORT)
+    roadmap_text = _read(MASTER_ORCHESTRATION_ROADMAP)
+    matrix_text = _read(J04_M0_PATH_MATRIX)
+
+    top_line_match = re.search(r"^Current status:.*$", report_text, re.MULTILINE)
+    assert top_line_match, "no 'Current status:' line found in Acceptance Report"
+    top_line = top_line_match.group(0)
+    assert top_line.startswith("Current status: `Accepted`"), (
+        f"Acceptance Report current status is not Accepted.\nLine: {top_line!r}"
+    )
+
+    roadmap_status_match = re.search(
+        r"^- J04-M0 acceptance status:.*$",
+        roadmap_text,
+        re.MULTILINE,
+    )
+    assert roadmap_status_match, "no J04-M0 acceptance status line in roadmap"
+    roadmap_status = roadmap_status_match.group(0)
+    assert "`Accepted`" in roadmap_status, (
+        f"roadmap acceptance status does not contain Accepted.\nLine: {roadmap_status!r}"
+    )
+    assert "Rejected / follow-up required" not in roadmap_status, (
+        f"roadmap acceptance status still claims rejection.\nLine: {roadmap_status!r}"
+    )
+
+    final_gate_match = re.search(
+        r"^\| Final Green Gate \(2-Client-Live, Golive, Packaging\) \|.*?\|.*?\|$",
+        matrix_text,
+        re.MULTILINE,
+    )
+    assert final_gate_match, "Final Green Gate row missing from Path Matrix"
+    final_gate = final_gate_match.group(0)
+    assert "`available`" in final_gate, (
+        f"Final Green Gate is not marked available.\nRow: {final_gate!r}"
+    )
+    assert "acceptance remains rejected" not in final_gate.lower(), (
+        f"Final Green Gate still claims rejected acceptance.\nRow: {final_gate!r}"
+    )
+    assert "NOT RUN" not in final_gate, (
+        f"Final Green Gate still claims NOT RUN.\nRow: {final_gate!r}"
+    )
+    assert "`Accepted`" in final_gate or "Accepted" in final_gate, (
+        f"Final Green Gate does not reference Accepted.\nRow: {final_gate!r}"
     )

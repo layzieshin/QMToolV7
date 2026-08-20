@@ -2793,3 +2793,11 @@ Changed files (test-only):
 - **Historische Evidence:** frühere `Accepted unset`-Stellen in MR09/MR10-Zwischenständen unverändert
 - **Nicht Bestandteil:** Word-COM-E2E, Produktionslizenz/Deployment, Branch-Cleanup, automatischer Merge dieses Docs-PRs
 
+### MR-ACCEPT-R1 — Steuerungsquellen synchronisiert
+
+- **Status:** PASS
+- **Geändert:** `docs/MASTER_ORCHESTRATION_ROADMAP.md`, `docs/J04_M0_PATH_MATRIX.md`,
+  `tests/docs/test_docs_consistency.py` (plus R1-Evidence in den Acceptance-Ownern)
+- **Ergebnis:** aktuelle J04-M0-Statusstellen tragen `Accepted`; historische Evidence unverändert
+- **Gate:** `pytest tests/docs/test_docs_consistency.py`
+

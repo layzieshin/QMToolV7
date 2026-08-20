@@ -3,9 +3,11 @@
 Stand: J04-M0 Meilenstein 0 Dokumentation geschlossen; M1/G1 Execute-Semantik technisch
 remediated; G3 Interfaces-Wiring-Gate technisch abgeschlossen; M2 PyQt fail-closed +
 OpenAPI/If-Match/428 technisch abgeschlossen; **M2R Header-/Kommentarstatus-CAS Consumer
-technisch abgeschlossen** (2026-08-07).
-Abnahmestatus der Zeilen bleibt `implemented_unaccepted`, solange Live-/Zwei-Prozess-/
-Packaging-/Human-Evidence fehlen.
+technisch abgeschlossen** (2026-08-07); **formale Acceptance `Accepted`** (2026-08-20;
+Produkt-Merge `e003b37`, Main-Basis `f7b867d`).
+Zeilenstatus `implemented_unaccepted` / `gap` bezeichnen weiterhin Evidence-Tiefe einzelner
+Pfade und ersetzen nicht den package-weiten Acceptance-Status in
+`docs/J04_M0_ACCEPTANCE_REPORT.md`.
 Kanonische Source of Truth fuer Status und Tests.
 Same-Process-`TestClient`-Nachweise gelten nicht als Live-/Zwei-Client-Evidence.
 
@@ -171,7 +173,7 @@ vorschnelle Hochstufung auf `available`.
 | Soft-Degrade `DocumentsFeatureUnavailableError` (Artefakte/Kommentare/Header) | `removed` | selection/pool zeigen echte Fehler |
 | `_FailClosed*Api` HTTP ports | `removed` | Soft-Degrade-Stubs entfernt; HTTP-Ports fail-closed ohne lokale SQLite |
 | modules→interfaces wiring | `available` (G3) | `DOCUMENTS_ALLOW_INPROCESS_SQLITE_PORT` in `modules.documents.wiring`; Interfaces-Suite **174 passed** |
-| Final Green Gate (2-Client-Live, Golive, Packaging) | `gap` | **NOT RUN**; acceptance remains rejected |
+| Final Green Gate (2-Client-Live, Golive, Packaging) | `available` | MR10 Packaging/Golive/Human-Smoke PASS; formale Acceptance `Accepted` (2026-08-20). Word-COM-E2E und Produktionslizenz bleiben Folgepakete |
 | PyQt `available_actions` fail-closed | `available` (Same-Process) | Presenter ohne `compute_available_actions`; Create nur Capability; Controls backendgesteuert (**M2**); Live/Packaging offen |
 
 ## N. Concurrency (P3)
