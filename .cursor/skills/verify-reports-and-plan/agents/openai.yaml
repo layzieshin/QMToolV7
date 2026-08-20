@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evidence-Based Review Planner"
+  short_description: "Verify reports and plan gated next steps"
+  default_prompt: "Use $verify-reports-and-plan to verify this completion report and produce a fail-fast next-step plan and agent prompt."
