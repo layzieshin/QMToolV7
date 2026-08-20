@@ -76,7 +76,7 @@ run. CP08-V9 has **not** been executed.
 
 <!-- J04_M0_MERGE_LEDGER_START -->
 
-Current checkpoint: MR09
+Current checkpoint: COMPLETE
 
 | ID | Titel | Status | Start-SHA | Ergebnis/Evidence | Commit |
 | --- | --- | --- | --- | --- | --- |
@@ -89,8 +89,8 @@ Current checkpoint: MR09
 | MR06 | DOCX-Kommentarsynchronisation stabilisieren | PASS | `3bf6518` | 71 passed; `build/j04-m0-closure/mr06-results-20260818T112948464Z/junit.xml` | pending user approval |
 | MR07 | Realprocess-Harness auf verbindlichen M0-Scope bringen | PASS | `3bf6518` | 75 passed; `build/j04-m0-closure/mr07-results-20260818T135020994Z/junit.xml` | pending user approval |
 | MR08 | Gesamte Regression und Candidate Freeze | PASS | `3bf6518` | 988 passed / 20 skipped; freeze regression `build/j04-m0-closure/mr08-freeze-regression-results-20260818T193330926Z/junit.xml`; CandidateSha `4db97ea72ffcb18823cd610599752cc1c8e8716d` | `4db97ea` |
-| MR09 | Kontrollierten CP08-V9-Lauf ausführen | IN_PROGRESS | `c003dd9` | R2-R4 PASS; CP08-V10 FAILED (Pipe-Backpressure); MR09-R3 und MR09-R3-R1 PASS; CandidateSha `254c8ea`; CP08-V11 NOT RUN | `254c8ea` |
-| MR10 | Packaging, Golive, Human Gate und Merge | TODO | — | — | — |
+| MR09 | Kontrollierten CP08-V9-Lauf ausführen | PASS | `c003dd9` | CP08-V11 PASS; 18/18 Realprocess-Schritte; 1 passed; `build/j04-m0-closure/mr09-cp08-v11-results-20260819T202601488Z/runner.log` | `254c8ea` |
+| MR10 | Packaging, Golive, Human Gate und Merge | PASS | `be8fb01` | MR10-A/A-R1/B PASS; Human-Smoke PASS; 8 passed; `build/j04-m0-closure/mr10-c-closure-20260820T053032181Z/pre-commit-junit.xml` | `254c8ea` |
 
 <!-- J04_M0_MERGE_LEDGER_END -->
 
@@ -1459,25 +1459,126 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
 - **Parent MR09:** IN_PROGRESS und nicht bestanden
 - **Gesamtstatus:** NOT_READY; MR10 TODO; Accepted unset
 
+### CP08-V11 — Einmaliger destruktiver Lauf (PASS)
+
+- **Lauf-HEAD:** `be8fb01104cb7d4618627aa81d6f1d71e1d0a98f` (`be8fb01`)
+- **CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` (unverändert)
+- **Stamp:** `20260819T202601488Z` (historischer Verzeichnisbezeichner — fälschlich mit `Z`-Suffix,
+  tatsächlich lokale Wall-Clock beim Anlegen; Verzeichnis unverändert)
+- **Lokale Laufzeit (UTC+2):** 2026-08-19T20:26:10.849+02:00 bis 2026-08-19T20:26:44.992+02:00
+- **Entsprechende UTC-Zeit:** 2026-08-19T18:26:10.849Z bis 2026-08-19T18:26:44.992Z
+- **Runner-Aufrufe:** exakt **1**
+- **Guard-Identität:** `database=qmtool_j04_destructive_test`, `major=18`, `port=5432`, `marker=j04_m0_destructive_pg16`
+- **Runner-Exitcode:** **0** (1 passed in 31.68s)
+- **Basetemp:** `build/j04-m0-closure/mr09-cp08-v11-results-20260819T202601488Z/basetemp`
+- **Evidence:** `build/j04-m0-closure/mr09-cp08-v11-results-20260819T202601488Z/runner.log`
+- **Realprocess-Workspace:** `build/j04-m0-closure/cp08-realprocess-ws/20260819T182612961146Z-fab8b6579d6a43d2aeb7f5552f8187ac/`
+- **Schritte 1–18:** alle **PASS** (siehe `acceptance-scenario-summary.json`)
+- **Backendlog:** `backend-4440.log` **5388 Bytes** (>4076-Byte-Grenze; Drain-Fix wirksam)
+- **Preflight:** alle 12 read-only Checks grün (Branch, HEAD, Candidate-Invariante, Staging, Worktree, Prozesse, Port, Env, Basetemp)
+- **Cleanup:** Env entfernt; kein pytest/Backend-Rest; Port 8000 frei; Harness-Hashes unverändert
+- **Einmalfreigabe:** verbraucht; Ergebnis: **PASS**
+- **Parent MR09:** **PASS**
+- **Current checkpoint:** **MR10**
+- **Gesamtstatus:** NOT_READY; MR10 TODO; Accepted unset
+- **Nächster Schritt:** unabhängige Prüfung und Planung von MR10 (nicht automatisch starten)
+
 ### MR10 — Packaging, Golive, Human Gate und Merge
 
-- **Status:** TODO
-- **Startzeit:** —
-- **Endzeit:** —
-- **Start-SHA:** —
-- **Ziel und Scope:** Onedir, Golive, sichtbarer interaktiver PyQt-Smoke,
-  danach Git-Aktionen nur nach ausdrücklicher Freigabe. `Accepted` nur durch
-  einen Menschen.
-- **Geänderte Dateien und Verantwortlichkeiten:** —
-- **Bewusst nicht geänderte Dateien:** —
-- **Implementierte Invarianten:** —
-- **Alle Testversuche:** —
-- **Genaue Befehle:** —
-- **Passed/Failed/Skipped:** —
-- **Evidence-Pfade:** —
-- **Abweichungen:** —
-- **Commit-SHA:** pending user approval
-- **Abschlussbewertung:** —
+- **Status:** PASS (MR10-A PASS; MR10-A-R1 PASS; MR10-B PASS; MR10-C PASS)
+- **Startzeit:** 2026-08-19T18:40:21.807Z
+- **Endzeit:** 2026-08-20T05:30:32.181Z
+- **Start-SHA / Lauf-HEAD:** `be8fb01104cb7d4618627aa81d6f1d71e1d0a98f` (`be8fb01`) — unverändert
+- **End-HEAD:** docs-only Closure-Commit (dieser Commit)
+- **CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` (`254c8ea`) — unverändert
+- **Gesamtstatus:** READY_FOR_ACCEPTANCE; Accepted unset
+- **MR10-B Human-Smoke:** PASS
+- **Word-COM-E2E:** nicht verifiziert; separates Conversion-Follow-up
+
+### MR10-A — Technische Release-Gates
+
+- **Status:** PASS (historischer Gate E FAILED; durch MR10-A-R1 behoben)
+- **Stamp:** `20260819T184021807Z`
+- **Evidence:** `build/j04-m0-closure/mr10-a-technical-20260819T184021807Z/`
+- **Preflight:** Branch `feature/ap-j04-m0`, HEAD `be8fb01`, Divergenz 0 behind / 72 ahead;
+  CandidateSha..HEAD nur zwei Docs; Staging leer; stat-only + `docs/transition/` unverändert;
+  2 fremde Python-Prozesse erfasst (nicht beendet); `packaging/dist_output` und
+  `packaging/_pyi_build` innerhalb `I:\Projekte\QMToolV7-j04-m0\packaging`; app.ico vor Build
+  `F1C4D46485E2CE1568F93C92BD6D98BC5B972491065E5632CDA9A7AA1D57A996`
+- **Gate A** (`gate-a-junit.xml`): **18 passed / 0 failed** — Releaseverträge, Golive-Unit,
+  UI-MVP- und PyQt-Navigation-Smoke (nicht-interaktiv)
+- **Gate B** (`gate-b-build.log`): Exit **0** — `packaging/build_onedir.py`;
+  `OK: bundle clean`, `OK: bundle imports`, `QM-Tool.exe`, `QM-Tool.zip`;
+  ZIP **86 241 417 Bytes** SHA-256 `018B56DB881696C4626D2ED0478C3E5F384E97477BE6E15F7ED4CB04982D96A4`;
+  EXE **11 099 231 Bytes** SHA-256 `EE40B1C53B768DC75A2F71D3F1A1F216D052702B24BB7D9EDCD0A83689F98229`;
+  app.ico nach Build unverändert; keine tracked Inhaltsdiffs außerhalb der Docs
+- **Gate C** (`golive-gate.json`): Exit **0**, `ok=true` — alle 7 Top-Level-Checks grün;
+  Migration-Gate 10/10 grün
+- **Gate D** (`gate-d-junit.xml`): Exit **0** — **1005 passed / 0 failed / 20 skipped /
+  52 deselected / 238 subtests passed** in 703.67s; Marker `not postgres and not j04_final_acceptance`
+- **Gate D Skips (20):** 16× `not_in_m0` Legacy local documents CLI workflow;
+  3× `not_in_m0` Legacy documents CLI authorization matrix;
+  1× `not_in_m0` Legacy training flow outside reduced J04-M0 scope
+- **Gate D Deselections (52):** postgres-markierte und j04_final_acceptance-markierte Tests
+  (bewusst ausgeschlossen — kein PostgreSQL-Reset, kein Realprocess)
+- **Gate E** (`gate-e-junit.xml`): **FAILED** — `1 failed / 7 passed`; erste Fehlerstelle
+  `tests/docs/test_docs_consistency.py::test_acceptance_report_remediation_checkpoint_consistent_with_checklist`
+  wegen fehlendem `MR09-R2-R4`-Verweis in der Top-Statuszeile des Acceptance Reports
+- **Bewusst ausgeschlossen:** PostgreSQL-Reset, CP08/Realprocess, sichtbarer PyQt-Human-Smoke,
+  Word-COM, Commit/Staging/Push/PR/Merge
+- **Abschlussbewertung MR10-A:** PASS (Gates A–D grün; historischer Gate E rot;
+  Remediation MR10-A-R1 PASS). Parent MR10 bleibt IN_PROGRESS. MR10-B
+  (sichtbarer interaktiver PyQt-Human-Smoke) **NOT RUN**
+
+### MR10-A-R1 — Docs-Konsistenz
+
+- **Status:** PASS
+- **Stamp:** `20260819T212617115Z`
+- **Evidence:** `build/j04-m0-closure/mr10-a-r1-docs-20260819T212617115Z/`
+- **Ursache historischer Gate-E-Fehler:** Die oberste `Current status:`-Zeile des
+  Acceptance Reports enthielt keine isolierbare Klausel `MR09-R2-R4 PASS`; der erste
+  `Technical acceptance candidate`-Abschnitt war bereits korrekt.
+- **Historische rote Gate-E-Evidence:** `build/j04-m0-closure/mr10-a-technical-20260819T184021807Z/gate-e-junit.xml`
+  — **1 failed / 7 passed** (unverändert, nicht umklassifiziert)
+- **Gates A–D:** **nicht** erneut ausgeführt; historische Evidence bleibt gültig
+  unter `build/j04-m0-closure/mr10-a-technical-20260819T184021807Z/`
+- **Gate R1-A** (`gate-a-junit.xml`): **8 passed / 0 failed**
+- **Gate R1-B** (`gate-b-junit.xml`): **8 passed / 0 failed**
+- **Korrektur:** isolierte Klausel `MR09-R2-R4 PASS` in der Top-Statuszeile ergänzt
+- **CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` — unverändert
+- **MR10-B:** PASS
+- **Abschlussbewertung MR10-A-R1:** PASS. MR10-A formal PASS. Parent MR10 IN_PROGRESS.
+
+### MR10-B — Sichtbarer interaktiver Onedir-Human-Smoke
+
+- **Status:** PASS
+- **Stamp:** `20260819T214740696Z`
+- **Evidence:** `build/j04-m0-closure/mr10-b-human-20260819T214740696Z/`
+- **Vorbereitung:** exakt 1; Guard-bestätigte DB `qmtool_j04_destructive_test`; Backend via Harness; HTTP-Seed QMB/Editor
+- **Build-Artefakte:** unverändert (ZIP/EXE/app.ico wie MR10-A)
+- **Backend-Health:** HTTP 200 `ok`
+- **Menschliche Antwort:** `MR10-B Human-Smoke PASS`
+- **Cleanup:** `cleaned_up`; Client-Exit 0; Port 8000 frei; Reset-/Acceptance-Opt-ins nicht gesetzt
+- **Word-COM / Produktionslizenz:** nicht verifiziert
+- **Nächster Schritt:** MR10-C — lokal abgeschlossen; Fetch/Push/PR nur nach separater Freigabe
+- **Gesamtstatus:** READY_FOR_ACCEPTANCE; Accepted unset; CandidateSha unverändert
+
+### MR10-C — Closure und Merge-Vorbereitung
+
+- **Status:** PASS
+- **Stamp:** `20260820T053032181Z`
+- **Evidence:** `build/j04-m0-closure/mr10-c-closure-20260820T053032181Z/`
+- **Formal:** MR10 PASS; Current checkpoint COMPLETE; Gesamtstatus READY_FOR_ACCEPTANCE;
+  Acceptance-Report-Status `Ready for acceptance`; Accepted unset;
+  CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`
+- **Commit:** docs-only `docs(j04-m0): close MR10 acceptance gates`; kein Push/PR/Merge
+- **Pre-Commit-Docs-Gate:** siehe `pre-commit-junit.xml`
+- **Post-Commit-Docs-Gate:** siehe `post-commit-junit.xml`
+- **Nicht verifiziert:** Word-COM-E2E (Conversion-Folgepaket); Produktionslizenz-/Deploymentprüfung
+- **Übergangspersistenz:** backend-eigene Documents-SQLite bleibt dokumentiert
+- **MR10-B-Orchestrator:** Evidence-lokal unter `build/j04-m0-closure/mr10-b-human-20260819T214740696Z/mr10_b_orchestrator.py`;
+  durch `.gitignore` ausgeschlossen; keine DSN/hartcodierten Passwörter; kein Produkt-Diff;
+  nicht committen; kein Produkt-Helper/Entrypoint
 
 ## Classification legend
 

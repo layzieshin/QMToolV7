@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Rejected / follow-up required` — **MR00–MR08 PASS; MR09 IN_PROGRESS (MR09-R2-R4 PASS; CP08-V10 FAILED — pdf_comment_flow Schritt 14; MR09-R3 und MR09-R3-R1 PASS — Harness-Backpressure behoben; aktiver CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`; CP08-V11 NOT RUN; Gesamtstatus NOT_READY); Current checkpoint MR09; FR14 freeze `ed488ed` remains historical; overall `NOT_READY`**
+Current status: `Ready for acceptance` — **MR00–MR10 PASS; MR09-R2-R4 PASS; MR10-A PASS; MR10-B Human-Smoke PASS; Current checkpoint COMPLETE; aktiver CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`; Gesamtstatus READY_FOR_ACCEPTANCE; Accepted unset; FR14 freeze `ed488ed` remains historical**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -23,8 +23,8 @@ Aktiver CandidateSha: **`254c8ea8147130c02b5661e2e467b2641ca83885`** (`254c8ea`)
 `docs(j04-m0): freeze MR09 R3 candidate`.
 
 Dieser Freeze ersetzt den historischen CP08-V10-Candidate `08b04e6` für künftige
-nicht-destruktive Bewertung. Ein destruktiver CP08-V11-Lauf bleibt dennoch **NOT RUN**
-und erfordert eine eigene ausdrückliche Einmalfreigabe.
+nicht-destruktive Bewertung. Der destruktive CP08-V11-Lauf ist **PASS**
+(Stamp `20260819T202601488Z`; alle 18 Realprocess-Schritte).
 
 `4db97ea72ffcb18823cd610599752cc1c8e8716d` (`4db97ea`) ist ausschließlich der
 historische **MR08-Candidate-Freeze** und für weitere CP08-Läufe ungültig.
@@ -45,13 +45,13 @@ Verlauf seit `4db97ea`:
 - **FreezeCommit** `08b04e6fe28ee86e71759440236b5ca10711fa1a` (`08b04e6`):
   `docs(j04-m0): freeze MR09 retry candidate` — Freeze-Regression-Gate grün —
   1254 passed / 0 failed / 20 skipped; stamp `20260819T150534010Z`.
-- **Parent MR09** bleibt **IN_PROGRESS und nicht bestanden**.
+- **Parent MR09** ist **PASS** (CP08-V11 bestanden).
 
-CP08-V10: **FAILED** — Schritt 14 `pdf_comment_flow` Timeout (Lauf `a15cb3f`, Stamp `20260819T155102306Z`).
+CP08-V10: **FAILED** (historisch) — Schritt 14 `pdf_comment_flow` Timeout (Lauf `a15cb3f`, Stamp `20260819T155102306Z`).
 MR09-R3 hat die Ursache (stdout-Pipe-Backpressure im Harness) behoben.
-CP08-V11: **NOT RUN** — aktiver CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`; destruktive Einmalfreigabe weiterhin ausstehend.
-Gesamtstatus: **NOT_READY**. `ACCEPTED` ist nicht gesetzt.
-Current checkpoint: **MR09**.
+CP08-V11: **PASS** — alle 18 Realprocess-Schritte grün (Lauf-HEAD `be8fb01`, Stamp `20260819T202601488Z`).
+Gesamtstatus: **READY_FOR_ACCEPTANCE**. `ACCEPTED` ist nicht gesetzt.
+Current checkpoint: **COMPLETE**.
 
 Historical FR14 freeze `ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)
 remains history only.
@@ -1412,8 +1412,8 @@ Verbindliche Reihenfolge nach Freigabe:
 **Status:** MR09-R3-R1 **PASS**. MR09-R3 **PASS**.
 **Aktiver Candidate:** `254c8ea8147130c02b5661e2e467b2641ca83885` (`254c8ea`).
 `08b04e6` bleibt ausschließlich historischer CP08-V10-Candidate.
-CP08-V11 bleibt **NOT RUN** und benötigt weiter eine ausdrückliche Einmalfreigabe.
-**Parent MR09:** IN_PROGRESS. **Gesamtstatus:** NOT_READY. MR10: TODO. Accepted: unset.
+CP08-V11: **PASS** (Stamp `20260819T202601488Z`; alle 18 Realprocess-Schritte).
+**Parent MR09:** PASS. **Gesamtstatus:** NOT_READY. MR10: TODO. Accepted: unset.
 
 ## CP08-V10 — Final acceptance attempt (FAILED / NOT_READY)
 
@@ -1466,6 +1466,158 @@ APPROVED, SIGNED_PDF, RELEASED_PDF, Restart, Session-Persistenz: **NOT REACHED**
 
 **Einmalfreigabe:** verbraucht (Runner wurde gestartet). Neue Remediation (MR09-R3) und neue
 ausdrückliche Einmalfreigabe erforderlich vor einem weiteren CP08-Lauf.
+
+## CP08-V11 — Final acceptance attempt (PASS / NOT_READY)
+
+**Lauf-HEAD:** `be8fb01104cb7d4618627aa81d6f1d71e1d0a98f` (`be8fb01`)
+**CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` (`254c8ea`) — unverändert
+**Stamp:** `20260819T202601488Z` (historischer Verzeichnisbezeichner — fälschlich mit `Z`-Suffix,
+tatsächlich lokale Wall-Clock beim Anlegen; Verzeichnis unverändert)
+**Lokale Laufzeit (UTC+2):** 2026-08-19T20:26:10.849+02:00 bis 2026-08-19T20:26:44.992+02:00
+**Entsprechende UTC-Zeit:** 2026-08-19T18:26:10.849Z bis 2026-08-19T18:26:44.992Z
+**Runner-Aufrufe:** exakt **1**
+**Runner-Exitcode:** **0**
+**Guard-Identität:** `database=qmtool_j04_destructive_test`, `major=18`, `port=5432`, `marker=j04_m0_destructive_pg16`
+**Preflight (read-only, vor Opt-in):** Branch `feature/ap-j04-m0`, HEAD `be8fb01`, Divergenz 0 behind / 72 ahead;
+CandidateSha ist Vorfahr von HEAD; CandidateSha..HEAD nur zwei Docs; Staging leer; keine Inhaltsdiffs
+außer stat-only + `docs/transition/`; kein pytest; Port 8000 frei; Env-Variablen nicht gesetzt;
+frischer Basetemp existierte noch nicht.
+**Basetemp:** `build/j04-m0-closure/mr09-cp08-v11-results-20260819T202601488Z/basetemp`
+**Evidence:** `build/j04-m0-closure/mr09-cp08-v11-results-20260819T202601488Z/runner.log`
+**Realprocess-Workspace:** `build/j04-m0-closure/cp08-realprocess-ws/20260819T182612961146Z-fab8b6579d6a43d2aeb7f5552f8187ac/`
+**Scenario summary:** `…/logs/acceptance-scenario-summary.json` (18/18 pass)
+
+| Schritt | Name | Status | Detail |
+| --- | --- | --- | --- |
+| 1 | preconditions | PASS | port free; pg preflight ok major=18 |
+| 2 | pg_bootstrap | PASS | isolated PG schema migrated |
+| 3 | backend_start | PASS | backend ready status=200 |
+| 4 | health_and_openapi | PASS | health and dev openapi reachable |
+| 5 | bootstrap_admin_login | PASS | bootstrap admin session user=j04acceptadmin |
+| 6 | seed_directory_users | PASS | directory users seeded and login verified |
+| 7 | seed_workflow_profile | PASS | workflow profile ready code=j04_accept_flow_profile |
+| 8 | client_process_sessions | PASS | two client processes with distinct homes and token fingerprints |
+| 9 | document_baseline_flow | PASS | document J04-ACCEPT-DOC in progress |
+| 10 | etag_concurrency_race | PASS | one winner and one 409 on shared etag |
+| 11 | artifacts_transport | PASS | artifact content verified |
+| 12 | signature_verify_password | PASS | editor, reviewer, and approver signature assets active and verified |
+| 13 | signed_editing_complete | PASS | signed editing-complete fail-closed then reached IN_REVIEW |
+| 14 | pdf_comment_flow | PASS | PDF_REVIEW comment created |
+| 15 | docx_comment_sync | PASS | DOCX_EDIT comment sync idempotent |
+| 16 | signed_review_approval | PASS | signed review/approval reached APPROVED with SIGNED_PDF and RELEASED_PDF |
+| 17 | backend_restart | PASS | backend process restarted on same backend home |
+| 18 | persistence_and_session_contract | PASS | document persisted in APPROVED; PG-backed sessions survived restart |
+
+**Erste Fehlerstelle:** keine — vollständiger PASS aller 18 Schritte.
+
+**Backendlog-Drain-Nachweis:**
+- CP08-V9/V10 Backendlog jeweils exakt **4076 Bytes** (Pipe-Backpressure vor Fix).
+- CP08-V11 `backend-4440.log`: **5388 Bytes** — wächst über die frühere 4076-Byte-Grenze hinaus;
+  Schritt 14 `pdf_comment_flow` und nachfolgende Schritte sind im Log sichtbar.
+- Restart-Backend `backend-24208.log`: **469 Bytes**.
+
+**Endzustand:** PASS. Alle 18 Realprocess-Schritte grün; APPROVED, SIGNED_PDF, RELEASED_PDF,
+Restart und Session-Persistenz erreicht.
+
+**Parent MR09:** **PASS**.
+**Current checkpoint:** **MR10**.
+**Gesamtstatus:** NOT_READY. MR10: TODO. Accepted: unset.
+
+**Cleanup nach Lauf:**
+- `QMTOOL_J04_FINAL_ACCEPTANCE`: entfernt aus Elternprozess ✓
+- `QMTOOL_PG_TEST_RESET`: nicht gesetzt ✓
+- Pytest-Prozesse: 0 ✓
+- Port 8000: frei (kein aktiver Listener) ✓
+- Harness- und Harness-Unit-Datei-Hashes unverändert ✓
+- Candidate-Produkt-, Backend-, Acceptance- und Testdateien unverändert ✓
+
+**Einmalfreigabe:** verbraucht. Kein zweiter CP08-V11-Lauf. Nächster Schritt: MR10-B (Human-Smoke) — **NOT RUN**.
+
+## MR10-A — Technische Release-Gates (PASS)
+
+**Stamp:** `20260819T184021807Z`
+**Evidence:** `build/j04-m0-closure/mr10-a-technical-20260819T184021807Z/`
+**Remediation:** MR10-A-R1 PASS (`20260819T212617115Z`)
+**Start-/End-HEAD:** `be8fb01104cb7d4618627aa81d6f1d71e1d0a98f` (unverändert)
+**CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` (unverändert)
+
+| Gate | Ergebnis | Evidence |
+| --- | --- | --- |
+| A — Releaseverträge | **18 passed / 0 failed** (19.84s) | `gate-a-junit.xml` |
+| B — Onedir-Build | Exit **0** (~120s); bundle clean + imports OK | `gate-b-build.log` |
+| C — Golive | Exit **0**; `ok=true` | `golive-gate.json` |
+| D — Nicht-live Regression | **1005 passed / 20 skipped / 52 deselected** (703.67s) | `gate-d-junit.xml` |
+| E — Docs-Konsistenz | **FAILED** — `test_acceptance_report_remediation_checkpoint_consistent_with_checklist` | `gate-e-junit.xml` |
+
+**Build-Artefakte (Gate B):**
+- `packaging/dist_output/QM-Tool/` — vorhanden
+- `packaging/dist_output/QM-Tool.zip` — **86 241 417 Bytes**, SHA-256 `018B56DB…`
+- `packaging/dist_output/QM-Tool/QM-Tool.exe` — **11 099 231 Bytes**, SHA-256 `EE40B1C5…`
+- `packaging/icons/app.ico` — SHA-256 vor/nach Build `F1C4D464…` (unverändert)
+- Keine `.env`, SQLite/DB, Private Keys, Secrets, CP08- oder interne Evidence-Dateien im Kundenbundle
+
+**Gate D — Skips:** 20× `not_in_m0` (Legacy CLI/training außerhalb reduziertem M0-Scope).
+**Gate D — Deselections:** 52× postgres + j04_final_acceptance (bewusst ausgeschlossen).
+
+**Gate E Fehlerstelle (historisch):** `tests/docs/test_docs_consistency.py::test_acceptance_report_remediation_checkpoint_consistent_with_checklist` —
+die Current-Status-Zeile erwähnte den letzten MR09-Remediation-Checkpoint `MR09-R2-R4` nicht.
+**Remediation MR10-A-R1:** Klausel `MR09-R2-R4 PASS` ergänzt; R1-A und R1-B grün.
+
+**Word-COM-E2E:** nicht verifiziert; separates Conversion-Follow-up.
+
+**Parent MR10:** IN_PROGRESS. **MR10-B Human-Smoke:** PASS.
+**Gesamtstatus:** NOT_READY. **Accepted:** unset.
+
+## MR10-A-R1 — Docs-Konsistenz (PASS)
+
+**Stamp:** `20260819T212617115Z`
+**Evidence:** `build/j04-m0-closure/mr10-a-r1-docs-20260819T212617115Z/`
+**Gate R1-A:** **8 passed / 0 failed** (`gate-a-junit.xml`)
+**Gate R1-B:** **8 passed / 0 failed** (`gate-b-junit.xml`)
+**Historische rote Gate-E-Evidence:** `mr10-a-technical-20260819T184021807Z/gate-e-junit.xml` — unverändert
+
+## MR10-B — Sichtbarer Onedir-Human-Smoke (PASS)
+
+**Stamp:** `20260819T214740696Z`
+**Evidence:** `build/j04-m0-closure/mr10-b-human-20260819T214740696Z/`
+**Lauf-HEAD / CandidateSha:** `be8fb01` / `254c8ea` — unverändert
+**Testvorbereitungen:** exakt 1
+**Guard:** `database=qmtool_j04_destructive_test`, `major=18`, `port=5432`, `marker=j04_m0_destructive_pg16`, `reset_present=False` vor Reset
+**EXE:** `packaging/dist_output/QM-Tool/QM-Tool.exe` — 11 099 231 Bytes, SHA-256 `EE40B1C53B768DC75A2F71D3F1A1F216D052702B24BB7D9EDCD0A83689F98229`
+**Backend-Health:** HTTP 200, `status=ok`
+**Backend-HOME:** `…/mr10-b-human-20260819T214740696Z/workspace/backend-home`
+**Client-HOME:** `…/mr10-b-human-20260819T214740696Z/workspace/client-home`
+**Menschliche Antwort:** `MR10-B Human-Smoke PASS` (ausdrücklich; EXE-Exitcode 0 allein zählt nicht als PASS)
+**Erste Abweichung:** keine
+**Cleanup:** Orchestrator `phase=cleaned_up`, Exit 0; Client-Exit 0; kein Listener auf 8000; Env-Opt-ins nicht gesetzt
+**Word-COM / Produktionslizenz:** nicht verifiziert; Folgepakete
+**Nächster Schritt:** MR10-C lokal abgeschlossen; Fetch/Push/PR nur nach separater Freigabe.
+
+## MR10-C — Closure und Merge-Vorbereitung (PASS)
+
+**Stamp:** `20260820T053032181Z`
+**Evidence:** `build/j04-m0-closure/mr10-c-closure-20260820T053032181Z/`
+**CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` (`254c8ea`) — unverändert
+**Current checkpoint:** COMPLETE
+**Gesamtstatus:** READY_FOR_ACCEPTANCE
+**Acceptance-Report-Status:** `Ready for acceptance`
+**Accepted:** unset (Human-Smoke ist kein Merge-Accept)
+
+**Technische Zusammenfassung:**
+- CP08-V11: PASS, 18/18 Schritte
+- MR10-A: Releaseverträge, Onedir/ZIP, Bundle-/Importprüfung, Golive, nicht-live Regression — PASS
+- MR10-A-R1: Docs-Konsistenz PASS
+- MR10-B: Human-Smoke PASS; Nutzerantwort ausdrücklich; Cleanup PASS
+- CandidateSha..Closure-HEAD: ausschließlich die beiden Dokument-Owner
+
+**Nicht verifiziert:** Word-COM-E2E (Conversion-Folgepaket); Produktionslizenz-/Deploymentprüfung (Folgepaket).
+**Übergangspersistenz:** backend-eigene Documents-SQLite bleibt dokumentiert.
+
+**MR10-B-Prozessabweichung:** Evidence-lokales `mr10_b_orchestrator.py` unter `build/` (gitignore);
+keine DSN oder hartcodierten Passwörter; kein Produkt-/Candidate-Diff; nicht committen;
+kein Produkt-Helper oder neuer Entrypoint.
+
+Historische rote Evidence (u. a. CP08-V10, MR10-A Gate E) bleibt erhalten und nicht umgeschrieben.
 
 ## Governance
 
