@@ -57,7 +57,7 @@ Living task list for the J04-M0 executable closure plan. Status values: `TODO` |
 | FR14 | Freeze R1–R8 acceptance candidate | PASS | `ed488ed` | 144 focused gates; `$CandidateSha` below; CP08-V8 failed |
 | CP08-V8 | Final acceptance attempt | FAILED | — | PG live **51 passed**; realprocess **FAILED** in `training_read_receipt` before out-of-scope reads (`review/accept` sent as editor → 403); artifacts **PASS**; Word **NOT REACHED** |
 | CP08-R9 | Document-release actor remediation + scope cut | PASS | _(uncommitted)_ | Test-only; editor/reviewer/approver use separate clients; gate ends at `APPROVED`; ready for controlled commit sequence |
-| CP09 | Human acceptance | TODO | — | Depends green CP08 + explicit human sign-off |
+| CP09 | Human acceptance | PASS | `e003b37` / `f7b867d` | Formale Acceptance 2026-08-20; Produkt-Merge `e003b37`; Main-Basis `f7b867d` (Skill only) |
 
 ## Current Merge-Readiness Program
 
@@ -1491,7 +1491,9 @@ New-Item -ItemType Directory -Force -Path "$root/mr08-regression-results-$stamp"
 - **Start-SHA / Lauf-HEAD:** `be8fb01104cb7d4618627aa81d6f1d71e1d0a98f` (`be8fb01`) — unverändert
 - **End-HEAD:** docs-only Closure-Commit (dieser Commit)
 - **CandidateSha:** `254c8ea8147130c02b5661e2e467b2641ca83885` (`254c8ea`) — unverändert
-- **Gesamtstatus:** READY_FOR_ACCEPTANCE; Accepted unset
+- **Gesamtstatus:** ACCEPTED; Accepted (formale menschliche Freigabe 2026-08-20)
+- **J04-M0-Produkt-Merge:** `e003b37ecb3ff6a2f878cc0cf6d1b89e8df9ad38` (`e003b37`)
+- **Aktuelle Main-Basis:** `f7b867d895566ea8fd0b80a07a6eec3be4cf868a` (`f7b867d`; dazwischen nur Skill-Merge)
 - **MR10-B Human-Smoke:** PASS
 - **Word-COM-E2E:** nicht verifiziert; separates Conversion-Follow-up
 
@@ -2780,4 +2782,14 @@ Changed files (test-only):
   - vollständige HTTP-Erreichbarkeit von Legacy-Slash-IDs erfordert separaten Option-B-Auftrag
 - **Abschlussbewertung:** MR-FIX-R1 PASS. Review-Fix-Stand technisch verifiziert; Git-Schreibaktionen
   und erneute Reviewer-Bestätigung bleiben separate Folgeschritte.
+
+### Formal Acceptance — J04-M0
+
+- **Status:** PASS (`Accepted`)
+- **Erteilt:** 2026-08-20 — ausdrückliche menschliche Freigabe
+- **J04-M0-Produkt-Merge:** `e003b37ecb3ff6a2f878cc0cf6d1b89e8df9ad38` (`e003b37`, PR #24)
+- **Aktuelle Main-Basis:** `f7b867d895566ea8fd0b80a07a6eec3be4cf868a` (`f7b867d`, PR #25 Skill only)
+- **Zwischen den SHAs:** ausschließlich Skill-Merge; keine weitere J04-M0-Produktänderung
+- **Historische Evidence:** frühere `Accepted unset`-Stellen in MR09/MR10-Zwischenständen unverändert
+- **Nicht Bestandteil:** Word-COM-E2E, Produktionslizenz/Deployment, Branch-Cleanup, automatischer Merge dieses Docs-PRs
 

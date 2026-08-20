@@ -2,7 +2,7 @@
 
 ## Status
 
-Current status: `Ready for acceptance` — **MR00–MR10 PASS; MR09-R2-R4 PASS; MR10-A PASS; MR10-B Human-Smoke PASS; Current checkpoint COMPLETE; aktiver CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`; Gesamtstatus READY_FOR_ACCEPTANCE; Accepted unset; FR14 freeze `ed488ed` remains historical**
+Current status: `Accepted` — **MR00–MR10 PASS; MR09-R2-R4 PASS; MR10-A PASS; MR10-B Human-Smoke PASS; Current checkpoint COMPLETE; aktiver CandidateSha `254c8ea8147130c02b5661e2e467b2641ca83885`; Gesamtstatus ACCEPTED; Accepted; FR14 freeze `ed488ed` remains historical**
 
 Allowed values: `Draft` | `Ready for acceptance` | `Accepted` | `Rejected / follow-up required`
 
@@ -50,7 +50,7 @@ Verlauf seit `4db97ea`:
 CP08-V10: **FAILED** (historisch) — Schritt 14 `pdf_comment_flow` Timeout (Lauf `a15cb3f`, Stamp `20260819T155102306Z`).
 MR09-R3 hat die Ursache (stdout-Pipe-Backpressure im Harness) behoben.
 CP08-V11: **PASS** — alle 18 Realprocess-Schritte grün (Lauf-HEAD `be8fb01`, Stamp `20260819T202601488Z`).
-Gesamtstatus: **READY_FOR_ACCEPTANCE**. `ACCEPTED` ist nicht gesetzt.
+Gesamtstatus: **ACCEPTED**. Formale menschliche Acceptance ist gesetzt.
 Current checkpoint: **COMPLETE**.
 
 Historical FR14 freeze `ed488ede47063c22ec0b8b9d2a72be25224f6098` (`ed488ed`)
@@ -1664,6 +1664,28 @@ deshalb keinen neuen Socket-Fehlernachweis; der frühere Sammellauf bleibt histo
 - `tests/interfaces/test_documents_http_client_fail_closed.py`
 - `tests/modules/test_documents_event_contracts.py`
 - `tests/modules/test_documents_infrastructure.py`
+
+## Formal Acceptance
+
+**Status:** `Accepted`
+**Erteilt:** 2026-08-20 — ausdrückliche menschliche Freigabe
+**Nicht abgeleitet aus:** technischen Gates, CI-Grün oder Merge allein.
+
+| Referenz | SHA | Bedeutung |
+| --- | --- | --- |
+| J04-M0-Produkt-Merge | `e003b37ecb3ff6a2f878cc0cf6d1b89e8df9ad38` (`e003b37`) | Squash-Merge von PR #24; akzeptierter Produktstand |
+| Aktuelle Main-Basis | `f7b867d895566ea8fd0b80a07a6eec3be4cf868a` (`f7b867d`) | Squash-Merge von PR #25 (Skill only) |
+
+Zwischen `e003b37` und `f7b867d` liegt ausschließlich der Skill-Merge
+(`docs(skills): add shared report verification planner`); keine weitere
+J04-M0-Produktänderung.
+
+**Referenzierte grüne Gates (nicht erneut ausgeführt für diesen docs-only Statuswechsel):**
+Produkt-, PostgreSQL-, Packaging- und Human-Smoke-Evidence aus MR00–MR10 /
+MR-FIX-R1 sowie Post-Merge-CI für `e003b37` und `f7b867d`.
+
+**Außerhalb dieser Acceptance:** Word-COM-E2E, Produktionslizenz-/Deploymentprüfung,
+Branch-Cleanup.
 
 ## Governance
 
