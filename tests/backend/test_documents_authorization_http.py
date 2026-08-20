@@ -573,3 +573,10 @@ def test_authorized_create_from_template_stale_still_returns_409(
     )
     assert success.status_code == 200, success.text
     assert success.json()["state"]["document_id"] == "DOC-TPL-OWN"
+
+    repeated_stale = client.post(
+        "/documents/versions/DOC-TPL-OWN/1/create-from-template",
+        headers={**_mutation_headers(qmb, assigned), "Content-Type": _TEMPLATE_CT},
+        content=_MINIMAL_DOTX,
+    )
+    assert repeated_stale.status_code == 409, repeated_stale.text

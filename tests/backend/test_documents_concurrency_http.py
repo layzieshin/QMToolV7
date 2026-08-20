@@ -135,7 +135,9 @@ def test_every_active_version_mutation_requires_if_match(
 
 
 _TEMPLATE_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
+_TEMPLATE_DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 _MINIMAL_DOTX = b"PK\x03\x04minimal-dotx-stub"
+_MINIMAL_DOCX = b"PK\x03\x04minimal-docx-stub"
 
 
 def test_create_from_template_without_if_match_succeeds_when_target_missing(
@@ -157,6 +159,31 @@ def test_create_from_template_without_if_match_succeeds_when_target_missing(
     assert created.status_code == 200, created.text
     assert created.json()["state"]["document_id"] == "DOC-TEMPLATE-NEW"
     assert "available_actions" in created.json()
+
+
+def test_create_from_docx_template_succeeds_and_records_docx_source_type(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.backend.documents_routes.docx_conversion_available",
+        lambda: True,
+    )
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    created = client.post(
+        "/documents/versions/DOC-TEMPLATE-DOCX/1/create-from-template",
+        headers={**_auth(admin), "Content-Type": _TEMPLATE_DOCX_CT},
+        content=_MINIMAL_DOCX,
+    )
+    assert created.status_code == 200, created.text
+    artifacts = client.get(
+        "/documents/versions/DOC-TEMPLATE-DOCX/1/artifacts",
+        headers=_auth(admin),
+    )
+    assert artifacts.status_code == 200, artifacts.text
+    assert [row["source_type"] for row in artifacts.json()] == ["TEMPLATE_DOCX"]
 
 
 def test_create_from_template_without_if_match_returns_428_when_target_exists(

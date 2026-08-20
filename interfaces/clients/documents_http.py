@@ -9,6 +9,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote
 
 from interfaces.clients.http_transport import (
     BackendHttpTransport,
@@ -61,6 +62,10 @@ class DocumentsBackendConflictError(DocumentsBackendTransportError):
 _token_provider: Callable[[], str | None] | None = None
 _reject_env_token: bool = False
 _artifact_temp_dirs: set[Path] = set()
+
+
+def _document_path_segment(document_id: str) -> str:
+    return quote(document_id, safe="")
 
 
 def clear_artifact_temp_files() -> None:
@@ -246,7 +251,7 @@ class DocumentsHttpClient:
         )
 
     def list_artifacts(self, document_id: str, version: int) -> list[DocumentArtifact]:
-        rows = self._request("GET", f"/documents/versions/{document_id}/{version}/artifacts")
+        rows = self._request("GET", f"/documents/versions/{_document_path_segment(document_id)}/{version}/artifacts")
         if not isinstance(rows, list):
             raise DocumentsBackendTransportError("invalid artifacts list response")
         return [self._artifact_from_payload(row) for row in rows if isinstance(row, dict)]
@@ -296,7 +301,7 @@ class DocumentsHttpClient:
 
     def get_document_version(self, document_id: str, version: int) -> DocumentVersionState | None:
         try:
-            payload = self._request("GET", f"/documents/versions/{document_id}/{version}")
+            payload = self._request("GET", f"/documents/versions/{_document_path_segment(document_id)}/{version}")
         except DocumentsBackendTransportError as exc:
             if "HTTP 404" in str(exc):
                 return None
@@ -305,7 +310,7 @@ class DocumentsHttpClient:
 
     def get_header(self, document_id: str) -> DocumentHeader | None:
         try:
-            row = self._request("GET", f"/documents/headers/{document_id}")
+            row = self._request("GET", f"/documents/headers/{_document_path_segment(document_id)}")
         except DocumentsBackendTransportError as exc:
             if "HTTP 404" in str(exc):
                 return None
@@ -329,7 +334,7 @@ class DocumentsHttpClient:
         )
 
     def list_tasks(self, *, scope: str | None = None) -> list[DocumentTaskItem]:
-        suffix = f"?scope={scope}" if scope else ""
+        suffix = f"?scope={quote(scope, safe='')}" if scope else ""
         rows = self._request("GET", f"/documents/home/tasks{suffix}")
         if not isinstance(rows, list):
             raise DocumentsBackendTransportError("invalid documents tasks response")
@@ -418,7 +423,7 @@ class DocumentsHttpClient:
     ) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/assign-roles",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/assign-roles",
             body={
                 "editors": sorted(editors),
                 "reviewers": sorted(reviewers),
@@ -431,7 +436,7 @@ class DocumentsHttpClient:
     def start_workflow(self, state: DocumentVersionState, *, profile_id: str | None = None) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/start",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/start",
             body={"profile_id": profile_id},
             if_match=self._if_match(state),
         )
@@ -440,7 +445,7 @@ class DocumentsHttpClient:
     def complete_editing(self, state: DocumentVersionState, *, sign_intent: object | None = None) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/editing-complete",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/editing-complete",
             body=self._workflow_body(sign_intent),
             if_match=self._if_match(state),
         )
@@ -449,7 +454,7 @@ class DocumentsHttpClient:
     def accept_review(self, state: DocumentVersionState, *, sign_intent: object | None = None) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/review/accept",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/review/accept",
             body=self._workflow_body(sign_intent),
             if_match=self._if_match(state),
         )
@@ -458,7 +463,7 @@ class DocumentsHttpClient:
     def reject_review(self, state: DocumentVersionState, reason: RejectionReason) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/review/reject",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/review/reject",
             body={"template_text": reason.template_text, "free_text": reason.free_text},
             if_match=self._if_match(state),
         )
@@ -467,7 +472,7 @@ class DocumentsHttpClient:
     def accept_approval(self, state: DocumentVersionState, *, sign_intent: object | None = None) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/approval/accept",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/approval/accept",
             body=self._workflow_body(sign_intent),
             if_match=self._if_match(state),
         )
@@ -476,7 +481,7 @@ class DocumentsHttpClient:
     def reject_approval(self, state: DocumentVersionState, reason: RejectionReason) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/approval/reject",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/approval/reject",
             body={"template_text": reason.template_text, "free_text": reason.free_text},
             if_match=self._if_match(state),
         )
@@ -485,7 +490,7 @@ class DocumentsHttpClient:
     def abort_workflow(self, state: DocumentVersionState) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/abort",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/abort",
             body={},
             if_match=self._if_match(state),
         )
@@ -522,7 +527,7 @@ class DocumentsHttpClient:
     def ensure_source_pdf_for_signing(self, state: DocumentVersionState) -> Path:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/workflow/ensure-source-pdf",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/workflow/ensure-source-pdf",
             body={},
             if_match=self._if_match(state),
         )
@@ -537,7 +542,7 @@ class DocumentsHttpClient:
         file_bytes = source_path.read_bytes()
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/import-pdf",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/import-pdf",
             raw_body=file_bytes,
             content_type="application/pdf",
             if_match=self._if_match(state),
@@ -548,7 +553,7 @@ class DocumentsHttpClient:
         file_bytes = source_path.read_bytes()
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/import-docx",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/import-docx",
             raw_body=file_bytes,
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             if_match=self._if_match(state),
@@ -573,7 +578,7 @@ class DocumentsHttpClient:
             raise ValueError("If-Match token is required for header update")
         row = self._request(
             "PUT",
-            f"/documents/headers/{document_id}",
+            f"/documents/headers/{_document_path_segment(document_id)}",
             body={
                 "workflow_profile_id": workflow_profile_id,
                 "department": department,
@@ -615,7 +620,7 @@ class DocumentsHttpClient:
     ) -> DocumentVersionState:
         payload = self._request(
             "PATCH",
-            f"/documents/versions/{state.document_id}/{state.version}/metadata",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/metadata",
             body={
                 "title": title,
                 "description": description,
@@ -630,7 +635,7 @@ class DocumentsHttpClient:
     def list_workflow_comments(self, state: DocumentVersionState, *, context: str) -> list[dict[str, object]]:
         rows = self._request(
             "GET",
-            f"/documents/versions/{state.document_id}/{state.version}/comments?context={context}",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/comments?context={quote(context, safe='')}",
         )
         if not isinstance(rows, list):
             raise DocumentsBackendTransportError("invalid workflow comments list response")
@@ -645,7 +650,7 @@ class DocumentsHttpClient:
     def sync_docx_comments(self, state: DocumentVersionState) -> list[dict[str, object]]:
         rows = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/comments/sync-docx",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/comments/sync-docx",
             body={},
             if_match=self._if_match(state),
         )
@@ -664,7 +669,7 @@ class DocumentsHttpClient:
     ) -> dict[str, object]:
         row = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/comments",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/comments",
             body={
                 "context": context,
                 "page_number": page_number,
@@ -701,7 +706,7 @@ class DocumentsHttpClient:
     def archive_approved(self, state: DocumentVersionState) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/lifecycle/archive",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/lifecycle/archive",
             body={},
             if_match=self._if_match(state),
         )
@@ -722,7 +727,7 @@ class DocumentsHttpClient:
             raise DocumentsBackendTransportError("sign_intent is required for annual validity extension")
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/lifecycle/extend-annual",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/lifecycle/extend-annual",
             body={
                 "duration_days": duration_days,
                 "reason": reason,
@@ -743,7 +748,7 @@ class DocumentsHttpClient:
     def create_new_version_after_archive(self, state: DocumentVersionState, next_version: int) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/lifecycle/new-version-after-archive",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/lifecycle/new-version-after-archive",
             body={"next_version": next_version},
             if_match=self._if_match(state),
         )
@@ -752,7 +757,7 @@ class DocumentsHttpClient:
     def list_change_requests(self, state: DocumentVersionState) -> list[dict[str, object]]:
         rows = self._request(
             "GET",
-            f"/documents/versions/{state.document_id}/{state.version}/change-requests",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/change-requests",
         )
         if not isinstance(rows, list):
             raise DocumentsBackendTransportError("invalid change requests list response")
@@ -768,7 +773,7 @@ class DocumentsHttpClient:
     ) -> DocumentVersionState:
         payload = self._request(
             "POST",
-            f"/documents/versions/{state.document_id}/{state.version}/change-requests",
+            f"/documents/versions/{_document_path_segment(state.document_id)}/{state.version}/change-requests",
             body={"change_id": change_id, "reason": reason, "impact_refs": impact_refs},
             if_match=self._if_match(state),
         )
@@ -800,7 +805,7 @@ class DocumentsHttpClient:
         if_match = self._if_match(state) if state is not None else "none"
         payload = self._request(
             "POST",
-            f"/documents/versions/{document_id}/{version}/create-from-template",
+            f"/documents/versions/{_document_path_segment(document_id)}/{version}/create-from-template",
             raw_body=file_bytes,
             content_type=content_type,
             if_match=if_match,
@@ -965,7 +970,7 @@ class DocumentsHttpClient:
         return self._read_receipt_from_payload(row)
 
     def get_read_receipt(self, document_id: str, version: int) -> DocumentReadReceipt | None:
-        row = self._request("GET", f"/documents/reads/receipt/{document_id}/{version}")
+        row = self._request("GET", f"/documents/reads/receipt/{_document_path_segment(document_id)}/{version}")
         if row is None:
             return None
         if not isinstance(row, dict):

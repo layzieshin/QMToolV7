@@ -4,7 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from modules.documents.contracts import RejectionReason, SystemRole, ValidityExtensionOutcome, WorkflowProfile
+from modules.documents.contracts import (
+    ArtifactSourceType,
+    RejectionReason,
+    SystemRole,
+    ValidityExtensionOutcome,
+    WorkflowProfile,
+)
 from modules.documents.service import DocumentsService
 from tests.database_helpers import make_documents_service_with_profiles
 from pathlib import Path
@@ -63,20 +69,40 @@ class DocumentsEventContractsTest(unittest.TestCase):
 
             pdf = root / "source.pdf"
             dotx = root / "template.dotx"
+            docx = root / "template.docx"
+            doct = root / "template.doct"
             self._write_bytes(pdf, b"%PDF-1.4\n%%EOF\n")
             self._write_bytes(dotx, b"dotx-bytes")
+            self._write_bytes(docx, b"docx-bytes")
+            self._write_bytes(doct, b"doct-bytes")
 
             service.import_existing_pdf("DOC-EVT-1", 1, pdf, actor_user_id="owner-1", actor_role=SystemRole.USER)
             service.create_from_template("DOC-EVT-2", 1, dotx, actor_user_id="owner-2", actor_role=SystemRole.USER)
+            service.create_from_template("DOC-EVT-3", 1, docx, actor_user_id="owner-3", actor_role=SystemRole.USER)
+            service.create_from_template("DOC-EVT-4", 1, doct, actor_user_id="owner-4", actor_role=SystemRole.USER)
             stamped = service.get_document_version("DOC-EVT-1", 1)
             assert stamped is not None
             self.assertIsNotNone(stamped.last_event_id)
             self.assertEqual(stamped.last_actor_user_id, "owner-1")
+            for document_id, actor, source_type in (
+                ("DOC-EVT-2", "owner-2", ArtifactSourceType.TEMPLATE_DOTX),
+                ("DOC-EVT-3", "owner-3", ArtifactSourceType.TEMPLATE_DOCX),
+                ("DOC-EVT-4", "owner-4", ArtifactSourceType.TEMPLATE_DOCT),
+            ):
+                template_state = service.get_document_version(document_id, 1)
+                assert template_state is not None
+                self.assertIsNotNone(template_state.last_event_id)
+                self.assertEqual(template_state.last_actor_user_id, actor)
+                template_artifacts = service.list_artifacts(document_id, 1)
+                self.assertEqual([item.source_type for item in template_artifacts], [source_type])
+                registry_entry = registry.get_entry(document_id)
+                assert registry_entry is not None
+                self.assertEqual(registry_entry.last_update_event_id, template_state.last_event_id)
 
             imported = [e for e in events if e.name == "domain.documents.artifact.imported.v1"]
             created = [e for e in events if e.name == "domain.documents.template.created.v1"]
             self.assertEqual(len(imported), 1)
-            self.assertEqual(len(created), 1)
+            self.assertEqual(len(created), 3)
 
             imported_payload = imported[0].payload
             self.assertEqual(imported[0].module_id, "documents")

@@ -656,6 +656,21 @@ def test_unusual_document_id_remains_fachlich_and_omits_storage_paths(tmp_path: 
         assert ".." not in path.as_posix()
 
 
+def test_new_document_id_with_slash_is_rejected(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+
+    response = client.post(
+        "/documents/versions/create",
+        headers=_auth(admin),
+        json={"document_id": "DOC/NEW", "version": 1},
+    )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]["error"] == "documents_workflow"
+
+
 def test_pool_list_by_status(tmp_path: Path) -> None:
     container, users = _build_documents_backend_container(tmp_path)
     client = TestClient(create_app(container))

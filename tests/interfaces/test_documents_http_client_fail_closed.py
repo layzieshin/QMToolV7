@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -77,3 +78,42 @@ def test_conflict_maps_current_state_only() -> None:
     assert captured.value.current_etag == "new"
     assert captured.value.current_state is not None
     assert captured.value.current_state.status == DocumentStatus.IN_REVIEW
+
+
+def test_document_paths_encode_legacy_ids_and_query_values() -> None:
+    client = DocumentsHttpClient(base_url="http://127.0.0.1:8000", token="t")
+    client._request = MagicMock(return_value=[])
+
+    client.list_artifacts("DOC-2026_08.~", 1)
+    assert client._request.call_args.args == (
+        "GET",
+        "/documents/versions/DOC-2026_08.~/1/artifacts",
+    )
+
+    legacy_state = DocumentVersionState(document_id="LEGACY ?#%", version=1)
+    client.list_workflow_comments(legacy_state, context="PDF REVIEW/ARCHIVE")
+    assert client._request.call_args.args == (
+        "GET",
+        "/documents/versions/LEGACY%20%3F%23%25/1/comments?context=PDF%20REVIEW%2FARCHIVE",
+    )
+
+    client.list_tasks(scope="mine/team")
+    assert client._request.call_args.args == ("GET", "/documents/home/tasks?scope=mine%2Fteam")
+
+
+def test_create_from_template_maps_docx_to_document_media_type(tmp_path: Path) -> None:
+    client = DocumentsHttpClient(base_url="http://127.0.0.1:8000", token="t")
+    client._request = MagicMock(return_value={})
+    client._state_from_response = MagicMock(return_value=object())
+    source = tmp_path / "template.docx"
+    source.write_bytes(b"PK\x03\x04docx-stub")
+
+    client.create_from_template_for_version("DOC-TEMPLATE", 1, source, state=None)
+
+    assert client._request.call_args.args == (
+        "POST",
+        "/documents/versions/DOC-TEMPLATE/1/create-from-template",
+    )
+    assert client._request.call_args.kwargs["content_type"] == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )

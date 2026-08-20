@@ -2734,3 +2734,50 @@ Changed files (test-only):
 - `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py` — focused scenario unit tests
 - `tests/acceptance/test_j04_m0_realprocess.py` — calls `run_acceptance_scenario()`
 
+## MR-FIX-R1 — Review-Fix Verification Checkpoint
+
+- **Status:** PASS
+- **Startzeit:** 2026-08-20T09:55:00+02:00
+- **Endzeit:** 2026-08-20T10:11:45+02:00
+- **Start-SHA / Branch:** `9cee1ddf78c39f88dcf582fab79cea10146953ed` auf `feature/ap-j04-m0`
+- **Remote-Head:** `origin/feature/ap-j04-m0` = `9cee1ddf78c39f88dcf582fab79cea10146953ed`
+- **Ziel und Scope:** ausschließlich Verifikation der PR-24-Review-Fixes; kein Commit, kein Push,
+  keine PR-/Conversation-Aktion, keine Produktentscheidung außerhalb des bestätigten Vertragsumfangs.
+- **Preflight:**
+  - Worktree/Staging erfasst; Review-Fix-Dateien vollständig gelistet
+  - Fremdänderungen `interfaces/pyqt/widgets/signature_placement/label_geometry.py`,
+    `modules/training/wiring.py` und `docs/transition/` unverändert belassen
+  - kein paralleler Pytest-Prozess
+- **Change-Manifest dieses Checkpoints:**
+  - `modules/documents/contracts.py`
+  - `modules/documents/service.py`
+  - `modules/documents/validation.py`
+  - `interfaces/clients/documents_http.py`
+  - `tests/backend/test_documents_authorization_http.py`
+  - `tests/backend/test_documents_concurrency_http.py`
+  - `tests/backend/test_documents_http_api.py`
+  - `tests/interfaces/test_documents_http_client_fail_closed.py`
+  - `tests/modules/test_documents_event_contracts.py`
+  - `tests/modules/test_documents_infrastructure.py`
+- **Alle Testversuche:**
+  1. Gate A — `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py::test_acceptance_document_create_with_qmb_token_returns_etag`
+     mit `--basetemp build/mr-fix-r1/gate-a-basetemp` — **1 passed**
+     (`build/mr-fix-r1/gate-a-junit.xml`)
+  2. Gate B — `tests/docs/test_docs_consistency.py -v`
+     mit `--basetemp build/mr-fix-r1/gate-b-basetemp` — **8 passed**
+     (`build/mr-fix-r1/gate-b-junit.xml`)
+  3. Gate C — fokussierte Review-Fix-Suite in einem frischen seriellen Prozess
+     mit `--basetemp build/mr-fix-r1/gate-c-basetemp` — **94 passed, 1 warning**
+     (`build/mr-fix-r1/gate-c-junit.xml`)
+  4. Gate D — `pytest -m "not postgres and not j04_final_acceptance"`
+     mit `--basetemp build/mr-fix-r1/gate-d-basetemp` — **1048 passed, 20 skipped, 7 warnings**
+     (`build/mr-fix-r1/gate-d-junit.xml`)
+- **WinError-10053-Klassifikation:** im früher roten Gesamtlauf historisch vorhanden; Gate A reproduzierte
+  den Fehler im Einzelprozess **nicht**. Kein neuer Socket-/Cleanup- oder `WinError 5`-Umgebungseffekt in MR-FIX-R1.
+- **Vertragliche Klarstellung:**
+  - neue öffentliche `document_id`-Werte sind URL-sicher
+  - Legacy-Slash-IDs bleiben unverändert und außerhalb des aktuellen HTTP-Routenvertrags
+  - vollständige HTTP-Erreichbarkeit von Legacy-Slash-IDs erfordert separaten Option-B-Auftrag
+- **Abschlussbewertung:** MR-FIX-R1 PASS. Review-Fix-Stand technisch verifiziert; Git-Schreibaktionen
+  und erneute Reviewer-Bestätigung bleiben separate Folgeschritte.
+

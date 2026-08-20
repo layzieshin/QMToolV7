@@ -377,8 +377,6 @@ class DocumentsService:
         workflow_profile_id: str | None = None,
         custom_fields: dict[str, object] | None = None,
     ) -> DocumentVersionState:
-        if not document_id.strip():
-            raise ValidationError("document_id is required")
         if version <= 0:
             raise ValidationError("version must be > 0")
         normalized_title = title.strip() or document_id
@@ -395,6 +393,7 @@ class DocumentsService:
                 existing = self.get_document_version(document_id, version)
                 if existing is not None:
                     raise DocumentConflictError(existing)
+                _val.assert_new_document_id_safe(document_id)
                 created = DocumentVersionState(
                     document_id=document_id,
                     version=version,
@@ -969,28 +968,34 @@ class DocumentsService:
         actor_user_id: str,
         actor_role: SystemRole,
     ) -> DocumentVersionState:
-        self._validate_source_file(template_path, allowed_suffixes={".dotx", ".doct"})
+        self._validate_source_file(template_path, allowed_suffixes={".dotx", ".docx", ".doct"})
         state = self._ensure_document_version(
             document_id, version, owner_user_id=actor_user_id,
             doc_type=DocumentType.OTHER, control_class=ControlClass.CONTROLLED,
             workflow_profile_id=None,
         )
         self._ensure_owner_or_privileged(state, actor_user_id, actor_role)
-        source_type = (
-            ArtifactSourceType.TEMPLATE_DOTX if template_path.suffix.lower() == ".dotx" else ArtifactSourceType.TEMPLATE_DOCT
-        )
-        artifact = self._create_artifact(
-            state=state, source_path=template_path,
-            artifact_type=ArtifactType.SOURCE_DOCX,
-            source_type=source_type,
-            metadata={"intake_mode": "create_from_template"},
-        )
-        event = self._publish(
-            "domain.documents.template.created.v1", state,
-            {"artifact_id": artifact.artifact_id}, actor_user_id=actor_user_id,
-        )
-        self._sync_registry(state, event)
-        return state
+        source_types = {
+            ".dotx": ArtifactSourceType.TEMPLATE_DOTX,
+            ".docx": ArtifactSourceType.TEMPLATE_DOCX,
+            ".doct": ArtifactSourceType.TEMPLATE_DOCT,
+        }
+        source_type = source_types[template_path.suffix.lower()]
+        with self._write_transaction():
+            artifact = self._create_artifact(
+                state=state, source_path=template_path,
+                artifact_type=ArtifactType.SOURCE_DOCX,
+                source_type=source_type,
+                metadata={"intake_mode": "create_from_template"},
+            )
+            event = self._publish(
+                "domain.documents.template.created.v1", state,
+                {"artifact_id": artifact.artifact_id}, actor_user_id=actor_user_id,
+            )
+            updated = eventing.stamp_event_on_state(state, event, actor_user_id)
+            self._store_state(updated)
+            self._sync_registry(updated, event)
+        return updated
 
     # --- Workflow delegation (unchanged) ---
 

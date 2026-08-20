@@ -17,12 +17,13 @@ from modules.documents.contracts import (
     ControlClass,
     DocumentArtifact,
     DocumentStatus,
+    DocumentVersionState,
     SystemRole,
     ValidityExtensionOutcome,
     WorkflowProfile,
 )
 from modules.documents.artifact_ops import resolve_artifact_path
-from modules.documents.errors import DocumentConflictError
+from modules.documents.errors import DocumentConflictError, ValidationError
 from modules.documents.service import DocumentsService
 from modules.documents.storage import FileSystemDocumentsStorage, contained_path
 from modules.documents.workflow_profile_seed_reader import WorkflowProfileSeedReader
@@ -485,7 +486,7 @@ class DocumentsInfrastructureTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 storage.resolve_storage_key(r"I:\windows\outside.pdf")
 
-    def test_unusual_document_id_stays_fachlich_and_does_not_enter_storage_path(self) -> None:
+    def test_new_document_ids_are_url_safe_and_legacy_slash_ids_remain_usable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             storage = FileSystemDocumentsStorage(root / "artifacts")
@@ -494,11 +495,21 @@ class DocumentsInfrastructureTest(unittest.TestCase):
                 signature_api=_FakeSignatureApi(),
                 storage_port=storage,
             )
-            weird_id = r"DOC..\\WEIRD"
+            with self.assertRaises(ValidationError):
+                service.create_document_version("DOC/NEW", 1, owner_user_id="owner-1")
+
+            weird_id = "DOC/LEGACY/WEIRD"
+            legacy_state = DocumentVersionState(
+                document_id=weird_id,
+                version=1,
+                title=weird_id,
+                owner_user_id="owner-1",
+                created_by="owner-1",
+                created_at=datetime.now(timezone.utc),
+            )
+            service._repository.upsert(legacy_state)
             source_pdf = root / "source.pdf"
             source_pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
-            state = service.create_document_version(weird_id, 1, owner_user_id="owner-1")
-            self.assertEqual(state.document_id, weird_id)
             imported = service.import_existing_pdf(
                 weird_id,
                 1,
@@ -584,6 +595,47 @@ class DocumentsInfrastructureTest(unittest.TestCase):
                     actor_user_id="owner-1",
                     actor_role=SystemRole.USER,
                     expected_last_event_id=docx_prior,
+                )
+
+            template = root / "template.dotx"
+            template.write_bytes(b"PK\x03\x04dotx-stub")
+            template_state = service.create_document_version("DOC-TEMPLATE-CAS", 1, owner_user_id="owner-1")
+            template_prior = template_state.last_event_id
+            updated_template = service.mutate_version_if_current(
+                "DOC-TEMPLATE-CAS",
+                1,
+                template_prior,
+                lambda _current: service.create_from_template(
+                    "DOC-TEMPLATE-CAS",
+                    1,
+                    template,
+                    actor_user_id="owner-1",
+                    actor_role=SystemRole.USER,
+                ),
+                actor_user_id="owner-1",
+                actor_role=SystemRole.USER,
+                owner_or_privileged=True,
+            )
+            self.assertIsNotNone(updated_template.last_event_id)
+            self.assertNotEqual(updated_template.last_event_id, template_prior)
+            persisted_template = service.get_document_version("DOC-TEMPLATE-CAS", 1)
+            assert persisted_template is not None
+            self.assertEqual(persisted_template.last_event_id, updated_template.last_event_id)
+            with self.assertRaises(DocumentConflictError):
+                service.mutate_version_if_current(
+                    "DOC-TEMPLATE-CAS",
+                    1,
+                    template_prior,
+                    lambda _current: service.create_from_template(
+                        "DOC-TEMPLATE-CAS",
+                        1,
+                        template,
+                        actor_user_id="owner-1",
+                        actor_role=SystemRole.USER,
+                    ),
+                    actor_user_id="owner-1",
+                    actor_role=SystemRole.USER,
+                    owner_or_privileged=True,
                 )
 
     def test_sqlite_connections_are_thread_local_and_nested(self) -> None:

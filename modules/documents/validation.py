@@ -25,6 +25,17 @@ _FORBIDDEN_CUSTOM_FIELD_KEYS = {
 }
 _FORBIDDEN_CUSTOM_FIELD_PREFIXES = ("status.", "assignments.", "workflow.", "registry.")
 _ALLOWED_CUSTOM_FIELD_KEY_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,64}$")
+_PUBLIC_DOCUMENT_ID_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
+
+
+def assert_new_document_id_safe(document_id: str) -> None:
+    if not document_id.strip():
+        raise ValidationError("document_id is required")
+    if not _PUBLIC_DOCUMENT_ID_RE.fullmatch(document_id):
+        raise ValidationError(
+            "new document_id must contain only URL-unreserved ASCII characters "
+            "(letters, digits, '.', '_', '~', or '-')"
+        )
 
 
 def assert_custom_fields_safe(custom_fields: dict[str, object]) -> None:

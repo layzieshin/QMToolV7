@@ -1619,6 +1619,52 @@ kein Produkt-Helper oder neuer Entrypoint.
 
 Historische rote Evidence (u. a. CP08-V10, MR10-A Gate E) bleibt erhalten und nicht umgeschrieben.
 
+## MR-FIX-R1 — Review-Fix Verification Checkpoint (PASS)
+
+**Stamp:** `20260820T075936Z`
+**Evidence:** `build/mr-fix-r1/`
+**Scope:** reiner Verifikations-Checkpoint für PR-24-Review-Fixes; keine Produktentscheidung über den bereits
+bestätigten Vertragsumfang hinaus; kein Commit, kein Push, keine PR-/Conversation-Aktion.
+
+**Preflight:** Branch `feature/ap-j04-m0`; lokales `HEAD` und `origin/feature/ap-j04-m0` beide
+`9cee1ddf78c39f88dcf582fab79cea10146953ed`; Fremdänderungen in
+`interfaces/pyqt/widgets/signature_placement/label_geometry.py`, `modules/training/wiring.py`
+und `docs/transition/` unverändert belassen; kein paralleler Pytest-Prozess.
+
+**Gates:**
+- Gate A — `tests/acceptance/test_j04_m0_acceptance_scenario_unit.py::test_acceptance_document_create_with_qmb_token_returns_etag`
+  mit frischem `--basetemp` und JUnit — **PASS** (`build/mr-fix-r1/gate-a-junit.xml`)
+- Gate B — `tests/docs/test_docs_consistency.py` mit frischem `--basetemp` und JUnit — **PASS**
+  (`build/mr-fix-r1/gate-b-junit.xml`)
+- Gate C — fokussierte Review-Fix-Suite (Template-Event-/ETag, DOCX/DOTX/DOCT, Backend-CAS/Auth,
+  Client-Encoding, URL-ID-Validierung) in einem frischen seriellen Prozess — **PASS**
+  (`build/mr-fix-r1/gate-c-junit.xml`)
+- Gate D — `pytest -m "not postgres and not j04_final_acceptance"` mit frischem `--basetemp` und JUnit —
+  **PASS** (`build/mr-fix-r1/gate-d-junit.xml`)
+
+**WinError-10053-Nachweis:** der zuvor rote Acceptance-Einzeltest aus Gate A reproduzierte den früheren
+`ConnectionAbortedError [WinError 10053]` im isolierten Einzelprozess **nicht**. MR-FIX-R1 enthält
+deshalb keinen neuen Socket-Fehlernachweis; der frühere Sammellauf bleibt historische Evidence.
+
+**Vertragliche Klarstellung:**
+- Neue öffentliche `document_id`-Werte sind auf URL-unreserved ASCII beschränkt.
+- Bestehende Legacy-Slash-IDs bleiben fachlich unverändert und werden nicht stillschweigend migriert.
+- Die vollständige HTTP-Erreichbarkeit solcher Legacy-Slash-IDs bleibt **außerhalb** des aktuellen
+  HTTP-Routenvertrags. Falls sie gefordert wird, ist ein separater Auftrag für Option B
+  (Route-/OpenAPI-Anpassung) erforderlich.
+
+**Review-Fix-Dateien unter Verifikation:**
+- `modules/documents/contracts.py`
+- `modules/documents/service.py`
+- `modules/documents/validation.py`
+- `interfaces/clients/documents_http.py`
+- `tests/backend/test_documents_authorization_http.py`
+- `tests/backend/test_documents_concurrency_http.py`
+- `tests/backend/test_documents_http_api.py`
+- `tests/interfaces/test_documents_http_client_fail_closed.py`
+- `tests/modules/test_documents_event_contracts.py`
+- `tests/modules/test_documents_infrastructure.py`
+
 ## Governance
 
 - `docs/J04_M0_PATH_MATRIX.md` (kanonische Pfad-SoT)
