@@ -27,6 +27,9 @@ Before acting, read:
   merge, deployment, Echtdaten, human acceptance, cleanup or branch deletion.
 - Preserve foreign changes. Never use blanket staging, reset, restore, clean, stash, rebase or
   force-push.
+- The primary Cursor agent passes its complete report and evidence directly to the native reviewer
+  and returns one consolidated result. Never ask the user to copy, paste, forward or relay a report
+  between agents.
 
 ## Reviewer identity (D15)
 
@@ -37,7 +40,7 @@ Require:
 
 - Task model slug exactly `gpt-5.6-luna-xhigh`;
 - agent frontmatter `model: gpt-5.6-luna[effort=xhigh]`;
-- a new agent id and separate context;
+- a new agent id captured by the parent from the native Task result and a separate context;
 - `$verify-reports-and-plan`;
 - evidence profile `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED` before accepting a PASS;
 - honest `UNAVAILABLE` when local runtime metadata is absent;
@@ -59,11 +62,14 @@ stop the macro for that checkpoint.
 5. If the remediation budget is unused and the correction is bounded and decision-complete, apply
    one `R1` remediation and run a new complete gate sequence. Otherwise stop the macro.
 6. Create the `pre-review` snapshot and invoke the custom `qmtool-evidence-reviewer` in a separate
-   context. Require its exact output contract and D15 model evidence profile.
+   native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
+   primary evidence directly; never ask the user to relay them. Require its output contract and
+   capture parent-owned Task metadata separately.
 7. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
    review makes the checkpoint `BLOCKED`; do not revert it automatically.
-8. Accept only reviewer `PASS` with an accepted evidence profile. A reviewer remediation consumes
-   the same single remediation budget.
+8. Accept only reviewer `PASS` with an accepted evidence profile. A bounded
+   `REMEDIATION_REQUIRED` finding consumes the same single remediation budget: correct it, rerun
+   the affected gates and invoke a fresh reviewer Task. Any other verdict stops the checkpoint.
 9. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
    paths and create the authorized local commit. Verify the commit file set.
 10. Advance to the next checkpoint only when it is named by the same macro authorization.

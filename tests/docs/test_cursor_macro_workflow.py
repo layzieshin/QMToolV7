@@ -15,6 +15,7 @@ PROTOCOL = SKILL_ROOT / "references" / "checkpoint-protocol.md"
 SNAPSHOT = SKILL_ROOT / "scripts" / "checkpoint_snapshot.py"
 AP029_PLAN = ROOT / "docs" / "AP-029_WEB_POSTGRES_TRANSITION_PLAN.md"
 ROADMAP = ROOT / "docs" / "MASTER_ORCHESTRATION_ROADMAP.md"
+WORKFLOW = ROOT / ".cursor" / "rules" / "00-agent-workflow.mdc"
 
 REQUIRED_FRONTMATTER_MODEL = "gpt-5.6-luna[effort=xhigh]"
 REQUIRED_TASK_MODEL = "gpt-5.6-luna-xhigh"
@@ -126,6 +127,7 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     agent = _read(AGENT)
     skill = _read(SKILL)
     protocol = _read(PROTOCOL)
+    workflow = _read(WORKFLOW)
 
     assert f"model: {REQUIRED_FRONTMATTER_MODEL}" in agent
     assert "readonly: true" in agent
@@ -158,6 +160,14 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "`NOT RUN` only" in protocol
     assert "evidence_profile" in protocol
     assert REQUIRED_TASK_MODEL in protocol
+
+    for contract in (agent, skill, protocol, workflow):
+        normalized = " ".join(contract.split()).lower()
+        assert "never ask the user to copy, paste, forward or relay" in normalized
+    assert "complete work report" in workflow
+    assert "invoke a fresh reviewer Task" in workflow
+    assert "one consolidated report" in protocol
+    assert "does not need shell access" in protocol
 
 
 def test_reviewer_evidence_profile_runtime_attested() -> None:

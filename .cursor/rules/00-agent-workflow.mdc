@@ -189,6 +189,17 @@ After implementation and before declaring success, inspect the final diff as if 
 written it. If subagents or a separate review agent are available, use one; otherwise perform a
 fresh explicit review pass.
 
+When the user provides an implementation or work plan, the primary Cursor agent owns the complete
+review loop. After the authorized work and its verification, invoke `qmtool-evidence-reviewer` as a
+native Cursor Task/subagent and pass the original plan, complete work report, actual diff/status and
+available primary evidence directly. Never ask the user to copy, paste, forward or relay a report
+between agents.
+
+If the reviewer returns `REMEDIATION_REQUIRED` for a bounded, authorized correction, apply it once,
+rerun the affected verification and invoke a fresh reviewer Task. On `PASS`, return one consolidated
+final report. On `USER_DECISION_REQUIRED`, `BLOCKED` or `FAILED`, stop and report the finding without
+widening scope or authorization.
+
 Check for:
 
 - a new or duplicated entrypoint, user action, public API, service, wrapper, persistence path,

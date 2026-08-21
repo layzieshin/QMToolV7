@@ -38,9 +38,11 @@ Provide the reviewer only facts and primary artifacts, not the desired verdict:
 
 ```text
 Review checkpoint <ID> using $verify-reports-and-plan.
+Original user plan/request: <verbatim text or repository path>
 Plan: docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md
 Allowlist: <paths>
 Evidence root: <path>
+Complete parent report: <verbatim report or repository path>
 Before fingerprint: <sha256>
 Pre-review fingerprint: <sha256>
 Remediation count: <0|1>
@@ -50,15 +52,20 @@ Do not mutate repository state.
 ```
 
 Launch the reviewer as a native Cursor Task/subagent with model slug `gpt-5.6-luna-xhigh` in a
-separate context. Capture `agent_id`. Accept Gate E only when `evidence_profile` is
+separate context. The primary Cursor agent sends the handoff directly, waits for the result and
+returns one consolidated report; never ask the user to copy, paste, forward or relay between
+agents. Capture `agent_id` from the native Task result. The reviewer does not need shell access or
+visibility into its own Task id; unavailable self-observation alone is not a content blocker.
+Accept Gate E only when `evidence_profile` is
 `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED` and `reviewer_verdict` is `PASS`. Treat
 `CONTROL_PLANE_PINNED` as control-plane binding, never as observed runtime attestation. If
 `evidence_profile` is `UNVERIFIED` or fingerprints diverge, Gate E is blocked.
 
-Required reviewer fields: `agent_id`, `agent_name`, `separate_context`, `configured_model`,
+Required reviewer content fields: `agent_name`, `configured_model`,
 `requested_model`, `observed_runtime_model`, `observed_reasoning`, `evidence_profile`,
-`contradictory_metadata`, `reviewer_verdict`, `pre_fingerprint`, `post_fingerprint`,
-`mutation_detected`.
+`contradictory_metadata`, `reviewer_verdict` and findings. Parent-owned fields are `agent_id`,
+`separate_context`, `pre_fingerprint`, `post_fingerprint` and `mutation_detected`; capture them from
+the native Task lifecycle instead of requiring reviewer self-attestation.
 
 ## Commit boundary
 
