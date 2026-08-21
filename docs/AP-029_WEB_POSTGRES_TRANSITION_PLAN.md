@@ -789,3 +789,26 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
   reviewer_verdict PASS; pre/post fingerprint identical; mutation_detected false.
 - Reports: `gate-e-reviewer-result.txt`, `gate-e-reviewer-report.md`.
 - Historische R1–R4 Evidence unverändert.
+
+### Sequenz M0-EV01 — late GOV01-R5 reviewer reconciliation — PASS
+
+- Zweck: verspäteten Gate-E-Lauf `e5b22ec9-4fb5-4357-969b-b8df6552eee4` reconciliieren;
+  kein erneuter Reviewer, kein Gate-Retry, kein CB00.
+- Nicht-autoritative Evidence-Wurzel: `build/ap-029-gov01/r5-20260821T133745524Z/`.
+- Pre-Fingerprint (alt): `3244c87fd5ff24658d3eeeb31620bfa080f22cd12cb62e8533970648adb44937`.
+- Autoritativ bleibt: `build/ap-029-gov01/r5-20260821T133945364Z/` /
+  Agent `5e997705-3943-4833-9889-fe6ec6a85228` /
+  Fingerprint `a89f3feafb61b22d1079501e7a469b1b1ec8b5b0e71d0561e93f8c86ff493ccf`.
+- Klassifikation: tatsächlich gestartet und abgeschlossen; non-authoritative / superseded;
+  älterer Fingerprint; zeitlich überlappend mit der späteren autoritativen R5-Sequenz
+  (Start ~2026-08-21T13:38:38Z, Ende ~2026-08-21T13:42:45Z vs. autoritativer Stamp
+  `20260821T133945364Z`). Prozessabweichung: paralleler/überlappender Gate-E-Lauf.
+- Tatsächlicher Verdict: `PASS` (nicht in `NOT RUN` umklassifiziert).
+- evidence_profile: `CONTROL_PLANE_PINNED`; mutation_detected: false;
+  post_fingerprint: `UNAVAILABLE` (nur `pending_parent_capture`; kein erfundener
+  historischer Post-Fingerprint).
+- Findings: keine actionable Findings. Positive Verifikationshinweise (partial-metadata
+  fail-closed; `allow_implicit_invocation: false`) am HEAD `ae6e428` weiterhin erfüllt.
+- Entscheidung A: GOV01 und TOOL00 bleiben PASS; Current checkpoint bleibt CB00;
+  CB00 bleibt TODO / NOT STARTED.
+- Gesicherte Artefakte: `gate-e-late-reviewer-result.txt`, `gate-e-late-reviewer-report.md`.

@@ -187,6 +187,10 @@ Historische oder zu klaerende Artefakte:
 Nächste autorisierte Aktion ist ausschliesslich CB00 (Current checkpoint nach TOOL00 PASS).
 GOV01 und TOOL00 sind PASS. CB00 bleibt TODO / NOT STARTED, bis ausdrücklich freigegeben
 und in origin/main integriert. Kein späterer Produktcheckpoint ist freigegeben.
+M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
+reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
+autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
+ist als Prozessabweichung dokumentiert und ändert den Checkpoint-Status nicht.
 
 Planungsartefakte (AP-028, historisch/abgeschlossen):
 - `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md`
