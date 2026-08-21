@@ -687,7 +687,7 @@ Technische Gates ersetzen keine menschliche Pilotfreigabe.
 
 ## 10. GOV01 attempt evidence
 
-GOV01 ist Current checkpoint.
+Während der nachfolgend dokumentierten GOV01-Versuche war GOV01 der Current checkpoint.
 
 Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 

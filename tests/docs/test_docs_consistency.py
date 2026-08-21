@@ -718,6 +718,19 @@ def test_ap029_future_checkpoint_evidence_roots_are_checkpoint_specific() -> Non
     assert _ap029_evidence_root("J04-M1") == "build/ap-029-j04-m1/"
 
 
+def test_ap029_unqualified_current_checkpoint_claims_match_ledger() -> None:
+    """Present-tense '<ID> ist Current checkpoint.' must match ledger Current."""
+    text = _read(AP029_PLAN)
+    current, _ = _parse_ap029_ledger(text)
+    claim_re = re.compile(r"(?m)^([A-Z0-9-]+) ist Current checkpoint\.?\s*$")
+    for match in claim_re.finditer(text):
+        claimed = match.group(1)
+        assert claimed == current, (
+            f"unqualified claim {claimed!r} ist Current checkpoint conflicts with "
+            f"ledger Current checkpoint {current!r} (line context: {match.group(0)!r})"
+        )
+
+
 def test_ap029_macro_governance_is_explicit_and_serial() -> None:
     plan = _read(AP029_PLAN)
     roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
