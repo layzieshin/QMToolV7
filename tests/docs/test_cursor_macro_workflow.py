@@ -16,6 +16,8 @@ SNAPSHOT = SKILL_ROOT / "scripts" / "checkpoint_snapshot.py"
 AP029_PLAN = ROOT / "docs" / "AP-029_WEB_POSTGRES_TRANSITION_PLAN.md"
 ROADMAP = ROOT / "docs" / "MASTER_ORCHESTRATION_ROADMAP.md"
 WORKFLOW = ROOT / ".cursor" / "rules" / "00-agent-workflow.mdc"
+GIT_WORKFLOW = ROOT / ".cursor" / "rules" / "01-git-workflow.mdc"
+AGENTS = ROOT / "AGENTS.md"
 
 REQUIRED_FRONTMATTER_MODEL = "gpt-5.6-luna[effort=xhigh]"
 REQUIRED_TASK_MODEL = "gpt-5.6-luna-xhigh"
@@ -168,6 +170,28 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "invoke a fresh reviewer Task" in workflow
     assert "one consolidated report" in protocol
     assert "does not need shell access" in protocol
+
+
+def test_local_commit_is_included_in_implementation_authorization() -> None:
+    git_workflow = _read(GIT_WORKFLOW)
+    agents = _read(AGENTS)
+    skill = _read(SKILL)
+    protocol = _read(PROTOCOL)
+
+    normalized_git = " ".join(git_workflow.split())
+    assert "includes authorization for the corresponding local commit" in normalized_git
+    assert "does not apply to analysis, review, diagnosis, status" in normalized_git
+    assert "Do not ask for a second commit confirmation" in normalized_git
+    assert "Never commit directly on `main`" in git_workflow
+    assert "Do not use `git add .`" in git_workflow
+
+    assert "local feature-branch commit" in agents
+    assert "unless the user opts out" in agents
+    assert "unless the user explicitly opts out" in skill
+    assert "unless the user explicitly opts out" in protocol
+    for contract in (git_workflow, agents, skill, protocol):
+        assert "Push" in contract or "push" in contract
+        assert "separate" in contract.lower()
 
 
 def test_reviewer_evidence_profile_runtime_attested() -> None:

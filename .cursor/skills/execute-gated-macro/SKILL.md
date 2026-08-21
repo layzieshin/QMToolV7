@@ -1,6 +1,6 @@
 ---
 name: execute-gated-macro
-description: Execute an explicitly authorized QMToolV7 AP-029 macro as serial, independently reviewed checkpoints with separate scope, evidence, remediation budget, and local commits. Use only when the user names the macro/checkpoints and grants the relevant implementation and Git permissions; do not use for ordinary single-file edits or to infer destructive, publication, deployment, or acceptance authority.
+description: Execute an explicitly authorized QMToolV7 AP-029 macro as serial, independently reviewed checkpoints with separate scope, evidence, remediation budget, and local commits. Use only when the user names the macro/checkpoints and grants implementation permission; local commits follow the repository Git workflow, while push, PR, merge, destructive, deployment, and acceptance actions remain separately gated.
 ---
 
 # Execute Gated Macro
@@ -19,7 +19,7 @@ Before acting, read:
 
 - Run checkpoints serially in the authorized order.
 - Give every checkpoint its own allowlist, evidence root, diff fingerprint, gate sequence,
-  independent reviewer verdict and, only if authorized, local commit.
+  independent reviewer verdict and local commit after PASS unless the user explicitly opts out.
 - Stop the macro on the first unresolved checkpoint.
 - Permit at most one remediation round per checkpoint, regardless of whether it follows an
   implementation gate or reviewer finding.
@@ -71,7 +71,8 @@ stop the macro for that checkpoint.
    `REMEDIATION_REQUIRED` finding consumes the same single remediation budget: correct it, rerun
    the affected gates and invoke a fresh reviewer Task. Any other verdict stops the checkpoint.
 9. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
-   paths and create the authorized local commit. Verify the commit file set.
+   paths and create the local commit included by the implementation authorization unless the user
+   opted out. Verify the commit file set.
 10. Advance to the next checkpoint only when it is named by the same macro authorization.
 
 Use the final report fields and status semantics in the checkpoint protocol. Report observed

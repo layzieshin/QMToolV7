@@ -69,9 +69,10 @@ the native Task lifecycle instead of requiring reviewer self-attestation.
 
 ## Commit boundary
 
-Commit only after reviewer PASS and only when the user's macro authorization explicitly permits a
-local commit. Stage every path by name, compare the staged path list with the checkpoint allowlist,
-then commit. Push and PR are separate permissions even if the local commit is green.
+An explicit macro implementation authorization includes the local checkpoint commit after reviewer
+PASS unless the user explicitly opts out. Stage every path by name, compare the staged path list
+with the checkpoint allowlist, then commit. Push and PR are separate permissions even if the local
+commit is green.
 
 ## Final report
 

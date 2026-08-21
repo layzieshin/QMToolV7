@@ -42,9 +42,11 @@ The step-by-step workflow and the per-layer verification commands are defined on
 Branch, commit, push, and pull-request behavior is defined once in
 [`.cursor/rules/01-git-workflow.mdc`](.cursor/rules/01-git-workflow.mdc) (also auto-loaded).
 Do not duplicate either rule set here. In short: work step by step, verify after each step, do not
-proceed on failure, keep diffs small, and keep commit, push, pull request, and branch deletion
-user-gated. Creating a local feature branch for an explicitly commissioned change remains allowed
-and expected when required by the Git workflow rule.
+proceed on failure, and keep diffs small. An explicitly commissioned implementation includes its
+local feature-branch commit after green gates and exact-path staging unless the user opts out.
+Push, pull request, merge, and branch deletion remain separately user-gated. Creating a local
+feature branch for an explicitly commissioned change remains allowed and expected when required by
+the Git workflow rule.
 
 ## Environment (this repo)
 
