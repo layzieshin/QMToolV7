@@ -1,13 +1,37 @@
 # Database Evolution Policy
 
 Status: Canonical (P0)
-Valid from: 2026-07-31
+Valid from: 2026-08-21
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
+Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 
-This policy is binding for the SQLite databases owned by Documents, Registry,
-User Management, Signature, Training, and Incident Management.
+## Productive target runtime (DECIDED)
 
-## Version Contract
+- Productive runtime persistence is **PostgreSQL only**.
+- **No productive SQLite fallback.**
+- One PostgreSQL database per installation.
+- Separate schema, migrations, and ownership per module.
+- No direct cross-schema queries between fach modules.
+- Forward-only migrations; no down-migration rollback.
+- Rollback after irreversible migration = restore of the **complete** PostgreSQL + Blobstore
+  backup set.
+- Schema changes require contiguous migration numbering, checksums/fingerprints, advisory
+  locking, and readiness/preflight checks (implement in PG00; do not invent unavailable
+  operator commands here).
+
+### Target operator posture (planned; not all commands exist yet)
+
+PG00 defines the concrete runner, roles, readiness, and operator commands. Until those
+commands are implemented and documented with evidence, do **not** treat them as already
+available. Current SQLite-oriented CLI commands below are **Ist/legacy** tooling.
+
+## Ist / legacy SQLite section (import, tests, historical AP-027)
+
+The following rules apply to the **current** SQLite-owned databases used by Documents,
+Registry, User Management, Signature, Training, and Incident Management for local/dev,
+import, and tests. They are **not** the productive target runtime.
+
+### Version Contract (SQLite Ist)
 
 - Database version 1 is defined exclusively by each module's
   `migrations/0001_initial.sql`.
@@ -20,7 +44,7 @@ User Management, Signature, Training, and Incident Management.
 - A database newer than the application, structurally unknown, corrupt, or
   inconsistent is not modified and blocks module wiring.
 
-## Startup And Upgrade
+### Startup And Upgrade (SQLite Ist)
 
 The database preflight runs after module settings are loaded and before any
 repository is created.
@@ -37,7 +61,7 @@ repository is created.
 An interrupted journal is restored on the next explicit migration attempt. The
 recovery run then stops and must be started again deliberately.
 
-## Existing Development Databases
+### Existing Development Databases (SQLite Ist)
 
 Unversioned databases are adopted only when their structure exactly matches the
 registered V1 fingerprint and their data validators pass. Adoption first creates
@@ -47,7 +71,7 @@ repaired heuristically.
 Repository constructors must not create tables, execute migration scripts, add
 columns, or backfill legacy structures.
 
-## Operator Commands
+### Operator Commands (SQLite Ist — currently implemented)
 
 ```powershell
 .\.venv\Scripts\python.exe -m interfaces.cli.main database status
@@ -60,7 +84,15 @@ columns, or backfill legacy structures.
 `restore` validates backup checksums, integrity, database IDs, and configured
 target paths. It creates a safety backup of the current set before restoring.
 
-## Required Change Package
+SQLite remains allowed for:
+
+- read-only inventory (INV00)
+- one-time import into PostgreSQL
+- isolated automated tests
+
+SQLite is **not** allowed as productive runtime fallback.
+
+## Required Change Package (applies to future PostgreSQL schema work and remaining SQLite Ist changes)
 
 Every future schema change must include:
 
@@ -71,9 +103,9 @@ Every future schema change must include:
 - fresh-install and idempotence coverage;
 - updated target version through the module contribution;
 - inclusion of every registered migration in the production bundle;
-- green database migration, backup/restore, Doctor, and go-live gates.
+- green database migration, backup/restore, Doctor, and go-live gates (as applicable).
 
-Run locally:
+Run locally (Ist gates; PostgreSQL gates are added by PG00/OPS00):
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/database_migration_gate.py --output build/database-migration-gate-output.json
