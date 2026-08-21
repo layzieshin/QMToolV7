@@ -184,9 +184,9 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Nächste autorisierte Aktion ist ausschliesslich TOOL00 (Current checkpoint nach GOV01 PASS).
-GOV01-R5 ist PASS; GOV01 ist PASS. CB00 bleibt TODO / NOT STARTED, bis TOOL00 PASS und
-Integration in origin/main. Kein späterer Produktcheckpoint ist freigegeben.
+Nächste autorisierte Aktion ist ausschliesslich CB00 (Current checkpoint nach TOOL00 PASS).
+GOV01 und TOOL00 sind PASS. CB00 bleibt TODO / NOT STARTED, bis ausdrücklich freigegeben
+und in origin/main integriert. Kein späterer Produktcheckpoint ist freigegeben.
 
 Planungsartefakte (AP-028, historisch/abgeschlossen):
 - `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md`

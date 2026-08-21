@@ -282,13 +282,13 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: TOOL00
+Current checkpoint: CB00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
 | GOV00 | Canonical architecture decisions and executable plan | PASS | d39c8e798d8c9bdf77b721c9cfa76001c2a676d5 | build/ap-029-gov00/ baseline 9 passed; gate-a 4 passed; gate-b 13 passed; gate-c 13 passed; gate-d 19 passed; junit under build/ap-029-gov00/*/junit.xml | this package |
 | GOV01 | Executable macro governance and ledger hardening | PASS | d39c8e798d8c9bdf77b721c9cfa76001c2a676d5 | R5 PASS build/ap-029-gov01/r5-20260821T133945364Z/ gate-a 19 passed; gate-b 15 passed; gate-c 37 passed; Gate E PASS CONTROL_PLANE_PINNED agent 5e997705-3943-4833-9889-fe6ec6a85228 | historical R1–R4 preserved; Current advances to TOOL00 |
-| TOOL00 | Native Cursor reviewer and gated macro tooling | IN_PROGRESS | d39c8e798d8c9bdf77b721c9cfa76001c2a676d5 | — | starts after GOV01 PASS / Commit 1 |
+| TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
 | CB00 | Controlled portable container-core integration | TODO | — | — | no SQLite, no demo UI, no runtime activation |
 | INV00 | Read-only SQLite store inventory | TODO | — | — | migrate/archive/discard decisions only |
 | PG00 | PostgreSQL platform foundation | TODO | — | — | roles, schemas, runner, org, audit, blob contracts |
