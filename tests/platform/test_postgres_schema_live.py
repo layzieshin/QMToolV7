@@ -1,4 +1,4 @@
-"""Live PostgreSQL checks for AP-029 PG00-A platform schema applicator."""
+"""Live PostgreSQL checks for AP-029 PG00-A/B platform schema applicator."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,6 +6,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from qm_platform.persistence import postgres_schema as pgs
 from tests.postgres_destructive_guard import (
     EXPECTED_DATABASE,
@@ -49,9 +50,9 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
     platform_env: LivePostgresEnv,
 ) -> None:
     version = pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert version == 2
+    assert version == 3
     again = pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert again == 2
+    assert again == 3
     with psycopg.connect(platform_env.migrator_dsn) as conn:
         conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
         rows = conn.execute(
@@ -61,17 +62,20 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
             ORDER BY version
             """
         ).fetchall()
-        assert len(rows) == 2
+        assert len(rows) == 3
         assert int(rows[0][0]) == 1
         assert rows[0][1] == "platform_settings"
         assert int(rows[1][0]) == 2
         assert rows[1][1] == "platform_settings_integrity"
+        assert int(rows[2][0]) == 3
+        assert rows[2][1] == "organization"
         assert len(rows[0][2]) == 64
         assert len(rows[0][3]) == 64
         for table in (
             "platform_settings",
             "platform_setting_revisions",
             "platform_settings_integrity",
+            "organizations",
             "_qm_schema_migrations",
         ):
             owner = conn.execute(
@@ -199,9 +203,28 @@ def test_runtime_acl_drift_is_rejected(platform_env: LivePostgresEnv) -> None:
             )
 
 
+def test_organization_seed_matches_server_context(platform_env: LivePostgresEnv) -> None:
+    pgs.migrate_platform_schema(platform_env.migrator_dsn)
+    with psycopg.connect(platform_env.runtime_dsn) as runtime:
+        runtime.execute("SET ROLE qmtool_runtime")
+        row = runtime.execute(
+            """
+            SELECT organization_id
+            FROM platform.organizations
+            WHERE is_active = true
+            """
+        ).fetchone()
+        assert row is not None
+        assert row[0] == INSTALLATION_ORGANIZATION_ID
+        active_count = runtime.execute(
+            "SELECT COUNT(*) FROM platform.organizations WHERE is_active = true"
+        ).fetchone()
+        assert active_count is not None and int(active_count[0]) == 1
+
+
 def test_assert_runtime_schema_ready(platform_env: LivePostgresEnv) -> None:
     pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert pgs.assert_runtime_schema_ready(platform_env.runtime_dsn) == 2
+    assert pgs.assert_runtime_schema_ready(platform_env.runtime_dsn) == 3
 
 
 def test_failed_migration_rolls_back_completely(

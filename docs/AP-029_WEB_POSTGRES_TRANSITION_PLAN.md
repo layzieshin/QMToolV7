@@ -292,7 +292,7 @@ Current checkpoint: PG00
 | TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
 | CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
 | INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
-| PG00 | PostgreSQL platform foundation | IN_PROGRESS | 90cefa498d05f708ad54d4d673a41e245957d63f | PG00-A PASS dd91ec4 / platform gate 12 passed + static 10 passed; PG00-B open | roles, schemas, runner, org, audit, blob contracts |
+| PG00 | PostgreSQL platform foundation | IN_PROGRESS | 90cefa498d05f708ad54d4d673a41e245957d63f | PG00-A PASS dd91ec4; PG00-B PASS fc762a0+f10c70a reviewer eeaaedeb CONTROL_PLANE_PINNED; C–D open | roles, schemas, runner, org, audit, blob contracts |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | preserve existing domain behavior |
 | OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | shared PG+blob backup contract |
@@ -881,7 +881,16 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
   platform `organizations` migration; client spoof rejection on `/auth/*`.
 - Excluded: audit contract (C), blob contract (D), SQLite cutover wiring.
 - Evidence target: `build/ap-029-pg00/b/` (org context tests, platform gate rerun).
-- Tests: `test_organization_context.py` 3 passed; `test_auth_session_contracts.py` 12 passed;
-  `test_auth_api.py` org spoof 403; platform gate 12/12 green; `tests/platform` 110 passed,
-  10 live skipped.
-- Status: **PG00-B PASS** (commit `fc762a0`); PG00 remains **IN_PROGRESS** (C–D open).
+- Tests: pending formal review evidence under `build/ap-029-pg00/b/`.
+- Gate B focused: `gate-b-org-junit.xml` — 31 passed (exit 0).
+- Gate platform: `gate-platform-junit.xml` — 110 passed, 11 skipped (live PG; no DSN).
+- Migration gate: `gate.json` — 12/12 checks green vs base `90cefa4`.
+- Gate D: `gate-d-pre-review-snapshot-r1.json`; fingerprint `ff550ae864e3352213d714677107483962792bf925dd89b6e71e13a36355f2d0`.
+- Gate E attempt1: Agent `eeaaedeb-af6f-4734-b00a-c09f812279da`; evidence_profile
+  `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
+  mutation_detected false.
+- Live-test remediation: `test_postgres_schema_live.py` aligned to migration 0003 (version 3,
+  organizations seed test).
+- Rework-Zähler: `0/2`.
+- Status: **PG00-B PASS** (commits `fc762a0`, `f10c70a`, live-test fix pending in closure commit);
+  PG00 remains **IN_PROGRESS** (C–D open).
