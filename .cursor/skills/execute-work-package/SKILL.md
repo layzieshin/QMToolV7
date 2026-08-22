@@ -124,16 +124,19 @@ After every checkpoint is green:
 ## Final Git and merge
 
 1. Set `phase=FINAL_GIT` and invoke `[ROLE:git-steward]`.
-2. Fetch and detect base movement. If base changed, integrate it using allowed Git conventions.
+2. Before creating the PR, inspect the final status/diff, explicitly stage the roadmap, completion
+   report, execution journal, and other authorized finalization edits, create a finalization commit,
+   push it, and update `last_green_commit`. Never leave FINAL_PASS documents only in the worktree.
+3. Fetch and detect base movement. If base changed, integrate it using allowed Git conventions.
    Fachliche conflicts return to implementer/reviewer; the steward never decides them.
-3. Invalidate and rerun full regression after base integration. If the material diff changed,
+4. Invalidate and rerun full regression after base integration. If the material diff changed,
    invalidate and rerun the final architect audit.
-4. Create/update the PR, wait for required CI, and set `gates.ci_pass=true` only when checks are
+5. Create/update the PR, wait for required CI, and set `gates.ci_pass=true` only when checks are
    green. CI code failures return through the normal implementer/reviewer loop.
-5. Merge only with full regression PASS, final audit PASS, CI PASS, no human gate, and work branch
+6. Merge only with full regression PASS, final audit PASS, CI PASS, no human gate, and work branch
    different from base. Never bypass protection.
-6. External mandatory approval that automation cannot satisfy sets `BLOCKED_HUMAN`.
-7. After confirmed merge set `status=DONE`, retain final evidence, and stop. Do not start the next
+7. External mandatory approval that automation cannot satisfy sets `BLOCKED_HUMAN`.
+8. After confirmed merge set `status=DONE`, retain final evidence, and stop. Do not start the next
    prepared package or delete branches automatically.
 
 ## HUMAN_GATE output

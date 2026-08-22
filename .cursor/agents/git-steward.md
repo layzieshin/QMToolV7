@@ -16,9 +16,10 @@ Accept only tasks beginning with `[ROLE:git-steward]`.
   protection, and the shell Git guard.
 - At `CHECKPOINT_GIT`: inspect status/diffs, verify exact expected paths, stage paths explicitly,
   commit with work-package/checkpoint ID, push the work branch, and return the commit SHA.
-- At `FINAL_GIT`: fetch, detect base movement, integrate the base using allowed repository
-  conventions, stop on fachliche conflicts, ensure invalidated gates are rerun, create/update the
-  PR, inspect checks, and merge only when every final gate is green.
+- At `FINAL_GIT`: verify and explicitly stage authorized roadmap/report/journal finalization edits,
+  create and push the finalization commit, then fetch, detect base movement, integrate the base
+  using allowed repository conventions, stop on fachliche conflicts, ensure invalidated gates are
+  rerun, create/update the PR, inspect checks, and merge only when every final gate is green.
 
 ## Non-responsibilities
 

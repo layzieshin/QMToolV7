@@ -133,11 +133,14 @@ def test_config_agents_skills_rules_and_worktree_contracts() -> None:
 
     execute_skill = _read(CURSOR / "skills" / "execute-work-package" / "SKILL.md")
     assert "/execute-gated-macro` is the single checkpoint-execution owner" in execute_skill
+    assert "create a finalization commit" in execute_skill
+    assert "Never leave FINAL_PASS documents only in the worktree" in execute_skill
     reviewer = _read(AGENTS / "checkpoint-reviewer.md")
     assert "$verify-reports-and-plan" in reviewer
     assert "at most one focused verification pass" in reviewer
     assert "non-blocking follow-up" in reviewer
     assert "realistic security/data-integrity bypass" in reviewer
+    assert "finalization commit" in _read(AGENTS / "git-steward.md")
 
     rule = _read(CURSOR / "rules" / "02-autonomous-work-package.mdc")
     assert _frontmatter_value(rule, "alwaysApply") == "true"
@@ -151,6 +154,7 @@ def test_config_agents_skills_rules_and_worktree_contracts() -> None:
     assert hooks["version"] == 1
     assert hooks["hooks"]["stop"][0]["loop_limit"] == defaults["stop_hook_loop_limit"]
     assert hooks["hooks"]["beforeShellExecution"][0]["failClosed"] is True
+    assert hooks["hooks"]["beforeShellExecution"][0]["matcher"] == "(?i)(git|gh)"
 
     worktrees = json.loads(_read(CURSOR / "worktrees.json"))
     assert worktrees == {"setup-worktree-windows": "setup-worktree-windows.ps1"}
@@ -282,6 +286,13 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     assert guard("git branch")["permission"] == "allow"
     assert guard("git branch --show-current")["permission"] == "allow"
     assert guard("git branch unauthorized")["permission"] == "deny"
+    assert guard("gh api repos/layzieshin/QMToolV7/pulls/30")["permission"] == "allow"
+    assert (
+        guard(
+            "gh api --method PUT repos/layzieshin/QMToolV7/pulls/30/merge"
+        )["permission"]
+        == "deny"
+    )
 
     _write_state(state_path, phase="IMPLEMENT")
     assert guard('git commit -m "wrong phase"')["permission"] == "deny"
@@ -291,6 +302,10 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     _write_state(state_path, phase="CHECKPOINT_GIT")
     assert guard('git commit -m "WP-TEST CP-1"')["permission"] == "allow"
     assert guard("git add expected.py")["permission"] == "allow"
+    assert (
+        guard('Set-Location "I:\\OtherRepo"; git add expected.py')["permission"]
+        == "deny"
+    )
 
     _write_state(state_path, status="IDLE", phase="CHECKPOINT_GIT")
     assert guard('git commit -m "idle"')["permission"] == "deny"

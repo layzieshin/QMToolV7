@@ -77,7 +77,46 @@ foreach ($match in $gitMatches) {
     Deny-Command "Unclassified Git subcommand '$subcommand' is denied fail-closed."
 }
 
-# Classify every gh pr invocation. Unknown subcommands fail closed.
+# Classify every GitHub CLI invocation. Unknown or mutating API forms fail closed.
+$ghVersionOnly = $lower -match '^\s*gh(?:\.exe)?\s+--version\s*$'
+$ghTopMatches = [regex]::Matches($command, '(?i)\bgh(?:\.exe)?\s+([a-z][a-z-]*)')
+$ghInvocationCount = [regex]::Matches($command, '(?i)\bgh(?:\.exe)?(?=\s|$)').Count
+if (-not $ghVersionOnly -and $ghInvocationCount -ne $ghTopMatches.Count) {
+    Deny-Command "Unclassified GitHub CLI invocation or global option is denied fail-closed."
+}
+
+foreach ($match in $ghTopMatches) {
+    $topCommand = $match.Groups[1].Value.ToLowerInvariant()
+    if ($topCommand -eq "pr") {
+        continue
+    }
+    if ($topCommand -eq "api") {
+        if ($lower -match "(?:--method|-x)\s+(?:post|put|patch|delete)\b" -or
+            $lower -match "(?:^|\s)(?:-f|-F|--field|--raw-field|--input)(?:\s|=)") {
+            Deny-Command "Mutating gh api requests are forbidden; use a gated first-class gh pr command."
+        }
+        if ($lower -match "(?:--method|-x)\s+\S+" -and
+            $lower -notmatch "(?:--method|-x)\s+get\b") {
+            Deny-Command "Only read-only GET requests are allowed through gh api."
+        }
+        continue
+    }
+    if ($topCommand -eq "auth" -and $lower -match '^\s*gh(?:\.exe)?\s+auth\s+status\s*$') {
+        continue
+    }
+    if ($topCommand -eq "repo" -and $lower -match '^\s*gh(?:\.exe)?\s+repo\s+view\b') {
+        continue
+    }
+    if ($topCommand -eq "run" -and $lower -match '^\s*gh(?:\.exe)?\s+run\s+(?:list|view|watch)\b') {
+        continue
+    }
+    if ($topCommand -eq "version") {
+        continue
+    }
+    Deny-Command "Unclassified GitHub CLI command '$topCommand' is denied fail-closed."
+}
+
+# Classify every gh pr invocation.
 $ghMatches = [regex]::Matches($command, '(?i)\bgh\s+pr\s+([a-z][a-z-]*)')
 $readGh = @("checks", "view", "status", "list", "diff")
 $writeGh = @("create", "edit", "close", "reopen", "comment", "review", "ready", "merge")
@@ -101,6 +140,9 @@ if (-not $isWrite) {
 }
 if ($lower -match "\bgit\s+-c\s+") {
     Deny-Command "git -C is forbidden for workflow Git writes; the hook cwd is authoritative."
+}
+if ($lower -match "\b(?:set-location|push-location|pop-location|chdir|cd|sl)\b") {
+    Deny-Command "Inline directory changes are forbidden for workflow Git/GitHub writes; the hook cwd is authoritative."
 }
 
 $statePath = if ($env:QMTOOL_WORKFLOW_STATE_PATH) {
