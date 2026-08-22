@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -51,6 +52,7 @@ def _governance_guard_enforced() -> bool:
             user_id="u1",
             session_id="s1",
             request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             username="admin",
             global_roles=["Admin"],
             is_qmb=False,

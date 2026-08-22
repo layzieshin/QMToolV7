@@ -18,6 +18,7 @@ def _actor():
         user_id="qmb-1",
         session_id="s1",
         request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="qmb",
         global_roles=["QMB"],
         is_qmb=True,

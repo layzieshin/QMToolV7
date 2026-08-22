@@ -292,7 +292,7 @@ Current checkpoint: PG00
 | TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
 | CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
 | INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
-| PG00 | PostgreSQL platform foundation | IN_PROGRESS | 90cefa498d05f708ad54d4d673a41e245957d63f | Subcheckpoint A in progress on `feature/ap-029-pg00` | roles, schemas, runner, org, audit, blob contracts |
+| PG00 | PostgreSQL platform foundation | IN_PROGRESS | 90cefa498d05f708ad54d4d673a41e245957d63f | PG00-A PASS dd91ec4 / platform gate 12 passed + static 10 passed; PG00-B open | roles, schemas, runner, org, audit, blob contracts |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | preserve existing domain behavior |
 | OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | shared PG+blob backup contract |
@@ -665,7 +665,8 @@ Zusätzlich muss jedes Checkpoint-Evidence-Paket enthalten:
 - alle Versuche, einschließlich historischer roter oder blockierter Versuche;
 - Befehle, Exitcodes, passed/failed/skipped/errors und JUnit-/Logpfade;
 - Reviewer-Agent, konfiguriertes und tatsächlich nachgewiesenes Modell, Verdict;
-- Remediation-Zähler (`0` oder `1`); eine zweite Runde ist unzulässig;
+- Rework-Zähler (`0`, `1` oder `2`); danach genau ein frischer Escalation Review; eine dritte
+  normale Runde ist unzulässig;
 - lokalen Commit-SHA nach PASS oder ausdrückliche Angabe `kein Commit`;
 - Einschränkungen, NOT RUN und Aktionen mit separater Freigabe.
 
@@ -710,7 +711,8 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
   `tests/docs/test_cursor_macro_workflow.py::test_qmtool_reviewer_and_macro_skill_contracts`.
   Der Test suchte im rohen Markdown nach der zusammenhängenden Phrase `separate context`; der
   Skill trennt diese Phrase durch einen Markdown-Zeilenumbruch.
-- Remediation-Zähler R1: `1/1` verbraucht (innerhalb der alten Sequenz).
+- Remediation-Zähler R1: `1/1` verbraucht (historisch unter früherem 1/1-Makro-Limit; aktuelles
+  Agentensystem: höchstens `2/2` + Escalation Review).
 - Gate B–E (R1): `NOT RUN`.
 
 ### Sequenz GOV01-R2 (FAILED — unverändert; getrennt von R1/R3)
@@ -836,7 +838,7 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Gate E attempt1: Agent `8c211263-6e86-469c-99c7-07f90f64c03e`; evidence_profile
   `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
   mutation_detected false.
-- Remediation-Zähler: `1/1`.
+- Remediation-Zähler: `1/1` (historisch unter früherem 1/1-Makro-Limit).
 - Statusübergang: CB00 `PASS`; Current → `INV00`.
 
 ## 12. INV00 attempt evidence
@@ -856,7 +858,7 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Gate E attempt1: Agent `cf156ee0-1976-47ca-8668-bdc6eae6401e`; evidence_profile
   `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
   mutation_detected false.
-- Remediation-Zähler: `1/1`.
+- Remediation-Zähler: `1/1` (historisch unter früherem 1/1-Makro-Limit).
 - Statusübergang: INV00 `PASS`; Current → `PG00`.
 
 #### PG00-A journal (Runner/Roles/Ownership/Lock/Fingerprint)
@@ -868,6 +870,18 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Excluded: org context (B), audit contract (C), blob contract (D), SQLite cutover wiring.
 - Evidence target: `build/ap-029-pg00/a/` (`gate.json`, static/live pytest).
 - Gate: `platform_postgres_migration_gate.py` — 12/12 checks green; static pytest 10 passed.
-- Review rework 1/1: removed platform → UM internal import; platform-owned runtime identity check.
+- Review rework 1/2: removed platform → UM internal import; platform-owned runtime identity check.
 - Platform suite: 107 passed, 10 live skipped (no `QMTOOL_PG_TEST_ADMIN_DSN`).
-- Status: **PG00-A PASS** (local commit); PG00 remains **IN_PROGRESS** (B–D open).
+- Status: **PG00-A PASS** (commit `dd91ec44297b563f5fd4c03f90155013da5707a9`); PG00 remains **IN_PROGRESS** (B–D open).
+
+#### PG00-B journal (Organization / request context)
+
+- Branch: `feature/ap-029-pg00`; base `90cefa498d05f708ad54d4d673a41e245957d63f`.
+- Scope: server-confirmed `organization_id` on `UserContext` / `SystemExecutionContext`;
+  platform `organizations` migration; client spoof rejection on `/auth/*`.
+- Excluded: audit contract (C), blob contract (D), SQLite cutover wiring.
+- Evidence target: `build/ap-029-pg00/b/` (org context tests, platform gate rerun).
+- Tests: `test_organization_context.py` 3 passed; `test_auth_session_contracts.py` 12 passed;
+  `test_auth_api.py` org spoof 403; platform gate 12/12 green; `tests/platform` 110 passed,
+  10 live skipped.
+- Status: **PG00-B PASS** (pending commit); PG00 remains **IN_PROGRESS** (C–D open).

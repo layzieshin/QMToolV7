@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from modules.usermanagement.api import UserContext, require_confirmed_user_context
 from modules.usermanagement.contracts import issue_user_context
 from modules.usermanagement.errors import AuthorizationError
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 
 
 class RequireConfirmedUserContextContractTest(unittest.TestCase):
@@ -16,6 +17,7 @@ class RequireConfirmedUserContextContractTest(unittest.TestCase):
             user_id="u1",
             session_id="s1",
             request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             username="qmb",
             global_roles=("QMB",),
             is_qmb=True,
@@ -30,6 +32,7 @@ class RequireConfirmedUserContextContractTest(unittest.TestCase):
             user_id="u1",
             session_id="s1",
             request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             is_confirmed=True,
             username="x",
         )
@@ -41,6 +44,7 @@ class RequireConfirmedUserContextContractTest(unittest.TestCase):
             user_id="u1",
             session_id="s1",
             request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             username="admin",
             global_roles=("ADMIN",),
             is_qmb=False,
@@ -54,6 +58,7 @@ class RequireConfirmedUserContextContractTest(unittest.TestCase):
                     user_id="u1",
                     session_id="s1",
                     request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
                     is_confirmed=False,
                 )
             )

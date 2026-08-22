@@ -92,6 +92,10 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
         "qm_platform/persistence/postgres/migrations",
     ),
     (
+        "qm_platform/persistence/postgres/migrations/0003_organization.sql",
+        "qm_platform/persistence/postgres/migrations",
+    ),
+    (
         "qm_platform/persistence/postgres/provision_platform_schema.sql",
         "qm_platform/persistence/postgres",
     ),

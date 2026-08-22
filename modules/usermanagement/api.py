@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from qm_platform.organization.server_context import resolve_active_organization_id
+
 from .contracts import (
     AuthenticatedUser,
     IssuedSession,
@@ -218,6 +220,10 @@ def require_confirmed_user_context(actor: object) -> UserContext:
         raise AuthorizationError("session_id is required")
     if not str(actor.request_id).strip():
         raise AuthorizationError("request_id is required")
+    if not str(actor.organization_id).strip():
+        raise AuthorizationError("organization_id is required")
+    if actor.organization_id != resolve_active_organization_id():
+        raise AuthorizationError("organization_id is not server-confirmed")
     return actor
 
 

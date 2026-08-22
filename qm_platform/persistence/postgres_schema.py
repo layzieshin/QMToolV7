@@ -37,6 +37,10 @@ EXPECTED_TABLES = frozenset(
     {"platform_settings", "platform_setting_revisions", MIGRATIONS_TABLE}
 )
 EXPECTED_TABLES_WITH_INTEGRITY = EXPECTED_TABLES | frozenset({"platform_settings_integrity"})
+EXPECTED_TABLES_WITH_ORGANIZATION = EXPECTED_TABLES_WITH_INTEGRITY | frozenset({"organizations"})
+EXPECTED_ORGANIZATIONS_COLUMNS = frozenset(
+    {"organization_id", "display_name", "is_active", "created_at"}
+)
 EXPECTED_PLATFORM_SETTINGS_COLUMNS = frozenset(
     {
         "scope_kind",
@@ -83,6 +87,12 @@ EXPECTED_CHECK_CONSTRAINTS = frozenset(
     }
 )
 EXPECTED_INTEGRITY_CHECK_CONSTRAINTS = frozenset()
+EXPECTED_ORGANIZATION_CHECK_CONSTRAINTS = frozenset(
+    {
+        "organizations_organization_id_nonempty",
+        "organizations_display_name_nonempty",
+    }
+)
 
 
 class PostgresSchemaError(RuntimeError):
@@ -850,9 +860,14 @@ def _validate_schema_contracts(
     *,
     require_history_select: bool = True,
     require_integrity: bool = True,
+    require_organization: bool = False,
 ) -> None:
     expected_tables = (
-        EXPECTED_TABLES_WITH_INTEGRITY if require_integrity else EXPECTED_TABLES
+        EXPECTED_TABLES_WITH_ORGANIZATION
+        if require_organization
+        else EXPECTED_TABLES_WITH_INTEGRITY
+        if require_integrity
+        else EXPECTED_TABLES
     )
     tables = _table_names(conn)
     missing_tables = expected_tables - tables
@@ -894,6 +909,17 @@ def _validate_schema_contracts(
             raise PostgresSchemaError(
                 f"platform_settings_integrity missing columns: {sorted(missing_integrity)}"
             )
+    if require_organization:
+        missing_org = EXPECTED_ORGANIZATIONS_COLUMNS - columns_for("organizations")
+        if missing_org:
+            raise PostgresSchemaError(
+                f"organizations missing columns: {sorted(missing_org)}"
+            )
+        active_count = conn.execute(
+            f"SELECT COUNT(*) FROM {SCHEMA_NAME}.organizations WHERE is_active = true"
+        ).fetchone()
+        if active_count is None or int(active_count[0]) != 1:
+            raise PostgresSchemaError("exactly one active organization is required")
     missing_history = EXPECTED_HISTORY_COLUMNS - columns_for(MIGRATIONS_TABLE)
     if missing_history:
         raise PostgresSchemaError(
@@ -903,6 +929,8 @@ def _validate_schema_contracts(
     expected_checks = EXPECTED_CHECK_CONSTRAINTS
     if require_integrity:
         expected_checks = expected_checks | EXPECTED_INTEGRITY_CHECK_CONSTRAINTS
+    if require_organization:
+        expected_checks = expected_checks | EXPECTED_ORGANIZATION_CHECK_CONSTRAINTS
     checks = {
         str(row[0])
         for row in conn.execute(
@@ -921,6 +949,8 @@ def _validate_schema_contracts(
     owned_tables = ("platform_settings", "platform_setting_revisions", MIGRATIONS_TABLE)
     if require_integrity:
         owned_tables = (*owned_tables, "platform_settings_integrity")
+    if require_organization:
+        owned_tables = (*owned_tables, "organizations")
     for table in owned_tables:
         owner = conn.execute(
             """
@@ -992,6 +1022,7 @@ def migrate_platform_schema(
                         conn,
                         require_history_select=step.version >= 2,
                         require_integrity=step.version >= 2,
+                        require_organization=step.version >= 3,
                     )
                     fingerprint = _compute_schema_fingerprint(conn)
                     conn.execute(
@@ -1019,6 +1050,7 @@ def migrate_platform_schema(
                 conn,
                 require_history_select=target >= 2,
                 require_integrity=target >= 2,
+                require_organization=target >= 3,
             )
             return target
         finally:
@@ -1050,5 +1082,6 @@ def assert_runtime_schema_ready(dsn: str, *, migrations_dir: Path | None = None)
             conn,
             require_history_select=True,
             require_integrity=True,
+            require_organization=True,
         )
         return target

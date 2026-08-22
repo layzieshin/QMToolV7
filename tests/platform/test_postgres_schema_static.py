@@ -56,6 +56,7 @@ def test_integrity_migration_contains_required_contracts() -> None:
     assert [step.name for step in steps] == [
         "platform_settings",
         "platform_settings_integrity",
+        "organization",
     ]
     sql = (
         pgs.MIGRATIONS_DIR / "0002_platform_settings_integrity.sql"

@@ -123,6 +123,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
             user_id="qmb-id",
             session_id="qmb-session",
             request_id="qmb-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             username="qmb",
             global_roles=("QMB",),
             is_qmb=True,

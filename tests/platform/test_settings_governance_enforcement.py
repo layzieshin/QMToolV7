@@ -7,6 +7,7 @@ from pathlib import Path
 
 from modules.signature.module import SIGNATURE_SETTINGS_CONTRIBUTION
 from modules.usermanagement.contracts import issue_user_context
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from qm_platform.persistence.database_evolution import DatabaseEvolutionService
 from qm_platform.persistence.platform_settings_contribution import (
     PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
@@ -50,6 +51,7 @@ class SettingsGovernanceEnforcementTest(unittest.TestCase):
                 user_id="u1",
                 session_id="s1",
                 request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
                 username="admin",
                 global_roles=["Admin"],
                 is_qmb=False,

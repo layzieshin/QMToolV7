@@ -82,7 +82,8 @@ Entschieden (AP-029 Entscheidungsregister D01–D14):
 - Erster Pilot: begrenzter DMS-Kern PDF-first; keine QES-Behauptung.
 - Container-Prototyp nur portabler Kern; keine J04-Bootstrap-Regression; Produktivierung spaeter.
 - Gated Makros dürfen mehrere Checkpoints nur seriell mit separater Allowlist, Evidence,
-  Reviewer-Verdict und lokalem Commit orchestrieren; maximal eine Remediation je Checkpoint.
+  Reviewer-Verdict und lokalem Commit orchestrieren; höchstens zwei normale Reworks je Checkpoint
+  und danach genau ein Escalation Review.
 - Container wird vor Übernahme qualifiziert; CB00 kann als dokumentierter No-Code-PASS enden.
 
 Entschiedene Zielentscheidungen (AP-028 / Supervisor 2026-07-31; weiter gueltig wo nicht durch AP-029 ersetzt):
@@ -184,8 +185,8 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Nächste autorisierte Aktion ist **PG00** (Current checkpoint; **IN_PROGRESS** — Subcheckpoint A PASS auf
-`feature/ap-029-pg00`, Subcheckpoints B–D offen). INV00 ist PASS und gemergt (`90cefa4`). Nach
+Nächste autorisierte Aktion ist ausschliesslich PG00 (Current checkpoint; **IN_PROGRESS** — Subcheckpoint A PASS,
+Subcheckpoint B auf `feature/ap-029-pg00` in Arbeit). INV00 ist PASS und gemergt (`90cefa4`). Nach
 vollständigem PG00-PASS folgt **WEB00** (vorbereitet, nicht gestartet). Kein späterer Produktcheckpoint ist freigegeben.
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;

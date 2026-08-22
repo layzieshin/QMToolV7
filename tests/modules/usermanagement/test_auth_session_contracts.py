@@ -24,6 +24,7 @@ from modules.usermanagement.contracts import (
     issue_system_execution_context,
     issue_user_context,
 )
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 
 
 def _utc(year: int = 2026, month: int = 7, day: int = 31, hour: int = 10) -> datetime:
@@ -35,6 +36,7 @@ def test_issue_user_context_is_confirmed_immutable_and_publicly_importable() -> 
         user_id="u-1",
         session_id="s-1",
         request_id="r-1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="alice",
         global_roles={"USER", "user"},
         is_qmb=False,
@@ -45,6 +47,7 @@ def test_issue_user_context_is_confirmed_immutable_and_publicly_importable() -> 
     assert ctx.user_id == "u-1"
     assert ctx.session_id == "s-1"
     assert ctx.request_id == "r-1"
+    assert ctx.organization_id == INSTALLATION_ORGANIZATION_ID
     assert ctx.username == "alice"
     assert ctx.global_roles == frozenset({"USER", "user"})
     assert ctx.is_qmb is False
@@ -54,11 +57,26 @@ def test_issue_user_context_is_confirmed_immutable_and_publicly_importable() -> 
         ctx.username = "bob"  # type: ignore[misc]
 
 
+def test_issue_user_context_rejects_non_server_organization_id() -> None:
+    with pytest.raises(ValueError, match="server-confirmed installation organization"):
+        issue_user_context(
+            user_id="u-1",
+            session_id="s-1",
+            request_id="r-1",
+            organization_id="00000000-0000-4000-8000-000000000099",
+            username="alice",
+            global_roles=["USER"],
+            is_qmb=False,
+            authenticated_at=_utc(),
+        )
+
+
 def test_direct_user_context_construction_is_not_confirmed() -> None:
     forged = UserContext(
         user_id="attacker",
         session_id="forged-session",
         request_id="forged-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="attacker",
         global_roles=frozenset({"ADMIN"}),
         is_qmb=True,
@@ -73,6 +91,7 @@ def test_user_context_constructor_rejects_server_confirmed_keyword() -> None:
             user_id="attacker",
             session_id="forged-session",
             request_id="forged-request",
+            organization_id=INSTALLATION_ORGANIZATION_ID,
             username="attacker",
             global_roles=frozenset({"ADMIN"}),
             is_qmb=True,
@@ -87,6 +106,7 @@ def test_issue_user_context_rejects_naive_datetime() -> None:
             user_id="u-1",
             session_id="s-1",
             request_id="r-1",
+            organization_id=INSTALLATION_ORGANIZATION_ID,
             username="alice",
             global_roles=["USER"],
             is_qmb=False,
@@ -102,6 +122,7 @@ def test_issue_system_execution_context_is_confirmed_and_rejects_bare_fallback()
     assert isinstance(ctx, SystemExecutionContext)
     assert ctx.is_confirmed is True
     assert ctx.system_actor == "usermanagement.session-cleanup"
+    assert ctx.organization_id == INSTALLATION_ORGANIZATION_ID
     with pytest.raises(FrozenInstanceError):
         ctx.system_actor = "other"  # type: ignore[misc]
     with pytest.raises(ValueError, match="explicit named system actor"):
@@ -111,7 +132,11 @@ def test_issue_system_execution_context_is_confirmed_and_rejects_bare_fallback()
 
 
 def test_direct_system_context_construction_is_not_confirmed() -> None:
-    forged = SystemExecutionContext(system_actor="usermanagement.session-cleanup", request_id="r-1")
+    forged = SystemExecutionContext(
+        system_actor="usermanagement.session-cleanup",
+        request_id="r-1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
+    )
     assert forged.is_confirmed is False
 
 
@@ -120,6 +145,7 @@ def test_system_context_constructor_rejects_server_confirmed_keyword() -> None:
         SystemExecutionContext(
             system_actor="usermanagement.session-cleanup",
             request_id="r-1",
+            organization_id=INSTALLATION_ORGANIZATION_ID,
             _server_confirmed=True,  # type: ignore[call-arg]
         )
 

@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable
 
+from qm_platform.organization.server_context import resolve_active_organization_id
+
 
 @dataclass(frozen=True)
 class AuthenticatedUser:
@@ -48,6 +50,7 @@ class UserContext:
     user_id: str
     session_id: str
     request_id: str
+    organization_id: str
     username: str
     global_roles: frozenset[str]
     is_qmb: bool
@@ -65,6 +68,7 @@ class SystemExecutionContext:
 
     system_actor: str
     request_id: str
+    organization_id: str
     _server_confirmed: bool = field(default=False, init=False, repr=False, compare=False)
 
     @property
@@ -113,6 +117,7 @@ def issue_user_context(
     user_id: str,
     session_id: str,
     request_id: str,
+    organization_id: str,
     username: str,
     global_roles: Iterable[str],
     is_qmb: bool,
@@ -125,10 +130,16 @@ def issue_user_context(
     """
     if not user_id or not session_id or not request_id or not username:
         raise ValueError("user_id, session_id, request_id, and username are required")
+    if not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    resolved_org = resolve_active_organization_id()
+    if str(organization_id).strip() != resolved_org:
+        raise ValueError("organization_id must match the server-confirmed installation organization")
     context = UserContext(
         user_id=str(user_id),
         session_id=str(session_id),
         request_id=str(request_id),
+        organization_id=resolved_org,
         username=str(username),
         global_roles=_as_frozenset(global_roles),
         is_qmb=bool(is_qmb),
@@ -147,6 +158,7 @@ def issue_system_execution_context(*, system_actor: str, request_id: str) -> Sys
     context = SystemExecutionContext(
         system_actor=str(system_actor),
         request_id=str(request_id),
+        organization_id=resolve_active_organization_id(),
     )
     object.__setattr__(context, "_server_confirmed", True)
     return context
