@@ -38,6 +38,7 @@ EXPECTED_TABLES = frozenset(
 )
 EXPECTED_TABLES_WITH_INTEGRITY = EXPECTED_TABLES | frozenset({"platform_settings_integrity"})
 EXPECTED_TABLES_WITH_ORGANIZATION = EXPECTED_TABLES_WITH_INTEGRITY | frozenset({"organizations"})
+EXPECTED_TABLES_WITH_AUDIT = EXPECTED_TABLES_WITH_ORGANIZATION | frozenset({"audit_events"})
 EXPECTED_ORGANIZATIONS_COLUMNS = frozenset(
     {"organization_id", "display_name", "is_active", "created_at"}
 )
@@ -91,6 +92,36 @@ EXPECTED_ORGANIZATION_CHECK_CONSTRAINTS = frozenset(
     {
         "organizations_organization_id_nonempty",
         "organizations_display_name_nonempty",
+    }
+)
+EXPECTED_AUDIT_EVENTS_COLUMNS = frozenset(
+    {
+        "audit_id",
+        "organization_id",
+        "occurred_at",
+        "request_id",
+        "correlation_id",
+        "actor_kind",
+        "actor_user_id",
+        "actor_label",
+        "action",
+        "object_type",
+        "object_id",
+        "result",
+        "reason_code",
+        "details_json",
+    }
+)
+EXPECTED_AUDIT_CHECK_CONSTRAINTS = frozenset(
+    {
+        "audit_events_organization_id_nonempty",
+        "audit_events_request_id_present",
+        "audit_events_action_present",
+        "audit_events_object_type_present",
+        "audit_events_object_id_present",
+        "audit_events_actor_kind_known",
+        "audit_events_result_known",
+        "audit_events_actor_form",
     }
 )
 
@@ -708,11 +739,37 @@ def _query_privilege(
     return bool(row[0])
 
 
+def _validate_append_only_runtime_table(
+    conn: psycopg.Connection,
+    table: str,
+) -> None:
+    qualified = f"{SCHEMA_NAME}.{table}"
+    if not _query_privilege(
+        conn,
+        "SELECT has_table_privilege(%s, %s, %s)",
+        (RUNTIME_ROLE, qualified, "INSERT"),
+    ):
+        raise PostgresSchemaError(
+            f"qmtool_runtime missing INSERT on append-only table {qualified}"
+        )
+    forbidden = ("SELECT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+    for privilege in forbidden:
+        if _query_privilege(
+            conn,
+            "SELECT has_table_privilege(%s, %s, %s)",
+            (RUNTIME_ROLE, qualified, privilege),
+        ):
+            raise PostgresSchemaError(
+                f"qmtool_runtime must not have {privilege} on append-only table {qualified}"
+            )
+
+
 def _validate_role_contract(
     conn: psycopg.Connection,
     *,
     require_history_select: bool = True,
     require_integrity: bool = True,
+    require_audit: bool = False,
 ) -> None:
     role_rows = conn.execute(
         """
@@ -854,6 +911,9 @@ def _validate_role_contract(
                 f"qmtool_runtime must not have {privilege} on {history}"
             )
 
+    if require_audit:
+        _validate_append_only_runtime_table(conn, "audit_events")
+
 
 def _validate_schema_contracts(
     conn: psycopg.Connection,
@@ -861,9 +921,12 @@ def _validate_schema_contracts(
     require_history_select: bool = True,
     require_integrity: bool = True,
     require_organization: bool = False,
+    require_audit: bool = False,
 ) -> None:
     expected_tables = (
-        EXPECTED_TABLES_WITH_ORGANIZATION
+        EXPECTED_TABLES_WITH_AUDIT
+        if require_audit
+        else EXPECTED_TABLES_WITH_ORGANIZATION
         if require_organization
         else EXPECTED_TABLES_WITH_INTEGRITY
         if require_integrity
@@ -920,6 +983,12 @@ def _validate_schema_contracts(
         ).fetchone()
         if active_count is None or int(active_count[0]) != 1:
             raise PostgresSchemaError("exactly one active organization is required")
+    if require_audit:
+        missing_audit = EXPECTED_AUDIT_EVENTS_COLUMNS - columns_for("audit_events")
+        if missing_audit:
+            raise PostgresSchemaError(
+                f"audit_events missing columns: {sorted(missing_audit)}"
+            )
     missing_history = EXPECTED_HISTORY_COLUMNS - columns_for(MIGRATIONS_TABLE)
     if missing_history:
         raise PostgresSchemaError(
@@ -931,6 +1000,8 @@ def _validate_schema_contracts(
         expected_checks = expected_checks | EXPECTED_INTEGRITY_CHECK_CONSTRAINTS
     if require_organization:
         expected_checks = expected_checks | EXPECTED_ORGANIZATION_CHECK_CONSTRAINTS
+    if require_audit:
+        expected_checks = expected_checks | EXPECTED_AUDIT_CHECK_CONSTRAINTS
     checks = {
         str(row[0])
         for row in conn.execute(
@@ -951,6 +1022,8 @@ def _validate_schema_contracts(
         owned_tables = (*owned_tables, "platform_settings_integrity")
     if require_organization:
         owned_tables = (*owned_tables, "organizations")
+    if require_audit:
+        owned_tables = (*owned_tables, "audit_events")
     for table in owned_tables:
         owner = conn.execute(
             """
@@ -969,6 +1042,7 @@ def _validate_schema_contracts(
         conn,
         require_history_select=require_history_select,
         require_integrity=require_integrity,
+        require_audit=require_audit,
     )
 
 
@@ -1023,6 +1097,7 @@ def migrate_platform_schema(
                         require_history_select=step.version >= 2,
                         require_integrity=step.version >= 2,
                         require_organization=step.version >= 3,
+                        require_audit=step.version >= 4,
                     )
                     fingerprint = _compute_schema_fingerprint(conn)
                     conn.execute(
@@ -1051,6 +1126,7 @@ def migrate_platform_schema(
                 require_history_select=target >= 2,
                 require_integrity=target >= 2,
                 require_organization=target >= 3,
+                require_audit=target >= 4,
             )
             return target
         finally:
@@ -1083,5 +1159,6 @@ def assert_runtime_schema_ready(dsn: str, *, migrations_dir: Path | None = None)
             require_history_select=True,
             require_integrity=True,
             require_organization=True,
+            require_audit=True,
         )
         return target

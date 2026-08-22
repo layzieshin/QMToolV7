@@ -50,9 +50,9 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
     platform_env: LivePostgresEnv,
 ) -> None:
     version = pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert version == 3
+    assert version == 4
     again = pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert again == 3
+    assert again == 4
     with psycopg.connect(platform_env.migrator_dsn) as conn:
         conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
         rows = conn.execute(
@@ -62,13 +62,15 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
             ORDER BY version
             """
         ).fetchall()
-        assert len(rows) == 3
+        assert len(rows) == 4
         assert int(rows[0][0]) == 1
         assert rows[0][1] == "platform_settings"
         assert int(rows[1][0]) == 2
         assert rows[1][1] == "platform_settings_integrity"
         assert int(rows[2][0]) == 3
         assert rows[2][1] == "organization"
+        assert int(rows[3][0]) == 4
+        assert rows[3][1] == "audit_events"
         assert len(rows[0][2]) == 64
         assert len(rows[0][3]) == 64
         for table in (
@@ -76,6 +78,7 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
             "platform_setting_revisions",
             "platform_settings_integrity",
             "organizations",
+            "audit_events",
             "_qm_schema_migrations",
         ):
             owner = conn.execute(
@@ -224,7 +227,7 @@ def test_organization_seed_matches_server_context(platform_env: LivePostgresEnv)
 
 def test_assert_runtime_schema_ready(platform_env: LivePostgresEnv) -> None:
     pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert pgs.assert_runtime_schema_ready(platform_env.runtime_dsn) == 3
+    assert pgs.assert_runtime_schema_ready(platform_env.runtime_dsn) == 4
 
 
 def test_failed_migration_rolls_back_completely(

@@ -57,6 +57,7 @@ def test_integrity_migration_contains_required_contracts() -> None:
         "platform_settings",
         "platform_settings_integrity",
         "organization",
+        "audit_events",
     ]
     sql = (
         pgs.MIGRATIONS_DIR / "0002_platform_settings_integrity.sql"
