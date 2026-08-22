@@ -83,6 +83,18 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
         "qm_platform/persistence/migrations/0002_platform_settings_integrity.sql",
         "qm_platform/persistence/migrations",
     ),
+    (
+        "qm_platform/persistence/postgres/migrations/0001_platform_settings.sql",
+        "qm_platform/persistence/postgres/migrations",
+    ),
+    (
+        "qm_platform/persistence/postgres/migrations/0002_platform_settings_integrity.sql",
+        "qm_platform/persistence/postgres/migrations",
+    ),
+    (
+        "qm_platform/persistence/postgres/provision_platform_schema.sql",
+        "qm_platform/persistence/postgres",
+    ),
     ("interfaces/pyqt/shell/styles.qss", "interfaces/pyqt/shell"),
     ("qm_platform/licensing/keys/prod_ed25519_public.pem", "qm_platform/licensing/keys"),
 ]
