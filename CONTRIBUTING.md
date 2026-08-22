@@ -41,6 +41,13 @@ Entry points (run from the project root):
 - Details: [`docs/AP-028_M3_POSTGRES_SCHEMA.md`](docs/AP-028_M3_POSTGRES_SCHEMA.md) (Abschnitt „Lokaler Lab-Testserver“).
 - Productive target runtime is PostgreSQL-only (AP-029); lab usage is not a SQLite fallback license.
 
+### J04 Slot-2 destructive PostgreSQL (lokal, gitignored)
+
+- Vorlage: [`.env.example`](.env.example) — **nicht** `QMTOOL_PG_TEST_RESET` speichern.
+- Einmalig / nach Branch-Bereinigung: [`tests/postgres/README.md`](tests/postgres/README.md)
+  (`scripts/provision_j04_destructive_postgres.py`, dann `scripts/run_postgres_live_tests.py`).
+- Slot 1 (`QMTOOL_PG_HOST` / Lab `192.168.0.4`) und Slot 2 (`QMTOOL_PG_TEST_*`) getrennt halten.
+
 ## Documentation map ("I want X -> read Y")
 
 Priority and conflict resolution: [`docs/DOCS_CANONICAL_INDEX.md`](docs/DOCS_CANONICAL_INDEX.md) (P0 overrules P1/P2).

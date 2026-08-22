@@ -56,6 +56,25 @@ QMTOOL_PG_REQUIRED=1
 Do **not** point destructive fixtures at `QMTOOL_PG_DSN` / runtime `.env` DSNs.
 Secrets stay local and must never be committed.
 
+## Local Windows bootstrap (disposable PG 18 on localhost:5432)
+
+After branch cleanup or a fresh clone, re-provision Slot-2 once (never touches Slot-1
+lab credentials on `192.168.0.4`):
+
+```powershell
+.\.venv\Scripts\python.exe scripts/provision_j04_destructive_postgres.py --local-trust-bootstrap
+.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py
+```
+
+Alternative when you already have a superuser DSN:
+
+```powershell
+$env:J04_PG_PROVISION_SUPERUSER_DSN = "postgresql://postgres:<password>@127.0.0.1:5432/postgres"
+.\.venv\Scripts\python.exe scripts/provision_j04_destructive_postgres.py
+```
+
+The script appends `QMTOOL_PG_TEST_*` keys to gitignored `.env` only (no RESET).
+
 Notes on tools and variables:
 
 - `psql` is **not** required by the PostgreSQL live pytest classes.
