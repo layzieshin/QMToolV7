@@ -884,4 +884,4 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Tests: `test_organization_context.py` 3 passed; `test_auth_session_contracts.py` 12 passed;
   `test_auth_api.py` org spoof 403; platform gate 12/12 green; `tests/platform` 110 passed,
   10 live skipped.
-- Status: **PG00-B PASS** (pending commit); PG00 remains **IN_PROGRESS** (C–D open).
+- Status: **PG00-B PASS** (commit `fc762a0`); PG00 remains **IN_PROGRESS** (C–D open).
