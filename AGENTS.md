@@ -67,20 +67,51 @@ and supplemented by `.cursor/rules/02-autonomous-work-package.mdc`.
 
 ## Destructive PostgreSQL live tests (Slot 2)
 
-All `@pytest.mark.postgres` tests use a **disposable local test cluster** (Slot 2). They must
-**never** use Slot 1 lab credentials (`QMTOOL_PG_HOST` / `192.168.0.4` / `qmtool_test`).
+When a task requires `@pytest.mark.postgres` live tests, follow this section end-to-end.
+Do **not** run bare `pytest -m postgres` — the runner is mandatory.
 
-Before running destructive PostgreSQL tests, check gitignored `.env` for Slot 2 keys:
+### Two slots (do not mix)
 
-- `QMTOOL_PG_TEST_ADMIN_DSN`
-- `QMTOOL_PG_TEST_EXPECTED_DATABASE` (`qmtool_j04_destructive_test`)
-- `QMTOOL_PG_TEST_EXPECTED_MAJOR` (local Windows disposable cluster: `18`; CI: `16`)
+| Slot | Variables | Purpose |
+| --- | --- | --- |
+| **1 – Runtime/Lab** | `QMTOOL_PG_HOST/PORT/DATABASE/USER/PASSWORD` | Lab `192.168.0.4:5432/qmtool_test` — **never** for destructive tests |
+| **2 – Destructive (J04)** | `QMTOOL_PG_TEST_*` | Isolated disposable cluster on a separate target |
 
-Do **not** store `QMTOOL_PG_TEST_RESET` in `.env`. The runner injects it only into the pytest
-child after a read-only preflight.
+Also documented in [`.env.example`](.env.example) and [`CONTRIBUTING.md`](CONTRIBUTING.md) (Lab section).
 
-**If Slot 2 keys are missing** (fresh clone, branch cleanup, or empty `.env`), provision once.
-Requires a local PostgreSQL instance (16+; here PG 18 on `127.0.0.1:5432`):
+### Agent checklist (Slot 2)
+
+1. Open gitignored `.env` in the repo root (template: [`.env.example`](.env.example)).
+2. Confirm all three keys exist:
+   - `QMTOOL_PG_TEST_ADMIN_DSN`
+   - `QMTOOL_PG_TEST_EXPECTED_DATABASE` (`qmtool_j04_destructive_test`)
+   - `QMTOOL_PG_TEST_EXPECTED_MAJOR` (local disposable cluster: `18`; CI: `16`)
+3. If any key is missing → **provision once** (see below), then re-check.
+4. Run tests **only** via `scripts/run_postgres_live_tests.py`.
+5. If preflight prints `preflight: ...` and exits **2**, Slot 2 is not configured — go back to step 2.
+
+**Do not store in `.env`:**
+- `QMTOOL_PG_TEST_RESET` — the runner injects this only into the pytest child process
+- Do not change Slot 1 lab keys for destructive work
+
+Example Slot 2 block (password is local; never commit):
+
+```text
+QMTOOL_PG_TEST_ADMIN_DSN=postgresql://qmtool_j04_test_admin:<password>@127.0.0.1:5432/qmtool_j04_destructive_test
+QMTOOL_PG_TEST_EXPECTED_DATABASE=qmtool_j04_destructive_test
+QMTOOL_PG_TEST_EXPECTED_MAJOR=18
+```
+
+Guard checks in `tests/postgres_destructive_guard.py` (read-only preflight):
+- Database name exactly `qmtool_j04_destructive_test`
+- Cluster marker `j04_m0_destructive_pg16` (name is historical; works on PG18)
+- PostgreSQL major ≥ 16 and exactly `QMTOOL_PG_TEST_EXPECTED_MAJOR`
+- Target is not the runtime/lab endpoint (`192.168.0.4` / `qmtool_test`)
+- Admin role has `CREATEROLE` + `CREATEDB`
+
+### Provision Slot 2 (when keys are missing)
+
+Fresh clone, branch cleanup, or empty `.env` — run once. Requires local PostgreSQL 16+ (here PG 18 on `127.0.0.1:5432`):
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/provision_j04_destructive_postgres.py --local-trust-bootstrap
@@ -93,22 +124,47 @@ $env:J04_PG_PROVISION_SUPERUSER_DSN = "postgresql://postgres:<password>@127.0.0.
 .\.venv\Scripts\python.exe scripts/provision_j04_destructive_postgres.py
 ```
 
-The provision script creates the test admin, database, cluster marker, and appends the three
-Slot 2 keys to `.env`. It never writes the destructive reset opt-in.
+Creates test admin, database, marker; appends the three Slot 2 keys to `.env`. Never writes `QMTOOL_PG_TEST_RESET`.
 
-**Run destructive PostgreSQL tests** through the runner (not bare `pytest -m postgres`):
+### Run destructive tests (canonical)
+
+**Never** `pytest -m postgres` directly. Always:
 
 ```powershell
+# Default live suite (runner default targets)
 .\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py
+
+# Targeted files or single test
+.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py `
+  tests/platform/test_platform_blob_contract_live.py `
+  tests/platform/test_postgres_schema_live.py
+
+.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py `
+  tests/modules/usermanagement/test_postgres_schema_live.py::test_provision_is_idempotent
 ```
 
-Optional single test or file:
+**Runner flow** (`scripts/run_postgres_live_tests.py`):
+1. Loads `.env` (Slot 2 DSN)
+2. Read-only preflight (`preflight_isolated_postgres_target()`)
+3. On success: starts pytest child with `QMTOOL_PG_TEST_RESET=I_UNDERSTAND_THIS_IS_DESTRUCTIVE` and `QMTOOL_PG_REQUIRED=1`
+4. Cleans up restore databases (`qmtool_j04_restore_*`)
+
+### J04 full realprocess gate (separate)
+
+Do not invoke `tests/acceptance/test_j04_m0_realprocess.py` as a loose pytest target.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py tests/modules/usermanagement/test_postgres_schema_live.py::test_provision_is_idempotent
+$env:QMTOOL_J04_FINAL_ACCEPTANCE = "I_UNDERSTAND_THIS_IS_A_REAL_ACCEPTANCE_RUN"
+.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py `
+  --j04-final-acceptance `
+  --basetemp build/j04-m0-closure/cp08-pytest-<stamp>
 ```
 
-Details: [`tests/postgres/README.md`](tests/postgres/README.md), [`.env.example`](.env.example).
+`--basetemp` must be a **new** path (must not already exist).
+
+### Optional Compose sketch (not required)
+
+`tests/postgres/compose.yaml` + `manage.ps1` — PG16 on `127.0.0.1:55432`. Local Windows setup here uses **PG18 on port 5432** instead. See [`tests/postgres/README.md`](tests/postgres/README.md) for operator details.
 
 ## Architecture essentials
 
