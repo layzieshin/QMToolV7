@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from modules.incident_management.contracts import AuthorizationError
 from modules.usermanagement.contracts import issue_user_context
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from qm_platform.settings.errors import ResidualPolicyReadonlyError
 from tests.modules.incident_management_test_support import (
     _FakeUser,

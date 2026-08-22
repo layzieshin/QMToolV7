@@ -68,6 +68,7 @@ class RequireConfirmedUserContextContractTest(unittest.TestCase):
             username="qmb",
             global_roles=frozenset({"QMB"}),
             is_qmb=True,
+            organization_id=INSTALLATION_ORGANIZATION_ID,
             authenticated_at=datetime.now(timezone.utc),
         )
         cases = (

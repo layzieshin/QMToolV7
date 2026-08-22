@@ -15,6 +15,7 @@ from modules.documents.contracts import (
 )
 from modules.documents.errors import DocumentConflictError, InvalidTransitionError, PermissionDeniedError, SignatureTransitionError, ValidationError
 from modules.documents.service import DocumentsService
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from tests.database_helpers import make_documents_service_with_profiles
 from pathlib import Path
 import tempfile

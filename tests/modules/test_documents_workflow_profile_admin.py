@@ -22,6 +22,7 @@ def _actor(*, username: str, roles: tuple[str, ...], is_qmb: bool, **overrides) 
         "user_id": f"{username}-id",
         "session_id": f"{username}-session",
         "request_id": f"{username}-request",
+        "organization_id": INSTALLATION_ORGANIZATION_ID,
         "username": username,
         "global_roles": roles,
         "is_qmb": is_qmb,
