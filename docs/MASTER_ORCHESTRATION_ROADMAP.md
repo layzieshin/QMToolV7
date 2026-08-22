@@ -186,7 +186,7 @@ Historische oder zu klaerende Artefakte:
 
 ## Naechste freigegebene Aktion
 Die naechste autorisierte Aktion ist ausschliesslich WEB00 (webclient foundation, **TODO**, vorbereitet).
-**PG00 PASS** (PR pending merge). INV00 ist PASS (`90cefa4`). Kein späterer Produktcheckpoint ist freigegeben.
+**PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`). Kein späterer Produktcheckpoint ist freigegeben.
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
 autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung

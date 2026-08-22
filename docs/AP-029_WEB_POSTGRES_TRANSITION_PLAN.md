@@ -292,7 +292,7 @@ Current checkpoint: WEB00
 | TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
 | CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
 | INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
-| PG00 | PostgreSQL platform foundation | PASS | 90cefa498d05f708ad54d4d673a41e245957d63f | A–D passed; full regression passed; evidence build/ap-029-pg00/final/ | Current advances to WEB00 |
+| PG00 | PostgreSQL platform foundation | PASS | 90cefa498d05f708ad54d4d673a41e245957d63f | A–D passed; full regression passed; merged `8a67f67` PR #32; evidence build/ap-029-pg00/final/ | Current advances to WEB00 |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | preserve existing domain behavior |
 | OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | shared PG+blob backup contract |
@@ -937,4 +937,8 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Module regression fix: `organization_id` in documents/incident/UM contract tests (`995052a`).
 - Evidence: `build/ap-029-pg00/final/`.
 - Final audit: package scope A–D complete; no parallel persistence path; live PG skipped (no DSN).
-- Status: **PG00 PASS**; Current → **WEB00** (prepared, not started).
+- Merge: PR [#32](https://github.com/layzieshin/QMToolV7/pull/32) → `main` at `8a67f67445fe569378f50de7a695973aea27ff56`.
+- CI substitute (Actions quota exhausted): quality-gates regression suite green locally (226 passed, 5 skipped);
+  `platform_postgres_migration_gate` and `postgres_migration_gate` 12/12 each vs `90cefa4`;
+  evidence under `build/ap-029-pg00/final/ci-local-substitute/`.
+- Status: **PG00 PASS** (merged); Current → **WEB00** (prepared, not started).
