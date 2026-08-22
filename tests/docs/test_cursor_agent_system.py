@@ -41,6 +41,19 @@ def _frontmatter_value(text: str, key: str) -> str:
     return match.group(1).strip()
 
 
+def _observed_work_branch() -> str:
+    completed = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    branch = completed.stdout.strip()
+    assert branch, "git branch --show-current returned no branch name"
+    return branch
+
+
 def _write_state(path: Path, **updates: Any) -> dict[str, Any]:
     state = json.loads(_read(RUNTIME_TEMPLATE))
     state.update(
@@ -48,7 +61,7 @@ def _write_state(path: Path, **updates: Any) -> dict[str, Any]:
             "status": "RUNNING",
             "work_package": "WP-TEST",
             "base_branch": "main",
-            "work_branch": "feature/cursor-autonomous-agent-system",
+            "work_branch": _observed_work_branch(),
             "phase": "IMPLEMENT",
             "checkpoint": "CP-1",
             "work_package_path": "docs/WP-TEST.md",
@@ -269,6 +282,7 @@ def test_subagent_model_gate_allows_match_denies_mismatch_and_ignores_untagged(
 
 def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
+    work_branch = _observed_work_branch()
 
     def guard(
         command: str, env_overrides: dict[str, str] | None = None
@@ -329,18 +343,18 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     assert guard("git push origin HEAD:refs/heads/other")["permission"] == "deny"
     assert (
         guard(
-            "git push origin other:feature/cursor-autonomous-agent-system"
+            f"git push origin other:{work_branch}"
         )["permission"]
         == "deny"
     )
     assert (
-        guard("git push origin :feature/cursor-autonomous-agent-system")["permission"]
+        guard(f"git push origin :{work_branch}")["permission"]
         == "deny"
     )
     assert guard("git push --force origin HEAD")["permission"] == "deny"
     assert guard("git push -u origin HEAD")["permission"] == "allow"
     assert (
-        guard("git push origin feature/cursor-autonomous-agent-system")["permission"]
+        guard(f"git push origin {work_branch}")["permission"]
         == "allow"
     )
     assert guard("git clean -fd")["permission"] == "deny"
@@ -377,7 +391,7 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     )
     gh_mock = tmp_path / "gh.cmd"
     gh_mock.write_text(
-        '@echo {"headRefName":"feature/cursor-autonomous-agent-system",'
+        f'@echo {{"headRefName":"{work_branch}",'
         '"baseRefName":"main","state":"OPEN"}\n',
         encoding="utf-8",
     )
