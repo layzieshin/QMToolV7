@@ -15,6 +15,13 @@
   "work_package_path": null,
   "execution_journal_path": null,
   "final_report_path": null,
+  "external_review": {
+    "status": "NOT_REQUESTED",
+    "round": 0,
+    "reviewed_head": null,
+    "blocking_findings": [],
+    "last_checked_at": null
+  },
   "gates": {
     "full_regression_pass": false,
     "final_audit_pass": false,

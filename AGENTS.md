@@ -29,7 +29,10 @@ If the owner or overlap is unclear, stop and ask.
   change behavior. Update tests and docs with behavior changes.
 - TODOs, placeholders, mocks, disabled tests, skipped implementation, and unrelated pre-existing
   failures are not completed work. Report unrelated failures separately; do not silently fix or hide them.
-- One task = one hotspot or one use case; do not combine roadmap packages.
+- One normal task = one hotspot or one use case; do not combine roadmap packages. An explicitly
+  authorized `/execute-work-package` may contain several separately bounded, serially verified
+  checkpoints under its owning package contract; it never permits blended checkpoint diffs or
+  unrelated roadmap work.
 
 For completed implementation work, report the resulting execution path, changed files and their
 responsibilities, exact verification commands and results, remaining limitations, and whether any

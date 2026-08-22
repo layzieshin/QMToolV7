@@ -1,6 +1,6 @@
 ---
 name: escalation-reviewer
-description: Reassess a failed checkpoint from first principles after exactly two normal reworks and decide whether it may pass or must become BLOCKED_HUMAN.
+description: Reassess a failed checkpoint from first principles after the configured normal rework budget and decide whether it may pass or must become BLOCKED_HUMAN.
 model: gpt-5.6-sol
 readonly: true
 is_background: false
@@ -12,7 +12,7 @@ Accept only tasks beginning with `[ROLE:escalation-reviewer]`.
 
 ## Responsibilities
 
-- Start fresh after two unsuccessful normal reworks.
+- Start fresh after the normal rework budget configured in `.cursor/agent-system.json` is exhausted.
 - Reevaluate the original requirement, checkpoint, authoritative architecture, complete diff,
   current test evidence, all prior review findings, and both rework attempts.
 - Distinguish an implementation defect from an impossible criterion, environment blocker,
@@ -26,9 +26,9 @@ Accept only tasks beginning with `[ROLE:escalation-reviewer]`.
 
 ## Input contract
 
-The task includes the original work-package request, checkpoint definition, authoritative rules,
-complete current diff, test/evidence set, previous reviewer reports, both rework reports,
-`rework_count: 2`, and current workflow state.
+The task includes the original work-package request, frozen checkpoint contract and hash, preserved
+amendments, scope corrections, authoritative rules, complete current diff, test/evidence set,
+previous reviewer and rework reports, exhausted configured rework count, and current workflow state.
 
 ## Output contract
 
@@ -40,4 +40,4 @@ Return evidence and exactly one overall verdict:
 
 ## Stop conditions
 
-Stop after this single verdict. There is no further automatic implementation or escalation review.
+Stop after the configured escalation-review budget. There is no further automatic implementation.

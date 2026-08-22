@@ -1,6 +1,6 @@
 ---
 name: execute-gated-macro
-description: Execute an explicitly authorized QMToolV7 AP-029 macro as serial, independently reviewed checkpoints with separate scope, evidence, the shared two-rework budget, and gated Git operations.
+description: Execute an explicitly authorized QMToolV7 AP-029 macro as serial, independently reviewed checkpoints with separate frozen contracts, scope, evidence, configured bounded rework, and gated Git operations.
 ---
 
 # Execute Gated Macro
@@ -20,9 +20,11 @@ Before acting, read:
 - Run checkpoints serially in the authorized order.
 - Give every checkpoint its own allowlist, evidence root, diff fingerprint, gate sequence,
   independent reviewer verdict and local commit after PASS unless the user explicitly opts out.
+- Before source edits freeze `checkpoint-contract.md`, record its SHA256 in the journal, and review
+  against it. Preserve old snapshots and formal amendments; never move acceptance criteria silently.
 - Stop the macro on the first unresolved checkpoint.
-- Permit at most two remediation rounds per checkpoint across implementation gates and reviewer
-  findings, then exactly one fresh escalation review.
+- Use `.cursor/agent-system.json` as the normative source for remediation, reviewer, scope-correction,
+  escalation, parallelism and model limits. AP-029 has no implicit numeric override.
 - Do not infer permission for destructive tests, external writes, deployment, Echtdaten, human
   acceptance, cleanup, or branch deletion. A standalone macro keeps push/PR/merge separately
   gated; an explicit `/execute-work-package` parent may authorize only the hook-gated
@@ -59,25 +61,34 @@ stop the macro for that checkpoint.
    user authorization.
 2. Create the `before` snapshot with `scripts/checkpoint_snapshot.py`; stop if out-of-scope paths
    are present and are not explicitly declared foreign changes.
-3. Mark only the active checkpoint `IN_PROGRESS` and implement only its allowlist.
+3. Create the immutable checkpoint contract in the existing evidence root, hash it with
+   `Get-FileHash`, record `contract_sha256`, then mark only the active checkpoint `IN_PROGRESS` and
+   implement only its allowlist.
 4. Run mandatory gates in order. At the first red/blocked gate, stop that sequence and preserve
    evidence.
-5. On the first or second bounded, decision-complete failure, apply `R1` or `R2` and run a new
-   complete gate sequence. A further normal failure invokes exactly one fresh
+5. Each bounded, decision-complete failure consumes the configured checkpoint-rework budget and
+   runs a new complete gate sequence. After exhaustion, invoke the configured fresh
    `[ROLE:escalation-reviewer]`; escalation `FAIL` sets `BLOCKED_HUMAN`.
-6. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
+6. If implementer reports `SCOPE_CORRECTION_REQUIRED`, classify it before editing under the strict
+   existing-owner/approved-criterion/no-new-behavior-or-surface rule. Record an allowed correction
+   within the configured budget; otherwise treat it as Scope Expansion and stop for normal planning.
+7. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
    native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
    primary evidence directly; never ask the user to relay them. Require its output contract and
    capture parent-owned Task metadata separately.
-7. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
+8. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
    review makes the checkpoint `BLOCKED`; do not revert it automatically.
-8. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
-   minimal order and consumes the shared two-rework budget; correct it, rerun the affected gates,
+9. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
+   minimal order and consumes the configured shared rework budget; correct it, rerun the affected gates,
    and invoke a fresh reviewer Task. After the budget, use the single escalation path above.
-9. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
+10. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
    paths and create the local commit included by the implementation authorization unless the user
    opted out. Verify the commit file set.
-10. Advance to the next checkpoint only when it is named by the same macro authorization.
+11. Advance to the next checkpoint only when it is named by the same macro authorization.
+
+Package Integration and External GitHub Codex Review remain owned by the outer
+`/execute-work-package` lifecycle. Never run Codex after individual AP-029 subcheckpoints; evaluate
+it only on the final package PR head.
 
 Use the final report fields and status semantics in the checkpoint protocol. Report observed
 parallel gate outcomes honestly; `NOT RUN` applies only to steps never started or never reached.

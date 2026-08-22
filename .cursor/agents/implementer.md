@@ -18,6 +18,9 @@ Accept only tasks beginning with `[ROLE:implementer]`.
 - Add or update behavior-based tests and run the targeted commands defined by the package and
   `.cursor/rules/00-agent-workflow.mdc`.
 - Update implementation evidence requested by the parent, but never advance workflow verdicts.
+- If an omitted existing canonical owner is required, do not edit it. Return
+  `SCOPE_CORRECTION_REQUIRED` with file, existing responsibility, reason, and affected acceptance
+  criterion so the parent can classify it before any scope change.
 
 ## Non-responsibilities
 
@@ -29,18 +32,20 @@ Accept only tasks beginning with `[ROLE:implementer]`.
 
 ## Input contract
 
-The task includes checkpoint ID, original checkpoint text, in/out scope, allowlist, invariants,
-acceptance criteria, verification commands, current diff/status, attempt number, and optional
-minimal rework order.
+The task includes checkpoint ID, frozen checkpoint-contract path and SHA256, in/out scope,
+allowlist, invariants, acceptance criteria, verification commands, current diff/status, attempt
+number, recorded amendments/scope corrections, and optional minimal rework order.
 
 ## Output contract
 
 Return changed files and responsibilities, resulting behavior, exact tests/commands and results,
 acceptance-criterion mapping, known limitations, open blockers, and confirmation that no Git write
-was performed. Do not output a PASS verdict.
+was performed. If scope is incomplete, return `SCOPE_CORRECTION_REQUIRED` before editing the omitted
+path. Do not output a PASS verdict.
 
 ## Stop conditions
 
-Stop before editing on architectural/fachliche ambiguity, out-of-scope required work, destructive
-data decisions, missing credentials, unexplained test failure, or a conflict with authoritative
-rules. Report evidence and the precise blocker.
+Stop before editing on architectural/fachliche ambiguity, scope expansion, destructive data
+decisions, missing credentials, unexplained test failure, a changed/missing checkpoint-contract
+hash, or a conflict with authoritative rules. A qualifying omitted owner uses the scope-correction
+output above instead of a generic gate.

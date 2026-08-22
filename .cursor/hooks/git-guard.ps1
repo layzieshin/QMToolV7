@@ -14,11 +14,62 @@ $inputData = $raw | ConvertFrom-Json
 $command = [string]$inputData.command
 $lower = $command.ToLowerInvariant()
 
+# Narrow exception: synchronize a clean local main that is only behind origin/main.
+$safePull = $command -match '(?i)^\s*git(?:\.exe)?\s+pull\s+--ff-only(?:\s+origin\s+main)?\s*$'
+if ($safePull) {
+    $cwd = [string]$inputData.cwd
+    if (-not $cwd -or -not (Test-Path -LiteralPath $cwd -PathType Container)) {
+        Deny-Command "Safe pull denied: command working directory is unavailable."
+    }
+    $repositoryRoot = [string](& git -C $cwd rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $repositoryRoot) {
+        Deny-Command "Safe pull denied: repository root cannot be observed."
+    }
+    try {
+        $resolvedCwd = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $cwd).Path).TrimEnd('\', '/')
+        $resolvedRoot = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $repositoryRoot).Path).TrimEnd('\', '/')
+    } catch {
+        Deny-Command "Safe pull denied: repository path cannot be resolved."
+    }
+    if ($resolvedCwd -ne $resolvedRoot) {
+        Deny-Command "Safe pull denied: command cwd must be the repository root."
+    }
+    $branch = [string](& git -C $cwd branch --show-current 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $branch -ne "main") {
+        Deny-Command "Safe pull denied: current branch must be main."
+    }
+    $upstream = [string](& git -C $cwd rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $upstream -ne "origin/main") {
+        Deny-Command "Safe pull denied: main upstream must be origin/main."
+    }
+    $porcelain = @(& git -C $cwd status --porcelain=v1 --untracked-files=all 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $porcelain.Count -ne 0) {
+        Deny-Command "Safe pull denied: working tree and index must be completely clean."
+    }
+    $countsRaw = [string](& git -C $cwd rev-list --left-right --count HEAD...origin/main 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $countsRaw) {
+        Deny-Command "Safe pull denied: ahead/behind relationship cannot be observed."
+    }
+    $counts = @($countsRaw.Trim() -split '\s+')
+    if ($counts.Count -ne 2) {
+        Deny-Command "Safe pull denied: ahead/behind result is invalid."
+    }
+    $ahead = 0
+    $behind = 0
+    if (-not [int]::TryParse($counts[0], [ref]$ahead) -or
+        -not [int]::TryParse($counts[1], [ref]$behind) -or
+        $ahead -ne 0 -or $behind -lt 0) {
+        Deny-Command "Safe pull denied: local main is ahead or diverged from origin/main."
+    }
+    @{ permission = "allow" } | ConvertTo-Json -Compress | Write-Output
+    exit 0
+}
+
 # Repository-wide hard denials.
 if ($lower -match "\bgit\b[^;`r`n]*\bpush\b[^;`r`n]*(--force(?:-with-lease)?|-f(?:\s|$))") {
     Deny-Command "Force-push is forbidden."
 }
-if ($lower -match "\bgh\s+pr\s+merge\b[^;`r`n]*(?:--admin|--bypass|--force)") {
+if ($lower -match "\bgh(?:\.exe)?\s+pr\s+merge\b[^;`r`n]*(?:--admin|--bypass|--force)") {
     Deny-Command "Branch-protection bypass flags are forbidden."
 }
 
@@ -120,7 +171,7 @@ foreach ($match in $ghTopMatches) {
 }
 
 # Classify every gh pr invocation.
-$ghMatches = [regex]::Matches($command, '(?i)\bgh\s+pr\s+([a-z][a-z-]*)')
+$ghMatches = [regex]::Matches($command, '(?i)\bgh(?:\.exe)?\s+pr\s+([a-z][a-z-]*)')
 $readGh = @("checks", "view", "status", "list", "diff")
 $writeGh = @("create", "edit", "close", "reopen", "comment", "review", "ready", "merge")
 $hasGhWrite = $false
@@ -181,20 +232,53 @@ if (-not $stateWorkBranch -or $observedBranch -ne $stateWorkBranch) {
 if ($observedBranch -eq $baseBranch) {
     Deny-Command "Git write denied on the protected base branch."
 }
+$configPath = Join-Path $cwd ".cursor/agent-system.json"
+if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    Deny-Command "Git write denied: agent-system config is unavailable."
+}
+try {
+    $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+} catch {
+    Deny-Command "Git write denied: agent-system config is invalid."
+}
 
 $isCommit = $lower -match "\bgit\b[^;`r`n]*\bcommit\b"
 $isPush = $lower -match "\bgit\b[^;`r`n]*\bpush\b"
 $isFetch = $lower -match "\bgit\b[^;`r`n]*\bfetch\b"
 $isGitMerge = $lower -match "\bgit\b[^;`r`n]*\bmerge\b"
 $isIndexWrite = $lower -match "\bgit\b[^;`r`n]*\b(?:add|rm|mv)\b"
-$isPrCreateOrUpdate = $lower -match "\bgh\s+pr\s+(?:create|edit|close|reopen|comment|review|ready)\b"
-$isPrMerge = $lower -match "\bgh\s+pr\s+merge\b"
+$isPrCreateOrUpdate = $lower -match "\bgh(?:\.exe)?\s+pr\s+(?:create|edit|close|reopen|comment|review|ready)\b"
+$isPrComment = $lower -match "\bgh(?:\.exe)?\s+pr\s+comment\b"
+$isPrMerge = $lower -match "\bgh(?:\.exe)?\s+pr\s+merge\b"
 
 if (($isCommit -or $isIndexWrite) -and $phase -notin @("CHECKPOINT_GIT", "FINAL_GIT")) {
     Deny-Command "Commit/index writes are allowed only in CHECKPOINT_GIT or FINAL_GIT."
 }
 if (($isFetch -or $isGitMerge -or $isPrCreateOrUpdate) -and $phase -ne "FINAL_GIT") {
     Deny-Command "Fetch, merge, and pull-request writes are allowed only in FINAL_GIT."
+}
+
+if ($isPrComment) {
+    $codexReviewRequest = $lower -match '^\s*gh(?:\.exe)?\s+pr\s+comment\s+\d+\s+--body\s+(?:"@codex review"|''@codex review'')\s*$'
+    if (-not $codexReviewRequest) {
+        Deny-Command "PR comments are limited to the exact bounded @codex review request."
+    }
+    if (-not [bool]$config.external_review.enabled) {
+        Deny-Command "Codex review request denied: external review is disabled."
+    }
+    $externalState = $state.external_review
+    if ($null -eq $externalState) {
+        Deny-Command "Codex review request denied: external-review state is missing."
+    }
+    $externalStatus = [string]$externalState.status
+    if ($externalStatus -notin @("NOT_REQUESTED", "STALE")) {
+        Deny-Command "Codex review request denied: state must be NOT_REQUESTED or STALE."
+    }
+    $round = [int]$externalState.round
+    $maxRounds = [int]$config.external_review.max_review_rounds
+    if ($round -lt 0 -or $round -ge $maxRounds) {
+        Deny-Command "Codex review request denied: configured external-review round budget is exhausted."
+    }
 }
 
 if ($isPush) {
@@ -218,12 +302,12 @@ if ($isPrMerge) {
     if ($phase -ne "FINAL_GIT" -or -not $fullRegression -or -not $finalAudit -or -not $ciPass) {
         Deny-Command "PR merge denied: FINAL_GIT, full regression PASS, final audit PASS, CI PASS, and no HUMAN_GATE are required."
     }
-    $mergeMatch = [regex]::Match($lower, '^\s*gh\s+pr\s+merge\s+(\d+)\s+--squash\s*$')
+    $mergeMatch = [regex]::Match($lower, '^\s*gh(?:\.exe)?\s+pr\s+merge\s+(\d+)\s+--squash\s*$')
     if (-not $mergeMatch.Success) {
         Deny-Command "PR merge must use the exact form: gh pr merge <number> --squash."
     }
     $prNumber = $mergeMatch.Groups[1].Value
-    $prJson = (& gh pr view $prNumber --json headRefName,baseRefName,state 2>$null)
+    $prJson = (& gh pr view $prNumber --json headRefName,headRefOid,baseRefName,state 2>$null)
     if ($LASTEXITCODE -ne 0 -or -not $prJson) {
         Deny-Command "PR merge denied: pull-request head/base metadata could not be verified."
     }
@@ -236,6 +320,35 @@ if ($isPrMerge) {
         [string]$pr.baseRefName -ne $baseBranch -or
         [string]$pr.state -ne "OPEN") {
         Deny-Command "PR merge denied: PR must be OPEN with persisted work_branch as head and base_branch as base."
+    }
+    if ([bool]$config.external_review.enabled) {
+        $externalState = $state.external_review
+        if ($null -eq $externalState) {
+            Deny-Command "PR merge denied: external-review state is missing."
+        }
+        $externalStatus = [string]$externalState.status
+        $mergeableExternal = @("PASS", "BOUNDED_COMPLETE", "UNAVAILABLE", "LIMIT_REACHED", "DISABLED")
+        if ($externalStatus -notin $mergeableExternal) {
+            Deny-Command "PR merge denied: external review is not in a mergeable state."
+        }
+        if ($externalStatus -eq "PASS" -and
+            ([string]$externalState.reviewed_head -ne [string]$pr.headRefOid)) {
+            Deny-Command "PR merge denied: external PASS does not match the current PR head."
+        }
+        if ($externalStatus -eq "PASS" -and
+            @($externalState.blocking_findings).Count -ne 0) {
+            Deny-Command "PR merge denied: external PASS still contains blocking findings."
+        }
+        if ($externalStatus -eq "BOUNDED_COMPLETE" -and
+            ([int]$externalState.round -ne [int]$config.external_review.max_review_rounds -or
+             [string]$externalState.reviewed_head -or
+             @($externalState.blocking_findings).Count -ne 0)) {
+            Deny-Command "PR merge denied: BOUNDED_COMPLETE requires exhausted rounds, no reviewed head, and no open findings."
+        }
+        if ($externalStatus -in @("UNAVAILABLE", "LIMIT_REACHED") -and
+            [bool]$config.external_review.unavailability_blocks_merge) {
+            Deny-Command "PR merge denied: configured external-review unavailability policy blocks merge."
+        }
     }
 }
 

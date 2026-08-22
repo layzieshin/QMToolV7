@@ -1,15 +1,54 @@
 {
-  "version": 1,
+  "version": 2,
   "profile": "balanced",
   "defaults": {
     "max_checkpoint_reworks": 2,
     "max_final_audit_reworks": 2,
+    "max_escalation_reviews": 1,
     "max_reviewer_verification_passes": 1,
     "max_parallel_workers": 3,
     "stop_hook_loop_limit": 8,
     "local_only": true,
     "architecture_change_requires_human": true,
     "auto_merge_after_all_gates": true
+  },
+  "planning_quality": {
+    "enabled": true,
+    "automatic_challenge_risk_levels": [
+      "HIGH"
+    ],
+    "max_plan_challenge_rounds": 1,
+    "max_scope_correction_rounds": 1,
+    "require_requirement_traceability": true,
+    "require_risk_to_evidence": true,
+    "require_integration_scenario_for_interacting_checkpoints": true
+  },
+  "external_review": {
+    "enabled": true,
+    "provider": "github-codex",
+    "required_when_available": true,
+    "unavailability_blocks_merge": false,
+    "max_review_rounds": 2,
+    "max_rework_batches": 2,
+    "max_review_requests_per_round": 1,
+    "max_triage_passes_per_round": 1,
+    "wait_seconds": 300,
+    "poll_interval_seconds": 30,
+    "statuses": [
+      "NOT_REQUESTED",
+      "PENDING",
+      "PASS",
+      "FINDINGS",
+      "STALE",
+      "BOUNDED_COMPLETE",
+      "UNAVAILABLE",
+      "LIMIT_REACHED",
+      "DISABLED"
+    ],
+    "review_author_logins": [
+      "chatgpt-codex-connector",
+      "chatgpt-codex-connector[bot]"
+    ]
   },
   "workflow_contract": {
     "statuses": [
@@ -71,7 +110,8 @@
         "edit only the current checkpoint scope",
         "add or update required tests",
         "run targeted verification",
-        "perform a concrete reviewer-assigned rework"
+        "perform a concrete reviewer-assigned rework",
+        "report a required correction to an incomplete allowlist before editing"
       ],
       "forbidden_responsibility": [
         "expand scope or change architecture",
@@ -119,13 +159,47 @@
         "create checkpoint commits",
         "push the work-package branch",
         "create or update the final pull request",
-        "inspect checks and merge after all final gates"
+        "inspect checks and external review state",
+        "request one configured GitHub Codex review round when instructed",
+        "merge after all final gates"
       ],
       "forbidden_responsibility": [
         "modify product or test code",
+        "decide or repair external review findings",
+        "use Codex to modify source code",
         "resolve fachliche merge conflicts",
         "bypass branch protection or required checks",
         "force-push, rebase, or push to the base branch"
+      ]
+    },
+    "plan-challenger": {
+      "model": "gpt-5.6-terra",
+      "purpose": "Perform a bounded independent pre-mortem of a decision-ready plan before implementation.",
+      "allowed_responsibility": [
+        "challenge requirement interpretation and evidence coverage",
+        "identify realistic high-risk failure modes and cross-checkpoint seams",
+        "request the smallest material plan correction"
+      ],
+      "forbidden_responsibility": [
+        "edit code, tests, planning documents, or workflow state",
+        "replace established architecture with preferences",
+        "request optional refactoring or general hardening",
+        "start another challenger or review loop"
+      ]
+    },
+    "external-review-triager": {
+      "model": "gpt-5.6-terra",
+      "purpose": "Independently classify GitHub Codex findings against the current pull-request head and authoritative package evidence.",
+      "allowed_responsibility": [
+        "verify all external findings against the current PR head and diff",
+        "classify materiality and current-head relevance",
+        "produce one minimal bundled external rework order for confirmed blockers"
+      ],
+      "forbidden_responsibility": [
+        "edit source, tests, evidence, or workflow state",
+        "accept external findings as truth without verification",
+        "request Codex source-code changes",
+        "commit, push, comment, review, or merge"
       ]
     }
   }

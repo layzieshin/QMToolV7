@@ -18,34 +18,17 @@ Before changing code, read the relevant canonical docs:
 - `docs/TEST_SMOKE_GATES.md` (P0 verification gates)
 - `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (active Web/PostgreSQL transition steering)
 
-Architecture pointers (details live in the docs above):
+Always preserve these boundaries: business logic in owning module services; external module access
+through `modules/<name>/api.py`; backend as thin `/api/v1` transport; authorization in services;
+productive persistence PostgreSQL-only; new UI only in `webclient/*` after WEB00; no new PyQt/Tk
+product work; no duplicate API/service/persistence/entrypoint path. The P0 documents above own the
+detailed contracts and exceptions.
 
-- Fachliche business logic belongs in `modules/*` services only; `qm_platform/*` is platform/runtime infrastructure, not domain logic. Keep webclient, legacy PyQt widgets, and CLI parsers thin.
-- External Python access to a module goes through `modules/<name>/api.py`; do not add new imports from module internals.
-- Runtime ports, capabilities, settings contributions, and domain events are integration mechanisms, not alternative import surfaces.
-- `src/backend/*` is a transport host; public backend imports go through `src/backend/api.py`.
-- New feature order: service + public API + HTTP `/api/v1` contract + tests, then `webclient/` adapter after WEB00. CLI is an operator/test adapter.
-- New productive persistence is PostgreSQL-only; no SQLite product fallback.
-- GUI source of truth for new UI is `webclient/*` (`docs/GUI_SOURCE_OF_TRUTH.md`). PyQt/Tk are frozen legacy/reference — no new product UI work.
-- Before roadmap/backend/multiuser/Web-PostgreSQL work, check `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` and `docs/MASTER_ORCHESTRATION_ROADMAP.md`.
-- Do not combine multiple roadmap checkpoints in one implementation diff or commit. An explicitly
-  authorized AP-029 macro may orchestrate several checkpoints serially only when every checkpoint
-  keeps its own allowlist, evidence, reviewer verdict and local commit and the macro stops on the
-  first unresolved checkpoint.
-- Do not invent npm/Vite commands until WEB00 lands them in-repo.
+## Environment
 
-## Environment (this repo)
-
-- OS/shell: Windows / PowerShell — chain commands with `;`, not `&&`.
-- Python `3.14.x`; use the workspace venv explicitly:
-  `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest`.
-- Destructive PostgreSQL live tests (`@pytest.mark.postgres`): follow
-  [`AGENTS.md` — Destructive PostgreSQL live tests (Slot 2)](../AGENTS.md#destructive-postgresql-live-tests-slot-2)
-  end-to-end. Slot 2 only (`QMTOOL_PG_TEST_*`); never Slot 1 lab (`192.168.0.4`).
-  Check `.env` for all three Slot 2 keys; if missing, run
-  `scripts/provision_j04_destructive_postgres.py --local-trust-bootstrap`.
-  Run tests only via `scripts/run_postgres_live_tests.py` (preflight exit **2** =
-  missing Slot 2 config). Never bare `pytest -m postgres`.
+Use Windows/PowerShell, Python 3.14 and the workspace `.venv` exactly as documented in `AGENTS.md`.
+For destructive PostgreSQL tests, the complete Slot 2 procedure in `AGENTS.md` is mandatory; never
+use the Runtime/Lab target or invoke bare `pytest -m postgres`.
 
 ## Phase 0: Scope classification
 
@@ -120,22 +103,20 @@ entrypoint, public API or public surface, module, service, persistence path, or 
 For other clearly scoped tasks, implementation may continue after the plan unless the user requested
 a separate approval step.
 
+Exception for an authorized autonomous run: when `.cursor/runtime/workflow-state.json` is
+`status=RUNNING`, identifies the concrete approved package, and the user started it with
+`/execute-work-package <WP-ID>`, that invocation is the implementation-plan approval for its
+decision-ready checkpoints. Do not request another general Phase-2 approval for each persistence,
+backend, migration, security or public-surface step. Only the HUMAN_GATEs defined by the active
+work-package contracts may interrupt that run. A missing requirement source, material contract
+amendment or new architecture decision still triggers the applicable HUMAN_GATE.
+
 ## Phase 3: Step-by-step implementation
 
 Execute exactly one planned step at a time. Keep each step small and reviewable; do not begin the
-next step until the current step is verified. Use the smallest relevant verification:
-
-| Change area | Command |
-| --- | --- |
-| Platform/runtime | `.\.venv\Scripts\python.exe -m pytest tests/platform -q` |
-| Module service/logic | `.\.venv\Scripts\python.exe -m pytest tests/modules -q` or targeted PowerShell `.\.venv\Scripts\python.exe -m pytest @((Get-ChildItem -Path tests/modules -Filter 'test_<module>_*.py').FullName) -q` (do not pass unexpanded `*.py` globs; PowerShell and pytest will not expand them) |
-| Docs / governance | `.\.venv\Scripts\python.exe -m pytest tests/docs -q` |
-| Legacy PyQt adapter (frozen regression) | `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q` |
-| CLI flow | `.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -q` |
-| Backend host | `.\.venv\Scripts\python.exe -m src.backend` and `GET /health` when the server is running |
-| Runtime smoke | `.\.venv\Scripts\python.exe -m interfaces.cli.main health` |
-| Stricter runtime check | `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor --strict` |
-| Web foundation (after WEB00) | use checkpoint-defined commands; do not invent npm/Vite steps before WEB00 |
+next step until it is verified. Select targeted and broader commands from
+`docs/TEST_SMOKE_GATES.md`, the owning package, and `AGENTS.md`; do not invent missing toolchains or
+unexpanded PowerShell globs. For new behavior, update behavior-based tests.
 
 For behavior changes, add or update tests before considering the step complete. Stop on newly
 introduced failures; do not broaden scope to fix unrelated failures or rewrite unrelated code while
@@ -172,23 +153,11 @@ Apply these rules:
 
 ## Phase 5: Broader verification
 
-Run targeted checks after every implementation step. Before finalizing, run the broader relevant
-layer suite unless it is clearly too expensive; explain every skipped applicable gate.
-
-- Full layer runs: `.\.venv\Scripts\python.exe -m pytest tests/platform -q`,
-  `.\.venv\Scripts\python.exe -m pytest tests/modules -q`,
-  `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q`,
-  `.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -q`
-- Run applicable architecture gates when changing public surfaces, imports, entrypoints, module
-  boundaries, GUI actions, backend boundaries, or runtime registration.
-- Packaging impact only: `.\.venv\Scripts\python.exe packaging/build_onedir.py`
-- Release or migration impact only:
-  `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
-  and the applicable migration gate documented in `docs/TEST_SMOKE_GATES.md` or the owning P0
-  operations document.
-
-This repo has no configured linter, formatter, typechecker, security scanner, or pre-commit command.
-Do not invent such verification steps.
+Run targeted checks after every implementation step and the broader applicable layer,
+architecture, packaging, release or migration gates before finalization. The exact matrix lives in
+`docs/TEST_SMOKE_GATES.md` and the owning package. Explain every skipped applicable gate. This repo
+has no configured linter, formatter, typechecker, security scanner or pre-commit command; do not
+invent one.
 
 ## Phase 6: Adversarial final review
 
@@ -201,10 +170,11 @@ authorization), the primary Cursor agent owns the complete review loop. After th
 and its verification, invoke `checkpoint-reviewer` as a native Cursor Task/subagent and pass
 the original plan, complete work report, actual diff/status and available primary evidence directly.
 Never ask the user to copy, paste, forward or relay a report between agents.
+The macro remains serial and stops at the first unresolved checkpoint.
 
-If the reviewer returns `FAIL`, apply only its bounded minimal order within the shared limit of two
-reworks, rerun affected verification, and invoke a fresh reviewer Task. After a further FAIL, use
-exactly one escalation review. On `PASS`, return one consolidated final report; escalation FAIL
+If the reviewer returns `FAIL`, apply only its bounded minimal order within the configured rework
+budget, rerun affected verification, and invoke a fresh reviewer Task. After exhaustion, use the
+configured escalation-review budget. On `PASS`, return one consolidated final report; escalation FAIL
 sets `BLOCKED_HUMAN`.
 
 For all other implementation tasks, keep the general adversarial review above: use a subagent or
@@ -232,64 +202,18 @@ Correct every discovered violation and repeat applicable verification before com
 
 ## Phase 7: Definition of Done
 
-This is the authoritative Definition of Done for implementation tasks. The task may be declared
-complete only when every applicable item is satisfied. Mark non-applicable items `N/A` and explain
-why; if an applicable item is not satisfied, do not declare completion.
+Declare completion only when every applicable item below is satisfied; mark `N/A` with a reason:
 
-### Scope
-
-- The implementation matches the explicit task.
-- No unrelated roadmap package was started.
-- No unrelated refactoring was included.
-- The final changed-file list matches the approved plan, or every deviation is justified.
-
-### Ownership and architecture
-
-- The existing owner was extended where appropriate.
-- No parallel implementation path was introduced.
-- No unauthorized entrypoint or public surface was created.
-- Module boundaries remain intact.
-- Business logic remains in the owning module service or use-case layer.
-- Authorization remains enforced in the service layer.
-- Backend transport remains free of domain logic and direct domain persistence.
-- Runtime registration still uses the canonical composition root.
-
-### Behavior
-
-- Acceptance criteria are demonstrably satisfied.
-- Error paths and permission paths are covered where applicable.
-- Persistence and restart behavior were checked where applicable.
-- Existing behavior outside scope was not silently changed.
-- No TODO, placeholder, mock, skipped branch, or disabled test is presented as completion.
-
-### Verification
-
-- Targeted verification passed after every implementation step.
-- Broader applicable layer verification passed.
-- Applicable architecture gates passed.
-- Packaging, release, or migration gates passed when relevant.
-- Every skipped gate is explicitly justified.
-- Exact commands and results are recorded.
-
-### Review
-
-- The final diff was reviewed adversarially.
-- No duplicate entrypoint, action, API, service, wrapper, helper, or persistence path remains.
-- No module-internal import was added outside an explicitly allowed boundary.
-- No broad exception handler hides a failure.
-- No test was weakened solely to obtain a passing result.
-- No unrelated file was modified by the current task.
-- Pre-existing working-tree changes remained untouched.
-
-### Reporting
-
-The final response must include:
-
-1. summary of implemented behavior
-2. final execution path
-3. changed files with responsibility
-4. verification commands and results
-5. Definition of Done checklist
-6. known limitations
-7. remaining unrelated findings
-8. explicit statement about whether new public surfaces or parallel paths were introduced
+- **Scope:** explicit task and changed-file set match; no unrelated package/refactor or foreign
+  work was touched.
+- **Ownership/architecture:** existing owner extended; no duplicate path or unauthorized public
+  surface; module, service-auth, backend-transport and composition boundaries intact.
+- **Behavior:** observable criteria, relevant negative/permission/restart paths and compatibility
+  are proven; no TODO, placeholder, mock, skip or disabled test is presented as complete.
+- **Verification:** targeted and broader applicable gates passed; exact commands/results and every
+  justified omission are recorded.
+- **Review:** adversarial diff review found no hidden fallback, broad swallowed failure, weakened
+  test, internal-boundary bypass, unrelated change, or parallel implementation.
+- **Reporting:** summarize behavior and execution path, changed files/responsibilities, verification,
+  limitations, unrelated findings, DoD status, and whether any public surface, service, entrypoint,
+  wrapper, helper, user action or persistence path was introduced.
