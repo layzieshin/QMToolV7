@@ -1095,9 +1095,11 @@ def _validate_schema_contracts(
         str(row[0])
         for row in conn.execute(
             """
-            SELECT constraint_name
-            FROM information_schema.table_constraints
-            WHERE table_schema = %s AND constraint_type = 'CHECK'
+            SELECT con.conname
+            FROM pg_constraint con
+            JOIN pg_namespace ns ON ns.oid = con.connamespace
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            WHERE ns.nspname = %s AND con.contype = 'c'
             """,
             (SCHEMA_NAME,),
         ).fetchall()
