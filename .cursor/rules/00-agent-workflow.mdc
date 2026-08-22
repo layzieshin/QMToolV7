@@ -16,16 +16,23 @@ Before changing code, read the relevant canonical docs:
 - `docs/ARCHITECTURE_REFACTOR_CANONICAL.md` (P0 architecture boundaries)
 - `docs/MODULE_INTEGRATION_POLICY.md` (P0 onboarding and integration rules)
 - `docs/TEST_SMOKE_GATES.md` (P0 verification gates)
+- `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (active Web/PostgreSQL transition steering)
 
 Architecture pointers (details live in the docs above):
 
-- Fachliche business logic belongs in `modules/*` services only; `qm_platform/*` is platform/runtime infrastructure, not domain logic. Keep PyQt widgets and CLI parsers thin.
+- Fachliche business logic belongs in `modules/*` services only; `qm_platform/*` is platform/runtime infrastructure, not domain logic. Keep webclient, legacy PyQt widgets, and CLI parsers thin.
 - External Python access to a module goes through `modules/<name>/api.py`; do not add new imports from module internals.
 - Runtime ports, capabilities, settings contributions, and domain events are integration mechanisms, not alternative import surfaces.
 - `src/backend/*` is a transport host; public backend imports go through `src/backend/api.py`.
-- Verify features CLI-first before GUI integration.
-- Before roadmap/backend/multiuser work, check `docs/MASTER_ORCHESTRATION_ROADMAP.md`.
-- Do not combine multiple roadmap packages in one implementation task.
+- New feature order: service + public API + HTTP `/api/v1` contract + tests, then `webclient/` adapter after WEB00. CLI is an operator/test adapter.
+- New productive persistence is PostgreSQL-only; no SQLite product fallback.
+- GUI source of truth for new UI is `webclient/*` (`docs/GUI_SOURCE_OF_TRUTH.md`). PyQt/Tk are frozen legacy/reference — no new product UI work.
+- Before roadmap/backend/multiuser/Web-PostgreSQL work, check `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` and `docs/MASTER_ORCHESTRATION_ROADMAP.md`.
+- Do not combine multiple roadmap checkpoints in one implementation diff or commit. An explicitly
+  authorized AP-029 macro may orchestrate several checkpoints serially only when every checkpoint
+  keeps its own allowlist, evidence, reviewer verdict and local commit and the macro stops on the
+  first unresolved checkpoint.
+- Do not invent npm/Vite commands until WEB00 lands them in-repo.
 
 ## Environment (this repo)
 
@@ -115,11 +122,13 @@ next step until the current step is verified. Use the smallest relevant verifica
 | --- | --- |
 | Platform/runtime | `.\.venv\Scripts\python.exe -m pytest tests/platform -q` |
 | Module service/logic | `.\.venv\Scripts\python.exe -m pytest tests/modules -q` or targeted PowerShell `.\.venv\Scripts\python.exe -m pytest @((Get-ChildItem -Path tests/modules -Filter 'test_<module>_*.py').FullName) -q` (do not pass unexpanded `*.py` globs; PowerShell and pytest will not expand them) |
-| PyQt/GUI adapter | `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q` |
+| Docs / governance | `.\.venv\Scripts\python.exe -m pytest tests/docs -q` |
+| Legacy PyQt adapter (frozen regression) | `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q` |
 | CLI flow | `.\.venv\Scripts\python.exe -m pytest tests/e2e_cli -q` |
 | Backend host | `.\.venv\Scripts\python.exe -m src.backend` and `GET /health` when the server is running |
 | Runtime smoke | `.\.venv\Scripts\python.exe -m interfaces.cli.main health` |
 | Stricter runtime check | `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor --strict` |
+| Web foundation (after WEB00) | use checkpoint-defined commands; do not invent npm/Vite steps before WEB00 |
 
 For behavior changes, add or update tests before considering the step complete. Stop on newly
 introduced failures; do not broaden scope to fix unrelated failures or rewrite unrelated code while
@@ -179,6 +188,22 @@ Do not invent such verification steps.
 After implementation and before declaring success, inspect the final diff as if another agent had
 written it. If subagents or a separate review agent are available, use one; otherwise perform a
 fresh explicit review pass.
+
+For an explicitly authorized AP-029 macro or checkpoint (`$execute-gated-macro` or equivalent named
+authorization), the primary Cursor agent owns the complete review loop. After the authorized work
+and its verification, invoke `qmtool-evidence-reviewer` as a native Cursor Task/subagent and pass
+the original plan, complete work report, actual diff/status and available primary evidence directly.
+Never ask the user to copy, paste, forward or relay a report between agents.
+
+If the reviewer returns `REMEDIATION_REQUIRED` for a bounded, authorized correction, apply it once,
+rerun the affected verification and invoke a fresh reviewer Task. On `PASS`, return one consolidated
+final report. On `USER_DECISION_REQUIRED`, `BLOCKED` or `FAILED`, stop and report the finding without
+widening scope or authorization.
+
+For all other implementation tasks, keep the general adversarial review above: use a subagent or
+separate review agent when available, otherwise perform a fresh explicit review pass. Do not invoke
+`qmtool-evidence-reviewer` or impose AP-029 checkpoint evidence unless the task is explicitly
+authorized as part of that macro.
 
 Check for:
 

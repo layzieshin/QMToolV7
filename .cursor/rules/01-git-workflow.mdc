@@ -53,15 +53,23 @@ Never use:
 Do not use `git add .` or other blanket staging. Stage only the exact files intended for the
 commissioned commit, by explicit path.
 
-## Commit, push, PR, and branch deletion
+## Commit authorization and external Git actions
 
-These actions are **user-gated**:
+An explicit user request to implement or change repository files includes authorization for the
+corresponding local commit on a suitable non-`main` task branch after all required gates pass and
+the exact staged path list has been verified. Do not ask for a second commit confirmation unless
+the user explicitly opted out of committing or asked to stop before the commit.
+
+This implicit local-commit authorization does not apply to analysis, review, diagnosis, status,
+planning, or recommendation-only requests. It never widens the commissioned file or behavior
+scope. Push, pull request, merge, and branch deletion remain separately user-gated.
 
 | Action | Allowed only when |
 | --- | --- |
-| Commit | User explicitly asks to commit |
+| Local commit | Included in an explicitly commissioned implementation after green gates and exact-path staging; or when the user explicitly asks to commit. Never commit directly on `main` |
 | Push | User explicitly asks to push; never push to `main` |
 | Pull request | User explicitly asks to create a PR; base branch must be `main` |
+| Merge | User explicitly asks to merge and the applicable review/CI requirements are satisfied |
 | Branch deletion | User explicitly asks. Normally only after confirmed integration into `main`. An unmerged branch may be deleted only on an explicit, unambiguous delete instruction, after warning that the work will be lost |
 
 Before commit, push, or PR, inspect:
@@ -82,5 +90,6 @@ In the final response for work that touched Git, state explicitly:
 - whether a push occurred (and remote/branch)
 - whether a PR was created (and URL if so)
 
-If none of commit/push/PR were requested, say that Git write actions were left undone pending
-explicit user approval.
+For an explicitly commissioned implementation, create and report the eligible local commit unless
+the user opted out or a required gate failed. If the request was analysis/review-only, or none of
+push/PR were requested, leave those actions undone and report that boundary explicitly.

@@ -1,7 +1,8 @@
 # Architecture Refactor — Canonical Document
 
-Status: **P0 — kanonisch, verbindlich**  
+Status: **P0 — kanonisch, verbindlich**
 Ablösung von: `docs/SRP_REFACTOR_ROADMAP.md` und `docs/TRACK_B_SRP_PREP.md` (beide jetzt P2/History)
+Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 
 ---
 
@@ -31,9 +32,14 @@ Ablösung von: `docs/SRP_REFACTOR_ROADMAP.md` und `docs/TRACK_B_SRP_PREP.md` (be
    Boundary-Schulden und werden in einem separaten Cleanup-Track auf `api.py` umgestellt.
    Neue externe Imports aus Modul-Internals dürfen nicht mehr dazukommen.
 
-2. **Adapter bleiben Adapter**  
-   `interfaces/cli/*` und `interfaces/pyqt/*` sammeln Eingaben, rufen Ports/APIs auf, rendern Ergebnisse.  
-   Sie tragen keine Workflow-Regeln, greifen nicht auf Repositories zu und konvertieren keine Dateien fachlich.
+2. **Adapter bleiben Adapter**
+   Aktive Adapter für neue Arbeit: `webclient/*` (geplant ab WEB00; noch nicht implementiert)
+   und `interfaces/cli/*` (Operator-/Testadapter). Sie sammeln Eingaben, rufen Ports/APIs
+   bzw. `/api/v1` auf und rendern Ergebnisse. Sie tragen keine Workflow-Regeln, greifen
+   nicht auf Repositories zu und konvertieren keine Dateien fachlich.
+   `interfaces/pyqt/*` ist ein **eingefrorener Legacy-Adapter** (keine neue Produktarbeit,
+   keine neuen Contributions). Historische PyQt-Hotspots unten sind Inventar/Referenz und
+   geben **keine** neue PyQt-Produktarbeit frei.
 
 3. **Backend-Host bleibt Transport**
    `src/backend/*` ist ein separater Backend-Host und kein Fachmodul. Seine öffentliche
@@ -42,10 +48,11 @@ Ablösung von: `docs/SRP_REFACTOR_ROADMAP.md` und `docs/TRACK_B_SRP_PREP.md` (be
    Request-/Response-Serialisierung, Prozessstart und Healthchecks enthalten, aber keine
    Businesslogik, GUI-/CLI-Logik oder direkte Repository-/Storage-Zugriffe fachlicher
    Module. Fachliche Use Cases werden nur über öffentliche Modul-APIs angebunden, wenn
-   die jeweilige Backend-Phase ausdrücklich freigegeben ist.
+   die jeweilige Backend-Phase ausdrücklich freigegeben ist. Die kanonische HTTP-Grenze
+   für Browserclients ist `/api/v1` (AP-029).
 
 4. **Godfile-Regel**
-   Eine Datei = eine technische Verantwortung.  
+   Eine Datei = eine technische Verantwortung.
    Verbotene Mischungen: Parser+Dispatch+Rendering, Widget+Dateisystem+Workflow, Service+Eventing+Storage-Details.
 
 5. **Fassade statt Monolith**
@@ -64,11 +71,14 @@ Ablösung von: `docs/SRP_REFACTOR_ROADMAP.md` und `docs/TRACK_B_SRP_PREP.md` (be
 
 ## Hotspot-Verantwortungsmatrix
 
+Historische PyQt-Zeilen sind **Legacy-Inventar** (frozen). Neue Produkt-UI-Arbeit gehört
+nicht in diese Hotspots, sondern in `webclient/` nach WEB00.
+
 | Datei | Aktuelle Vermischung | Ziel-Schnitt | Erlaubte Schnittstelle |
 |---|---|---|---|
 | `interfaces/cli/main.py` | Parsing + Bootstrap + Auth + Dispatch + Rendering + Fachlogik | Nur Entry-Point, delegiert an Handler | Nur über `api.py`-Ports |
-| `interfaces/pyqt/contributions/documents_workflow_view.py` | Contribution + Widget + Tabelle + Dialoge + Artefaktpfade + Signaturen + Workflow-Actions | `contribution.py` + Teilwidgets + Dialoge + Presenter | Nur über Presenter/Ports |
-| `interfaces/pyqt/contributions/settings_view.py` | Mehrere eigenständige Bereiche in einer Datei | Contribution + je Widget pro Bereich | Presenter je Bereich |
+| `interfaces/pyqt/contributions/documents_workflow_view.py` (legacy/frozen) | Contribution + Widget + Tabelle + Dialoge + Artefaktpfade + Signaturen + Workflow-Actions | historischer Schnitt; keine neuen Contributions | Nur über Presenter/Ports |
+| `interfaces/pyqt/contributions/settings_view.py` (legacy/frozen) | Mehrere eigenständige Bereiche in einer Datei | historischer Schnitt; keine neuen Contributions | Presenter je Bereich |
 | `modules/documents/service.py` | Workflow + Artefakte + Dateinamen + Release-PDF + Signatur-Gates + Registry-Sync + Events + Validierung | Fassade + `workflow_ops.py`, `artifact_ops.py`, `query_ops.py`, `validation.py`, `signature_guard.py`, `eventing.py`, `registry_sync.py`, `naming.py` | Öffentlicher Vertrag stabil |
 | `modules/signature/service.py` | Ausführung + Templates + Assets + Policy + Audit + PDF-Rendering | Fassade + `execute_ops.py`, `template_ops.py`, `asset_ops.py`, `policy.py`, `audit.py`, `pdf_rendering.py` | Öffentlicher Vertrag stabil |
 | `modules/usermanagement/service.py` | Auth + Session-Persistenz + Nutzerverwaltung | `auth_ops.py`, `user_admin_ops.py`, `session_store.py` | Öffentlicher Vertrag stabil |

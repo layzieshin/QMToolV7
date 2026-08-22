@@ -1,20 +1,32 @@
 # GUI Source Of Truth
 
-Status: Canonical (P0)  
-Valid from: 2026-04-13  
+Status: Canonical (P0)
+Valid from: 2026-08-21
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
+Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 
-Die einzige aktive GUI-Quelle für QMToolV7 ist:
+Die einzige **neue** UI-Source-of-Truth für QMToolV7 ist:
 
-- `interfaces/pyqt/*`
+- `webclient/*`
+
+Stand GOV00 / vor WEB00: das Verzeichnis und die produktive Web-UI sind **noch nicht
+implementiert**. Es darf keine nicht vorhandene Webfunktion als bereits geliefert
+dargestellt werden.
 
 ## Verbindliche Regel
 
-- Neue GUI-Features, Refactorings und UX-Arbeit erfolgen ausschließlich im PyQt-Baum.
-- `interfaces/gui/*` (Tk MVP) bleibt nur für Legacy-/Kompatibilitätstests bestehen.
-- Es darf keine fachliche GUI-Weiterentwicklung in parallelen GUI-Bäumen geben.
+- Neue Endbenutzer-UI, UX und Frontend-Arbeit erfolgen ausschließlich unter `webclient/*`
+  (Vue 3 + TypeScript, Vite; Vuetify hinter einer QM-eigenen Komponentenschicht; zentrale SPA).
+- Fachmodule liefern **keine** eigenen Frontend-Bundles.
+- `interfaces/pyqt/*` und `interfaces/gui/*` (Tk) sind **frozen Legacy/Reference**:
+  keine weitere Produktentwicklung, kein zukünftiger Pilotbetrieb, keine neuen PyQt-Contributions.
+- Es darf keinen parallelen fachlichen Workflow in PyQt und Web geben.
 
 ## Konsequenz für Entwicklung
 
-- Navigation, Contributions und Widgets werden nur in `interfaces/pyqt` gepflegt.
-- Build und Test fokussieren auf den PyQt-Entry (`.\.venv\Scripts\python.exe -m interfaces.pyqt`) sowie `packaging/dist_output/QM-Tool/QM-Tool.exe`.
+- Bis WEB00 existiert kein neuer produktiver Endbenutzerclient.
+- Historische PyQt-Implementierung und -Tests bleiben als Referenz/Regression erhalten,
+  sind aber keine Onboarding-Anweisung für neue Produkt-UI.
+- Neue Features: Service/`modules/*/api.py`/HTTP-Vertrag und Tests zuerst; Webclient-Adapter
+  erst nach WEB00 und nur über `/api/v1`.
+- Build-/Smoke-Befehle für PyQt beschreiben den **Legacy-Ist-Pfad**, nicht die Zielarchitektur.

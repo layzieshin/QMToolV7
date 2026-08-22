@@ -1,10 +1,26 @@
 # Modules Developer Guide
 
-Status: Canonical (P0)  
-Valid from: 2026-04-13  
+Status: Canonical (P0)
+Valid from: 2026-08-21
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
 
-This guide summarizes each module for implementation and extension work.
+## Transition / target architecture note (binding)
+
+Active transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`.
+
+For **new** product work the binding target contracts are:
+
+- productive persistence: PostgreSQL-only (no SQLite product fallback)
+- public Python boundary: `modules/<module>/api.py`
+- browser HTTP boundary: `/api/v1` (after WEB00)
+- end-user UI: central `webclient/` SPA only (WEB00 not implemented yet)
+- PyQt/Tk: frozen legacy/reference — no new product UI
+
+Sections below that describe SQLite paths, PyQt contributions, or desktop session files are
+**Ist-/Legacy-Inventar** for the current codebase. They remain useful for understanding
+today's owners and must not be read as permission to extend those product paths.
+Do not rewrite historical module tables wholesale in GOV00; follow AP-029 and P0 target
+contracts when changing behavior.
 
 **New module onboarding checklist:** `docs/MODULE_INTEGRATION_POLICY.md`
 
