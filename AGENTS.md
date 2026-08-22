@@ -70,6 +70,26 @@ and supplemented by `.cursor/rules/02-autonomous-work-package.mdc`.
 When a task requires `@pytest.mark.postgres` live tests, follow this section end-to-end.
 Do **not** run bare `pytest -m postgres` — the runner is mandatory.
 
+### Stale checkout and Git worktrees
+
+Agents read files from the **opened workspace root only** — not from another clone path on disk.
+
+If this Slot 2 section or `scripts/provision_j04_destructive_postgres.py` is missing, the checkout
+is stale (common on long-lived feature branches or secondary worktrees such as `QMToolV7-main-clean`):
+
+```powershell
+git fetch origin
+git merge origin/main
+```
+
+If `git checkout main` fails with **already used by worktree**, `main` is checked out in another
+folder (for example `I:\Projekte\QMToolV7`). Either open that workspace, or stay on the current
+branch and merge `origin/main` as above.
+
+`.env` is **gitignored and per clone** — each workspace needs its own three `QMTOOL_PG_TEST_*` keys.
+Re-running the provision script in one clone **rotates the test-admin password**; other clones need
+a matching DSN update or their own re-provision before preflight will pass.
+
 ### Two slots (do not mix)
 
 | Slot | Variables | Purpose |

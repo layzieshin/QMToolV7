@@ -11,7 +11,8 @@ instances such as `qmtool_app`.
 Follow that section end-to-end before running any `@pytest.mark.postgres` test: check the three
 `QMTOOL_PG_TEST_*` keys in gitignored `.env`, provision if missing, then run only via
 `scripts/run_postgres_live_tests.py` (never bare `pytest -m postgres`). Preflight exit **2** means
-Slot 2 is not configured.
+Slot 2 is not configured. If this section or `scripts/provision_j04_destructive_postgres.py` is
+missing, merge `origin/main` (see AGENTS.md — *Stale checkout and Git worktrees*).
 
 This README is the operator reference for cluster identity, local bootstrap, optional Compose,
 CI, and safety details.
