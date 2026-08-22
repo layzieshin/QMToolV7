@@ -48,6 +48,12 @@ Push, pull request, merge, and branch deletion remain separately user-gated. Cre
 feature branch for an explicitly commissioned change remains allowed and expected when required by
 the Git workflow rule.
 
+For an approved larger package, the user may explicitly invoke `/execute-work-package <WP-ID>`.
+That Cursor-native workflow, its role separation, bounded review loops, local runtime state, and
+HUMAN_GATEs are documented in
+[`docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`](docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md)
+and supplemented by `.cursor/rules/02-autonomous-work-package.mdc`.
+
 ## Environment (this repo)
 
 - OS/shell: Windows / PowerShell — chain commands with `;`, not `&&`.

@@ -191,18 +191,18 @@ fresh explicit review pass.
 
 For an explicitly authorized AP-029 macro or checkpoint (`$execute-gated-macro` or equivalent named
 authorization), the primary Cursor agent owns the complete review loop. After the authorized work
-and its verification, invoke `qmtool-evidence-reviewer` as a native Cursor Task/subagent and pass
+and its verification, invoke `checkpoint-reviewer` as a native Cursor Task/subagent and pass
 the original plan, complete work report, actual diff/status and available primary evidence directly.
 Never ask the user to copy, paste, forward or relay a report between agents.
 
-If the reviewer returns `REMEDIATION_REQUIRED` for a bounded, authorized correction, apply it once,
-rerun the affected verification and invoke a fresh reviewer Task. On `PASS`, return one consolidated
-final report. On `USER_DECISION_REQUIRED`, `BLOCKED` or `FAILED`, stop and report the finding without
-widening scope or authorization.
+If the reviewer returns `FAIL`, apply only its bounded minimal order within the shared limit of two
+reworks, rerun affected verification, and invoke a fresh reviewer Task. After a further FAIL, use
+exactly one escalation review. On `PASS`, return one consolidated final report; escalation FAIL
+sets `BLOCKED_HUMAN`.
 
 For all other implementation tasks, keep the general adversarial review above: use a subagent or
 separate review agent when available, otherwise perform a fresh explicit review pass. Do not invoke
-`qmtool-evidence-reviewer` or impose AP-029 checkpoint evidence unless the task is explicitly
+`checkpoint-reviewer` or impose AP-029 checkpoint evidence unless the task is explicitly
 authorized as part of that macro.
 
 Check for:

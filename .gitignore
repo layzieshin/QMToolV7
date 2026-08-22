@@ -43,6 +43,10 @@ storage/
 *.sqlite
 !tests/fixtures/database_migrations/**/*.db
 
+# Cursor-native local work-package runtime
+.cursor/runtime/workflow-state.json
+.cursor/runtime/*.log
+
 # OS
 .DS_Store
 Thumbs.db
