@@ -185,7 +185,9 @@ reviewer, never a replacement for checkpoint reviews, integration, regression, f
 2. Reuse an existing Codex review only when it covers the current PR head. If none exists and the
    feature is enabled, instruct `[ROLE:git-steward]` to post `@codex review` only within the
    configured request-per-round budget, then wait/poll only within configured limits. Never use
-   mutating `gh api`.
+   mutating `gh api`. The guard atomically reserves the authorized request as `PENDING` and advances
+   its round before allowing the command; after that reservation, including after resume, only wait
+   for/read the result and never resend that round.
 3. Usage-limit response -> `LIMIT_REACHED`; timeout/no response -> `UNAVAILABLE`; disabled provider
    -> `DISABLED`. These are mergeable only because config makes unavailability nonblocking; report
    them without retry, purchase/upgrade attempt or HUMAN_GATE.

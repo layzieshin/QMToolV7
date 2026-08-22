@@ -36,7 +36,8 @@ stop is represented by the hook input `status=aborted`; the stop hook then emits
 External-review statuses:
 
 - `NOT_REQUESTED`: enabled provider has not yet been attempted for the current final-PR lifecycle.
-- `PENDING`: one bounded request is awaiting a result.
+- `PENDING`: the hook atomically reserved exactly one bounded request while authorizing it; a
+  resumed coordinator waits for that result and never resends the same round.
 - `PASS`: no blocking finding on `reviewed_head`; it is stale if PR head changes.
 - `FINDINGS`: findings await/failed independent triage or confirmed rework is open.
 - `STALE`: the PR head changed after the recorded review.

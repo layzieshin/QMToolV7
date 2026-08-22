@@ -301,6 +301,79 @@ if ($isPrComment) {
         [string]$reviewPr.state -ne "OPEN") {
         Deny-Command "Codex review request denied: PR must be OPEN with persisted work_branch as head and base_branch as base."
     }
+    $normalizedStatePath = [System.IO.Path]::GetFullPath($statePath).ToLowerInvariant()
+    $hashProvider = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $statePathHash = [System.BitConverter]::ToString(
+            $hashProvider.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($normalizedStatePath))
+        ).Replace("-", "")
+    } finally {
+        $hashProvider.Dispose()
+    }
+    $reservationMutex = [System.Threading.Mutex]::new(
+        $false,
+        "Local\QMToolCursorReview-$statePathHash"
+    )
+    $mutexHeld = $false
+    $reservationFailed = $false
+    $temporaryStatePath = $null
+    $backupStatePath = $null
+    try {
+        try {
+            $mutexHeld = $reservationMutex.WaitOne(0)
+        } catch [System.Threading.AbandonedMutexException] {
+            $mutexHeld = $true
+        }
+        if (-not $mutexHeld) {
+            throw "Another review-request reservation is in progress."
+        }
+        $reservationState = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $reservationExternal = $reservationState.external_review
+        $reservationRound = [int]$reservationExternal.round
+        if ([string]$reservationState.status -ne "RUNNING" -or
+            [bool]$reservationState.human_gate -or
+            [string]$reservationState.phase -ne "FINAL_GIT" -or
+            [string]$reservationState.work_branch -ne $observedBranch -or
+            [string]$reservationState.base_branch -ne $baseBranch -or
+            $null -eq $reservationExternal -or
+            [string]$reservationExternal.status -notin @("NOT_REQUESTED", "STALE") -or
+            $reservationRound -lt 0 -or
+            $reservationRound -ge $maxRounds) {
+            throw "The review-request state is no longer eligible."
+        }
+        $reservedAt = [DateTime]::UtcNow.ToString("o")
+        $reservationExternal.status = "PENDING"
+        $reservationExternal.round = $reservationRound + 1
+        $reservationExternal.reviewed_head = $null
+        $reservationExternal.blocking_findings = @()
+        $reservationExternal.last_checked_at = $reservedAt
+        $reservationState.updated_at = $reservedAt
+        $reservationState.next_action = "Await the reserved Codex review request; do not resend this round."
+        $temporaryStatePath = "$statePath.request-$PID-$([Guid]::NewGuid().ToString('N')).tmp"
+        $backupStatePath = "$statePath.backup-$PID-$([Guid]::NewGuid().ToString('N')).tmp"
+        $serializedState = $reservationState | ConvertTo-Json -Depth 10
+        [System.IO.File]::WriteAllText($temporaryStatePath, $serializedState, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::Replace($temporaryStatePath, $statePath, $backupStatePath)
+        $temporaryStatePath = $null
+        Remove-Item -LiteralPath $backupStatePath -Force -ErrorAction SilentlyContinue
+        $backupStatePath = $null
+    } catch {
+        $reservationFailed = $true
+    } finally {
+        if ($temporaryStatePath -and (Test-Path -LiteralPath $temporaryStatePath -PathType Leaf)) {
+            Remove-Item -LiteralPath $temporaryStatePath -Force -ErrorAction SilentlyContinue
+        }
+        if ($backupStatePath -and (Test-Path -LiteralPath $backupStatePath -PathType Leaf)) {
+            Remove-Item -LiteralPath $backupStatePath -Force -ErrorAction SilentlyContinue
+        }
+        if ($mutexHeld) {
+            $reservationMutex.ReleaseMutex()
+        }
+        $reservationMutex.Dispose()
+    }
+    if ($reservationFailed) {
+        Deny-Command "Codex review request denied: atomic reservation failed or state is no longer requestable."
+    }
 }
 
 if ($isPush) {

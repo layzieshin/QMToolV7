@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -642,19 +643,45 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
         guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"]
         == "allow"
     )
+    reserved = json.loads(state_path.read_text(encoding="utf-8"))
+    assert reserved["external_review"]["status"] == "PENDING"
+    assert reserved["external_review"]["round"] == 1
+    assert reserved["external_review"]["reviewed_head"] is None
+    assert reserved["external_review"]["blocking_findings"] == []
+    assert reserved["external_review"]["last_checked_at"]
+    assert guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"] == "deny"
+    assert guard('gh.exe pr comment 999 --body "@codex review"', mock_env)["permission"] == "deny"
+    _write_state(state_path, phase="FINAL_GIT")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        parallel = list(
+            executor.map(
+                lambda command: guard(command, mock_env),
+                (
+                    'gh pr comment 999 --body "@codex review"',
+                    'gh.exe pr comment 999 --body "@codex review"',
+                ),
+            )
+        )
+    assert sorted(result["permission"] for result in parallel) == ["allow", "deny"]
+    reserved = json.loads(state_path.read_text(encoding="utf-8"))
+    assert reserved["external_review"]["status"] == "PENDING"
+    assert reserved["external_review"]["round"] == 1
     assert guard('gh pr comment 999 --body "general comment"')["permission"] == "deny"
     assert guard('gh.exe pr comment 999 --body "general comment"')["permission"] == "deny"
+    _write_state(state_path, phase="FINAL_GIT")
     assert guard('gh.exe pr comment 999 --body "@codex review"', mock_env)["permission"] == "allow"
     for metadata in (
         {"headRefName": "feature/other", "baseRefName": "main", "state": "OPEN"},
         {"headRefName": work_branch, "baseRefName": "other", "state": "OPEN"},
         {"headRefName": work_branch, "baseRefName": "main", "state": "CLOSED"},
     ):
+        expected_state = _write_state(state_path, phase="FINAL_GIT")
         gh_mock.write_text(
             "@echo " + json.dumps({**metadata, "headRefOid": "current-head"}) + "\n",
             encoding="utf-8",
         )
         assert guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"] == "deny"
+        assert json.loads(state_path.read_text(encoding="utf-8")) == expected_state
     gh_mock.write_text(
         f'@echo {{"headRefName":"{work_branch}",'
         '"headRefOid":"current-head","baseRefName":"main","state":"OPEN"}\n',
@@ -677,13 +704,29 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
         phase="FINAL_GIT",
         external_review={
             "status": "STALE",
+            "round": 1,
+            "reviewed_head": "old-head",
+            "blocking_findings": [],
+            "last_checked_at": "2026-08-22T00:00:00Z",
+        },
+    )
+    assert guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"] == "allow"
+    reserved = json.loads(state_path.read_text(encoding="utf-8"))
+    assert reserved["external_review"]["status"] == "PENDING"
+    assert reserved["external_review"]["round"] == 2
+    assert guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"] == "deny"
+    _write_state(
+        state_path,
+        phase="FINAL_GIT",
+        external_review={
+            "status": "STALE",
             "round": 2,
             "reviewed_head": "old-head",
             "blocking_findings": [],
             "last_checked_at": "2026-08-22T00:00:00Z",
         },
     )
-    assert guard('gh pr comment 999 --body "@codex review"')["permission"] == "deny"
+    assert guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"] == "deny"
 
     _write_state(
         state_path,
