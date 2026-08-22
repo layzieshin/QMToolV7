@@ -15,9 +15,9 @@ Verpflichtende Vorher/Nachher-Gates für Governance-, Architektur-, Persistenz- 
 - Bereits ausgeführte Gates mit ihrem echten Ergebnis berichten.
 - Keine Retries zur Verdeckung, keine abgeschwächten Assertions, keine verlängerten Timeouts
   als Ersatz für einen Fix.
-- In einem ausdrücklich freigegebenen AP-029-Makro ist höchstens eine klar abgegrenzte
-  Remediation-Runde je Checkpoint zulässig. Danach beginnt eine neue vollständige Gatesequenz;
-  ein zweites nicht-grünes Ergebnis stoppt das Makro.
+- In einem ausdrücklich freigegebenen AP-029-Makro sind höchstens zwei klar abgegrenzte
+  Remediation-Runden je Checkpoint zulässig. Danach beginnt jeweils eine neue vollständige
+  Gatesequenz; ein weiterer normaler FAIL führt genau einmal in den Escalation Review.
 
 Technische Gates ersetzen keine menschliche Pilotfreigabe.
 

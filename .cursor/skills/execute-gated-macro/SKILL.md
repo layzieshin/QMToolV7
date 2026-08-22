@@ -1,6 +1,6 @@
 ---
 name: execute-gated-macro
-description: Execute an explicitly authorized QMToolV7 AP-029 macro as serial, independently reviewed checkpoints with separate scope, evidence, remediation budget, and local commits. Use only when the user names the macro/checkpoints and grants implementation permission; local commits follow the repository Git workflow, while push, PR, merge, destructive, deployment, and acceptance actions remain separately gated.
+description: Execute an explicitly authorized QMToolV7 AP-029 macro as serial, independently reviewed checkpoints with separate scope, evidence, the shared two-rework budget, and gated Git operations.
 ---
 
 # Execute Gated Macro
@@ -21,10 +21,12 @@ Before acting, read:
 - Give every checkpoint its own allowlist, evidence root, diff fingerprint, gate sequence,
   independent reviewer verdict and local commit after PASS unless the user explicitly opts out.
 - Stop the macro on the first unresolved checkpoint.
-- Permit at most one remediation round per checkpoint, regardless of whether it follows an
-  implementation gate or reviewer finding.
-- Do not infer permission for destructive tests, external writes, push, PR, review resolution,
-  merge, deployment, Echtdaten, human acceptance, cleanup or branch deletion.
+- Permit at most two remediation rounds per checkpoint across implementation gates and reviewer
+  findings, then exactly one fresh escalation review.
+- Do not infer permission for destructive tests, external writes, deployment, Echtdaten, human
+  acceptance, cleanup, or branch deletion. A standalone macro keeps push/PR/merge separately
+  gated; an explicit `/execute-work-package` parent may authorize only the hook-gated
+  git-steward flow defined in the checkpoint protocol.
 - Preserve foreign changes. Never use blanket staging, reset, restore, clean, stash, rebase or
   force-push.
 - The primary Cursor agent passes its complete report and evidence directly to the native reviewer
@@ -33,13 +35,14 @@ Before acting, read:
 
 ## Reviewer identity (D15)
 
-Invoke `qmtool-evidence-reviewer` in a separate context via the native Cursor Task/subagent
+Invoke `checkpoint-reviewer` in a separate context via the native Cursor Task/subagent
 mechanism. Reading the agent file or a main-agent self-review is not a reviewer run.
 
 Require:
 
-- Task model slug exactly `gpt-5.6-luna-xhigh`;
-- agent frontmatter `model: gpt-5.6-luna[effort=xhigh]`;
+- every task begins `[ROLE:checkpoint-reviewer]`;
+- selected model exactly `gpt-5.6-terra`;
+- agent frontmatter `model: gpt-5.6-terra`;
 - a new agent id captured by the parent from the native Task result and a separate context;
 - `$verify-reports-and-plan`;
 - evidence profile `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED` before accepting a PASS;
@@ -59,17 +62,18 @@ stop the macro for that checkpoint.
 3. Mark only the active checkpoint `IN_PROGRESS` and implement only its allowlist.
 4. Run mandatory gates in order. At the first red/blocked gate, stop that sequence and preserve
    evidence.
-5. If the remediation budget is unused and the correction is bounded and decision-complete, apply
-   one `R1` remediation and run a new complete gate sequence. Otherwise stop the macro.
-6. Create the `pre-review` snapshot and invoke the custom `qmtool-evidence-reviewer` in a separate
+5. On the first or second bounded, decision-complete failure, apply `R1` or `R2` and run a new
+   complete gate sequence. A further normal failure invokes exactly one fresh
+   `[ROLE:escalation-reviewer]`; escalation `FAIL` sets `BLOCKED_HUMAN`.
+6. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
    native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
    primary evidence directly; never ask the user to relay them. Require its output contract and
    capture parent-owned Task metadata separately.
 7. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
    review makes the checkpoint `BLOCKED`; do not revert it automatically.
-8. Accept only reviewer `PASS` with an accepted evidence profile. A bounded
-   `REMEDIATION_REQUIRED` finding consumes the same single remediation budget: correct it, rerun
-   the affected gates and invoke a fresh reviewer Task. Any other verdict stops the checkpoint.
+8. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
+   minimal order and consumes the shared two-rework budget; correct it, rerun the affected gates,
+   and invoke a fresh reviewer Task. After the budget, use the single escalation path above.
 9. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
    paths and create the local commit included by the implementation authorization unless the user
    opted out. Verify the commit file set.

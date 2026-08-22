@@ -190,14 +190,14 @@ Alle Einträge unten haben Status **DECIDED**.
 - **Entscheidung:** Ein ausdrücklich freigegebenes Makro darf mehrere Checkpoints seriell
   orchestrieren. Jeder Checkpoint behält eine separate Allowlist, separate Evidence, einen
   separaten Reviewer-Verdict und einen separaten lokalen Commit. Nach dem ersten unresolved
-  Checkpoint stoppt das gesamte Makro. Pro Checkpoint ist höchstens eine Remediation-Runde
-  zulässig.
+  Checkpoint stoppt das gesamte Makro. Pro Checkpoint sind höchstens zwei normale
+  Remediation-Runden und danach genau ein frischer Escalation Review zulässig.
 - **Begründung:** Größere Arbeitsabschnitte sollen ohne dauernde Interaktion ausführbar sein,
   ohne Scope-, Evidence- oder Commitgrenzen aufzuweichen.
 - **Konsequenz:** Ein Makro ist eine Autorisierungshülle, kein gemeinsamer Implementierungsdiff.
   Push, PR, Review-Auflösung, Merge, Deployment, Echtdaten und Human Gates bleiben separat.
 - **Ausgeschlossen:** mehrere Checkpoints in einem Diff oder Commit; stilles Weiterarbeiten nach
-  Rot/Blocked; eine zweite automatische Reparaturrunde.
+  Rot/Blocked; eine dritte normale automatische Reparaturrunde.
 
 ### D14 — Container-Qualifikation vor Übernahme
 
@@ -215,14 +215,14 @@ Alle Einträge unten haben Status **DECIDED**.
 
 ### D15 — Reviewer model evidence profiles
 
-- **Entscheidung:** Der native Checkpoint-Reviewer (`qmtool-evidence-reviewer`) klassifiziert
+- **Entscheidung:** Der native Checkpoint-Reviewer (`checkpoint-reviewer`) klassifiziert
   Modellnachweise in genau drei Evidenzprofile:
   1. **RUNTIME_ATTESTED** — tatsächlich dienendes Modell und Reasoning/Modellvariante sind aus
      Cursor-Laufzeitmetadaten beobachtet und stimmen mit der geforderten Konfiguration überein.
   2. **CONTROL_PLANE_PINNED** — nur für lokale native Cursor-Subagents, wenn vollständig belegt:
      tatsächliche Instanziierung des projektgebundenen Custom-Agents; eindeutige Agent-ID;
-     separater Agentenkontext; Frontmatter exakt `gpt-5.6-luna[effort=xhigh]`; Task-Aufruf
-     fordert explizit `gpt-5.6-luna-xhigh`; keine Cursor-Meldung über Fallback, Inheritance,
+     separater Agentenkontext; Frontmatter exakt `gpt-5.6-terra`; Task-Auftrag beginnt mit
+     `[ROLE:checkpoint-reviewer]`; keine Cursor-Meldung über Fallback, Inheritance,
      Substitution oder Modellabweichung; keine verfügbaren Metadaten widersprechen der
      Konfiguration; Reviewer verwendet `$verify-reports-and-plan`; Reviewer ist read-only;
      Pre-/Post-Fingerprint identisch; `observed_runtime_model` und `observed_reasoning` werden
@@ -230,7 +230,8 @@ Alle Einträge unten haben Status **DECIDED**.
      niemals behauptet werden, das Laufzeitmodell sei beobachtet oder runtime-attestiert.
   3. **UNVERIFIED** — fehlende oder widersprüchliche Frontmatter-/Task-/Agent-ID-/Kontext-/
      Mutationsnachweise, **oder genau ein verfügbares Runtime-Feld** (`partial runtime metadata`)
-     → Reviewer `BLOCKED`, kein Commit, Makro stoppt.
+     → Reviewer-Gate `FAIL`, kein Commit, Makro stoppt beziehungsweise eskaliert nach dem
+     ausgeschöpften normalen Rework-Budget.
 - **Begründung:** Lokale Cursor-Subagents stellen oft keine unabhängigen Laufzeitmodell-Metadaten
   bereit (R23). Ohne ehrliche Evidenzstufen entstehen falsche Runtime-Attestierungen oder unnötige
   Dauer-BLOCKED-Zustände trotz nachweisbarer Control-Plane-Bindung.
@@ -378,7 +379,8 @@ separat freizugeben.
   vollständige Checkpoint-Spezifikationen; alle GOV00-Bestätigungsläufe nachtragen.
 - **Gates:** fokussierte AP-029-Verträge; vollständige Docs-Konsistenz; `tests/docs`;
   Allowlist und `git diff --check`; unabhängiger Review.
-- **Fail-fast:** erster roter/blocked Schritt stoppt die Sequenz; maximal eine R1-Sequenz.
+- **Fail-fast:** erster roter/blocked Schritt stoppt die Sequenz; maximal R1 und R2, danach genau
+  ein Escalation Review.
 - **DoD:** ein hypothetischer späterer PASS kann seine eigene Evidence-Wurzel verwenden;
   Roadmap und Ledger nennen denselben Current checkpoint; Makrogrenzen sind testgeschützt.
 - **Evidence:** `build/ap-029-gov01/` mit allen Versuchen und Diff-Snapshot.
@@ -388,18 +390,19 @@ separat freizugeben.
 
 - **Ziel:** Einen projektgebundenen, unabhängigen Cursor-Reviewer und einen wiederverwendbaren
   fail-fast Makro-Skill bereitstellen.
-- **Erlaubter Scope:** `.cursor/agents/qmtool-evidence-reviewer.md`,
+- **Erlaubter Scope:** `.cursor/agents/checkpoint-reviewer.md`,
   `.cursor/skills/execute-gated-macro/`, zugehörige Contracttests und Ledger-Evidence.
 - **Ausschlüsse:** externer Review-Wrapper, Produktcode, Runtime, Push/PR/Merge.
 - **Vorbedingungen:** GOV01 PASS; installierte Cursor-Version erkennt projektgebundene Agents.
-- **Schritte:** Reviewer mit `$verify-reports-and-plan`; Luna/Very-High-Bindung;
+- **Schritte:** Reviewer mit `$verify-reports-and-plan`; Terra-Bindung;
   Orchestrierungs-Skill; Snapshot-/Verdict-Vertrag; echter nativer Reviewer-Smoke.
 - **Gates:** Agent-/Skill-Contracttests; vollständige Docs-Gates; Diff-Hash vor/nach Review;
   nativer Reviewer-Verdict.
-- **Fail-fast:** Wenn tatsächlich verwendetes Modell oder Very-High-Stufe nicht nachweisbar ist,
-  TOOL00=`BLOCKED`. Kein anderer Agent darf als gleichwertiger Ersatz ausgegeben werden.
-- **DoD:** Reviewer liefert einen erlaubten Verdict, verändert keine getrackte Datei und weist
-  sein Laufmodell nach; Makro-Skill erzwingt eine Remediation-Runde und getrennte Commits.
+- **Fail-fast:** Wenn die konfigurierte Terra-Bindung fehlt, Cursor eine Modellabweichung meldet
+  oder D15 nur `UNVERIFIED` ergibt, ist TOOL00=`BLOCKED`. Kein anderer Agent darf als
+  gleichwertiger Ersatz ausgegeben werden.
+- **DoD:** Reviewer liefert PASS oder FAIL, verändert keine getrackte Datei und weist
+  seine Modellbindung nach; Makro-Skill erzwingt höchstens zwei Reworks und getrennte Commits.
 - **Evidence:** `build/ap-029-tool00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`CB00`.
 - **Publikationsbedingung:** CB00 beginnt erst, wenn Governance und TOOL00 in `origin/main`

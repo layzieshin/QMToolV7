@@ -25,6 +25,7 @@ This file defines document priority and decision authority for the repository.
 ## P1 (important, domain/process detail)
 
 - `docs/AGENT_INSTRUCTION_BOOTSTRAP_PROMPT.md` — generic Codex-first bootstrap prompt for new repos
+- `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md` — local Cursor-native work-package operation guide
 - `docs/MASTER_ORCHESTRATION_ROADMAP.md` — active work-package steering (planning only; P0 architecture docs win on boundaries)
 - `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` — Web/PostgreSQL target architecture and executable checkpoint ledger
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`

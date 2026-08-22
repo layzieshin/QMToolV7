@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "profile": "balanced",
+  "defaults": {
+    "max_checkpoint_reworks": 2,
+    "max_final_audit_reworks": 2,
+    "max_reviewer_verification_passes": 1,
+    "max_parallel_workers": 3,
+    "stop_hook_loop_limit": 8,
+    "local_only": true,
+    "architecture_change_requires_human": true,
+    "auto_merge_after_all_gates": true
+  },
+  "workflow_contract": {
+    "statuses": [
+      "IDLE",
+      "RUNNING",
+      "BLOCKED_HUMAN",
+      "DONE"
+    ],
+    "phases": [
+      "PLAN",
+      "IMPLEMENT",
+      "REVIEW",
+      "REWORK",
+      "ESCALATION_REVIEW",
+      "CHECKPOINT_GIT",
+      "FULL_REGRESSION",
+      "FINAL_AUDIT",
+      "FINAL_GIT",
+      "NEXT_PACKAGE"
+    ]
+  },
+  "roles": {
+    "roadmap-architect": {
+      "model": "gpt-5.6-sol",
+      "purpose": "High-quality roadmap and architecture planning plus the fresh final audit of a complete work package.",
+      "allowed_responsibility": [
+        "analyze roadmap dependencies and risks",
+        "prepare vertical work packages and checkpoints",
+        "write architecture change proposals in the existing AP/ADR structure",
+        "perform the final work-package audit",
+        "update the existing roadmap after FINAL_PASS"
+      ],
+      "forbidden_responsibility": [
+        "modify product source code",
+        "repair implementation findings",
+        "commit, push, create pull requests, or merge",
+        "silently change established architecture"
+      ]
+    },
+    "repo-explorer": {
+      "model": "composer-2.5[]",
+      "purpose": "Cost-efficient, read-only, fact-oriented exploration of larger repository areas.",
+      "allowed_responsibility": [
+        "locate owners, dependencies, patterns, tests, and boundaries",
+        "report concrete paths and evidence",
+        "identify uncertainty without resolving architecture choices"
+      ],
+      "forbidden_responsibility": [
+        "edit files",
+        "make architecture or product decisions",
+        "grant checkpoint PASS",
+        "perform Git write operations"
+      ]
+    },
+    "implementer": {
+      "model": "composer-2.5[]",
+      "purpose": "Implement exactly one approved checkpoint, including its tests and targeted verification.",
+      "allowed_responsibility": [
+        "edit only the current checkpoint scope",
+        "add or update required tests",
+        "run targeted verification",
+        "perform a concrete reviewer-assigned rework"
+      ],
+      "forbidden_responsibility": [
+        "expand scope or change architecture",
+        "grant PASS to its own work",
+        "commit, push, create pull requests, or merge",
+        "start another checkpoint"
+      ]
+    },
+    "checkpoint-reviewer": {
+      "model": "gpt-5.6-terra",
+      "purpose": "Independently verify one checkpoint, its real use case, acceptance criteria, architecture, scope, and tests.",
+      "allowed_responsibility": [
+        "inspect the original checkpoint and actual diff",
+        "rerun relevant tests independently",
+        "return evidence per acceptance criterion",
+        "issue a minimal rework instruction on FAIL"
+      ],
+      "forbidden_responsibility": [
+        "edit source code or tests",
+        "repair findings",
+        "commit, push, create pull requests, or merge",
+        "approve based only on the implementer report"
+      ]
+    },
+    "escalation-reviewer": {
+      "model": "gpt-5.6-sol",
+      "purpose": "Fresh high-reasoning review after two unsuccessful normal reworks.",
+      "allowed_responsibility": [
+        "reanalyze requirements, architecture, diff, tests, and prior findings from first principles",
+        "return PASS or FAIL with evidence",
+        "provide diagnosis and options when FAIL requires BLOCKED_HUMAN"
+      ],
+      "forbidden_responsibility": [
+        "edit source code or tests",
+        "perform further rework",
+        "commit, push, create pull requests, or merge",
+        "continue automation after FAIL"
+      ]
+    },
+    "git-steward": {
+      "model": "gpt-5.6-luna",
+      "purpose": "Perform only gated Git and GitHub routine operations for the active work package.",
+      "allowed_responsibility": [
+        "inspect status and exact staged paths",
+        "create checkpoint commits",
+        "push the work-package branch",
+        "create or update the final pull request",
+        "inspect checks and merge after all final gates"
+      ],
+      "forbidden_responsibility": [
+        "modify product or test code",
+        "resolve fachliche merge conflicts",
+        "bypass branch protection or required checks",
+        "force-push, rebase, or push to the base branch"
+      ]
+    }
+  }
+}

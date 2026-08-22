@@ -14,8 +14,8 @@ After the first mandatory red or blocked gate:
 - record any fail-fast violation separately.
 
 One remediation round means one bounded change set followed by a new gate sequence. An isolated
-diagnostic is not a PASS and may not silently become a retry. Once the remediation budget is used,
-any further non-PASS result stops the macro.
+diagnostic is not a PASS and may not silently become a retry. At most `R1` and `R2` are allowed.
+After another normal FAIL, exactly one fresh escalation review decides PASS or BLOCKED_HUMAN.
 
 ## Evidence layout
 
@@ -46,12 +46,13 @@ Complete parent report: <verbatim report or repository path>
 Before fingerprint: <sha256>
 Pre-review fingerprint: <sha256>
 Remediation count: <0|1>
-Requested model: gpt-5.6-luna-xhigh
-Return the qmtool-evidence-reviewer output contract including D15 evidence_profile.
+Task prefix: [ROLE:checkpoint-reviewer]
+Requested model: gpt-5.6-terra
+Return the checkpoint-reviewer output contract including D15 evidence_profile.
 Do not mutate repository state.
 ```
 
-Launch the reviewer as a native Cursor Task/subagent with model slug `gpt-5.6-luna-xhigh` in a
+Launch the reviewer as the native `checkpoint-reviewer` custom agent with model `gpt-5.6-terra` in a
 separate context. The primary Cursor agent sends the handoff directly, waits for the result and
 returns one consolidated report; never ask the user to copy, paste, forward or relay between
 agents. Capture `agent_id` from the native Task result. The reviewer does not need shell access or
@@ -71,8 +72,10 @@ the native Task lifecycle instead of requiring reviewer self-attestation.
 
 An explicit macro implementation authorization includes the local checkpoint commit after reviewer
 PASS unless the user explicitly opts out. Stage every path by name, compare the staged path list
-with the checkpoint allowlist, then commit. Push and PR are separate permissions even if the local
-commit is green.
+with the checkpoint allowlist, then commit. A standalone `/execute-gated-macro` invocation keeps
+push and PR separately gated. When the macro is invoked by an explicit `/execute-work-package`
+request, that outer request authorizes its git-steward checkpoint pushes and final PR/merge subject
+to the persisted final gates, hook policy, CI, and branch protection.
 
 ## Final report
 

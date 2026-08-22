@@ -8,7 +8,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-AGENT = ROOT / ".cursor" / "agents" / "qmtool-evidence-reviewer.md"
+AGENT = ROOT / ".cursor" / "agents" / "checkpoint-reviewer.md"
 SKILL_ROOT = ROOT / ".cursor" / "skills" / "execute-gated-macro"
 SKILL = SKILL_ROOT / "SKILL.md"
 PROTOCOL = SKILL_ROOT / "references" / "checkpoint-protocol.md"
@@ -19,8 +19,8 @@ WORKFLOW = ROOT / ".cursor" / "rules" / "00-agent-workflow.mdc"
 GIT_WORKFLOW = ROOT / ".cursor" / "rules" / "01-git-workflow.mdc"
 AGENTS = ROOT / "AGENTS.md"
 
-REQUIRED_FRONTMATTER_MODEL = "gpt-5.6-luna[effort=xhigh]"
-REQUIRED_TASK_MODEL = "gpt-5.6-luna-xhigh"
+REQUIRED_FRONTMATTER_MODEL = "gpt-5.6-terra"
+REQUIRED_TASK_MODEL = "gpt-5.6-terra"
 
 
 def _read(path: Path) -> str:
@@ -90,13 +90,8 @@ def classify_reviewer_evidence_profile(facts: dict[str, Any]) -> dict[str, str]:
         return blocked("contradictory or fallback/substitution metadata")
     model_observed = observed_model not in (None, "", "UNAVAILABLE")
     reasoning_observed = observed_reasoning not in (None, "", "UNAVAILABLE")
-    allowed_models = {
-        "gpt-5.6-luna",
-        "gpt-5.6-luna-xhigh",
-        REQUIRED_FRONTMATTER_MODEL,
-        REQUIRED_TASK_MODEL,
-    }
-    allowed_reasoning = {"xhigh", "very high", "very_high", "effort=xhigh"}
+    allowed_models = {REQUIRED_FRONTMATTER_MODEL, REQUIRED_TASK_MODEL}
+    allowed_reasoning = {"medium", "standard", "default", "terra"}
 
     # Exactly one observed field is fail-closed partial metadata (D15 / GOV01-R5).
     if model_observed != reasoning_observed:
@@ -133,25 +128,19 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
 
     assert f"model: {REQUIRED_FRONTMATTER_MODEL}" in agent
     assert "readonly: true" in agent
+    assert "[ROLE:checkpoint-reviewer]" in agent
     assert "$verify-reports-and-plan" in agent
-    for verdict in (
-        "PASS",
-        "REMEDIATION_REQUIRED",
-        "USER_DECISION_REQUIRED",
-        "BLOCKED",
-        "FAILED",
-    ):
-        assert verdict in agent
-    assert "Do not infer the runtime model" in agent
-    assert "CONTROL_PLANE_PINNED" in agent
-    assert "RUNTIME_ATTESTED" in agent
-    assert "UNVERIFIED" in agent
+    assert "overall verdict exactly" in agent
+    assert "`PASS`" in agent
+    assert "`FAIL`" in agent
+    assert "MINIMAL_REWORK_ORDER" in agent
+    assert "Never edit source" in agent
     assert "evidence_profile" in agent
     assert "observed_runtime_model" in agent
-    assert "UNAVAILABLE" in agent
-    assert "never" in agent.lower() and "runtime-attested" in agent.lower()
+    assert "CONTROL_PLANE_PINNED" in agent
+    assert "PARENT_CAPTURE_REQUIRED" in agent
 
-    assert "at most one remediation round" in skill
+    assert "at most two remediation rounds" in skill
     normalized_skill = " ".join(skill.split())
     assert "separate context" in normalized_skill
     assert "post-review" in skill
@@ -169,9 +158,9 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     normalized_workflow = " ".join(workflow.split()).lower()
     assert "explicitly authorized ap-029 macro" in normalized_workflow
     assert "execute-gated-macro" in normalized_workflow
-    assert "do not invoke" in normalized_workflow and "qmtool-evidence-reviewer" in normalized_workflow
+    assert "do not invoke" in normalized_workflow and "checkpoint-reviewer" in normalized_workflow
     assert "complete work report" in workflow
-    assert "invoke a fresh reviewer Task" in workflow
+    assert "fresh reviewer Task" in workflow
     assert "one consolidated report" in protocol
     assert "does not need shell access" in protocol
 
@@ -206,8 +195,8 @@ def test_reviewer_evidence_profile_runtime_attested() -> None:
             "separate_context": True,
             "configured_model": REQUIRED_FRONTMATTER_MODEL,
             "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-luna",
-            "observed_reasoning": "xhigh",
+            "observed_runtime_model": "gpt-5.6-terra",
+            "observed_reasoning": "standard",
             "uses_verify_reports_and_plan": True,
             "readonly": True,
             "pre_fingerprint": "aa",
@@ -219,7 +208,7 @@ def test_reviewer_evidence_profile_runtime_attested() -> None:
     )
     assert result["evidence_profile"] == "RUNTIME_ATTESTED"
     assert result["gate_e"] == "CONTINUE"
-    assert result["observed_runtime_model"] == "gpt-5.6-luna"
+    assert result["observed_runtime_model"] == "gpt-5.6-terra"
 
 
 def test_reviewer_evidence_profile_control_plane_pinned() -> None:
@@ -324,7 +313,7 @@ def test_reviewer_evidence_profile_blocks_on_observed_reasoning_mismatch() -> No
             "separate_context": True,
             "configured_model": REQUIRED_FRONTMATTER_MODEL,
             "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-luna",
+            "observed_runtime_model": "gpt-5.6-terra",
             "observed_reasoning": "low",
             "uses_verify_reports_and_plan": True,
             "readonly": True,
@@ -439,7 +428,7 @@ def test_reviewer_evidence_profile_blocks_on_partial_model_only() -> None:
             "separate_context": True,
             "configured_model": REQUIRED_FRONTMATTER_MODEL,
             "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-luna",
+            "observed_runtime_model": "gpt-5.6-terra",
             "observed_reasoning": "UNAVAILABLE",
             "uses_verify_reports_and_plan": True,
             "readonly": True,
@@ -526,9 +515,9 @@ def test_d15_r23_consistency_across_plan_roadmap_agent_skill() -> None:
 
     # Roadmap must not contradict D15 profiles once mentioned; at minimum plan owns D15.
     assert "ausschliesslich GOV01" in roadmap or "ausschließlich GOV01" in roadmap
-    assert "CONTROL_PLANE_PINNED" in agent
     assert "CONTROL_PLANE_PINNED" in skill
-    assert "UNAVAILABLE" in agent
+    assert "[ROLE:checkpoint-reviewer]" in agent
+    assert f"model: {REQUIRED_FRONTMATTER_MODEL}" in agent
     assert REQUIRED_TASK_MODEL in skill
 
 
