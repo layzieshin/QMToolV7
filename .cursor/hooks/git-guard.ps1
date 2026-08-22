@@ -222,6 +222,10 @@ $cwd = [string]$inputData.cwd
 if (-not $cwd -or -not (Test-Path -LiteralPath $cwd -PathType Container)) {
     Deny-Command "Git write denied: command working directory is unavailable."
 }
+$repositoryRoot = [string](& git -C $cwd rev-parse --show-toplevel 2>$null)
+if ($LASTEXITCODE -ne 0 -or -not $repositoryRoot) {
+    Deny-Command "Git write denied: repository root cannot be observed."
+}
 $observedBranch = [string](& git -C $cwd branch --show-current 2>$null)
 if ($LASTEXITCODE -ne 0 -or -not $observedBranch) {
     Deny-Command "Git write denied: current branch cannot be observed."
@@ -232,7 +236,7 @@ if (-not $stateWorkBranch -or $observedBranch -ne $stateWorkBranch) {
 if ($observedBranch -eq $baseBranch) {
     Deny-Command "Git write denied on the protected base branch."
 }
-$configPath = Join-Path $cwd ".cursor/agent-system.json"
+$configPath = Join-Path $repositoryRoot ".cursor/agent-system.json"
 if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
     Deny-Command "Git write denied: agent-system config is unavailable."
 }
@@ -259,8 +263,11 @@ if (($isFetch -or $isGitMerge -or $isPrCreateOrUpdate) -and $phase -ne "FINAL_GI
 }
 
 if ($isPrComment) {
-    $codexReviewRequest = $lower -match '^\s*gh(?:\.exe)?\s+pr\s+comment\s+\d+\s+--body\s+(?:"@codex review"|''@codex review'')\s*$'
-    if (-not $codexReviewRequest) {
+    $codexReviewRequest = [regex]::Match(
+        $lower,
+        '^\s*gh(?:\.exe)?\s+pr\s+comment\s+(\d+)\s+--body\s+(?:"@codex review"|''@codex review'')\s*$'
+    )
+    if (-not $codexReviewRequest.Success) {
         Deny-Command "PR comments are limited to the exact bounded @codex review request."
     }
     if (-not [bool]$config.external_review.enabled) {
@@ -278,6 +285,21 @@ if ($isPrComment) {
     $maxRounds = [int]$config.external_review.max_review_rounds
     if ($round -lt 0 -or $round -ge $maxRounds) {
         Deny-Command "Codex review request denied: configured external-review round budget is exhausted."
+    }
+    $reviewPrNumber = $codexReviewRequest.Groups[1].Value
+    $reviewPrJson = (& gh pr view $reviewPrNumber --json headRefName,headRefOid,baseRefName,state 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $reviewPrJson) {
+        Deny-Command "Codex review request denied: pull-request metadata could not be verified."
+    }
+    try {
+        $reviewPr = $reviewPrJson | ConvertFrom-Json
+    } catch {
+        Deny-Command "Codex review request denied: pull-request metadata is invalid."
+    }
+    if ([string]$reviewPr.headRefName -ne $stateWorkBranch -or
+        [string]$reviewPr.baseRefName -ne $baseBranch -or
+        [string]$reviewPr.state -ne "OPEN") {
+        Deny-Command "Codex review request denied: PR must be OPEN with persisted work_branch as head and base_branch as base."
     }
 }
 

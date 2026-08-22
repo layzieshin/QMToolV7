@@ -528,11 +528,13 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     work_branch = _observed_work_branch()
 
     def guard(
-        command: str, env_overrides: dict[str, str] | None = None
+        command: str,
+        env_overrides: dict[str, str] | None = None,
+        cwd: Path = ROOT,
     ) -> dict[str, Any]:
         return _run_hook(
             "git-guard.ps1",
-            {"command": command, "cwd": str(ROOT), "sandbox": False},
+            {"command": command, "cwd": str(cwd), "sandbox": False},
             state_path=state_path,
             env_overrides=env_overrides,
         )
@@ -563,6 +565,7 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     _write_state(state_path, phase="CHECKPOINT_GIT")
     assert guard('git commit -m "WP-TEST CP-1"')["permission"] == "allow"
     assert guard("git add expected.py")["permission"] == "allow"
+    assert guard("git add expected.py", cwd=ROOT / "tests")["permission"] == "allow"
     assert (
         guard('Set-Location "I:\\OtherRepo"; git add expected.py')["permission"]
         == "deny"
@@ -628,13 +631,35 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     assert guard("gh pr merge 999 --squash")["permission"] == "deny"
 
     _write_state(state_path, phase="FINAL_GIT")
+    gh_mock = tmp_path / "gh.cmd"
+    gh_mock.write_text(
+        f'@echo {{"headRefName":"{work_branch}",'
+        '"headRefOid":"current-head","baseRefName":"main","state":"OPEN"}\n',
+        encoding="utf-8",
+    )
+    mock_env = {"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
     assert (
-        guard('gh pr comment 999 --body "@codex review"')["permission"]
+        guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"]
         == "allow"
     )
     assert guard('gh pr comment 999 --body "general comment"')["permission"] == "deny"
     assert guard('gh.exe pr comment 999 --body "general comment"')["permission"] == "deny"
-    assert guard('gh.exe pr comment 999 --body "@codex review"')["permission"] == "allow"
+    assert guard('gh.exe pr comment 999 --body "@codex review"', mock_env)["permission"] == "allow"
+    for metadata in (
+        {"headRefName": "feature/other", "baseRefName": "main", "state": "OPEN"},
+        {"headRefName": work_branch, "baseRefName": "other", "state": "OPEN"},
+        {"headRefName": work_branch, "baseRefName": "main", "state": "CLOSED"},
+    ):
+        gh_mock.write_text(
+            "@echo " + json.dumps({**metadata, "headRefOid": "current-head"}) + "\n",
+            encoding="utf-8",
+        )
+        assert guard('gh pr comment 999 --body "@codex review"', mock_env)["permission"] == "deny"
+    gh_mock.write_text(
+        f'@echo {{"headRefName":"{work_branch}",'
+        '"headRefOid":"current-head","baseRefName":"main","state":"OPEN"}\n',
+        encoding="utf-8",
+    )
     _write_state(
         state_path,
         phase="FINAL_GIT",
@@ -669,13 +694,6 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
             "ci_pass": True,
         },
     )
-    gh_mock = tmp_path / "gh.cmd"
-    gh_mock.write_text(
-        f'@echo {{"headRefName":"{work_branch}",'
-        '"headRefOid":"current-head","baseRefName":"main","state":"OPEN"}\n',
-        encoding="utf-8",
-    )
-    mock_env = {"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
     for red_gate in ("full_regression_pass", "final_audit_pass", "ci_pass"):
         gates = {
             "full_regression_pass": True,
