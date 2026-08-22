@@ -233,14 +233,13 @@ def test_organization_seed_matches_server_context(platform_env: LivePostgresEnv)
 
 def test_assert_runtime_schema_ready(platform_env: LivePostgresEnv) -> None:
     pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert pgs.assert_runtime_schema_ready(platform_env.runtime_dsn) == 5
+    assert pgs.assert_runtime_schema_ready(platform_env.runtime_dsn) == 6
 
 
 def test_failed_migration_rolls_back_completely(
     platform_env: LivePostgresEnv,
     tmp_path: Path,
 ) -> None:
-    pgs.migrate_platform_schema(platform_env.migrator_dsn)
     steps_dir = tmp_path / "migrations"
     steps_dir.mkdir()
     for name in (
