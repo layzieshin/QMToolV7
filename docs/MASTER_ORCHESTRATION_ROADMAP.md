@@ -184,10 +184,9 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Nächste autorisierte Aktion ist ausschliesslich PG00 (Current checkpoint nach INV00 PASS).
-GOV01, TOOL00, CB00 und INV00 sind PASS. INV00 klassifizierte 7 produktive SQLite-Stores
-(5 migrate, 2 archive) read-only in `docs/AP-029_SQLITE_STORE_INVENTORY.md`. PG00 bleibt
-TODO / NOT STARTED bis explizit freigegeben. Kein späterer Produktcheckpoint ist freigegeben.
+Nächste autorisierte Aktion ist **PG00** (Current checkpoint; **IN_PROGRESS** — Subcheckpoint A PASS auf
+`feature/ap-029-pg00`, Subcheckpoints B–D offen). INV00 ist PASS und gemergt (`90cefa4`). Nach
+vollständigem PG00-PASS folgt **WEB00** (vorbereitet, nicht gestartet). Kein späterer Produktcheckpoint ist freigegeben.
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
 autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
