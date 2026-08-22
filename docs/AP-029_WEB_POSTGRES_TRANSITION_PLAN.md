@@ -282,14 +282,14 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: CB00
+Current checkpoint: INV00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
 | GOV00 | Canonical architecture decisions and executable plan | PASS | d39c8e798d8c9bdf77b721c9cfa76001c2a676d5 | build/ap-029-gov00/ baseline 9 passed; gate-a 4 passed; gate-b 13 passed; gate-c 13 passed; gate-d 19 passed; junit under build/ap-029-gov00/*/junit.xml | this package |
 | GOV01 | Executable macro governance and ledger hardening | PASS | d39c8e798d8c9bdf77b721c9cfa76001c2a676d5 | R5 PASS build/ap-029-gov01/r5-20260821T133945364Z/ gate-a 19 passed; gate-b 15 passed; gate-c 37 passed; Gate E PASS CONTROL_PLANE_PINNED agent 5e997705-3943-4833-9889-fe6ec6a85228 | historical R1–R4 preserved; Current advances to TOOL00 |
 | TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
-| CB00 | Controlled portable container-core integration | TODO | — | — | no SQLite, no demo UI, no runtime activation |
+| CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gates green; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
 | INV00 | Read-only SQLite store inventory | TODO | — | — | migrate/archive/discard decisions only |
 | PG00 | PostgreSQL platform foundation | TODO | — | — | roles, schemas, runner, org, audit, blob contracts |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
@@ -812,3 +812,25 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Entscheidung A: GOV01 und TOOL00 bleiben PASS; Current checkpoint bleibt CB00;
   CB00 bleibt TODO / NOT STARTED.
 - Gesicherte Artefakte: `gate-e-late-reviewer-result.txt`, `gate-e-late-reviewer-report.md`.
+
+## 11. CB00 attempt evidence
+
+### Sequenz CB00-R1 (autorisiert) — No-Code-PASS
+
+- Prototyp-Referenz: `origin/feature/container-module-prototype` @
+  `9f6e21565c184d15d5b305d481fc63799e4ee8eb` (53 Dateien vs. `origin/main`).
+- Qualifikation: kein Slice erfüllt D12/D14-Portabilität (SQLite/SQL/Demo-UI/Runtime-Aktivierung).
+  Disposition 53/53 in `component-disposition.json` (schema v2).
+- Evidence-Wurzel: `build/ap-029-cb00/r1-20260822T091700065Z/`.
+- Gate A: `gate-a-junit.xml` — 18 passed (exit 0).
+- Gate B: `gate-b-junit.xml` — 16 passed (exit 0).
+- Gate C: `gate-c-final-junit.xml` — 40 passed (exit 0).
+- J04-Regression: platform/modules/e2e grün; keine Produktcode-Änderung.
+- Gate D: `gate-d-pre-review-snapshot-r1.json`; allowlist nur Docs; staging empty.
+- Gate E attempt0: Agent `15b1bdb2-ac16-4fc3-acb2-3978af65cf4f`; verdict **BLOCKED**
+  (unvollständige Disposition; vorzeitiger PASS-Status).
+- Gate E attempt1: Agent `8c211263-6e86-469c-99c7-07f90f64c03e`; evidence_profile
+  `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
+  mutation_detected false.
+- Remediation-Zähler: `1/1`.
+- Statusübergang: CB00 `PASS`; Current → `INV00`.

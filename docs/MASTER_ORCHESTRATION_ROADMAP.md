@@ -184,9 +184,11 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Nächste autorisierte Aktion ist ausschliesslich CB00 (Current checkpoint nach TOOL00 PASS).
-GOV01 und TOOL00 sind PASS. CB00 bleibt TODO / NOT STARTED, bis ausdrücklich freigegeben
-und in origin/main integriert. Kein späterer Produktcheckpoint ist freigegeben.
+Nächste autorisierte Aktion ist ausschliesslich INV00 (Current checkpoint nach CB00 PASS).
+GOV01, TOOL00 und CB00 sind PASS. CB00 endete als dokumentierter No-Code-PASS: der historische
+Container-Prototyp (`origin/feature/container-module-prototype` @ `9f6e215`) bleibt Referenz;
+53/53 Dateien sind verwerfen/archivieren/CB01 zugeordnet; kein Slice wurde portabel übernommen.
+Kein späterer Produktcheckpoint ist freigegeben.
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
 autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
@@ -205,7 +207,7 @@ J04-M0 Historie (Accepted; unveraendert):
 - `docs/J04_M0_PATH_MATRIX.md`
 
 ## Nicht freigegeben
-- CB00 und alle spaeteren AP-029-Produktcheckpoints ohne expliziten Makroauftrag und
+- INV00 und alle spaeteren AP-029-Produktcheckpoints ohne expliziten Makroauftrag und
   veröffentlichte Governance-/Tooling-Basis
 - Neue PyQt-Produktarbeit oder PyQt-Pilotbetrieb
 - Produktiver SQLite-Fallback
