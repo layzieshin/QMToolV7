@@ -570,6 +570,39 @@ def test_checkpoint_snapshot_records_allowed_diff_and_hash(tmp_path: Path) -> No
     assert payload["out_of_scope_paths"] == []
     assert len(payload["repository_state_sha256"]) == 64
     assert payload["files"][0]["sha256"]
+    assert payload["files"][0]["unstaged"] is True
+
+    first_fingerprint = payload["repository_state_sha256"]
+    (repo / output).unlink()
+    _git(repo, "add", "tracked.txt")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "TEST",
+            "--phase",
+            "post-stage",
+            "--output",
+            output,
+            "--allow",
+            "tracked.txt",
+            "--base-ref",
+            "HEAD",
+            "--fail-on-out-of-scope",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    staged_payload = json.loads((repo / output).read_text(encoding="utf-8"))
+    assert staged_payload["repository_state_sha256"] != first_fingerprint
+    assert staged_payload["files"][0]["staged"] is True
+    assert staged_payload["files"][0]["unstaged"] is False
 
 
 def test_checkpoint_snapshot_fails_closed_on_out_of_scope_path(tmp_path: Path) -> None:

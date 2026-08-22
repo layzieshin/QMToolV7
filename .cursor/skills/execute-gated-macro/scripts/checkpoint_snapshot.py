@@ -40,27 +40,46 @@ def _matches(path: str, rules: tuple[str, ...]) -> bool:
     return False
 
 
-def _content_fingerprint(root: Path, paths: set[str]) -> tuple[str, list[dict[str, object]]]:
+def _content_fingerprint(
+    root: Path,
+    paths: set[str],
+    *,
+    staged: set[str],
+    unstaged: set[str],
+    untracked: set[str],
+    head: str | None,
+) -> tuple[str, list[dict[str, object]]]:
     digest = hashlib.sha256()
+    digest.update((head or "<no-head>").encode("utf-8"))
+    digest.update(b"\0")
     records: list[dict[str, object]] = []
     for relative in sorted(paths):
         path = root / Path(relative)
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
+        index_entry = _git(root, "ls-files", "--stage", "--", relative) or None
+        record: dict[str, object] = {
+            "path": relative,
+            "staged": relative in staged,
+            "unstaged": relative in unstaged,
+            "untracked": relative in untracked,
+            "index_entry": index_entry,
+        }
         if not path.exists():
-            digest.update(b"<deleted>")
-            records.append({"path": relative, "state": "deleted", "sha256": None, "size": 0})
-            continue
-        if not path.is_file():
-            digest.update(b"<non-file>")
-            records.append({"path": relative, "state": "non-file", "sha256": None, "size": 0})
-            continue
-        content = path.read_bytes()
-        file_hash = hashlib.sha256(content).hexdigest()
-        digest.update(content)
-        records.append(
-            {"path": relative, "state": "present", "sha256": file_hash, "size": len(content)}
-        )
+            record.update({"state": "deleted", "sha256": None, "size": 0, "mode": None})
+        elif not path.is_file():
+            record.update({"state": "non-file", "sha256": None, "size": 0, "mode": None})
+        else:
+            content = path.read_bytes()
+            record.update(
+                {
+                    "state": "present",
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "size": len(content),
+                    "mode": path.stat().st_mode & 0o777,
+                }
+            )
+        digest.update(json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        digest.update(b"\0")
+        records.append(record)
     return digest.hexdigest(), records
 
 
@@ -82,10 +101,18 @@ def build_snapshot(
     unstaged = _paths(root, "diff", "--name-only")
     untracked = _paths(root, "ls-files", "--others", "--exclude-standard")
     changed = staged | unstaged | untracked
+    head = _git(root, "rev-parse", "HEAD")
     permitted = {path for path in changed if _matches(path, allowlist)}
     declared_foreign = {path for path in changed if _matches(path, foreign)}
     out_of_scope = changed - permitted - declared_foreign
-    fingerprint, files = _content_fingerprint(root, changed)
+    fingerprint, files = _content_fingerprint(
+        root,
+        changed,
+        staged=staged,
+        unstaged=unstaged,
+        untracked=untracked,
+        head=head,
+    )
 
     return {
         "schema_version": 1,
@@ -94,7 +121,7 @@ def build_snapshot(
         "phase": phase,
         "repository_root": str(root),
         "branch": _git(root, "branch", "--show-current") or "DETACHED",
-        "head": _git(root, "rev-parse", "HEAD"),
+        "head": head,
         "base_ref": base_ref,
         "base_sha": _git(root, "rev-parse", base_ref, allow_missing_ref=True),
         "allowlist": sorted(allowlist),
