@@ -50,9 +50,9 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
     platform_env: LivePostgresEnv,
 ) -> None:
     version = pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert version == 5
+    assert version == 6
     again = pgs.migrate_platform_schema(platform_env.migrator_dsn)
-    assert again == 5
+    assert again == 6
     with psycopg.connect(platform_env.migrator_dsn) as conn:
         conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
         rows = conn.execute(
@@ -62,7 +62,7 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
             ORDER BY version
             """
         ).fetchall()
-        assert len(rows) == 5
+        assert len(rows) == 6
         assert int(rows[0][0]) == 1
         assert rows[0][1] == "platform_settings"
         assert int(rows[1][0]) == 2
@@ -73,6 +73,8 @@ def test_fresh_install_owners_history_fingerprint_and_noop(
         assert rows[3][1] == "audit_events"
         assert int(rows[4][0]) == 5
         assert rows[4][1] == "blob_artifacts"
+        assert int(rows[5][0]) == 6
+        assert rows[5][1] == "blob_backup_set_org_fk"
         assert len(rows[0][2]) == 64
         assert len(rows[0][3]) == 64
         for table in (
