@@ -31,8 +31,11 @@ def test_migration_chain_includes_blob_artifacts() -> None:
         "organization",
         "audit_events",
         "blob_artifacts",
+        "blob_backup_set_org_fk",
     ]
     assert steps[4].version == 5
+    assert steps[5].version == 6
+    assert steps[5].name == "blob_backup_set_org_fk"
     assert len(steps[4].checksum) == 64
 
 
@@ -52,6 +55,18 @@ def test_blob_migration_grants_expected_runtime_privileges() -> None:
 def test_packaging_includes_blob_artifacts_migration() -> None:
     text = (ROOT / "packaging/build_onedir.py").read_text(encoding="utf-8")
     assert "qm_platform/persistence/postgres/migrations/0005_blob_artifacts.sql" in text
+    assert "qm_platform/persistence/postgres/migrations/0006_blob_backup_set_org_fk.sql" in text
+
+
+def test_blob_org_fk_migration_enforces_composite_reference() -> None:
+    sql = (
+        pgs.MIGRATIONS_DIR / "0006_blob_backup_set_org_fk.sql"
+    ).read_text(encoding="utf-8").lower()
+    assert "backup_sets_id_org_unique" in sql
+    assert "unique (backup_set_id, organization_id)" in sql
+    assert "blob_artifacts_backup_set_org_fkey" in sql
+    assert "foreign key (backup_set_id, organization_id)" in sql
+    assert "references platform.backup_sets (backup_set_id, organization_id)" in sql
 
 
 def test_validate_storage_key_rejects_traversal() -> None:

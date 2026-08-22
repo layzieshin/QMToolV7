@@ -31,6 +31,7 @@ def test_migration_chain_includes_audit_events() -> None:
         "organization",
         "audit_events",
         "blob_artifacts",
+        "blob_backup_set_org_fk",
     ]
     assert steps[3].version == 4
     assert steps[3].name == "audit_events"

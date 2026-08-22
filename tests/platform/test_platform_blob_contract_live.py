@@ -154,3 +154,64 @@ def test_runtime_cannot_insert_backup_set_with_bad_organization(platform_env: Li
                     organization_id="00000000-0000-4000-8000-000000009999",
                 ),
             )
+
+
+def test_runtime_cannot_attach_artifact_to_foreign_org_backup_set(
+    platform_env: LivePostgresEnv,
+) -> None:
+    other_org_id = "00000000-0000-4000-8000-000000009999"
+    backup_set_id = str(uuid4())
+    now = datetime(2026, 8, 22, 12, 10, tzinfo=timezone.utc)
+
+    with psycopg.connect(platform_env.migrator_dsn) as migrator:
+        migrator.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
+        migrator.execute(
+            """
+            INSERT INTO platform.organizations (organization_id, display_name, is_active)
+            VALUES (%s, 'Inactive peer org', false)
+            """,
+            (other_org_id,),
+        )
+        migrator.commit()
+
+    with psycopg.connect(platform_env.runtime_dsn) as runtime:
+        runtime.execute("SET ROLE qmtool_runtime")
+        PlatformBlobRepository.insert_backup_set_on_connection(
+            runtime,
+            BackupSetWrite(
+                backup_set_id=backup_set_id,
+                organization_id=INSTALLATION_ORGANIZATION_ID,
+                created_at=now,
+            ),
+        )
+        runtime.commit()
+
+    with psycopg.connect(platform_env.runtime_dsn) as runtime:
+        runtime.execute("SET ROLE qmtool_runtime")
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            runtime.execute(
+                """
+                INSERT INTO platform.blob_artifacts (
+                    artifact_id, organization_id, backup_set_id,
+                    checksum_sha256, size_bytes, media_type, version_no,
+                    storage_key, created_at, updated_at
+                ) VALUES (
+                    %s::uuid, %s, %s::uuid,
+                    %s, %s, %s, %s,
+                    %s, %s, %s
+                )
+                """,
+                (
+                    str(uuid4()),
+                    other_org_id,
+                    backup_set_id,
+                    "e" * 64,
+                    3,
+                    "application/octet-stream",
+                    1,
+                    "artifacts/cross-org.bin",
+                    now,
+                    now,
+                ),
+            )
+            runtime.commit()
