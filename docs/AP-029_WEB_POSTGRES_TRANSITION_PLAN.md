@@ -820,7 +820,8 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Prototyp-Referenz: `origin/feature/container-module-prototype` @
   `9f6e21565c184d15d5b305d481fc63799e4ee8eb` (53 Dateien vs. `origin/main`).
 - Qualifikation: kein Slice erfüllt D12/D14-Portabilität (SQLite/SQL/Demo-UI/Runtime-Aktivierung).
-  Disposition 53/53 in `component-disposition.json` (schema v2).
+  Disposition 53/53 in `component-disposition.json` (schema v2): **21 verwerfen**, **32 archivieren**,
+  **0** übernommene portable Slices.
 - Evidence-Wurzel: `build/ap-029-cb00/r1-20260822T091700065Z/`.
 - Gate A: `gate-a-junit.xml` — 18 passed (exit 0).
 - Gate B: `gate-b-junit.xml` — 16 passed (exit 0).
