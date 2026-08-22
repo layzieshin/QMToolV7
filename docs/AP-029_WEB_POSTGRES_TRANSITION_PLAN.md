@@ -928,4 +928,4 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
   pre/post identical; mutation_detected false.
 - Reviewer: Agent `5623a16f-96a3-4b08-804b-96ceb581b7d6`; evidence_profile `CONTROL_PLANE_PINNED`.
 - Rework-Zähler: `0/2`.
-- Status: **PG00-D PASS** (pending commit); PG00 ready for package finalization.
+- Status: **PG00-D PASS** (commit `4a45816`); PG00 ready for package finalization.
