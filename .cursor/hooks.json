@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/session-start.ps1\"",
+        "timeout": 10
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/subagent-start.ps1\"",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/git-guard.ps1\"",
+        "matcher": "(?i)(git|gh)",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "stop": [
+      {
+        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/workflow-watchdog.ps1\"",
+        "timeout": 10,
+        "loop_limit": 8
+      }
+    ]
+  }
+}

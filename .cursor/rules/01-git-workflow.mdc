@@ -64,12 +64,19 @@ This implicit local-commit authorization does not apply to analysis, review, dia
 planning, or recommendation-only requests. It never widens the commissioned file or behavior
 scope. Push, pull request, merge, and branch deletion remain separately user-gated.
 
+An explicit `/execute-work-package <WP-ID>` invocation is the user's authorization for the
+`git-steward` to perform that work package's checkpoint commits/pushes and final PR/merge when
+`.cursor/agent-system.json` enables automatic merge and every persisted gate is green. This is not
+blanket Git permission: only the named work-package branch is covered, shell hooks remain
+fail-closed, branch protection must pass, and branch deletion is still separately user-gated.
+Outside that active persisted workflow, the normal user gates below remain unchanged.
+
 | Action | Allowed only when |
 | --- | --- |
 | Local commit | Included in an explicitly commissioned implementation after green gates and exact-path staging; or when the user explicitly asks to commit. Never commit directly on `main` |
-| Push | User explicitly asks to push; never push to `main` |
-| Pull request | User explicitly asks to create a PR; base branch must be `main` |
-| Merge | User explicitly asks to merge and the applicable review/CI requirements are satisfied |
+| Push | User explicitly asks to push, including through `/execute-work-package`; never push to `main` |
+| Pull request | User explicitly asks to create a PR, including through `/execute-work-package`; base branch must be `main` |
+| Merge | User explicitly asks to merge, including through `/execute-work-package`, and the applicable review/CI requirements are satisfied |
 | Branch deletion | User explicitly asks. Normally only after confirmed integration into `main`. An unmerged branch may be deleted only on an explicit, unambiguous delete instruction, after warning that the work will be lost |
 
 Before commit, push, or PR, inspect:

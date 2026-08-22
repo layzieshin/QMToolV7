@@ -1,0 +1,23 @@
+{
+  "status": "IDLE",
+  "work_package": null,
+  "base_branch": "main",
+  "work_branch": null,
+  "phase": "PLAN",
+  "checkpoint": null,
+  "rework_count": 0,
+  "final_rework_count": 0,
+  "escalation_used": false,
+  "human_gate": false,
+  "last_green_commit": null,
+  "next_action": null,
+  "updated_at": "1970-01-01T00:00:00Z",
+  "work_package_path": null,
+  "execution_journal_path": null,
+  "final_report_path": null,
+  "gates": {
+    "full_regression_pass": false,
+    "final_audit_pass": false,
+    "ci_pass": false
+  }
+}

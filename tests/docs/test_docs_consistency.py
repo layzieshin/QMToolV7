@@ -745,7 +745,8 @@ def test_ap029_macro_governance_is_explicit_and_serial() -> None:
         "separate Evidence",
         "separaten Reviewer-Verdict",
         "separaten lokalen Commit",
-        "höchstens eine Remediation-Runde",
+        "höchstens zwei normale",
+        "genau ein frischer Escalation Review",
     ):
         assert required in plan, f"AP-029 macro contract is missing {required!r}"
 
