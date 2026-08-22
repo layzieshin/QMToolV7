@@ -14,6 +14,7 @@ from modules.documents.workflow_profile_store import WorkflowProfileRelationalSt
 from modules.usermanagement.api import UserContext
 from modules.usermanagement.contracts import issue_user_context
 from tests.database_helpers import make_docs_repository, make_documents_service_with_profiles
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 
 
 def _actor(*, username: str, roles: tuple[str, ...], is_qmb: bool, **overrides) -> object:
@@ -21,6 +22,7 @@ def _actor(*, username: str, roles: tuple[str, ...], is_qmb: bool, **overrides) 
         "user_id": f"{username}-id",
         "session_id": f"{username}-session",
         "request_id": f"{username}-request",
+        "organization_id": INSTALLATION_ORGANIZATION_ID,
         "username": username,
         "global_roles": roles,
         "is_qmb": is_qmb,
@@ -81,6 +83,7 @@ class DocumentsWorkflowProfileAdminTest(unittest.TestCase):
             user_id="fake",
             session_id="s",
             request_id="r",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             is_qmb=True,
             global_roles=frozenset({"QMB"}),
         )
@@ -93,6 +96,7 @@ class DocumentsWorkflowProfileAdminTest(unittest.TestCase):
             user_id="u",
             session_id="s",
             request_id="r",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             username="u",
             global_roles=frozenset({"QMB"}),
             is_qmb=True,

@@ -72,7 +72,17 @@ def test_login_me_logout_and_separate_sessions(client: TestClient) -> None:
     assert me_a.status_code == 200
     assert me_a.json()["username"] == "bob"
     assert me_a.json()["user_id"]
+    assert me_a.json()["organization_id"] == "00000000-0000-4000-8000-000000000001"
     assert "password" not in me_a.text.lower()
+
+    spoof = client.get(
+        "/auth/me",
+        headers={
+            "Authorization": f"Bearer {login_a.json()['token']}",
+            "X-Organization-ID": "00000000-0000-4000-8000-000000009999",
+        },
+    )
+    assert spoof.status_code == 403
 
     me_admin = client.get(
         "/auth/me",

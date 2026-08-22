@@ -389,6 +389,7 @@ def test_create_user_audit_actor_is_admin_not_target(pg_service) -> None:
         user_id=admin.user_id,
         session_id=issued.session.session_id,
         request_id="req-create",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username=admin.username,
         global_roles={"ADMIN"},
         is_qmb=False,

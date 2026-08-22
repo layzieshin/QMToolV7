@@ -23,6 +23,7 @@ def _confirmed_actor():
         user_id="actor-1",
         session_id="sess-1",
         request_id="req-1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="admin",
         global_roles=["Admin"],
         is_qmb=False,
@@ -97,6 +98,7 @@ def test_settings_adapter_resolves_actor_and_writes_without_local_session_storag
     resolved = resolve_confirmed_settings_actor(
         container,
         request_id="settings-adapter-test",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
     )
     service.set_module_settings(
         "signature",
@@ -155,6 +157,7 @@ def test_settings_service_rejects_direct_user_context_construction(tmp_path: Pat
         user_id="u1",
         session_id="s1",
         request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="admin",
         global_roles=frozenset({"Admin"}),
         is_qmb=False,
@@ -196,6 +199,7 @@ def test_settings_service_rejects_missing_session_or_request_id(tmp_path: Path) 
         user_id="actor-1",
         session_id="sess-1",
         request_id="req-1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="admin",
         global_roles=["Admin"],
         is_qmb=False,
@@ -206,6 +210,7 @@ def test_settings_service_rejects_missing_session_or_request_id(tmp_path: Path) 
         user_id="actor-1",
         session_id="sess-1",
         request_id="req-1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="admin",
         global_roles=["Admin"],
         is_qmb=False,

@@ -13,6 +13,7 @@ from modules.documents.contracts import (
     WorkflowProfile,
 )
 from modules.documents.errors import PermissionDeniedError, ValidationError
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from modules.documents.service import DocumentsService
 from tests.database_helpers import make_documents_service_with_profiles
 import tempfile
@@ -123,6 +124,7 @@ class DocumentsVariantsMatrixTest(unittest.TestCase):
             user_id="qmb-id",
             session_id="qmb-session",
             request_id="qmb-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
             username="qmb",
             global_roles=("QMB",),
             is_qmb=True,

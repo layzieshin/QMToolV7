@@ -24,6 +24,7 @@ from modules.documents.workflow_profile_runtime_adapter import (
     runtime_transition_key_from_relational,
 )
 from modules.usermanagement.contracts import issue_user_context
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from tests.database_helpers import make_documents_service_with_profiles
 
 
@@ -37,6 +38,7 @@ def _qmb():
         user_id="qmb-id",
         session_id="qmb-session",
         request_id="qmb-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="qmb",
         global_roles=("QMB",),
         is_qmb=True,

@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
 
+from qm_platform.organization.server_context import resolve_active_organization_id
+
 from .contracts import AuthenticatedUser, IssuedSession, SessionRecord, UserContext, issue_user_context
 from .errors import (
     ExpiredSessionError,
@@ -135,6 +137,7 @@ class SessionOps:
             user_id=user.user_id,
             session_id=session.session_id,
             request_id=str(request_id),
+            organization_id=resolve_active_organization_id(),
             username=user.username,
             global_roles={role} if role else set(),
             is_qmb=is_effective_qmb(user),

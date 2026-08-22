@@ -283,7 +283,7 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: PG00
+Current checkpoint: WEB00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -292,7 +292,7 @@ Current checkpoint: PG00
 | TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
 | CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
 | INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
-| PG00 | PostgreSQL platform foundation | TODO | — | — | roles, schemas, runner, org, audit, blob contracts |
+| PG00 | PostgreSQL platform foundation | PASS | 90cefa498d05f708ad54d4d673a41e245957d63f | A–D passed; full regression passed; evidence build/ap-029-pg00/final/ | Current advances to WEB00 |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | preserve existing domain behavior |
 | OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | shared PG+blob backup contract |
@@ -665,7 +665,8 @@ Zusätzlich muss jedes Checkpoint-Evidence-Paket enthalten:
 - alle Versuche, einschließlich historischer roter oder blockierter Versuche;
 - Befehle, Exitcodes, passed/failed/skipped/errors und JUnit-/Logpfade;
 - Reviewer-Agent, konfiguriertes und tatsächlich nachgewiesenes Modell, Verdict;
-- Remediation-Zähler (`0` oder `1`); eine zweite Runde ist unzulässig;
+- Rework-Zähler (`0`, `1` oder `2`); danach genau ein frischer Escalation Review; eine dritte
+  normale Runde ist unzulässig;
 - lokalen Commit-SHA nach PASS oder ausdrückliche Angabe `kein Commit`;
 - Einschränkungen, NOT RUN und Aktionen mit separater Freigabe.
 
@@ -710,7 +711,8 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
   `tests/docs/test_cursor_macro_workflow.py::test_qmtool_reviewer_and_macro_skill_contracts`.
   Der Test suchte im rohen Markdown nach der zusammenhängenden Phrase `separate context`; der
   Skill trennt diese Phrase durch einen Markdown-Zeilenumbruch.
-- Remediation-Zähler R1: `1/1` verbraucht (innerhalb der alten Sequenz).
+- Remediation-Zähler R1: `1/1` verbraucht (historisch unter früherem 1/1-Makro-Limit; aktuelles
+  Agentensystem: höchstens `2/2` + Escalation Review).
 - Gate B–E (R1): `NOT RUN`.
 
 ### Sequenz GOV01-R2 (FAILED — unverändert; getrennt von R1/R3)
@@ -836,7 +838,7 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Gate E attempt1: Agent `8c211263-6e86-469c-99c7-07f90f64c03e`; evidence_profile
   `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
   mutation_detected false.
-- Remediation-Zähler: `1/1`.
+- Remediation-Zähler: `1/1` (historisch unter früherem 1/1-Makro-Limit).
 - Statusübergang: CB00 `PASS`; Current → `INV00`.
 
 ## 12. INV00 attempt evidence
@@ -856,5 +858,83 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Gate E attempt1: Agent `cf156ee0-1976-47ca-8668-bdc6eae6401e`; evidence_profile
   `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
   mutation_detected false.
-- Remediation-Zähler: `1/1`.
+- Remediation-Zähler: `1/1` (historisch unter früherem 1/1-Makro-Limit).
 - Statusübergang: INV00 `PASS`; Current → `PG00`.
+
+#### PG00-A journal (Runner/Roles/Ownership/Lock/Fingerprint)
+
+- Branch: `feature/ap-029-pg00`; base `90cefa498d05f708ad54d4d673a41e245957d63f`.
+- Scope: platform schema `platform` under `qm_platform/persistence/postgres/`; reuses shared
+  `qmtool_migrator` / `qmtool_runtime` from UM provision; advisory lock `0x5154_4D5F_504C_4154`.
+- Migrations: `0001_platform_settings`, `0002_platform_settings_integrity` (SQLite V2 mirror).
+- Excluded: org context (B), audit contract (C), blob contract (D), SQLite cutover wiring.
+- Evidence target: `build/ap-029-pg00/a/` (`gate.json`, static/live pytest).
+- Gate: `platform_postgres_migration_gate.py` — 12/12 checks green; static pytest 10 passed.
+- Review rework 1/2: removed platform → UM internal import; platform-owned runtime identity check.
+- Platform suite: 107 passed, 10 live skipped (no `QMTOOL_PG_TEST_ADMIN_DSN`).
+- Status: **PG00-A PASS** (commit `dd91ec44297b563f5fd4c03f90155013da5707a9`); PG00 remains **IN_PROGRESS** (B–D open).
+
+#### PG00-B journal (Organization / request context)
+
+- Branch: `feature/ap-029-pg00`; base `90cefa498d05f708ad54d4d673a41e245957d63f`.
+- Scope: server-confirmed `organization_id` on `UserContext` / `SystemExecutionContext`;
+  platform `organizations` migration; client spoof rejection on `/auth/*`.
+- Excluded: audit contract (C), blob contract (D), SQLite cutover wiring.
+- Evidence target: `build/ap-029-pg00/b/` (org context tests, platform gate rerun).
+- Tests: pending formal review evidence under `build/ap-029-pg00/b/`.
+- Gate B focused: `gate-b-org-junit.xml` — 31 passed (exit 0).
+- Gate platform: `gate-platform-junit.xml` — 110 passed, 11 skipped (live PG; no DSN).
+- Migration gate: `gate.json` — 12/12 checks green vs base `90cefa4`.
+- Gate D: `gate-d-pre-review-snapshot-r1.json`; fingerprint `ff550ae864e3352213d714677107483962792bf925dd89b6e71e13a36355f2d0`.
+- Gate E attempt1: Agent `eeaaedeb-af6f-4734-b00a-c09f812279da`; evidence_profile
+  `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
+  mutation_detected false.
+- Live-test remediation: `test_postgres_schema_live.py` aligned to migration 0003 (version 3,
+  organizations seed test).
+- Rework-Zähler: `0/2`.
+- Status: **PG00-B PASS** (commits `fc762a0`, `f10c70a`, closure `ec14130`); PG00 remains **IN_PROGRESS** (C–D open).
+
+#### PG00-C journal (Append-only audit without secrets)
+
+- Branch: `feature/ap-029-pg00`; base `90cefa498d05f708ad54d4d673a41e245957d63f`.
+- Scope: platform-wide append-only PostgreSQL audit contract (`platform.audit_events`);
+  redaction contract; schema version 4; JSON persistence allowlist for `details_json`.
+- Excluded: blob contract (D), SQLite cutover, module audit wiring, JSONL replacement.
+- Evidence: `build/ap-029-pg00/c/r1-20260822T143100000Z/`.
+- Gate C focused: `gate-c-junit.xml` — 24 passed.
+- Gate platform: `gate-platform-junit.xml` — 121 passed, 13 skipped (live PG; no DSN).
+- Migration gate: `gate.json` — 12/12 checks green vs base `90cefa4`.
+- Gate D/E R2: fingerprint `e40b7bc273f3bebe1433e415466c42adc383939406dcf214901eda3ae7af27e7`;
+  pre/post identical; mutation_detected false.
+- Reviewer attempt1: Agent `baa089d2-5745-47ff-a7cc-6b96e4143f69` — FAIL (camelCase `sessionToken` bypass).
+- Reviewer attempt2: Agent `238175fd-d4c4-4a0b-8695-da9753bbdf8d` — FAIL (stale JUnit evidence).
+- Reviewer attempt3: Agent `93b9ee06-e1ea-4f92-9f38-766d1efd8f7e` — FAIL (inline neutral-key secrets).
+- Reviewer attempt4: Agent `04dc7434-514f-4815-a51a-2a7ae9833038` — technical PASS; D15 parent attestation pending in subagent.
+- Escalation: Agent `945ecae4-a7fe-4c8c-a8fe-8c2dd8327941` — **PASS**; evidence_profile `CONTROL_PLANE_PINNED`.
+- Rework-Zähler: `2/2` (camelCase key normalization; inline secret alias redaction).
+- Status: **PG00-C PASS** (commit `3cba3b1`); PG00 remains **IN_PROGRESS** (D open).
+
+#### PG00-D journal (Blob metadata / backup-set contract)
+
+- Branch: `feature/ap-029-pg00`; base `90cefa498d05f708ad54d4d673a41e245957d63f`.
+- Scope: `platform.backup_sets` + `platform.blob_artifacts`; filesystem blob store with
+  traversal rejection; schema version 5; shared `backup_set_id` anchor for PG+Blob.
+- Excluded: OPS00 backup drill, HTTP blob endpoints, module blob migration (PG01).
+- Evidence: `build/ap-029-pg00/d/r1-20260822T150000000Z/`.
+- Gate D focused: `gate-d-junit.xml` — 20 passed.
+- Gate platform: `gate-platform-junit.xml` — 134 tests, 16 skipped (live PG; no DSN).
+- Migration gate: `gate.json` — 12/12 checks green vs base `90cefa4`.
+- Gate D/E: fingerprint `16d3771e06f4d9462f94ecdfbac0daefee95b26d27d08338d5203c5cb10e459a`;
+  pre/post identical; mutation_detected false.
+- Reviewer: Agent `5623a16f-96a3-4b08-804b-96ceb581b7d6`; evidence_profile `CONTROL_PLANE_PINNED`.
+- Rework-Zähler: `0/2`.
+- Status: **PG00-D PASS** (commit `4a45816`); PG00 package finalization complete (commit pending).
+
+#### PG00 package finalization
+
+- Full regression: `tests/platform` 134 tests (16 live skipped); `tests/modules` green;
+  `tests/e2e_cli` green; `tests/docs` 46 passed; migration gate 12/12 vs `90cefa4`.
+- Module regression fix: `organization_id` in documents/incident/UM contract tests (`995052a`).
+- Evidence: `build/ap-029-pg00/final/`.
+- Final audit: package scope A–D complete; no parallel persistence path; live PG skipped (no DSN).
+- Status: **PG00 PASS**; Current → **WEB00** (prepared, not started).

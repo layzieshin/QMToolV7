@@ -51,6 +51,7 @@ ALLOWED_JSON_COLUMNS: frozenset[str] = frozenset(
         "platform_settings.value_json",
         "platform_setting_revisions.old_value_json",
         "platform_setting_revisions.new_value_json",
+        "audit_events.details_json",  # AP-029 PG00-C platform audit contract
     }
 )
 

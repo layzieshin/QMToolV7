@@ -8,6 +8,11 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from qm_platform.organization.server_context import (
+    ClientOrganizationSpoofRejected,
+    resolve_active_organization_id,
+)
+
 from modules.usermanagement import api as um_api
 from modules.usermanagement.api import (
     AuditUnavailableError,
@@ -54,6 +59,19 @@ def effective_request_id(
     if x_request_id and _REQUEST_ID_RE.fullmatch(x_request_id.strip()):
         return x_request_id.strip()
     return str(uuid.uuid4())
+
+
+def enforce_server_organization_context(
+    x_organization_id: Annotated[str | None, Header(alias="X-Organization-ID")] = None,
+) -> None:
+    """Reject client attempts to supply a non-matching authoritative organization_id."""
+    try:
+        resolve_active_organization_id(client_organization_id=x_organization_id)
+    except ClientOrganizationSpoofRejected as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "forbidden", "message": "organization context is server-confirmed"},
+        ) from exc
 
 
 def get_container(request: Request):

@@ -10,6 +10,7 @@ from modules.documents.contracts import DocumentStatus, SystemRole, WorkflowProf
 from modules.documents.errors import DocumentConflictError, PermissionDeniedError, ValidationError
 from modules.documents.service import DocumentsService
 from tests.database_helpers import make_documents_service_with_profiles
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 
 
 class _FakeSignatureApi:
@@ -910,6 +911,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 user_id=user_id,
                 session_id=f"{user_id}-session",
                 request_id=f"{user_id}-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
                 username=user_id,
                 global_roles=frozenset({"USER"}),
                 is_qmb=False,
@@ -1049,6 +1051,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 user_id=user_id,
                 session_id=f"{user_id}-session",
                 request_id=f"{user_id}-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
                 username=user_id,
                 global_roles=frozenset({"QMB"} if is_qmb else {"USER"}),
                 is_qmb=is_qmb,
@@ -1136,6 +1139,7 @@ class DocumentsAuthorizationMatrixTest(unittest.TestCase):
                 user_id=user_id,
                 session_id=f"{user_id}-session",
                 request_id=f"{user_id}-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
                 username=user_id,
                 global_roles=frozenset({"QMB"} if is_qmb else {"USER"}),
                 is_qmb=is_qmb,

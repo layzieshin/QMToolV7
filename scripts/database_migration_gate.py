@@ -216,6 +216,7 @@ def evaluate_database_migration_gate(
         } | {
             path.relative_to(ROOT).as_posix()
             for path in ROOT.glob("qm_platform/**/migrations/*.sql")
+            if "postgres" not in path.parts
         }
         checks["manifest_matches_registered_migrations"] = manifest_ok
         checks["all_migration_files_are_registered"] = (

@@ -11,6 +11,7 @@ from modules.usermanagement.api import UserContext
 
 from src.backend.auth_dependencies import (
     effective_request_id,
+    enforce_server_organization_context,
     extract_bearer_token,
     get_container,
     map_auth_error,
@@ -18,7 +19,11 @@ from src.backend.auth_dependencies import (
     require_user_context_password_change,
 )
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+    dependencies=[Depends(enforce_server_organization_context)],
+)
 
 
 class LoginRequest(BaseModel):
@@ -39,6 +44,7 @@ class MeResponse(BaseModel):
     user_id: str
     session_id: str
     request_id: str
+    organization_id: str
     username: str
     global_roles: list[str]
     is_qmb: bool
@@ -50,6 +56,7 @@ def _me_payload(context: UserContext) -> MeResponse:
         user_id=context.user_id,
         session_id=context.session_id,
         request_id=context.request_id,
+        organization_id=context.organization_id,
         username=context.username,
         global_roles=sorted(context.global_roles),
         is_qmb=context.is_qmb,

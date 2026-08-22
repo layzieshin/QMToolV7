@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from modules.incident_management.contracts import AuthorizationError
 from modules.usermanagement.contracts import issue_user_context
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from qm_platform.settings.errors import ResidualPolicyReadonlyError
 from tests.modules.incident_management_test_support import (
     _FakeUser,
@@ -18,6 +19,7 @@ def _actor():
         user_id="qmb-1",
         session_id="s1",
         request_id="r1",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
         username="qmb",
         global_roles=["QMB"],
         is_qmb=True,
