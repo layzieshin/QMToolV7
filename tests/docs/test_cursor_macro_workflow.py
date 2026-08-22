@@ -166,6 +166,10 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     for contract in (agent, skill, protocol, workflow):
         normalized = " ".join(contract.split()).lower()
         assert "never ask the user to copy, paste, forward or relay" in normalized
+    normalized_workflow = " ".join(workflow.split()).lower()
+    assert "explicitly authorized ap-029 macro" in normalized_workflow
+    assert "execute-gated-macro" in normalized_workflow
+    assert "do not invoke" in normalized_workflow and "qmtool-evidence-reviewer" in normalized_workflow
     assert "complete work report" in workflow
     assert "invoke a fresh reviewer Task" in workflow
     assert "one consolidated report" in protocol
