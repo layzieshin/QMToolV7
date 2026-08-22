@@ -185,9 +185,8 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Nächste autorisierte Aktion ist ausschliesslich PG00 (Current checkpoint; **IN_PROGRESS** — Subcheckpoint A+B PASS,
-Subcheckpoint C–D offen). INV00 ist PASS und gemergt (`90cefa4`). Nach vollständigem PG00-PASS folgt
-**WEB00** (vorbereitet, nicht gestartet). Kein späterer Produktcheckpoint ist freigegeben.
+Die naechste autorisierte Aktion ist ausschliesslich WEB00 (webclient foundation, **TODO**, vorbereitet).
+**PG00 PASS** (PR pending merge). INV00 ist PASS (`90cefa4`). Kein späterer Produktcheckpoint ist freigegeben.
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
 autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
