@@ -39,6 +39,11 @@ Architecture pointers (details live in the docs above):
 - OS/shell: Windows / PowerShell — chain commands with `;`, not `&&`.
 - Python `3.14.x`; use the workspace venv explicitly:
   `$env:PYTHONPATH="."; .\.venv\Scripts\python.exe -m pytest`.
+- Destructive PostgreSQL live tests (`@pytest.mark.postgres`): see
+  [`AGENTS.md` — Destructive PostgreSQL live tests (Slot 2)](../AGENTS.md#destructive-postgresql-live-tests-slot-2).
+  If `QMTOOL_PG_TEST_ADMIN_DSN` is missing from `.env`, run
+  `scripts/provision_j04_destructive_postgres.py` first; start tests only via
+  `scripts/run_postgres_live_tests.py` (never bare `pytest -m postgres`).
 
 ## Phase 0: Scope classification
 

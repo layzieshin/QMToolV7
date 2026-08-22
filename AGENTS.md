@@ -65,6 +65,51 @@ and supplemented by `.cursor/rules/02-autonomous-work-package.mdc`.
 - No configured linter/typechecker (no ruff/flake8/mypy/pre-commit) — do not invent lint/typecheck steps.
 - Do not invent npm/Vite commands until WEB00 lands them in-repo.
 
+## Destructive PostgreSQL live tests (Slot 2)
+
+All `@pytest.mark.postgres` tests use a **disposable local test cluster** (Slot 2). They must
+**never** use Slot 1 lab credentials (`QMTOOL_PG_HOST` / `192.168.0.4` / `qmtool_test`).
+
+Before running destructive PostgreSQL tests, check gitignored `.env` for Slot 2 keys:
+
+- `QMTOOL_PG_TEST_ADMIN_DSN`
+- `QMTOOL_PG_TEST_EXPECTED_DATABASE` (`qmtool_j04_destructive_test`)
+- `QMTOOL_PG_TEST_EXPECTED_MAJOR` (local Windows disposable cluster: `18`; CI: `16`)
+
+Do **not** store `QMTOOL_PG_TEST_RESET` in `.env`. The runner injects it only into the pytest
+child after a read-only preflight.
+
+**If Slot 2 keys are missing** (fresh clone, branch cleanup, or empty `.env`), provision once.
+Requires a local PostgreSQL instance (16+; here PG 18 on `127.0.0.1:5432`):
+
+```powershell
+.\.venv\Scripts\python.exe scripts/provision_j04_destructive_postgres.py --local-trust-bootstrap
+```
+
+Alternative when a superuser DSN is already known:
+
+```powershell
+$env:J04_PG_PROVISION_SUPERUSER_DSN = "postgresql://postgres:<password>@127.0.0.1:5432/postgres"
+.\.venv\Scripts\python.exe scripts/provision_j04_destructive_postgres.py
+```
+
+The provision script creates the test admin, database, cluster marker, and appends the three
+Slot 2 keys to `.env`. It never writes the destructive reset opt-in.
+
+**Run destructive PostgreSQL tests** through the runner (not bare `pytest -m postgres`):
+
+```powershell
+.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py
+```
+
+Optional single test or file:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/run_postgres_live_tests.py tests/modules/usermanagement/test_postgres_schema_live.py::test_provision_is_idempotent
+```
+
+Details: [`tests/postgres/README.md`](tests/postgres/README.md), [`.env.example`](.env.example).
+
 ## Architecture essentials
 
 - Business logic lives in `modules/*` services. `qm_platform/*` contains platform, runtime, logging,
