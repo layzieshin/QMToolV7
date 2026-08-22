@@ -4,6 +4,18 @@ This target is **only** for destructive pytest fixtures. It must never share
 host, port, volume/data directory, database, or credentials with runtime/lab
 instances such as `qmtool_app`.
 
+## For AI agents
+
+**Entry point:** [`AGENTS.md` — Destructive PostgreSQL live tests (Slot 2)](../../AGENTS.md#destructive-postgresql-live-tests-slot-2).
+
+Follow that section end-to-end before running any `@pytest.mark.postgres` test: check the three
+`QMTOOL_PG_TEST_*` keys in gitignored `.env`, provision if missing, then run only via
+`scripts/run_postgres_live_tests.py` (never bare `pytest -m postgres`). Preflight exit **2** means
+Slot 2 is not configured.
+
+This README is the operator reference for cluster identity, local bootstrap, optional Compose,
+CI, and safety details.
+
 ## Identity
 
 | Item | Value |
