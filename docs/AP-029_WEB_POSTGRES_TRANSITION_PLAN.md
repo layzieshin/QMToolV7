@@ -282,7 +282,7 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: INV00
+Current checkpoint: PG00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -290,7 +290,7 @@ Current checkpoint: INV00
 | GOV01 | Executable macro governance and ledger hardening | PASS | d39c8e798d8c9bdf77b721c9cfa76001c2a676d5 | R5 PASS build/ap-029-gov01/r5-20260821T133945364Z/ gate-a 19 passed; gate-b 15 passed; gate-c 37 passed; Gate E PASS CONTROL_PLANE_PINNED agent 5e997705-3943-4833-9889-fe6ec6a85228 | historical R1–R4 preserved; Current advances to TOOL00 |
 | TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
 | CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
-| INV00 | Read-only SQLite store inventory | TODO | — | — | migrate/archive/discard decisions only |
+| INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
 | PG00 | PostgreSQL platform foundation | TODO | — | — | roles, schemas, runner, org, audit, blob contracts |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | preserve existing domain behavior |
@@ -835,3 +835,23 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
   mutation_detected false.
 - Remediation-Zähler: `1/1`.
 - Statusübergang: CB00 `PASS`; Current → `INV00`.
+
+## 12. INV00 attempt evidence
+
+### Sequenz INV00-R1 (autorisiert) — read-only inventory PASS
+
+- Base: `3484d6df6f3d814ce657352a60066d0adf57623c` (`origin/main`).
+- Deliverable: `docs/AP-029_SQLITE_STORE_INVENTORY.md` + evidence JSON
+  `sqlite-store-inventory.json` (7 product stores; 5 migrate, 2 archive).
+- Evidence-Wurzel: `build/ap-029-inv00/r1-20260822T104500000Z/`.
+- Gate A: `gate-a-junit.xml` — 18 passed (exit 0).
+- Gate B: `gate-b-junit.xml` — 16 passed (exit 0).
+- Gate C: `gate-c-junit.xml` — 40 passed (exit 0).
+- Gate D: `gate-d-pre-review-snapshot-r1.json`; allowlist-only docs diff; staging empty.
+- Gate E attempt0: Agent `89a3838a-a0a4-457d-bb51-0b4c85dccab9`; verdict **REMEDIATION_REQUIRED**
+  (training repository path incorrect).
+- Gate E attempt1: Agent `cf156ee0-1976-47ca-8668-bdc6eae6401e`; evidence_profile
+  `CONTROL_PLANE_PINNED`; reviewer_verdict **PASS**; pre/post fingerprint identical;
+  mutation_detected false.
+- Remediation-Zähler: `1/1`.
+- Statusübergang: INV00 `PASS`; Current → `PG00`.
