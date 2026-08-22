@@ -892,5 +892,4 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Live-test remediation: `test_postgres_schema_live.py` aligned to migration 0003 (version 3,
   organizations seed test).
 - Rework-Zähler: `0/2`.
-- Status: **PG00-B PASS** (commits `fc762a0`, `f10c70a`, live-test fix pending in closure commit);
-  PG00 remains **IN_PROGRESS** (C–D open).
+- Status: **PG00-B PASS** (commits `fc762a0`, `f10c70a`, closure `ec14130`); PG00 remains **IN_PROGRESS** (C–D open).
