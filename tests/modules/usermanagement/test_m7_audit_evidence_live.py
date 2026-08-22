@@ -22,6 +22,7 @@ from modules.usermanagement.postgres_session_repository import PostgresSessionRe
 from modules.usermanagement.postgres_user_repository import PostgresUserRepository
 from modules.usermanagement.service import UserManagementService
 from qm_platform.events.event_bus import EventBus
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from qm_platform.runtime.backend_bootstrap import wire_backend_usermanagement
 from src.backend.api import create_app
 from src.backend.bootstrap import build_platform_ports
