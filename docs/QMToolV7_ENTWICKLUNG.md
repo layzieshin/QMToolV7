@@ -102,7 +102,7 @@ Zusatz: `Admin/Debug` ist für Admins persistent ein-/ausblendbar (`Ansicht -> A
 ## CI
 
 Workflow-Definition: `.github/workflows/ci-gates.yml` (gleicher Stand wie im Ursprungsrepo; bei Bedarf Pfade/Runner anpassen).
-Der Workflow prüft Python `3.11` bis `3.14`; für Entwicklungsarbeit ist `3.14` die Referenzversion.
+Der Workflow prüft Python `3.14` (entspricht `pyproject.toml` `requires-python`); für Entwicklungsarbeit ist `3.14` die Referenzversion.
 
 ## Git-Workflow in IDEs
 
