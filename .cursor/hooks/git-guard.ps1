@@ -18,9 +18,6 @@ $lower = $command.ToLowerInvariant()
 if ($lower -match "\bgit\b[^;`r`n]*\bpush\b[^;`r`n]*(--force(?:-with-lease)?|-f(?:\s|$))") {
     Deny-Command "Force-push is forbidden."
 }
-if ($lower -match "\bgit\b[^;`r`n]*\b(?:clean|reset|rebase|stash|restore|pull|am|apply|update-ref)\b") {
-    Deny-Command "Destructive or history-rewriting Git command is forbidden."
-}
 if ($lower -match "\bgh\s+pr\s+merge\b[^;`r`n]*(?:--admin|--bypass|--force)") {
     Deny-Command "Branch-protection bypass flags are forbidden."
 }
@@ -38,10 +35,16 @@ $readGit = @(
     "check-ignore", "help", "version"
 )
 $writeGit = @("add", "rm", "mv", "commit", "push", "fetch", "merge")
+$destructiveGit = @(
+    "clean", "reset", "rebase", "stash", "restore", "pull", "am", "apply", "update-ref"
+)
 $hasGitWrite = $false
 
 foreach ($match in $gitMatches) {
     $subcommand = $match.Groups[1].Value.ToLowerInvariant()
+    if ($subcommand -in $destructiveGit) {
+        Deny-Command "Destructive or history-rewriting Git command is forbidden."
+    }
     if ($subcommand -in $writeGit) {
         $hasGitWrite = $true
         continue
@@ -138,7 +141,7 @@ if (-not $isWrite) {
     @{ permission = "allow" } | ConvertTo-Json -Compress | Write-Output
     exit 0
 }
-if ($lower -match "\bgit\s+-c\s+") {
+if ($command -match '(?i)\bgit\s+-C\s+') {
     Deny-Command "git -C is forbidden for workflow Git writes; the hook cwd is authoritative."
 }
 if ($lower -match "\b(?:set-location|push-location|pop-location|chdir|cd|sl)\b") {
