@@ -3,8 +3,29 @@ $ErrorActionPreference = "Stop"
 $raw = [Console]::In.ReadToEnd()
 $inputData = $raw | ConvertFrom-Json
 $task = [string]$inputData.task
+$actual = [string]$inputData.subagent_model
+$logPath = if ($env:QMTOOL_RUNTIME_LOG_PATH) {
+    $env:QMTOOL_RUNTIME_LOG_PATH
+} else {
+    Join-Path (Get-Location) ".cursor/runtime/subagent-start.log"
+}
+$logDirectory = Split-Path -Parent $logPath
+if ($logDirectory) {
+    New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+}
+$taskShort = ($task -replace '[\r\n]+', ' ').Trim()
+if ($taskShort.Length -gt 160) {
+    $taskShort = $taskShort.Substring(0, 160)
+}
 
 if ($task -notmatch "^\[ROLE:([a-z0-9-]+)\]") {
+    @{
+        timestamp = [DateTime]::UtcNow.ToString("o")
+        role = "UNTAGGED"
+        actual_model = $actual
+        task_short = $taskShort
+        allowed = $true
+    } | ConvertTo-Json -Compress | Add-Content -LiteralPath $logPath -Encoding UTF8
     @{ permission = "allow" } | ConvertTo-Json -Compress | Write-Output
     exit 0
 }
@@ -22,7 +43,6 @@ if ($null -eq $roleProperty) {
 }
 
 $expected = [string]$roleProperty.Value.model
-$actual = [string]$inputData.subagent_model
 $expectedLower = $expected.ToLowerInvariant()
 $actualLower = $actual.ToLowerInvariant()
 
@@ -33,20 +53,12 @@ if ($expectedLower -eq "composer-2.5[]") {
         ($actualLower.StartsWith("$expectedLower[") -and -not $actualLower.Contains("fast=true"))
 }
 
-$logPath = if ($env:QMTOOL_RUNTIME_LOG_PATH) {
-    $env:QMTOOL_RUNTIME_LOG_PATH
-} else {
-    Join-Path (Get-Location) ".cursor/runtime/subagent-start.log"
-}
-$logDirectory = Split-Path -Parent $logPath
-if ($logDirectory) {
-    New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
-}
 @{
     timestamp = [DateTime]::UtcNow.ToString("o")
     role = $role
     actual_model = $actual
     expected_model = $expected
+    task_short = $taskShort
     allowed = $modelMatches
 } | ConvertTo-Json -Compress | Add-Content -LiteralPath $logPath -Encoding UTF8
 

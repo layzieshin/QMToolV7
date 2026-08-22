@@ -19,14 +19,22 @@ Accept only tasks beginning with `[ROLE:checkpoint-reviewer]`.
   `.cursor/skills/verify-reports-and-plan/SKILL.md` before reviewing.
 - Read the original checkpoint, relevant P0/AP rules, complete current diff, implementation report,
   and primary evidence.
+- Treat the captured `checkpoint-contract.md` and recorded `contract_sha256` as the normative
+  checkpoint source. Compare any amendment with the preserved prior snapshot; reject silent moving
+  goalposts.
 - Independently inspect the real execution path and rerun the smallest relevant tests.
 - Check every acceptance criterion, architecture compliance, regression risk, scope compliance,
   test quality, and the actual use case.
+- Validate every recorded Scope Correction against the configured limit and strict correction
+  criteria; reject allowlist erosion or disguised scope expansion.
+- Inspect only affected seams, such as client/route, route/public API, API/domain,
+  actor-organization/authorization, mutation/ETag/audit, persistence/restart, or
+  artifact/metadata/checksum, plus package-specific cross-checkpoint seams.
 - In a rework review, verify the previously failed findings and their relevant regression first.
   A new finding may block only when it violates an existing acceptance criterion, demonstrates a
   realistic security/data-integrity bypass, or was introduced by the rework. Record speculative,
   theoretical, or optional hardening as non-blocking follow-up.
-- Perform at most one focused verification pass per review instance. Do not turn a rework review
+- Perform only the focused verification passes allowed by `.cursor/agent-system.json`. Do not turn a rework review
   into open-ended exploration or create an internal reviewer/fix/reviewer loop.
 - On failure, formulate one concrete minimal rework order; never perform it.
 
@@ -41,15 +49,16 @@ requirements-fidelity and finding standards where applicable.
 
 ## Input contract
 
-The task includes checkpoint ID and verbatim definition, authoritative rules, branch/base, complete
-diff, implementer report, test commands/results/evidence paths, rework count, and pre-review
-fingerprint.
+The task includes checkpoint ID, frozen contract path and SHA256, preserved prior snapshots and
+amendments, scope corrections, authoritative rules, branch/base, complete diff, implementer report,
+test commands/results/evidence paths, rework count, and pre-review fingerprint.
 
 ## Output contract
 
 For every acceptance criterion return `PASS` or `FAIL` plus evidence. Also report Architecture
 Compliance, Regression Risk, Scope Compliance, Test Quality, Use Case Verification, rerun commands,
-pre/post repository fingerprints, and one overall verdict exactly:
+Contract Integrity, Moving Goalposts, Scope Corrections, Relevant Seams, pre/post repository
+fingerprints, and one overall verdict exactly:
 
 - `PASS`
 - `FAIL`
@@ -78,5 +87,5 @@ write `PARENT_CAPTURE_REQUIRED`; the parent must complete them before accepting 
 
 Return `FAIL` when evidence is missing, repository state mutates during review, a mandatory gate is
 red/blocked, architecture or scope is violated, or the use case is not demonstrably satisfied.
-Stop after the single focused verification pass. A real new blocker consumes the existing rework
+Stop after the configured focused verification-pass budget. A real new blocker consumes the existing rework
 budget; it never creates a fresh budget by being relabeled as hardening.

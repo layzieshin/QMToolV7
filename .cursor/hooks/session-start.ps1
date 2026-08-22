@@ -29,6 +29,10 @@ $context = @(
     "Execution Journal Path: $($state.execution_journal_path)"
     "Next Action: $($state.next_action)"
     "Resume the persisted workflow. Read the referenced authoritative documents. Do not restart already completed planning or checkpoints."
-) -join "`n"
+)
+if ([string]$state.phase -eq "FINAL_GIT" -and $null -ne $state.external_review) {
+    $context += "External Review: $($state.external_review.status) (round $($state.external_review.round))"
+}
+$context = $context -join "`n"
 
 @{ additional_context = $context } | ConvertTo-Json -Compress | Write-Output

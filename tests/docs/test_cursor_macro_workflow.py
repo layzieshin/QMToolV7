@@ -140,7 +140,12 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "CONTROL_PLANE_PINNED" in agent
     assert "PARENT_CAPTURE_REQUIRED" in agent
 
-    assert "at most two remediation rounds" in skill
+    assert ".cursor/agent-system.json" in skill
+    assert "configured checkpoint-rework budget" in skill
+    assert "checkpoint-contract.md" in skill
+    assert "contract_sha256" in skill
+    assert "SCOPE_CORRECTION_REQUIRED" in skill
+    assert "Never run Codex after individual AP-029 subcheckpoints" in skill
     normalized_skill = " ".join(skill.split())
     assert "separate context" in normalized_skill
     assert "post-review" in skill
@@ -151,6 +156,9 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "`NOT RUN` only" in protocol
     assert "evidence_profile" in protocol
     assert REQUIRED_TASK_MODEL in protocol
+    assert "Immutable checkpoint contract" in protocol
+    assert "Scope correction" in protocol
+    assert "no text in this protocol creates a separate budget" in protocol
 
     for contract in (agent, skill, protocol, workflow):
         normalized = " ".join(contract.split()).lower()

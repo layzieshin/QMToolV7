@@ -30,16 +30,30 @@ When the user explicitly commissions a change that edits repository files:
 
 1. If already on a suitable task branch for that exact purpose, continue there.
 2. Otherwise, before creating a feature branch from `main`, verify that `main` has a configured
-   `origin/main` upstream and that `git status --short --branch` shows `main` is neither ahead,
-   behind, nor diverged from that upstream.
-3. If that check fails: **stop and report**. Do not automatically pull, merge, or rebase to "fix"
-   the drift.
+   `origin/main` upstream and inspect clean state and ahead/behind counts.
+3. If `main` is only behind, apply the narrowly defined safe fast-forward sync below. If it is
+   ahead, diverged, dirty, staged, on another branch, or has another upstream: **stop and report**.
 4. If the check passes, create and switch to `feature/<ap-oder-thema>` **before the first edit**.
 5. Prefer AP-style names when an Arbeitspaket is known, e.g. `feature/ap-027-request-context`.
 6. One branch = one Arbeitspaket or one clearly bounded purpose. Do not mix packages.
 
 If the agent is unexpectedly on `main` with unclear local changes, or the working tree contains
 unrelated dirty state that blocks safe work: **stop and ask**. Do not invent a cleanup path.
+
+## Safe base fast-forward sync
+
+Local `main` may be synchronized automatically only when all of these are observed immediately
+before the command:
+
+- current branch is exactly `main` and its upstream is exactly `origin/main`;
+- worktree and index are completely clean, including untracked files;
+- local `main` has no commits ahead of `origin/main` and is not diverged;
+- `origin/main` is equal or ahead, so the update is a fast-forward or no-op.
+
+The only allowed commands are exact `git pull --ff-only` or
+`git pull --ff-only origin main`. Do not add flags, `git -C`, inline directory changes, rebase,
+merge-commit creation, reset, force or stash. The Git guard independently rechecks every condition
+read-only and fails closed. If fast-forward is not possible, stop; do not attempt a creative repair.
 
 ## Forbidden Git operations
 
@@ -48,6 +62,7 @@ Never use:
 - `git reset --hard`
 - `git clean` (any form that deletes untracked or ignored files)
 - rebase (`git rebase`, `git pull --rebase`)
+- `git pull` except the exact safe base fast-forward forms above
 - force-push (`--force`, `--force-with-lease`, or equivalent)
 
 Do not use `git add .` or other blanket staging. Stage only the exact files intended for the

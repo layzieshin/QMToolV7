@@ -14,8 +14,9 @@ After the first mandatory red or blocked gate:
 - record any fail-fast violation separately.
 
 One remediation round means one bounded change set followed by a new gate sequence. An isolated
-diagnostic is not a PASS and may not silently become a retry. At most `R1` and `R2` are allowed.
-After another normal FAIL, exactly one fresh escalation review decides PASS or BLOCKED_HUMAN.
+diagnostic is not a PASS and may not silently become a retry. Numeric limits and role models come
+only from `.cursor/agent-system.json`; no text in this protocol creates a separate budget. After
+the configured normal budget, the configured fresh escalation path decides PASS or BLOCKED_HUMAN.
 
 ## Evidence layout
 
@@ -31,6 +32,27 @@ earlier result. Each checkpoint records:
 - remediation count;
 - final commit SHA/file set when commit permission exists;
 - remaining limitations and separately gated actions.
+
+## Immutable checkpoint contract
+
+Before the first source edit, create `checkpoint-contract.md` in the existing checkpoint evidence
+root. Record work package/checkpoint, `captured_at`, start HEAD, source document and commit, goal,
+use case, in/out scope, invariants, acceptance criteria, planned evidence, and requirement sources.
+Compute SHA256 with PowerShell `Get-FileHash` and write `contract_sha256` to the execution journal.
+
+Reviewer and final audit use this snapshot, not only mutable roadmap text. Preserve every prior
+snapshot. A material change requires a formal amendment and successor snapshot referencing the old
+hash; fachliche behavior, user decision, architecture, public contract, security, or persistence
+changes use the applicable HUMAN_GATE. A demonstrated clarification without behavior change may be
+handled by the planning process.
+
+## Scope correction
+
+On `SCOPE_CORRECTION_REQUIRED`, do not edit the omitted file. The parent may update the allowlist
+within the configured budget only when it is an existing canonical owner directly required by an
+approved criterion and the change is small, immediate, and adds no behavior, public surface,
+architecture or technology. Record file, responsibility, reason, affected criterion and reviewer
+verification. Anything broader is Scope Expansion; no incremental allowlist erosion.
 
 ## Reviewer handoff
 

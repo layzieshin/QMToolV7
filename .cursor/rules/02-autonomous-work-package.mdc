@@ -8,22 +8,33 @@ alwaysApply: true
 
 - When `.cursor/runtime/workflow-state.json` has `status: RUNNING`, read it and resume exactly its
   current checkpoint and `next_action`; never repeat a completed checkpoint.
+- `.cursor/agent-system.json` is the only normative source for workflow limits and role models.
+  Other harness files describe the bounded behavior without creating independent numeric budgets.
 - P0 architecture, the active roadmap/AP documents, `00-agent-workflow.mdc`, and
   `01-git-workflow.mdc` remain authoritative. Prefer existing patterns; no silent architecture
   change or scope creep.
-- Architecture/security/trust-model changes require an existing-style AP/ADR proposal,
-  `status=BLOCKED_HUMAN`, and `human_gate=true`.
+- Before source edits, freeze the immutable checkpoint contract and record its SHA256. Review against that
+  snapshot; material goal, requirement, architecture, public-contract, security or persistence
+  changes require a preserved amendment and the applicable HUMAN_GATE.
+- Apply configured planning quality: confirmed requirement traceability, HIGH-risk evidence, a
+  bounded Plan Challenge for configured risk profiles, and one Package Integration Scenario for
+  functionally interacting checkpoints (or justified `N/A`). Do not re-plan completed checkpoints
+  of an already running package.
 - Keep implementer and reviewer contexts separate. A checkpoint advances only after independent
   `PASS`; an implementer never self-approves.
 - A rework review is scoped to prior failed findings and relevant regression. A new finding blocks
   only if it violates an existing acceptance criterion, demonstrates a realistic security/data
   integrity bypass, or was introduced by the rework; otherwise record it as a non-blocking follow-up.
-- Each reviewer instance gets one focused verification pass. No recursive exploration or new
-  reviewer/fix loop inside that review; material new blockers consume the existing rework budget.
-- Use at most two normal checkpoint reworks, then exactly one escalation review. Escalation `FAIL`
-  blocks for the human. Final-audit rework is likewise limited to two cycles.
+- Each reviewer instance gets the configured focused verification passes. No recursive exploration
+  or new reviewer/fix loop; material new blockers consume the configured rework budget.
+- An omitted existing owner may enter the configured Scope Correction path before edit; new
+  responsibility, behavior, API, architecture or technology is Scope Expansion and follows normal
+  plan/HUMAN_GATE rules.
 - Only `git-steward` performs workflow Git/GitHub writes, and only in `CHECKPOINT_GIT` or
   `FINAL_GIT` under the hook gates.
+- GitHub Codex is a bounded optional external reviewer on the final PR path, never per checkpoint.
+  Verify findings through the readonly triager before rework; never automate Codex source changes.
+  Unavailability follows config and does not weaken internal gates.
 - Ask the user only at the defined HUMAN_GATEs. A manual stop/abort must remain stopped.
 - Detailed test selection and Definition of Done stay in `00-agent-workflow.mdc` and
   `docs/TEST_SMOKE_GATES.md`; do not weaken tests or invent missing toolchains.
