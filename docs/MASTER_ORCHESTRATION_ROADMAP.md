@@ -1,22 +1,24 @@
 Status: verbindlicher Masterplan / Steuerungsdokument
-Version: 0.1
+Version: 0.2
 Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
+Transition owner: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (P1)
 
 # Master-Orchestration-Roadmap QMToolV7
 
 ## Leitplanken
 - Keine Codeaenderungen, keine Refactorings, keine Dependency-Aenderungen und keine Implementierung in diesem Plan.
-- Bestehende App bleibt waehrend aller Umbauten lauffaehig.
 - Oeffentliche Python-Grenzen bleiben `modules/<name>/api.py` und `src/backend/api.py`.
 - Backend ist Host/Transport-Adapter, kein Fachmodul und kein Ort fuer Businesslogik.
-- GUI/CLI bleiben Adapter ohne fachliche Rollenentscheidungen, Repository-, SQL-, Storage- oder Datei-Direktzugriffe.
+- CLI bleibt Operator-/Testadapter ohne fachliche Rollenentscheidungen oder Repository-/SQL-/Storage-Direktzugriffe.
+- Neue Endbenutzer-UI ist ausschliesslich `webclient/*` (nach WEB00). PyQt/Tk sind frozen Legacy/Reference.
+- Produktive Persistenz ist PostgreSQL-only; kein produktiver SQLite-Fallback.
 
-## Praezisierte SQLite-Invariante
-- Fuer bereits backend-migrierte Use Cases darf SQLite nur noch vom Backend-Prozess geoeffnet werden.
-- Noch nicht migrierte Legacy-Use-Cases duerfen bis zu ihrer Migration lokal bleiben.
-- Ein Use Case darf nie halb lokal und halb backendseitig betrieben werden.
-- Mehrere Clients duerfen nie direkt auf dieselbe SQLite-Datei zugreifen.
-- PostgreSQL bleibt Zielrichtung/offene Entscheidung fuer echten Multiuser-Betrieb.
+## Persistenz-Invariante (Ziel, DECIDED in AP-029)
+- Produktive Runtime oeffnet ausschliesslich PostgreSQL.
+- Eine PostgreSQL-Datenbank je Installation; Schema/Ownership/Migrationen je Modul.
+- Keine direkten Cross-Schema-Abfragen zwischen Fachmodulen.
+- SQLite nur fuer read-only Inventar, einmaligen Import und isolierte Tests.
+- Historische Ist-SQLite-Stores bleiben bis zu INV00/PG01 inventarisiert und migriert; sie sind kein Zielbetrieb.
 
 ## Roadmap-Status
 - Phase 0 `Backend-Basis / Healthcheck`: erledigt. Backend ist lokal startbar und `GET /health` wurde erfolgreich verifiziert.
@@ -32,72 +34,91 @@ Geltung: Roadmap und Arbeitspaket-Steuerung, keine Implementierungsspezifikation
   gleichbedeutend mit „Gesamtrepo release-green“ (bekannter unabhaengiger Fehler
   `tests/e2e_cli/test_training_cli.py`). Produktiver PG-Cutover und UUID-Remapping
   der Quermodule bleiben ein separates Folgepaket ausserhalb AP-028.
-- Naechster aktiv freigegebener Schwerpunkt: **J04** als Dachpaket
-  - **J04-M0**: vollstaendige Documents-Transportmigration fuer den aktiven PyQt-Client
-    (Documents, Artefakte, Signaturen; siehe
-    `docs/J04_M0_PATH_MATRIX.md`, `docs/J04_M0_ACCEPTANCE_REPORT.md`).
-    Training-Consumer, Trainingsstatus und Read-Receipt-Integration bleiben ein separates
-    Folgepaket und sind kein J04-M0-Acceptance-Gate.
-  - **J04-M1**: spaetere relationale Normalisierung von Workflowinstanzen, Assignments
-    und Decisions (`docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/JSON_TO_DATABASE_MIGRATION_PLAN.md`
-    Abschnitt J04 = J04-M1). Startet erst nach abgeschlossenem M0.
-- Die Aufteilung **J04-M0 / J04-M1** ist verbindlich; M0 ersetzt den relationalen Kern
-  nicht, sondern staffelt Transport vor Persistenznormalisierung.
-- Frueheres Lab-Ziel `J04-M0-DESKTOP-SMOKE` und Soft-Degrade-Interim sind **superseded**
-  und zaehlen nicht als M0-Abnahme.
+- J04-M0: historische Documents-Transportmigration fuer den damaligen Desktop-Client
+  (Documents, Artefakte, Signaturen). J04-M0 bleibt historisch Accepted und wird
+  durch AP-029 nicht erneut geoeffnet.
 - J04-M0 acceptance status: `Accepted` (formale menschliche Freigabe 2026-08-20;
-  Produkt-Merge `e003b37`; aktuelle Main-Basis `f7b867d` mit ausschließlich Skill-Merge dazwischen).
-  Word-COM-E2E und Produktionslizenz-/Deploymentprüfung bleiben optionale Folgepakete und
+  Produkt-Merge `e003b37`; aktuelle Main-Basis enthaelt die Acceptance-Historie).
+  Word-COM-E2E und Produktionslizenz-/Deploymentpruefung bleiben optionale Folgepakete und
   sind kein Grund, den Acceptance-Status erneut auf `Rejected / follow-up required` zu setzen.
+- **AP-029 / GOV00**: Zielarchitektur kanonisch festgeschrieben. GOV01/TOOL00 härten jetzt
+  Ledger und autonomen Prüfablauf. Siehe Checkpoint-Ledger in
+  `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`.
+- **J04-M1**: relationale fachliche Normalisierung erst **nach** Pilot (AP-029 Ledger);
+  darf den Pilot nicht verzoegern.
 
 ## Zielarchitektur
 ```mermaid
 flowchart LR
-    PyQtClient[PyQt Client]
-    FutureClients[Spaetere eigene Clients]
-    BackendHost[Internes Backend API Modell]
+    WebClient[webclient Vue SPA]
+    CliAdapter[CLI Operator Test Adapter]
+    LegacyPyQt[Frozen Legacy PyQt Reference]
+    BackendHost[Same-Origin FastAPI /api/v1]
     ModuleApis[Oeffentliche Modul APIs]
     Services[Services und Transaktionsgrenzen]
-    Repos[Repositories und Storage]
-    Persistence[Zentrale Persistenz]
-    Artifacts[Zentrale Artefaktablage]
+    Persistence[PostgreSQL je Modulschema]
+    Artifacts[Blobstore hinter Port]
 
-    PyQtClient --> BackendHost
-    FutureClients --> BackendHost
+    WebClient --> BackendHost
+    CliAdapter --> ModuleApis
+    LegacyPyQt -.->|frozen reference only| ModuleApis
     BackendHost --> ModuleApis
     ModuleApis --> Services
-    Services --> Repos
-    Repos --> Persistence
-    Repos --> Artifacts
+    Services --> Persistence
+    Services --> Artifacts
 ```
 
-Entschieden:
-- Modulzugriffe nur ueber `api.py`.
-- Backend ruft fachliche Use Cases spaeter nur ueber oeffentliche Modul-APIs auf.
-- Services bleiben fachliche Wahrheit fuer Autorisierung, Invarianten und Transaktionsgrenzen.
-- Use-Case-Migration erfolgt komplett pro Use Case, nie halb lokal/halb backendseitig.
+Entschieden (AP-029 Entscheidungsregister D01–D14):
+- Neue UI-Source-of-Truth: `webclient/` (Vue 3 + TypeScript + Vite; Vuetify hinter QM-Schicht).
+- PyQt/Tk frozen; keine neue Produktentwicklung und kein Pilotbetrieb auf PyQt.
+- Produktive Runtime PostgreSQL-only; kein SQLite-Fallback.
+- Hosted-ready Single-Organisation; `organization_id` serverseitig.
+- Same-Origin HTTPS, Cookie-Sessions, CSRF; `/api/v1` kanonische HTTP-Grenze.
+- Zentrale SPA; Module liefern Datenvertraege/Capabilities/`allowed_actions`; keine Fachlogik im Browser.
+- Append-only fachliches Audit in PostgreSQL; technische Logs separat.
+- Blobstore mit gemeinsamen Backup-/Restore-Vertrag; keine Serverpfade im Browser.
+- Erstes Deployment: Windows Server On-Prem, kontrollierte Releases, Restore statt Down-Migration.
+- Backup ≠ Portabilitaetsexport ≠ Nachweisexport.
+- Erster Pilot: begrenzter DMS-Kern PDF-first; keine QES-Behauptung.
+- Container-Prototyp nur portabler Kern; keine J04-Bootstrap-Regression; Produktivierung spaeter.
+- Gated Makros dürfen mehrere Checkpoints nur seriell mit separater Allowlist, Evidence,
+  Reviewer-Verdict und lokalem Commit orchestrieren; maximal eine Remediation je Checkpoint.
+- Container wird vor Übernahme qualifiziert; CB00 kann als dokumentierter No-Code-PASS enden.
 
-Entschiedene Zielentscheidungen (AP-028 / Supervisor 2026-07-31):
-- internes Login fuer dieses Arbeitspaket (kein externes IdP/SSO in AP-028)
+Entschiedene Zielentscheidungen (AP-028 / Supervisor 2026-07-31; weiter gueltig wo nicht durch AP-029 ersetzt):
+- internes Login fuer AP-028-Scope (kein externes IdP/SSO in AP-028)
 - serverseitige opake Sessions als Erstmodell (kein JWT als Erstlösung)
 - bestaetigter, serverseitig erzeugter UserContext als Identitaetsgrundlage fuer backend-migrierte Aufrufe
 - Admin ist nicht automatisch QMB (AP-005 Option B angenommen)
-- PostgreSQL-Zeitpunkt fuer den Scope Usermanagement: in AP-028 (Schema `usermanagement`); andere Module nicht Big-Bang
+- PostgreSQL fuer Schema `usermanagement` in AP-028 vorbereitet; flächendeckender Produkt-Cutover folgt AP-029 Ledger
 
-Offene Zielentscheidungen:
-- Actor-/Audit-Nachweisniveau-Feinheiten und elektronische Signatur (Orientierung AP-006/006A; Umsetzung Auth-Audit in AP-028 M7)
-- langfristige Backend-Transportart jenseits des internen FastAPI-Hosts
-- PostgreSQL-Zeitpunkt fuer die übrigen Fachmodule
-- zentrale Artefaktablage
-- Mehrmandantenfaehigkeit, Lizenzpruefung, Exportanforderungen
+Offene Feinheiten (nicht erneut als Architektur-Grundsatzentscheidungen):
+- Actor-/Audit-Nachweisniveau-Feinheiten und elektronische Signatur jenseits des bestehenden QM-Signaturpfads
+- Converter-Auswahl/Haertung (CONV00)
 - Befugnisse/Kompetenzen jenseits globaler Basisrollen/`is_qmb`
 - Restpunkte in `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md` Abschnitt E
-  (user_id-Remapping: separates Folgepaket vor Cutover, M8 Prep-only; Passwortwechsel-
-  und Admin-HTTP-Policy in M6 entschieden)
+  (user_id-Remapping: separates Folgepaket)
+
+## AP-029 Checkpoint-Reihenfolge (verbindlich)
+
+GOV00 → GOV01 → TOOL00 → CB00 → INV00 → PG00 → WEB00 → PG01 → OPS00 → INT00 → WEB01 → PILOT00 → PILOT01 → CB01 → CONV00 → J04-M1 → MOD00
+
+Nach erfolgreichem GOV00 ist die **naechste autorisierte Aktion ausschliesslich GOV01** als Teil
+des ausdrücklich freigegebenen Makros M0 (GOV01 → TOOL00). Produktcheckpoints beginnen erst nach
+Integration dieser Governance-/Tooling-Basis in `origin/main`.
+
+Ein ausdrücklich freigegebenes Makro darf seine benannten Checkpoints seriell ohne weitere
+Nutzerinteraktion abarbeiten. Jeder Checkpoint behält eigenen Diff, Evidence, Review und lokalen
+Commit; das Makro stoppt beim ersten unresolved Checkpoint. Destruktive Läufe, Human Gates,
+Push/PR/Merge, Deployment und Echtdaten bleiben separat freizugeben.
 
 ## MVP-Priorisierung
-Zuerst stabilisieren:
-- Dokumentenlenkung
+Zuerst stabilisieren (Pilot-Kern laut AP-029):
+- Dokumentenlenkung (Web/PostgreSQL)
+- Signatur / PDF-Viewer / Freigabe / Audit
+- minimale Nutzerverwaltung und serverseitige `allowed_actions`
+
+Danach:
 - Lesebestaetigung / Kenntnisnahme
 - Schulung, Kompetenz & Befugnisse
 - Aufgaben- und Fristenmanagement
@@ -119,97 +140,57 @@ Alle ADR-Pakete sind reine Entscheidungs-/Dokumentationspakete:
 - Keine Dependencies.
 - Keine bestehenden Dateien aendern, ausser eine ausdruecklich freigegebene ADR-/Planungsdatei.
 
-## Erste 5 empfohlene Cursor-Arbeitspakete
-1. `AP-002 Public-Boundary-Verstoesse inventarisieren`
-   - Rein analytisch. Keine Umsetzung, keine Boundary-Cleanups.
-   - Ziel: direkte externe Imports aus Modul-Internals klassifizieren.
-   - Bereiche: `interfaces/*`, `tests/*`, `modules/*`.
-
-2. `AP-003 User/Auth-Current-State-Map`
-   - Rein analytisch. Keine Umsetzung.
-   - Ziel: `current_user.json`, `get_current_user`, Rollen- und QMB-Verwendungen erfassen.
-   - Bereiche: `modules/usermanagement`, CLI, PyQt, Training, Incident, Documents.
-
-3. `AP-004 UserContext-ADR`
-   - Entscheidungs-/Dokumentationspaket.
-   - Ziel: UserContext, Actor, Session/Token und Request-Kontext klaeren.
-   - Keine Implementierung, keine API-Aenderung, keine Migration.
-
-4. `AP-005 Rollen-/QMB-Semantik-ADR`
-   - Entscheidungs-/Dokumentationspaket.
-   - Ziel: Admin/QMB/User, `is_qmb`, Modulrollen und spaetere Befugnisse abgrenzen.
-   - Keine Implementierung, keine API-Aenderung, keine Migration.
-
-5. `AP-006 Audit-Actor-ADR`
-   - Entscheidungs-/Dokumentationspaket.
-   - Ziel: Actor, Correlation, Causation und Audit-Nachweisniveau klaeren.
-   - Keine Implementierung, keine API-Aenderung, keine Migration.
-
-`AP-001 Backend-Smoke inventarisieren` bleibt im Backlog, ist aber nicht mehr unter den ersten fuenf empfohlenen Paketen, weil Backendstart und `GET /health` bereits erfolgreich verifiziert wurden.
+## Historische Cursor-Arbeitspakete (AP-002 … AP-006)
+Die frueheren „erste 5“ ADR-/Analyse-Pakete sind abgeschlossen bzw. dokumentiert und dienen
+nur noch als Historie. Aktive Steuerung erfolgt ueber AP-029.
 
 ## Wichtigste Risiken
-- Globale Session-Datei und lokaler Current User als Actor-Quelle.
-- Lokale `users.db` und lokale SQLite-Stores im Multiuser-Kontext.
-- Verteilte Rechtepruefung und uneinheitliche QMB/Admin-Semantik.
-- Lokale Artefaktablage und direkte Client-Dateipfade.
-- Fehlendes durchgaengiges Optimistic Locking.
-- Gefahr halb migrierter Use Cases.
-- Backend koennte versehentlich Businesslogik oder Repository-Zugriffe aufnehmen.
+Siehe Risikoregister in `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (R01–R22), u. a.:
+- parallele PyQt-/Web-Fachlogik
+- produktiver SQLite-Fallback
+- Browser-Token-Leak / CSRF / clientgelieferte Identitaeten
+- Cross-Schema-SQL und Modulkopplung
+- DB-/Blob-Inkonsistenz und Migration ohne Ownership/Lock/Fingerprint
+- falsche PASS-Aussagen fuer nur geplante Faehigkeiten
+- Container-Prototyp ueberschreibt J04-Bootstrap
 
 ## Bestehende Planungsartefakte
 Aktive Grundlagen:
+- `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 - `docs/DOCS_CANONICAL_INDEX.md`
 - `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`
 - `docs/MODULE_INTEGRATION_POLICY.md`
 - `docs/MODULES_DEVELOPER_GUIDE.md`
 - `docs/TEST_SMOKE_GATES.md`
 - `docs/OPERATIONS_CANONICAL.md`
+- `docs/DATABASE_EVOLUTION_POLICY.md`
 - `docs/GUI_SOURCE_OF_TRUTH.md`
 - `docs/GUI_ARCHITECTURE_PROJECT.md`
 - `docs/LICENSE_SPEC.md`
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
 - `docs/INCIDENT_MANAGEMENT_ARCHITECTURE_CONTRACT.md`
 
-JSON-Persistenz-Baseline (Artefaktpaket Dokumentenlenkung v2, nur Dokumentation):
-- `docs/QMToolV7_Dokumentenlenkung_Artefaktpaket_v2/` inkl. Inventar, offene Fragen,
-  ADR, Zielpersistenzmodell und Migrationsplan (`JSON_TO_DATABASE_MIGRATION_PLAN.md`).
-- **J00** etabliert ausschliesslich diese Baseline; Runtime bleibt unveraendert.
-- **J01** (Schutzgate) ist in `main` (`d907386` / Folge-`71a7b43`); Runtime-Fachlogik
-  unveraendert. Supervisor-Freigabe des Gate-Vertrags bleibt gesondert.
-- **J02** (Settings-Persistenz) ist mit OQ-04 und Residual-Variante A **freigegeben**
-  (Branch/Worktree `feature/j02-settings-persistence`); Umsetzung und Supervisor-
-  Abnahme folgen getrennt. Actor fuer Settings-Revisionen: bestaetigter `UserContext`,
-  nie Legacy-`current_user`.
-  Uebergangsgrenze: keine lokale SQLite-Sessionvariante. Klassische CLI-/PyQt-
-  Ablaufe lesen Settings, schreiben aber bis zum separat freigegebenen Desktop-
-  Backend-Sessiontransport fail-closed. J09 bleibt Owner dieses Transports.
-- **J03 und alle weiteren J-Pakete** brauchen jeweils separate Freigaben.
-- **J03 (R1 / R1.1 / R1.2):** Nachbesserung im Branch `feature/j03-documents-workflow-profiles`
-  (Worktree `QMToolV7-j03`); Abnahmebericht `docs/J03_ACCEPTANCE_REPORT.md`.
-  R1.2 korrigiert Bootstrap-Provenienz vor Migration (frisch vs. V1-Upgrade).
-  Commit/Push/PR erst nach Supervisor-Review.
-- **J03–J06** muessen in den Documents-Umbau integriert werden; kein paralleler
-  Persistenzumbau neben dem Documents-Sollmodell.
+JSON-Persistenz-Baseline und J-Pakete bleiben historische/parallele Planungsartefakte;
+J04-M1 ist im AP-029-Ledger nach dem Pilot eingeordnet.
 
 Historische oder zu klaerende Artefakte:
-- `docs/SRP_REFACTOR_ROADMAP.md`: P2/History, spaeter archivieren vorschlagen.
-- `docs/TRACK_B_SRP_PREP.md`: P2/History, spaeter archivieren vorschlagen.
-- `docs/TRACK_B_CHANGE_SPEC.md`: P2/History, teils umgesetzt, spaeter archivieren oder als Historie belassen.
-- `docs/CLI_FIRST_MIGRATION.md`: Legacy/History, nur erklaerend.
-- `docs/UI_MVP.md`: Legacy/History, PyQt/P0 gewinnt.
-- `docs/TAGESSTART.md`: internes historisches Log.
-- `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen.
-- `docs/TRAINING_MODULE_SPEC.md`: fachlich relevant, aber Detailtiefe fuer Master-Roadmap nicht vorziehen; Status klaeren.
-
-Konflikte markieren statt aendern:
-- Alte P2-Dokumente koennen GUI-, Build- oder Migrationszustaende beschreiben, die P0 ueberholt hat.
-- Hinweise auf direkte `contracts.py`-Nutzung stehen im Konflikt mit der geschaerften P0-Grenze `api.py`.
-- Trainingsspezifikation enthaelt Detailarchitektur; fuer diese Roadmap nur Charter-/Priorisierungsebene nutzen.
+- `docs/SRP_REFACTOR_ROADMAP.md`: P2/History
+- `docs/TRACK_B_SRP_PREP.md`: P2/History
+- `docs/TRACK_B_CHANGE_SPEC.md`: P2/History
+- `docs/CLI_FIRST_MIGRATION.md`: Legacy/History
+- `docs/UI_MVP.md`: Legacy/History
+- `docs/PYQT_CONTRIBUTIONS_REFERENCE.md`: P2 Legacy/History (frozen inventory)
+- `docs/TAGESSTART.md`: internes historisches Log
+- `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-AP-028 ist im vereinbarten Scope abgeschlossen (M0–M9). Aktiver Schwerpunkt:
-**J04-M0** (vollstaendige Documents-/Artefakt-/Signatur-/Training-Read-Transportmigration).
-**J04-M1** (relationale Workflowinstanzen) bleibt gesondert und startet erst nach M0.
+Nächste autorisierte Aktion ist ausschliesslich CB00 (Current checkpoint nach TOOL00 PASS).
+GOV01 und TOOL00 sind PASS. CB00 bleibt TODO / NOT STARTED, bis ausdrücklich freigegeben
+und in origin/main integriert. Kein späterer Produktcheckpoint ist freigegeben.
+M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
+reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
+autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
+ist als Prozessabweichung dokumentiert und ändert den Checkpoint-Status nicht.
 
 Planungsartefakte (AP-028, historisch/abgeschlossen):
 - `docs/AP-028_USERMANAGEMENT_BACKEND_SESSIONS_ROADMAP.md`
@@ -218,39 +199,26 @@ Planungsartefakte (AP-028, historisch/abgeschlossen):
 - `docs/AP-028_M8_CUTOVER_PREP.md`
 - `docs/AP-028_M9_LEGACY_SESSION_BOUNDARY.md`
 
-Folgepakete ausserhalb AP-028 (nicht automatisch freigegeben):
-- UUID-Remapping + Quermodul-Datenmigration + produktiver UM-Cutover
-- Training-CLI-Reparatur (`TrainingAdminApi.create_category` /
-  `tests/e2e_cli/test_training_cli.py`)
+J04-M0 Historie (Accepted; unveraendert):
+- `docs/J04_M0_ACCEPTANCE_REPORT.md`
+- `docs/J04_M0_EXECUTABLE_CHECKLIST.md`
+- `docs/J04_M0_PATH_MATRIX.md`
 
 ## Nicht freigegeben
-- Boundary-Cleanups ausserhalb der in AP-028 explizit genannten Legacy-Grenzen
-- RequestContext-/Kettenkontext-Vollimplementierung (AP-022) jenseits Request-ID am Auth-Rand von AP-028
+- CB00 und alle spaeteren AP-029-Produktcheckpoints ohne expliziten Makroauftrag und
+  veröffentlichte Governance-/Tooling-Basis
+- Neue PyQt-Produktarbeit oder PyQt-Pilotbetrieb
+- Produktiver SQLite-Fallback
+- Boundary-Cleanups ausserhalb explizit genannter Legacy-Grenzen
+- RequestContext-/Kettenkontext-Vollimplementierung (AP-022) jenseits bestehender Auth-Raender
 - Command-ID-/Use-Case-ID-Implementierung
-- Event-/Auditlog-Schemaaenderungen ausserhalb Usermanagement-Auth-Audit (AP-028 M7)
-- Backend-Feature-Routen ausserhalb der AP-028 Auth-/Session-Endpunkte
-- PostgreSQL-Migration anderer Fachmodule
-- Fachliche Datenuebernahme / UUID-Remapping der Quermodule und produktiver UM-Cutover
-  (ausserhalb AP-028; M8 war Prep-only, siehe `docs/AP-028_M8_CUTOVER_PREP.md`)
-- Training-CLI-Reparatur (`tests/e2e_cli/test_training_cli.py`; unabhaengig von AP-028 M9)
+- Fachliche Datenuebernahme / UUID-Remapping der Quermodule ohne eigenes Paket
+- Training-CLI-Reparatur (`tests/e2e_cli/test_training_cli.py`)
 - Review-ablehnen Ketten-/Kontext-Upgrade (AP-026 ist nur Evidence-Baseline)
-- Documents-Multiuser-MVP / J04-M0 Transportvollstaendigkeit (aktiv; siehe
-  `docs/J04_M0_ACCEPTANCE_REPORT.md`)
-- J04-M1 relationale Workflowinstanzen (nach M0; JSON-Migrationsplan Abschnitt J04)
-- Incident-Modul Cleanup Admin=QMB (bekannte Abweichung; ausserhalb AP-028)
-- JSON→DB-Folgepakete J03–J10 (Documents-/Incident-/Training-Persistenzumbauten);
-  J00 Baseline, J01 Schutzgate in `main`, J02 Settings freigegeben zur Umsetzung
-  (OQ-04 entschieden; Supervisor-Abnahme nach Implementierung)
-  Hinweis: Abschnitt „J04“ im Documents-JSON-Migrationsplan meint **J04-M1**.
-- J01-/J02-Supervisor-Abnahmen gesondert von der technischen Umsetzung
-
-Im Rahmen von AP-028 freigegeben und milestone-weise umgesetzt (M0–M9):
-- Auth-Implementierung (serverseitige Sessions)
-- UserContext-Implementierung im Usermanagement-Scope
-- API-Erweiterungen von `modules/usermanagement/api.py` laut Milestone-Plan
-- Backend Auth-Routen (`/auth/*`) als Transport ohne Businesslogik
-- PostgreSQL fuer Schema `usermanagement` inkl. Cutover-Vorbereitung (Prep-only)
-- Legacy-Grenze Backend vs. Desktop-`current_user.json` (M9)
+- J04-M1 relationale Workflowinstanzen vor Pilotabschluss
+- Incident-Modul Cleanup Admin=QMB (bekannte Abweichung)
+- Container-Produktivierung vor Web-/PostgreSQL-Fundament
+- Formale neue Acceptance / Deployment / Echtdaten-Pilot ohne PILOT00/PILOT01
 
 ## Hinweis zu AP-002
 Ergebnis von AP-002 ist nur ein Inventar und liegt vor.

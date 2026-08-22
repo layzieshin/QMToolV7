@@ -1,0 +1,6 @@
+interface:
+  display_name: "Execute Gated Macro"
+  short_description: "Run serial AP-029 checkpoints with review"
+  default_prompt: "Use $execute-gated-macro to run the explicitly authorized AP-029 checkpoints with fail-fast gates and independent review."
+policy:
+  allow_implicit_invocation: false

@@ -1,14 +1,21 @@
 # PyQt Contributions Reference
 
-Status: Canonical (P0)  
-Valid from: 2026-04-13  
+Status: Legacy/History (P2) — frozen reference inventory
+Valid from: 2026-04-13
+Frozen from: 2026-08-21 (AP-029 / GOV00)
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
+Active GUI source of truth: `docs/GUI_SOURCE_OF_TRUTH.md` (`webclient/*`)
 
-This reference documents active PyQt contributions in `interfaces/pyqt/*` with their inputs, outputs, interfaces, and contract surfaces.
+**Frozen / not onboarding:** This document is a historical inventory of PyQt contributions.
+It is **not** an instruction to build new PyQt product UI. No new PyQt contributions are
+allowed. New end-user UI work belongs under `webclient/` after WEB00.
+
+This reference documents the frozen PyQt contribution matrix in `interfaces/pyqt/*`
+(inputs, outputs, interfaces, contract surfaces) for regression and archaeology only.
 
 ## Scope
 
-- Source of truth: `interfaces/pyqt/*`
+- Legacy/reference tree: `interfaces/pyqt/*` (frozen; no new product work)
 - Shell host: `interfaces/pyqt/shell/main_window.py`
 - Registry: `interfaces/pyqt/registry/catalog.py`
 - Contribution contract: `interfaces/pyqt/registry/contribution.py` (`QtModuleContribution`)
