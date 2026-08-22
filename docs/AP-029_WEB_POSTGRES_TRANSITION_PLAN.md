@@ -292,7 +292,7 @@ Current checkpoint: PG00
 | TOOL00 | Native Cursor reviewer and gated macro tooling | PASS | 62520ad2de0f5444b6eb59e82569fcea280e7b17 | R1 PASS build/ap-029-tool00/r1-20260821T135155594Z/ gate-a 17 passed; gate-b 15 passed; gate-c 38 passed; Gate E PASS CONTROL_PLANE_PINNED agent b442ad1b-0311-483f-9102-7f7ea5d295dd; attempt0 REMEDIATION_REQUIRED preserved | remediation 1/1; Current advances to CB00 |
 | CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
 | INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
-| PG00 | PostgreSQL platform foundation | IN_PROGRESS | 90cefa498d05f708ad54d4d673a41e245957d63f | PG00-A PASS dd91ec4; PG00-B PASS fc762a0; PG00-C PASS 3cba3b1 escalation 945ecae4 CONTROL_PLANE_PINNED; D open | roles, schemas, runner, org, audit, blob contracts |
+| PG00 | PostgreSQL platform foundation | IN_PROGRESS | 90cefa498d05f708ad54d4d673a41e245957d63f | PG00-A–C PASS; PG00-D PASS pending commit; finalization open | roles, schemas, runner, org, audit, blob contracts |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | preserve existing domain behavior |
 | OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | shared PG+blob backup contract |
@@ -913,3 +913,19 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - Escalation: Agent `945ecae4-a7fe-4c8c-a8fe-8c2dd8327941` — **PASS**; evidence_profile `CONTROL_PLANE_PINNED`.
 - Rework-Zähler: `2/2` (camelCase key normalization; inline secret alias redaction).
 - Status: **PG00-C PASS** (commit `3cba3b1`); PG00 remains **IN_PROGRESS** (D open).
+
+#### PG00-D journal (Blob metadata / backup-set contract)
+
+- Branch: `feature/ap-029-pg00`; base `90cefa498d05f708ad54d4d673a41e245957d63f`.
+- Scope: `platform.backup_sets` + `platform.blob_artifacts`; filesystem blob store with
+  traversal rejection; schema version 5; shared `backup_set_id` anchor for PG+Blob.
+- Excluded: OPS00 backup drill, HTTP blob endpoints, module blob migration (PG01).
+- Evidence: `build/ap-029-pg00/d/r1-20260822T150000000Z/`.
+- Gate D focused: `gate-d-junit.xml` — 20 passed.
+- Gate platform: `gate-platform-junit.xml` — 134 tests, 16 skipped (live PG; no DSN).
+- Migration gate: `gate.json` — 12/12 checks green vs base `90cefa4`.
+- Gate D/E: fingerprint `16d3771e06f4d9462f94ecdfbac0daefee95b26d27d08338d5203c5cb10e459a`;
+  pre/post identical; mutation_detected false.
+- Reviewer: Agent `5623a16f-96a3-4b08-804b-96ceb581b7d6`; evidence_profile `CONTROL_PLANE_PINNED`.
+- Rework-Zähler: `0/2`.
+- Status: **PG00-D PASS** (pending commit); PG00 ready for package finalization.

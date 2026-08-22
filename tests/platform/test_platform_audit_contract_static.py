@@ -30,8 +30,10 @@ def test_migration_chain_includes_audit_events() -> None:
         "platform_settings_integrity",
         "organization",
         "audit_events",
+        "blob_artifacts",
     ]
     assert steps[3].version == 4
+    assert steps[3].name == "audit_events"
     assert len(steps[3].checksum) == 64
 
 

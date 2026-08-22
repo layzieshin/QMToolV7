@@ -39,6 +39,9 @@ EXPECTED_TABLES = frozenset(
 EXPECTED_TABLES_WITH_INTEGRITY = EXPECTED_TABLES | frozenset({"platform_settings_integrity"})
 EXPECTED_TABLES_WITH_ORGANIZATION = EXPECTED_TABLES_WITH_INTEGRITY | frozenset({"organizations"})
 EXPECTED_TABLES_WITH_AUDIT = EXPECTED_TABLES_WITH_ORGANIZATION | frozenset({"audit_events"})
+EXPECTED_TABLES_WITH_BLOB = EXPECTED_TABLES_WITH_AUDIT | frozenset(
+    {"backup_sets", "blob_artifacts"}
+)
 EXPECTED_ORGANIZATIONS_COLUMNS = frozenset(
     {"organization_id", "display_name", "is_active", "created_at"}
 )
@@ -122,6 +125,35 @@ EXPECTED_AUDIT_CHECK_CONSTRAINTS = frozenset(
         "audit_events_actor_kind_known",
         "audit_events_result_known",
         "audit_events_actor_form",
+    }
+)
+EXPECTED_BACKUP_SETS_COLUMNS = frozenset(
+    {"backup_set_id", "organization_id", "label", "status", "created_at"}
+)
+EXPECTED_BLOB_ARTIFACTS_COLUMNS = frozenset(
+    {
+        "artifact_id",
+        "organization_id",
+        "backup_set_id",
+        "checksum_sha256",
+        "size_bytes",
+        "media_type",
+        "version_no",
+        "storage_key",
+        "created_at",
+        "updated_at",
+    }
+)
+EXPECTED_BLOB_CHECK_CONSTRAINTS = frozenset(
+    {
+        "backup_sets_organization_id_nonempty",
+        "backup_sets_status_known",
+        "blob_artifacts_organization_id_nonempty",
+        "blob_artifacts_checksum_format",
+        "blob_artifacts_size_positive",
+        "blob_artifacts_media_type_present",
+        "blob_artifacts_version_positive",
+        "blob_artifacts_storage_key_present",
     }
 )
 
@@ -739,6 +771,35 @@ def _query_privilege(
     return bool(row[0])
 
 
+def _validate_runtime_table_privileges(
+    conn: psycopg.Connection,
+    table: str,
+    *,
+    allowed: tuple[str, ...],
+    forbidden: tuple[str, ...] = ("TRUNCATE", "REFERENCES", "TRIGGER"),
+) -> None:
+    qualified = f"{SCHEMA_NAME}.{table}"
+    for privilege in allowed:
+        if not _query_privilege(
+            conn,
+            "SELECT has_table_privilege(%s, %s, %s)",
+            (RUNTIME_ROLE, qualified, privilege),
+        ):
+            raise PostgresSchemaError(
+                f"qmtool_runtime missing {privilege} on {qualified}"
+            )
+    disallowed = {"SELECT", "INSERT", "UPDATE", "DELETE", *forbidden}
+    for privilege in sorted(disallowed - set(allowed)):
+        if _query_privilege(
+            conn,
+            "SELECT has_table_privilege(%s, %s, %s)",
+            (RUNTIME_ROLE, qualified, privilege),
+        ):
+            raise PostgresSchemaError(
+                f"qmtool_runtime must not have {privilege} on {qualified}"
+            )
+
+
 def _validate_append_only_runtime_table(
     conn: psycopg.Connection,
     table: str,
@@ -770,6 +831,7 @@ def _validate_role_contract(
     require_history_select: bool = True,
     require_integrity: bool = True,
     require_audit: bool = False,
+    require_blob: bool = False,
 ) -> None:
     role_rows = conn.execute(
         """
@@ -913,6 +975,17 @@ def _validate_role_contract(
 
     if require_audit:
         _validate_append_only_runtime_table(conn, "audit_events")
+    if require_blob:
+        _validate_runtime_table_privileges(
+            conn,
+            "backup_sets",
+            allowed=("SELECT", "INSERT"),
+        )
+        _validate_runtime_table_privileges(
+            conn,
+            "blob_artifacts",
+            allowed=("SELECT", "INSERT", "UPDATE"),
+        )
 
 
 def _validate_schema_contracts(
@@ -922,9 +995,12 @@ def _validate_schema_contracts(
     require_integrity: bool = True,
     require_organization: bool = False,
     require_audit: bool = False,
+    require_blob: bool = False,
 ) -> None:
     expected_tables = (
-        EXPECTED_TABLES_WITH_AUDIT
+        EXPECTED_TABLES_WITH_BLOB
+        if require_blob
+        else EXPECTED_TABLES_WITH_AUDIT
         if require_audit
         else EXPECTED_TABLES_WITH_ORGANIZATION
         if require_organization
@@ -989,6 +1065,17 @@ def _validate_schema_contracts(
             raise PostgresSchemaError(
                 f"audit_events missing columns: {sorted(missing_audit)}"
             )
+    if require_blob:
+        missing_backup = EXPECTED_BACKUP_SETS_COLUMNS - columns_for("backup_sets")
+        if missing_backup:
+            raise PostgresSchemaError(
+                f"backup_sets missing columns: {sorted(missing_backup)}"
+            )
+        missing_blob = EXPECTED_BLOB_ARTIFACTS_COLUMNS - columns_for("blob_artifacts")
+        if missing_blob:
+            raise PostgresSchemaError(
+                f"blob_artifacts missing columns: {sorted(missing_blob)}"
+            )
     missing_history = EXPECTED_HISTORY_COLUMNS - columns_for(MIGRATIONS_TABLE)
     if missing_history:
         raise PostgresSchemaError(
@@ -1002,6 +1089,8 @@ def _validate_schema_contracts(
         expected_checks = expected_checks | EXPECTED_ORGANIZATION_CHECK_CONSTRAINTS
     if require_audit:
         expected_checks = expected_checks | EXPECTED_AUDIT_CHECK_CONSTRAINTS
+    if require_blob:
+        expected_checks = expected_checks | EXPECTED_BLOB_CHECK_CONSTRAINTS
     checks = {
         str(row[0])
         for row in conn.execute(
@@ -1024,6 +1113,8 @@ def _validate_schema_contracts(
         owned_tables = (*owned_tables, "organizations")
     if require_audit:
         owned_tables = (*owned_tables, "audit_events")
+    if require_blob:
+        owned_tables = (*owned_tables, "backup_sets", "blob_artifacts")
     for table in owned_tables:
         owner = conn.execute(
             """
@@ -1043,6 +1134,7 @@ def _validate_schema_contracts(
         require_history_select=require_history_select,
         require_integrity=require_integrity,
         require_audit=require_audit,
+        require_blob=require_blob,
     )
 
 
@@ -1098,6 +1190,7 @@ def migrate_platform_schema(
                         require_integrity=step.version >= 2,
                         require_organization=step.version >= 3,
                         require_audit=step.version >= 4,
+                        require_blob=step.version >= 5,
                     )
                     fingerprint = _compute_schema_fingerprint(conn)
                     conn.execute(
@@ -1127,6 +1220,7 @@ def migrate_platform_schema(
                 require_integrity=target >= 2,
                 require_organization=target >= 3,
                 require_audit=target >= 4,
+                require_blob=target >= 5,
             )
             return target
         finally:
@@ -1160,5 +1254,6 @@ def assert_runtime_schema_ready(dsn: str, *, migrations_dir: Path | None = None)
             require_integrity=True,
             require_organization=True,
             require_audit=True,
+            require_blob=True,
         )
         return target
