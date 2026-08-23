@@ -77,14 +77,21 @@ def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
     assert "CookieSessionAuth" in document["components"]["securitySchemes"]
     assert "CsrfHeader" in document["components"]["securitySchemes"]
     assert "security" not in document["paths"]["/health"]["get"]
-    assert "security" not in document["paths"]["/api/v1/auth/login"]["post"]
+    assert document["paths"]["/api/v1/auth/login"]["post"]["security"] == [{"CsrfHeader": []}]
     assert "security" not in document["paths"]["/api/v1/auth/token"]["post"]
     assert "security" not in document["paths"]["/api/v1/auth/csrf"]["get"]
     me_security = document["paths"]["/api/v1/auth/me"]["get"]["security"]
     assert {"BearerAuth": []} in me_security
     assert {"CookieSessionAuth": []} in me_security
+    assert not any("CsrfHeader" in alternative for alternative in me_security)
 
     mutation = document["paths"]["/api/v1/documents/versions/{document_id}/{version}/workflow/start"]["post"]
+    mutation_security = mutation["security"]
+    assert {"BearerAuth": []} in mutation_security
+    assert {"CookieSessionAuth": [], "CsrfHeader": []} in mutation_security
+    logout_security = document["paths"]["/api/v1/auth/logout"]["post"]["security"]
+    assert {"BearerAuth": []} in logout_security
+    assert {"CookieSessionAuth": [], "CsrfHeader": []} in logout_security
     if_match = _if_match_parameter(mutation)
     assert if_match is not None
     assert if_match["required"] is True

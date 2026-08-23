@@ -1513,7 +1513,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Change Password",
@@ -1798,6 +1799,11 @@
             "description": "Structured QMTool error response."
           }
         },
+        "security": [
+          {
+            "CsrfHeader": []
+          }
+        ],
         "summary": "Login Browser",
         "tags": [
           "auth"
@@ -1943,7 +1949,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Logout",
@@ -2091,7 +2098,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Logout All",
@@ -3214,7 +3222,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Set Workflow Comment Status",
@@ -3549,7 +3558,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Update Header",
@@ -4328,7 +4338,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Confirm Released Document",
@@ -4479,7 +4490,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Open Released Document",
@@ -4785,7 +4797,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Start Tracked Read",
@@ -4945,7 +4958,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Record Tracked Dwell",
@@ -5101,7 +5115,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Finalize Tracked Read",
@@ -5537,7 +5552,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Version",
@@ -6218,7 +6234,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Add Change Request",
@@ -6592,7 +6609,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Pdf Workflow Comment",
@@ -6789,7 +6807,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Sync Docx Comments",
@@ -7016,7 +7035,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create From Template",
@@ -7243,7 +7263,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import Docx",
@@ -7470,7 +7491,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import Pdf",
@@ -7662,7 +7684,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Archive Approved Version",
@@ -7864,7 +7887,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Extend Annual Validity Route",
@@ -8066,7 +8090,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "New Version After Archive",
@@ -8268,7 +8293,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Patch Version Metadata",
@@ -8460,7 +8486,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Abort Workflow",
@@ -8669,7 +8696,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Approval Accept",
@@ -8871,7 +8899,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Approval Reject",
@@ -9073,7 +9102,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Assign Roles",
@@ -9282,7 +9312,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Editing Complete",
@@ -9474,7 +9505,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Ensure Source Pdf For Signing Route",
@@ -9683,7 +9715,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Review Accept",
@@ -9885,7 +9918,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Review Reject",
@@ -10087,7 +10121,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Start Workflow",
@@ -10234,7 +10269,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Bind Document Type Profile",
@@ -10526,7 +10562,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Profile Definition",
@@ -10682,7 +10719,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Activate Profile Definition",
@@ -10838,7 +10876,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Deactivate Profile Definition",
@@ -11138,7 +11177,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Profile Version",
@@ -11280,7 +11320,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Clear Active Asset",
@@ -11431,7 +11472,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Set Active Asset",
@@ -11921,7 +11963,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import Asset Bytes",
@@ -12097,7 +12140,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import And Activate Asset",
@@ -12250,7 +12294,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Resolve Runtime Layout Route",
@@ -12397,7 +12442,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Standalone Sign",
@@ -12540,7 +12586,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Standalone Upload Pdf",
@@ -12844,7 +12891,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Copy Global Template",
@@ -13137,7 +13185,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create User Template",
@@ -13278,7 +13327,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Delete Template",
@@ -13436,7 +13486,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Update Template",
@@ -13589,7 +13640,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Verify Password",
@@ -13738,7 +13790,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create User",
@@ -14039,7 +14092,8 @@
             "BearerAuth": []
           },
           {
-            "CookieSessionAuth": []
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Patch User Access",

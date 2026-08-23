@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from fastapi.routing import APIRoute
 
 from src.backend.auth_routes import router as auth_router
+from src.backend.cookie_csrf import SAFE_METHODS
 from src.backend.csrf_middleware import enforce_cookie_csrf
 from src.backend.documents_routes import router as documents_router
 from src.backend.signature_routes import router as signature_router
@@ -201,6 +202,31 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
         }
 
 
+_OPENAPI_NO_SECURITY_PATHS = frozenset(
+    {
+        "/health",
+        f"{_API_V1}/auth/csrf",
+        f"{_API_V1}/auth/token",
+    }
+)
+_BROWSER_LOGIN = ("post", f"{_API_V1}/auth/login")
+
+
+def _apply_operation_security(path: str, method: str, operation: dict[str, Any]) -> None:
+    if path in _OPENAPI_NO_SECURITY_PATHS:
+        return
+    if (method, path) == _BROWSER_LOGIN:
+        operation["security"] = [{"CsrfHeader": []}]
+        return
+    if method.upper() in SAFE_METHODS:
+        operation["security"] = [{"BearerAuth": []}, {"CookieSessionAuth": []}]
+        return
+    operation["security"] = [
+        {"BearerAuth": []},
+        {"CookieSessionAuth": [], "CsrfHeader": []},
+    ]
+
+
 def _customize_openapi(app: FastAPI) -> dict[str, Any]:
     schema = get_openapi(
         title="QMTool Backend API",
@@ -283,13 +309,7 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
             operation.setdefault("operationId", f"{method}_{re.sub(r'[^A-Za-z0-9]+', '_', path).strip('_').lower()}")
             operation.setdefault("summary", operation["operationId"].replace("_", " ").capitalize())
             operation.setdefault("description", "QMTool J04-M0 HTTP operation.")
-            if path not in {
-                "/health",
-                f"{_API_V1}/auth/csrf",
-                f"{_API_V1}/auth/login",
-                f"{_API_V1}/auth/token",
-            }:
-                operation["security"] = [{"BearerAuth": []}, {"CookieSessionAuth": []}]
+            _apply_operation_security(path, method, operation)
             for status_code in _ERROR_STATUS_CODES:
                 operation.setdefault("responses", {}).setdefault(
                     str(status_code),
