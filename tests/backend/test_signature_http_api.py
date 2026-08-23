@@ -65,22 +65,22 @@ def test_verify_password_and_asset_roundtrip(tmp_path: Path) -> None:
     png = tmp_path / "sig.png"
     _create_signature_png(png)
     imported = client.post(
-        "/signature/assets/import-and-activate",
+        "/api/v1/signature/assets/import-and-activate",
         headers={**_auth(editor), "Content-Type": "image/png", "X-Filename-Hint": "sig.png"},
         content=png.read_bytes(),
     )
     assert imported.status_code == 200, imported.text
     asset_id = imported.json()["asset_id"]
 
-    active = client.get("/signature/assets/active/id", headers=_auth(editor))
+    active = client.get("/api/v1/signature/assets/active/id", headers=_auth(editor))
     assert active.status_code == 200
     assert active.json()["asset_id"] == asset_id
 
-    exported = client.get("/signature/assets/active/content", headers=_auth(editor))
+    exported = client.get("/api/v1/signature/assets/active/content", headers=_auth(editor))
     assert exported.status_code == 200
     assert exported.content.startswith(b"\x89PNG")
 
-    verify = client.post("/signature/verify-password", headers=_auth(editor), json={"password": "editorpass01"})
+    verify = client.post("/api/v1/signature/verify-password", headers=_auth(editor), json={"password": "editorpass01"})
     assert verify.status_code == 200
     assert verify.json()["ok"] is True
 
@@ -95,13 +95,13 @@ def test_standalone_sign_upload_handle(tmp_path: Path) -> None:
     png = tmp_path / "sig.png"
     _create_signature_png(png)
     assert client.post(
-        "/signature/assets/import-and-activate",
+        "/api/v1/signature/assets/import-and-activate",
         headers={**_auth(editor), "Content-Type": "image/png"},
         content=png.read_bytes(),
     ).status_code == 200
 
     upload = client.post(
-        "/signature/standalone/upload",
+        "/api/v1/signature/standalone/upload",
         headers={**_auth(editor), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
@@ -109,7 +109,7 @@ def test_standalone_sign_upload_handle(tmp_path: Path) -> None:
     handle = upload.json()["upload_handle"]
 
     signed = client.post(
-        "/signature/standalone/sign",
+        "/api/v1/signature/standalone/sign",
         headers=_auth(editor),
         json={
             "upload_handle": handle,
@@ -141,11 +141,11 @@ def test_export_active_content_leaves_no_export_file(tmp_path: Path) -> None:
     png = tmp_path / "sig.png"
     _create_signature_png(png)
     assert client.post(
-        "/signature/assets/import-and-activate",
+        "/api/v1/signature/assets/import-and-activate",
         headers={**_auth(editor), "Content-Type": "image/png"},
         content=png.read_bytes(),
     ).status_code == 200
-    exported = client.get("/signature/assets/active/content", headers=_auth(editor))
+    exported = client.get("/api/v1/signature/assets/active/content", headers=_auth(editor))
     assert exported.status_code == 200, exported.text
     assert exported.content.startswith(b"\x89PNG")
     export_dir = tmp_path / "scratch" / "signature-export"
@@ -158,13 +158,13 @@ def test_standalone_sign_error_cleans_scratch(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     editor = _login(client, "editor", "editorpass01")
     upload = client.post(
-        "/signature/standalone/upload",
+        "/api/v1/signature/standalone/upload",
         headers={**_auth(editor), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
     assert upload.status_code == 200, upload.text
     failed = client.post(
-        "/signature/standalone/sign",
+        "/api/v1/signature/standalone/sign",
         headers=_auth(editor),
         json={
             "upload_handle": upload.json()["upload_handle"],
@@ -190,7 +190,7 @@ def test_upload_store_purges_only_own_root(tmp_path: Path) -> None:
     client = TestClient(app)
     editor = _login(client, "editor", "editorpass01")
     first = client.post(
-        "/signature/standalone/upload",
+        "/api/v1/signature/standalone/upload",
         headers={**_auth(editor), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
@@ -208,7 +208,7 @@ def test_upload_store_purges_only_own_root(tmp_path: Path) -> None:
         datetime.now(timezone.utc) - timedelta(minutes=1),
     )
     second = client.post(
-        "/signature/standalone/upload",
+        "/api/v1/signature/standalone/upload",
         headers={**_auth(editor), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )

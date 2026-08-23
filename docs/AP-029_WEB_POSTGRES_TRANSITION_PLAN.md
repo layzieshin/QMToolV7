@@ -293,7 +293,7 @@ Current checkpoint: WEB00
 | CB00 | Controlled portable container-core integration | PASS | 2ad03e7090822a9f5237b6c6ba19fd43faa94415 | R1 No-Code-PASS build/ap-029-cb00/r1-20260822T091700065Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent 8c211263-6e86-469c-99c7-07f90f64c03e; 53/53 disposition | no code import; Current advances to INV00 |
 | INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
 | PG00 | PostgreSQL platform foundation | PASS | 90cefa498d05f708ad54d4d673a41e245957d63f | A–D passed; full regression passed; merged `8a67f67` PR #32; evidence build/ap-029-pg00/final/ | Current advances to WEB00 |
-| WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | TODO | — | — | Vue/TS foundation; not yet implemented as of GOV00 |
+| WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | IN_PROGRESS | — | — | feature/ap-029-web00; contract freeze 2026-08-22; evidence build/ap-029-web00/ |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | preserve existing domain behavior |
 | OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | shared PG+blob backup contract |
 | INT00 | Joint integration gate PG00/WEB00/PG01/OPS00 | TODO | — | — | blocks WEB01 |
@@ -479,7 +479,7 @@ separat freizugeben.
 - **DoD:** Foundation läuft gegen `/api/v1` Same-Origin; keine Fachmodule-UI-Vollständigkeit nötig.
 - **Evidence:** `build/ap-029-web00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`PG01`.
-- **Hinweis:** WEB00 ist mit Stand GOV00 **nicht implementiert**.
+- **Hinweis:** WEB00 ist **IN_PROGRESS** (Branch `feature/ap-029-web00`; Evidence `build/ap-029-web00/`).
 
 ### PG01 — Documents/Registry/Signature → PostgreSQL
 

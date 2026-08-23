@@ -158,7 +158,7 @@ def _build_documents_backend_container(root: Path) -> tuple[RuntimeContainer, ob
 
 
 def _login(client: TestClient, username: str, password: str) -> str:
-    response = client.post("/auth/login", json={"username": username, "password": password})
+    response = client.post("/api/v1/auth/token", json={"username": username, "password": password})
     assert response.status_code == 200, response.text
     return response.json()["token"]
 
@@ -193,7 +193,7 @@ def _minimal_pdf_bytes() -> bytes:
 def _create_assign_start(client: TestClient, users, *, doc_id: str) -> dict:
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={
             "document_id": doc_id,
@@ -206,13 +206,13 @@ def _create_assign_start(client: TestClient, users, *, doc_id: str) -> dict:
     )
     assert created.status_code == 200, created.text
     imported = client.post(
-        f"/documents/versions/{doc_id}/1/import-pdf",
+        f"/api/v1/documents/versions/{doc_id}/1/import-pdf",
         headers={**_mutation_headers(admin, created), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
     assert imported.status_code == 200, imported.text
     assigned = client.post(
-        f"/documents/versions/{doc_id}/1/workflow/assign-roles",
+        f"/api/v1/documents/versions/{doc_id}/1/workflow/assign-roles",
         headers=_mutation_headers(admin, imported),
         json={
             "editors": ["editor"],
@@ -223,7 +223,7 @@ def _create_assign_start(client: TestClient, users, *, doc_id: str) -> dict:
     assert assigned.status_code == 200, assigned.text
     editor_token = _login(client, "editor", "editorpass01")
     started = client.post(
-        f"/documents/versions/{doc_id}/1/workflow/start",
+        f"/api/v1/documents/versions/{doc_id}/1/workflow/start",
         headers=_mutation_headers(admin, assigned),
         json={"profile_id": "http_flow_profile"},
     )
@@ -242,17 +242,17 @@ def test_flow_create_assign_start_approve(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     tokens = _create_assign_start(client, users, doc_id="DOC-HTTP-A")
     edited = client.post(
-        "/documents/versions/DOC-HTTP-A/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-HTTP-A/1/workflow/editing-complete",
         headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
     )
     assert edited.status_code == 200, edited.text
     reviewed = client.post(
-        "/documents/versions/DOC-HTTP-A/1/workflow/review/accept",
+        "/api/v1/documents/versions/DOC-HTTP-A/1/workflow/review/accept",
         headers=_mutation_headers(tokens["reviewer"], edited),
     )
     assert reviewed.status_code == 200, reviewed.text
     approved = client.post(
-        "/documents/versions/DOC-HTTP-A/1/workflow/approval/accept",
+        "/api/v1/documents/versions/DOC-HTTP-A/1/workflow/approval/accept",
         headers=_mutation_headers(tokens["approver"], reviewed),
     )
     assert approved.status_code == 200, approved.text
@@ -265,12 +265,12 @@ def test_flow_review_reject_returns_in_progress(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     tokens = _create_assign_start(client, users, doc_id="DOC-HTTP-B")
     edited = client.post(
-        "/documents/versions/DOC-HTTP-B/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-HTTP-B/1/workflow/editing-complete",
         headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
     )
     assert edited.status_code == 200, edited.text
     rejected = client.post(
-        "/documents/versions/DOC-HTTP-B/1/workflow/review/reject",
+        "/api/v1/documents/versions/DOC-HTTP-B/1/workflow/review/reject",
         headers=_mutation_headers(tokens["reviewer"], edited),
         json={"template_text": "reject"},
     )
@@ -283,17 +283,17 @@ def test_flow_approval_reject(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     tokens = _create_assign_start(client, users, doc_id="DOC-HTTP-AR")
     edited = client.post(
-        "/documents/versions/DOC-HTTP-AR/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-HTTP-AR/1/workflow/editing-complete",
         headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
     )
     assert edited.status_code == 200, edited.text
     reviewed = client.post(
-        "/documents/versions/DOC-HTTP-AR/1/workflow/review/accept",
+        "/api/v1/documents/versions/DOC-HTTP-AR/1/workflow/review/accept",
         headers=_mutation_headers(tokens["reviewer"], edited),
     )
     assert reviewed.status_code == 200, reviewed.text
     rejected = client.post(
-        "/documents/versions/DOC-HTTP-AR/1/workflow/approval/reject",
+        "/api/v1/documents/versions/DOC-HTTP-AR/1/workflow/approval/reject",
         headers=_mutation_headers(tokens["approver"], reviewed),
         json={"template_text": "reject-approval"},
     )
@@ -307,7 +307,7 @@ def test_flow_abort(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     tokens = _create_assign_start(client, users, doc_id="DOC-HTTP-C")
     aborted = client.post(
-        "/documents/versions/DOC-HTTP-C/1/workflow/abort",
+        "/api/v1/documents/versions/DOC-HTTP-C/1/workflow/abort",
         headers=_mutation_headers(tokens["admin"], tokens["state_response"]),
     )
     assert aborted.status_code == 200, aborted.text
@@ -319,7 +319,7 @@ def test_duplicate_create_returns_409_without_resetting_etag(tmp_path: Path) -> 
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={
             "document_id": "DOC-DUP-HTTP",
@@ -330,7 +330,7 @@ def test_duplicate_create_returns_409_without_resetting_etag(tmp_path: Path) -> 
     )
     assert created.status_code == 200, created.text
     duplicate = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={
             "document_id": "DOC-DUP-HTTP",
@@ -345,7 +345,7 @@ def test_duplicate_create_returns_409_without_resetting_etag(tmp_path: Path) -> 
     assert detail["current_etag"] == created.json()["etag"]
     assert detail["current_state"]["title"] == "Original"
     assert detail["current_state"]["status"] == "PLANNED"
-    current = client.get("/documents/versions/DOC-DUP-HTTP/1", headers=_auth(admin))
+    current = client.get("/api/v1/documents/versions/DOC-DUP-HTTP/1", headers=_auth(admin))
     assert current.status_code == 200, current.text
     assert current.json()["etag"] == created.json()["etag"]
     assert current.json()["state"]["title"] == "Original"
@@ -357,7 +357,7 @@ def test_duplicate_create_after_workflow_start_returns_409_and_keeps_in_progress
     tokens = _create_assign_start(client, users, doc_id="DOC-DUP-STARTED-HTTP")
     started = tokens["state_response"]
     duplicate = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(tokens["admin"]),
         json={
             "document_id": "DOC-DUP-STARTED-HTTP",
@@ -371,7 +371,7 @@ def test_duplicate_create_after_workflow_start_returns_409_and_keeps_in_progress
     assert detail["error"] == "document_conflict"
     assert detail["current_etag"] == started.json()["etag"]
     assert detail["current_state"]["status"] == started.json()["state"]["status"]
-    current = client.get("/documents/versions/DOC-DUP-STARTED-HTTP/1", headers=_auth(tokens["admin"]))
+    current = client.get("/api/v1/documents/versions/DOC-DUP-STARTED-HTTP/1", headers=_auth(tokens["admin"]))
     assert current.status_code == 200, current.text
     assert current.json()["etag"] == started.json()["etag"]
     assert current.json()["state"]["status"] == started.json()["state"]["status"]
@@ -383,12 +383,12 @@ def test_actor_tampering_ignored_for_mutations(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-TAMPER", "version": 1, "workflow_profile_id": "http_flow_profile"},
     )
     assigned = client.post(
-        "/documents/versions/DOC-TAMPER/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-TAMPER/1/workflow/assign-roles",
         headers=_mutation_headers(admin, created),
         json={
             "editors": ["editor"],
@@ -413,12 +413,12 @@ def test_two_clients_and_restart_readback(tmp_path: Path) -> None:
     client_a = TestClient(create_app(container))
     client_b = TestClient(create_app(container))
     tokens = _create_assign_start(client_a, users, doc_id="DOC-HTTP-R")
-    read_before = client_b.get("/documents/versions/DOC-HTTP-R/1", headers=_auth(tokens["reviewer"]))
+    read_before = client_b.get("/api/v1/documents/versions/DOC-HTTP-R/1", headers=_auth(tokens["reviewer"]))
     assert read_before.status_code == 200, read_before.text
     restarted_container, _users = _build_documents_backend_container(tmp_path)
     restarted = TestClient(create_app(restarted_container))
     reviewer = _login(restarted, "reviewer", "reviewerpass01")
-    read_after = restarted.get("/documents/versions/DOC-HTTP-R/1", headers=_auth(reviewer))
+    read_after = restarted.get("/api/v1/documents/versions/DOC-HTTP-R/1", headers=_auth(reviewer))
     assert read_after.status_code == 200, read_after.text
     assert read_after.json()["state"]["document_id"] == "DOC-HTTP-R"
 
@@ -428,13 +428,13 @@ def test_import_pdf_rejects_invalid_content_type(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     create = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-PDF", "version": 1},
     )
     assert create.status_code == 200, create.text
     bad = client.post(
-        "/documents/versions/DOC-PDF/1/import-pdf",
+        "/api/v1/documents/versions/DOC-PDF/1/import-pdf",
         headers={**_mutation_headers(admin, create), "Content-Type": "text/plain"},
         content=b"not-pdf",
     )
@@ -447,7 +447,7 @@ def test_profile_mutation_available_over_http(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     qmb = _login(client, "qmb", "qmbpass001")
     response = client.post(
-        "/documents/workflow-profiles/definitions",
+        "/api/v1/documents/workflow-profiles/definitions",
         headers=_auth(qmb),
         json={
             "payload": {
@@ -549,13 +549,13 @@ def test_import_pdf_roundtrip(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-PDF-OK", "version": 1},
     )
     assert created.status_code == 200, created.text
     imported = client.post(
-        "/documents/versions/DOC-PDF-OK/1/import-pdf",
+        "/api/v1/documents/versions/DOC-PDF-OK/1/import-pdf",
         headers={**_mutation_headers(admin, created), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
@@ -568,21 +568,21 @@ def test_import_pdf_and_docx_consume_etag_and_reject_replay(tmp_path: Path) -> N
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created_pdf = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-IMP-CAS-PDF", "version": 1},
     )
     assert created_pdf.status_code == 200, created_pdf.text
     prior_pdf = created_pdf.json()["etag"]
     imported_pdf = client.post(
-        "/documents/versions/DOC-IMP-CAS-PDF/1/import-pdf",
+        "/api/v1/documents/versions/DOC-IMP-CAS-PDF/1/import-pdf",
         headers={**_mutation_headers(admin, created_pdf), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
     assert imported_pdf.status_code == 200, imported_pdf.text
     assert imported_pdf.json()["etag"] != prior_pdf
     replay_pdf = client.post(
-        "/documents/versions/DOC-IMP-CAS-PDF/1/import-pdf",
+        "/api/v1/documents/versions/DOC-IMP-CAS-PDF/1/import-pdf",
         headers={**_mutation_headers(admin, created_pdf), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
@@ -590,14 +590,14 @@ def test_import_pdf_and_docx_consume_etag_and_reject_replay(tmp_path: Path) -> N
     assert replay_pdf.json()["detail"]["current_etag"] == imported_pdf.json()["etag"]
 
     created_docx = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-IMP-CAS-DOCX", "version": 1},
     )
     assert created_docx.status_code == 200, created_docx.text
     prior_docx = created_docx.json()["etag"]
     imported_docx = client.post(
-        "/documents/versions/DOC-IMP-CAS-DOCX/1/import-docx",
+        "/api/v1/documents/versions/DOC-IMP-CAS-DOCX/1/import-docx",
         headers={
             **_mutation_headers(admin, created_docx),
             "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -607,7 +607,7 @@ def test_import_pdf_and_docx_consume_etag_and_reject_replay(tmp_path: Path) -> N
     assert imported_docx.status_code == 200, imported_docx.text
     assert imported_docx.json()["etag"] != prior_docx
     replay_docx = client.post(
-        "/documents/versions/DOC-IMP-CAS-DOCX/1/import-docx",
+        "/api/v1/documents/versions/DOC-IMP-CAS-DOCX/1/import-docx",
         headers={
             **_mutation_headers(admin, created_docx),
             "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -624,20 +624,20 @@ def test_unusual_document_id_remains_fachlich_and_omits_storage_paths(tmp_path: 
     admin = _login(client, "admin", "adminpass01")
     weird_id = "DOC-WEIRD..ID"
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": weird_id, "version": 1, "title": weird_id},
     )
     assert created.status_code == 200, created.text
     assert created.json()["state"]["document_id"] == weird_id
     imported = client.post(
-        f"/documents/versions/{weird_id}/1/import-pdf",
+        f"/api/v1/documents/versions/{weird_id}/1/import-pdf",
         headers={**_mutation_headers(admin, created), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
     assert imported.status_code == 200, imported.text
     assert imported.json()["state"]["document_id"] == weird_id
-    listed = client.get(f"/documents/versions/{weird_id}/1/artifacts", headers=_auth(admin))
+    listed = client.get(f"/api/v1/documents/versions/{weird_id}/1/artifacts", headers=_auth(admin))
     assert listed.status_code == 200, listed.text
     payload = listed.json()
     assert payload
@@ -662,7 +662,7 @@ def test_new_document_id_with_slash_is_rejected(tmp_path: Path) -> None:
     admin = _login(client, "admin", "adminpass01")
 
     response = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC/NEW", "version": 1},
     )
@@ -676,7 +676,7 @@ def test_pool_list_by_status(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     _create_assign_start(client, users, doc_id="DOC-POOL-1")
     admin = _login(client, "admin", "adminpass01")
-    response = client.get("/documents/pool/by-status/IN_PROGRESS", headers=_auth(admin))
+    response = client.get("/api/v1/documents/pool/by-status/IN_PROGRESS", headers=_auth(admin))
     assert response.status_code == 200, response.text
     rows = response.json()
     assert any(row["document_id"] == "DOC-POOL-1" and row["status"] == "IN_PROGRESS" for row in rows)
@@ -687,12 +687,12 @@ def test_version_read_after_restart(tmp_path: Path) -> None:
     container, users = _build_documents_backend_container(tmp_path)
     client = TestClient(create_app(container))
     tokens = _create_assign_start(client, users, doc_id="DOC-RESTART-1")
-    before = client.get("/documents/versions/DOC-RESTART-1/1", headers=_auth(tokens["reviewer"]))
+    before = client.get("/api/v1/documents/versions/DOC-RESTART-1/1", headers=_auth(tokens["reviewer"]))
     assert before.status_code == 200, before.text
     restarted_container, _users = _build_documents_backend_container(tmp_path)
     restarted = TestClient(create_app(restarted_container))
     reviewer = _login(restarted, "reviewer", "reviewerpass01")
-    after = restarted.get("/documents/versions/DOC-RESTART-1/1", headers=_auth(reviewer))
+    after = restarted.get("/api/v1/documents/versions/DOC-RESTART-1/1", headers=_auth(reviewer))
     assert after.status_code == 200, after.text
     assert after.json()["state"]["status"] == "IN_PROGRESS"
 
@@ -702,12 +702,12 @@ def test_header_read(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-HEADER", "version": 1, "workflow_profile_id": "http_flow_profile"},
     )
     assert created.status_code == 200, created.text
-    response = client.get("/documents/headers/DOC-HEADER", headers=_auth(admin))
+    response = client.get("/api/v1/documents/headers/DOC-HEADER", headers=_auth(admin))
     assert response.status_code == 200, response.text
     assert response.json()["document_id"] == "DOC-HEADER"
     assert response.json()["workflow_profile_id"] == "http_flow_profile"

@@ -23,21 +23,21 @@ def test_global_template_crud_is_technical_admin_only(tmp_path: Path) -> None:
     admin = _login(client, "admin", "adminpass01")
 
     denied = client.post(
-        "/signature/templates/user",
+        "/api/v1/signature/templates/user",
         headers=_auth(observer),
         json={**_TEMPLATE, "scope": "global"},
     )
     assert denied.status_code == 403, denied.text
 
     created = client.post(
-        "/signature/templates/user",
+        "/api/v1/signature/templates/user",
         headers=_auth(admin),
         json={**_TEMPLATE, "scope": "global"},
     )
     assert created.status_code == 200, created.text
     template_id = created.json()["template_id"]
     observer_delete = client.delete(
-        f"/signature/templates/{template_id}", headers=_auth(observer)
+        f"/api/v1/signature/templates/{template_id}", headers=_auth(observer)
     )
     assert observer_delete.status_code == 403, observer_delete.text
 
@@ -48,13 +48,13 @@ def test_global_template_can_be_copied_to_personal_scope(tmp_path: Path) -> None
     admin = _login(client, "admin", "adminpass01")
     observer = _login(client, "observer", "observerpass01")
     created = client.post(
-        "/signature/templates/user",
+        "/api/v1/signature/templates/user",
         headers=_auth(admin),
         json={**_TEMPLATE, "scope": "global"},
     )
     template_id = created.json()["template_id"]
     copied = client.post(
-        f"/signature/templates/global/{template_id}/copy",
+        f"/api/v1/signature/templates/global/{template_id}/copy",
         headers=_auth(observer),
         json={"name": "observer-copy"},
     )
@@ -71,14 +71,14 @@ def test_global_template_copy_clones_foreign_signature_asset(tmp_path: Path) -> 
     png = tmp_path / "global-signature.png"
     _create_signature_png(png)
     imported = client.post(
-        "/signature/assets/import-and-activate",
+        "/api/v1/signature/assets/import-and-activate",
         headers={**_auth(admin), "Content-Type": "image/png", "X-Filename-Hint": png.name},
         content=png.read_bytes(),
     )
     assert imported.status_code == 200, imported.text
     asset_id = imported.json()["asset_id"]
     created = client.post(
-        "/signature/templates/user",
+        "/api/v1/signature/templates/user",
         headers=_auth(admin),
         json={
             **_TEMPLATE,
@@ -89,7 +89,7 @@ def test_global_template_copy_clones_foreign_signature_asset(tmp_path: Path) -> 
     )
     assert created.status_code == 200, created.text
     copied = client.post(
-        f"/signature/templates/global/{created.json()['template_id']}/copy",
+        f"/api/v1/signature/templates/global/{created.json()['template_id']}/copy",
         headers=_auth(observer),
         json={"name": "observer-copy-with-asset"},
     )

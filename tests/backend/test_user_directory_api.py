@@ -39,15 +39,15 @@ def _build_test_container(tmp_path: Path) -> RuntimeContainer:
 
 def test_user_directory_requires_auth(tmp_path: Path) -> None:
     client = TestClient(create_app(_build_test_container(tmp_path)))
-    denied = client.get("/users/directory")
+    denied = client.get("/api/v1/users/directory")
     assert denied.status_code == 401
 
 
 def test_user_directory_lists_active_users(tmp_path: Path) -> None:
     client = TestClient(create_app(_build_test_container(tmp_path)))
-    login = client.post("/auth/login", json={"username": "bob", "password": "bob-secret"})
+    login = client.post("/api/v1/auth/token", json={"username": "bob", "password": "bob-secret"})
     token = login.json()["token"]
-    response = client.get("/users/directory", headers={"Authorization": f"Bearer {token}"})
+    response = client.get("/api/v1/users/directory", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     rows = response.json()
     assert any(row["username"] == "bob" and row["user_id"] for row in rows)

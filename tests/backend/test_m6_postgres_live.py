@@ -40,33 +40,33 @@ def _wired_client(runtime_dsn):
 def test_postgres_change_password_revokes_other_sessions_atomically(runtime_env) -> None:
     _admin, _migrator, runtime_dsn = runtime_env
     client, service = _wired_client(runtime_dsn)
-    first = client.post("/auth/login", json={"username": "opsadmin", "password": "ops-secret-1"})
-    second = client.post("/auth/login", json={"username": "opsadmin", "password": "ops-secret-1"})
+    first = client.post("/api/v1/auth/token", json={"username": "opsadmin", "password": "ops-secret-1"})
+    second = client.post("/api/v1/auth/token", json={"username": "opsadmin", "password": "ops-secret-1"})
     token_a = first.json()["token"]
     token_b = second.json()["token"]
     changed = client.post(
-        "/auth/change-password",
+        "/api/v1/auth/change-password",
         headers={"Authorization": f"Bearer {token_a}"},
         json={"new_password": "ops-secret-2"},
     )
     assert changed.status_code == 204
-    assert client.get("/auth/me", headers={"Authorization": f"Bearer {token_a}"}).status_code == 200
-    assert client.get("/auth/me", headers={"Authorization": f"Bearer {token_b}"}).status_code == 401
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token_a}"}).status_code == 200
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token_b}"}).status_code == 401
     assert service.authenticate("opsadmin", "ops-secret-2") is not None
 
 
 def test_postgres_deactivate_revokes_and_reactivation_does_not_revive(runtime_env) -> None:
     _admin, _migrator, runtime_dsn = runtime_env
     client, service = _wired_client(runtime_dsn)
-    admin_login = client.post("/auth/login", json={"username": "opsadmin", "password": "ops-secret-1"})
+    admin_login = client.post("/api/v1/auth/token", json={"username": "opsadmin", "password": "ops-secret-1"})
     admin_token = admin_login.json()["token"]
     client.post(
-        "/auth/change-password",
+        "/api/v1/auth/change-password",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"new_password": "ops-secret-2"},
     )
     created = client.post(
-        "/users",
+        "/api/v1/users",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={
             "username": "worker",
@@ -76,15 +76,15 @@ def test_postgres_deactivate_revokes_and_reactivation_does_not_revive(runtime_en
     )
     assert created.status_code == 201
     worker_token = client.post(
-        "/auth/login", json={"username": "worker", "password": "workerpass1"}
+        "/api/v1/auth/token", json={"username": "worker", "password": "workerpass1"}
     ).json()["token"]
     deactivated = client.patch(
-        "/users/worker/access",
+        "/api/v1/users/worker/access",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"is_active": False},
     )
     assert deactivated.status_code == 200
-    assert client.get("/auth/me", headers={"Authorization": f"Bearer {worker_token}"}).status_code == 401
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {worker_token}"}).status_code == 401
     with psycopg.connect(runtime_dsn) as conn:
         row = conn.execute(
             """
@@ -98,13 +98,13 @@ def test_postgres_deactivate_revokes_and_reactivation_does_not_revive(runtime_en
     assert row[0] is False
     assert row[1] is not None
     client.patch(
-        "/users/worker/access",
+        "/api/v1/users/worker/access",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"is_active": True},
     )
-    assert client.get("/auth/me", headers={"Authorization": f"Bearer {worker_token}"}).status_code == 401
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {worker_token}"}).status_code == 401
     assert (
-        client.post("/auth/login", json={"username": "worker", "password": "workerpass1"}).status_code
+        client.post("/api/v1/auth/token", json={"username": "worker", "password": "workerpass1"}).status_code
         == 200
     )
 
@@ -113,17 +113,17 @@ def test_postgres_concurrent_last_admin_guard(runtime_env) -> None:
     _admin, _migrator, runtime_dsn = runtime_env
     client, service = _wired_client(runtime_dsn)
     token = client.post(
-        "/auth/login", json={"username": "opsadmin", "password": "ops-secret-1"}
+        "/api/v1/auth/token", json={"username": "opsadmin", "password": "ops-secret-1"}
     ).json()["token"]
     client.post(
-        "/auth/change-password",
+        "/api/v1/auth/change-password",
         headers={"Authorization": f"Bearer {token}"},
         json={"new_password": "ops-secret-2"},
     )
 
     def _attempt(payload: dict) -> int:
         response = client.patch(
-            "/users/opsadmin/access",
+            "/api/v1/users/opsadmin/access",
             headers={"Authorization": f"Bearer {token}"},
             json=payload,
         )
@@ -147,15 +147,15 @@ def test_postgres_concurrent_mutual_admin_demotion_keeps_one_admin(runtime_env) 
     _admin, _migrator, runtime_dsn = runtime_env
     client, service = _wired_client(runtime_dsn)
     token_a = client.post(
-        "/auth/login", json={"username": "opsadmin", "password": "ops-secret-1"}
+        "/api/v1/auth/token", json={"username": "opsadmin", "password": "ops-secret-1"}
     ).json()["token"]
     client.post(
-        "/auth/change-password",
+        "/api/v1/auth/change-password",
         headers={"Authorization": f"Bearer {token_a}"},
         json={"new_password": "ops-secret-2"},
     )
     created = client.post(
-        "/users",
+        "/api/v1/users",
         headers={"Authorization": f"Bearer {token_a}"},
         json={
             "username": "opsadmin2",
@@ -166,12 +166,12 @@ def test_postgres_concurrent_mutual_admin_demotion_keeps_one_admin(runtime_env) 
     )
     assert created.status_code == 201
     token_b = client.post(
-        "/auth/login", json={"username": "opsadmin2", "password": "ops-secret-3"}
+        "/api/v1/auth/token", json={"username": "opsadmin2", "password": "ops-secret-3"}
     ).json()["token"]
 
     def _demote(actor_token: str, target: str) -> int:
         return client.patch(
-            f"/users/{target}/access",
+            f"/api/v1/users/{target}/access",
             headers={"Authorization": f"Bearer {actor_token}"},
             json={"role": "User"},
         ).status_code

@@ -88,28 +88,28 @@ def test_backend_auth_http_over_postgres(runtime_env, monkeypatch) -> None:
     client = TestClient(create_app(container))
 
     login = client.post(
-        "/auth/login",
+        "/api/v1/auth/token",
         json={"username": "opsadmin", "password": "ops-secret-1"},
     )
     assert login.status_code == 200
     token = login.json()["token"]
     assert set(login.json()) == {"token"}
 
-    me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 409
     assert me.json()["detail"]["error"] == "password_change_required"
 
     changed = client.post(
-        "/auth/change-password",
+        "/api/v1/auth/change-password",
         headers={"Authorization": f"Bearer {token}"},
         json={"new_password": "ops-secret-2"},
     )
     assert changed.status_code == 204
-    me_ok = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    me_ok = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me_ok.status_code == 200
     assert me_ok.json()["username"] == "opsadmin"
 
-    logout = client.post("/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    logout = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
     assert logout.status_code == 204
 
 

@@ -29,7 +29,7 @@ from tests.backend.test_documents_http_api import (
 
 def _create(client: TestClient, admin: str, document_id: str):
     response = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={
             "document_id": document_id,
@@ -44,33 +44,33 @@ def _create(client: TestClient, admin: str, document_id: str):
 @pytest.mark.parametrize(
     ("method", "path", "json_body", "content", "content_type"),
     [
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/assign-roles", {"editors": [], "reviewers": [], "approvers": []}, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/start", {"profile_id": "http_flow_profile"}, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/editing-complete", None, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/review/accept", None, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/review/reject", {"template_text": "reject"}, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/approval/accept", None, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/approval/reject", {"template_text": "reject"}, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/abort", None, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/import-pdf", None, b"%PDF-1.4\n%%EOF\n", "application/pdf"),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/assign-roles", {"editors": [], "reviewers": [], "approvers": []}, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/start", {"profile_id": "http_flow_profile"}, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/editing-complete", None, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/review/accept", None, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/review/reject", {"template_text": "reject"}, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/approval/accept", None, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/approval/reject", {"template_text": "reject"}, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/abort", None, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/import-pdf", None, b"%PDF-1.4\n%%EOF\n", "application/pdf"),
         (
             "POST",
-            "/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/ensure-source-pdf",
+            "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/workflow/ensure-source-pdf",
             None,
             None,
             None,
         ),
         (
             "POST",
-            "/documents/versions/DOC-CONFLICT-REQUIRED/1/import-docx",
+            "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/import-docx",
             None,
             b"PK\x03\x04docx-stub",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/lifecycle/archive", None, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/lifecycle/archive", None, None, None),
         (
             "POST",
-            "/documents/versions/DOC-CONFLICT-REQUIRED/1/lifecycle/extend-annual",
+            "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/lifecycle/extend-annual",
             {
                 "duration_days": 365,
                 "reason": "annual",
@@ -83,19 +83,19 @@ def _create(client: TestClient, admin: str, document_id: str):
             None,
             None,
         ),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/lifecycle/new-version-after-archive", {"next_version": 2}, None, None),
-        ("PATCH", "/documents/versions/DOC-CONFLICT-REQUIRED/1/metadata", {"title": "x"}, None, None),
-        ("PUT", "/documents/headers/DOC-CONFLICT-REQUIRED", {"department": "QA"}, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/change-requests", {"change_id": "CR-1", "reason": "r", "impact_refs": []}, None, None),
-        ("POST", "/documents/versions/DOC-CONFLICT-REQUIRED/1/comments/sync-docx", None, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/lifecycle/new-version-after-archive", {"next_version": 2}, None, None),
+        ("PATCH", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/metadata", {"title": "x"}, None, None),
+        ("PUT", "/api/v1/documents/headers/DOC-CONFLICT-REQUIRED", {"department": "QA"}, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/change-requests", {"change_id": "CR-1", "reason": "r", "impact_refs": []}, None, None),
+        ("POST", "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/comments/sync-docx", None, None, None),
         (
             "POST",
-            "/documents/versions/DOC-CONFLICT-REQUIRED/1/comments",
+            "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1/comments",
             {"context": "PDF_REVIEW", "page_number": 1, "comment_text": "note"},
             None,
             None,
         ),
-        ("POST", "/documents/comments/missing-comment/status", {"new_status": "OPEN"}, None, None),
+        ("POST", "/api/v1/documents/comments/missing-comment/status", {"new_status": "OPEN"}, None, None),
     ],
 )
 def test_every_active_version_mutation_requires_if_match(
@@ -128,7 +128,7 @@ def test_every_active_version_mutation_requires_if_match(
     assert denied.status_code == 428, denied.text
     assert denied.json()["detail"]["error"] == "if_match_required"
     current = client.get(
-        "/documents/versions/DOC-CONFLICT-REQUIRED/1",
+        "/api/v1/documents/versions/DOC-CONFLICT-REQUIRED/1",
         headers=_auth(admin),
     )
     assert current.json()["state"]["assignments"]["editors"] == []
@@ -152,7 +152,7 @@ def test_create_from_template_without_if_match_succeeds_when_target_missing(
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/DOC-TEMPLATE-NEW/1/create-from-template",
+        "/api/v1/documents/versions/DOC-TEMPLATE-NEW/1/create-from-template",
         headers={**_auth(admin), "Content-Type": _TEMPLATE_CT},
         content=_MINIMAL_DOTX,
     )
@@ -173,13 +173,13 @@ def test_create_from_docx_template_succeeds_and_records_docx_source_type(
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/DOC-TEMPLATE-DOCX/1/create-from-template",
+        "/api/v1/documents/versions/DOC-TEMPLATE-DOCX/1/create-from-template",
         headers={**_auth(admin), "Content-Type": _TEMPLATE_DOCX_CT},
         content=_MINIMAL_DOCX,
     )
     assert created.status_code == 200, created.text
     artifacts = client.get(
-        "/documents/versions/DOC-TEMPLATE-DOCX/1/artifacts",
+        "/api/v1/documents/versions/DOC-TEMPLATE-DOCX/1/artifacts",
         headers=_auth(admin),
     )
     assert artifacts.status_code == 200, artifacts.text
@@ -199,7 +199,7 @@ def test_create_from_template_without_if_match_returns_428_when_target_exists(
     admin = _login(client, "admin", "adminpass01")
     _create(client, admin, "DOC-TEMPLATE-EXISTS")
     denied = client.post(
-        "/documents/versions/DOC-TEMPLATE-EXISTS/1/create-from-template",
+        "/api/v1/documents/versions/DOC-TEMPLATE-EXISTS/1/create-from-template",
         headers={**_auth(admin), "Content-Type": _TEMPLATE_CT},
         content=_MINIMAL_DOTX,
     )
@@ -215,13 +215,13 @@ def test_stale_if_match_returns_current_etag_and_state_without_mutation(tmp_path
     stale_headers = _mutation_headers(admin, created)
 
     first = client.post(
-        "/documents/versions/DOC-CONFLICT-STALE/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-CONFLICT-STALE/1/workflow/assign-roles",
         headers=stale_headers,
         json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
     )
     assert first.status_code == 200, first.text
     stale = client.post(
-        "/documents/versions/DOC-CONFLICT-STALE/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-CONFLICT-STALE/1/workflow/assign-roles",
         headers=stale_headers,
         json={"editors": ["observer"], "reviewers": [], "approvers": []},
     )
@@ -233,7 +233,7 @@ def test_stale_if_match_returns_current_etag_and_state_without_mutation(tmp_path
     assert detail["current_state"]["assignments"]["editors"] == ["editor"]
     assert "state" not in detail
 
-    current = client.get("/documents/versions/DOC-CONFLICT-STALE/1", headers=_auth(admin))
+    current = client.get("/api/v1/documents/versions/DOC-CONFLICT-STALE/1", headers=_auth(admin))
     assert current.json()["state"]["assignments"]["editors"] == ["editor"]
 
 
@@ -251,12 +251,12 @@ def test_two_writers_with_same_if_match_have_one_winner(tmp_path: Path) -> None:
     headers = _mutation_headers(admin, created)
 
     first = client_a.post(
-        "/documents/versions/DOC-CONFLICT-RACE/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-CONFLICT-RACE/1/workflow/assign-roles",
         headers=headers,
         json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
     )
     second = client_b.post(
-        "/documents/versions/DOC-CONFLICT-RACE/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-CONFLICT-RACE/1/workflow/assign-roles",
         headers=headers,
         json={"editors": ["observer"], "reviewers": ["reviewer"], "approvers": ["approver"]},
     )
@@ -285,7 +285,7 @@ def test_parallel_duplicate_create_has_one_200_and_one_409(tmp_path: Path) -> No
     def _create():
         worker = TestClient(app)
         return worker.post(
-            "/documents/versions/create",
+            "/api/v1/documents/versions/create",
             headers=_auth(admin),
             json=payload,
         )
@@ -303,7 +303,7 @@ def test_parallel_duplicate_create_has_one_200_and_one_409(tmp_path: Path) -> No
     assert detail["error"] == "document_conflict"
     assert detail["current_etag"] == winner.json()["etag"]
     assert detail["current_state"]["status"] == winner.json()["state"]["status"]
-    current = client.get("/documents/versions/DOC-DUP-RACE-HTTP/1", headers=_auth(admin))
+    current = client.get("/api/v1/documents/versions/DOC-DUP-RACE-HTTP/1", headers=_auth(admin))
     assert current.status_code == 200, current.text
     assert current.json()["etag"] == winner.json()["etag"]
     assert current.json()["state"]["status"] == "PLANNED"
@@ -323,7 +323,7 @@ def test_parallel_import_pdf_has_one_200_and_one_409(tmp_path: Path) -> None:
     def _import():
         worker = TestClient(app)
         return worker.post(
-            "/documents/versions/DOC-IMP-RACE/1/import-pdf",
+            "/api/v1/documents/versions/DOC-IMP-RACE/1/import-pdf",
             headers=headers,
             content=b"%PDF-1.4\n%%EOF\n",
         )
@@ -340,7 +340,7 @@ def test_parallel_import_pdf_has_one_200_and_one_409(tmp_path: Path) -> None:
     detail = conflict.json()["detail"]
     assert detail["error"] == "document_conflict"
     assert detail["current_etag"] == winner.json()["etag"]
-    current = client.get("/documents/versions/DOC-IMP-RACE/1", headers=_auth(admin))
+    current = client.get("/api/v1/documents/versions/DOC-IMP-RACE/1", headers=_auth(admin))
     assert current.status_code == 200, current.text
     assert current.json()["etag"] == winner.json()["etag"]
 

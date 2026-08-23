@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from fastapi.routing import APIRoute
 
 from src.backend.auth_routes import router as auth_router
+from src.backend.csrf_middleware import enforce_cookie_csrf
 from src.backend.documents_routes import router as documents_router
 from src.backend.signature_routes import router as signature_router
 from src.backend.user_admin_routes import router as user_admin_router
@@ -37,34 +38,36 @@ class ErrorResponse(BaseModel):
 _ERROR_STATUS_CODES = (400, 401, 403, 404, 409, 413, 422, 501, 503)
 _PRODUCTION_PROFILES = {"prod", "production"}
 
+_API_V1 = "/api/v1"
+
 # Documents mutations that always require If-Match at runtime (_required_if_match).
 _DOCUMENTS_IF_MATCH_REQUIRED: frozenset[tuple[str, str]] = frozenset(
     {
-        ("post", "/documents/versions/{document_id}/{version}/workflow/assign-roles"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/start"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/editing-complete"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/review/accept"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/review/reject"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/approval/accept"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/approval/reject"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/abort"),
-        ("post", "/documents/versions/{document_id}/{version}/import-pdf"),
-        ("post", "/documents/versions/{document_id}/{version}/workflow/ensure-source-pdf"),
-        ("post", "/documents/versions/{document_id}/{version}/import-docx"),
-        ("put", "/documents/headers/{document_id}"),
-        ("patch", "/documents/versions/{document_id}/{version}/metadata"),
-        ("post", "/documents/versions/{document_id}/{version}/comments/sync-docx"),
-        ("post", "/documents/versions/{document_id}/{version}/comments"),
-        ("post", "/documents/comments/{comment_id}/status"),
-        ("post", "/documents/versions/{document_id}/{version}/lifecycle/archive"),
-        ("post", "/documents/versions/{document_id}/{version}/lifecycle/extend-annual"),
-        ("post", "/documents/versions/{document_id}/{version}/lifecycle/new-version-after-archive"),
-        ("post", "/documents/versions/{document_id}/{version}/change-requests"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/assign-roles"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/start"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/editing-complete"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/review/accept"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/review/reject"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/approval/accept"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/approval/reject"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/abort"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/import-pdf"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/workflow/ensure-source-pdf"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/import-docx"),
+        ("put", f"{_API_V1}/documents/headers/{{document_id}}"),
+        ("patch", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/metadata"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/comments/sync-docx"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/comments"),
+        ("post", f"{_API_V1}/documents/comments/{{comment_id}}/status"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/lifecycle/archive"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/lifecycle/extend-annual"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/lifecycle/new-version-after-archive"),
+        ("post", f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/change-requests"),
     }
 )
 _DOCUMENTS_CREATE_FROM_TEMPLATE = (
     "post",
-    "/documents/versions/{document_id}/{version}/create-from-template",
+    f"{_API_V1}/documents/versions/{{document_id}}/{{version}}/create-from-template",
 )
 _DOCUMENTS_STATE_RESPONSE_SCHEMAS = frozenset(
     {"VersionStateResponse", "ExtendAnnualResponse", "EnsureSourcePdfResponse"}
@@ -221,7 +224,19 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "opaque session token",
-        "description": "Opaque Bearer-Session aus POST /auth/login; nicht persistieren.",
+        "description": "Opaque Bearer-Session aus POST /api/v1/auth/token; nicht persistieren.",
+    }
+    schema["components"]["securitySchemes"]["CookieSessionAuth"] = {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "qmtool_session",
+        "description": "HttpOnly session cookie fuer Browser-Clients (Same-Origin).",
+    }
+    schema["components"]["securitySchemes"]["CsrfHeader"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "description": "CSRF double-submit header; muss qmtool_csrf Cookie entsprechen.",
     }
     schema["components"].setdefault("schemas", {})["ErrorDetail"] = {
         "type": "object",
@@ -268,8 +283,13 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
             operation.setdefault("operationId", f"{method}_{re.sub(r'[^A-Za-z0-9]+', '_', path).strip('_').lower()}")
             operation.setdefault("summary", operation["operationId"].replace("_", " ").capitalize())
             operation.setdefault("description", "QMTool J04-M0 HTTP operation.")
-            if path not in {"/health", "/auth/login"}:
-                operation["security"] = [{"BearerAuth": []}]
+            if path not in {
+                "/health",
+                f"{_API_V1}/auth/csrf",
+                f"{_API_V1}/auth/login",
+                f"{_API_V1}/auth/token",
+            }:
+                operation["security"] = [{"BearerAuth": []}, {"CookieSessionAuth": []}]
             for status_code in _ERROR_STATUS_CODES:
                 operation.setdefault("responses", {}).setdefault(
                     str(status_code),
@@ -335,6 +355,10 @@ def create_app(container=None) -> FastAPI:
     app.state.container = container
 
     @app.middleware("http")
+    async def cookie_csrf_guard(request: Request, call_next: Callable) -> Response:
+        return await enforce_cookie_csrf(request, call_next)
+
+    @app.middleware("http")
     async def attach_request_id(request: Request, call_next: Callable) -> Response:
         header_value = request.headers.get("X-Request-ID")
         if header_value and _REQUEST_ID_RE.fullmatch(header_value.strip()):
@@ -350,10 +374,10 @@ def create_app(container=None) -> FastAPI:
     def _health() -> HealthResponse:
         return HealthResponse(status="ok", service="qmtool-backend")
 
-    app.include_router(auth_router)
-    app.include_router(user_admin_router)
-    app.include_router(documents_router)
-    app.include_router(signature_router)
+    app.include_router(auth_router, prefix=_API_V1)
+    app.include_router(user_admin_router, prefix=_API_V1)
+    app.include_router(documents_router, prefix=_API_V1)
+    app.include_router(signature_router, prefix=_API_V1)
 
     def openapi() -> dict[str, Any]:
         if app.openapi_schema is None:

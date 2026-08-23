@@ -49,7 +49,7 @@ def test_production_hides_dynamic_openapi_endpoints(monkeypatch) -> None:
     assert client.get("/redoc").status_code == 404
     assert client.get("/openapi.json").status_code == 404
     # The in-process export remains available to the build/export step.
-    assert "/documents/pool/by-status/{status}" in app.openapi()["paths"]
+    assert "/api/v1/documents/pool/by-status/{status}" in app.openapi()["paths"]
 
 
 def test_openapi_has_complete_j04_routes_and_unique_operation_ids(monkeypatch) -> None:
@@ -61,22 +61,30 @@ def test_openapi_has_complete_j04_routes_and_unique_operation_ids(monkeypatch) -
     assert {"auth", "users", "documents", "signature"}.issubset(
         {tag for _path, _method, operation in operations for tag in operation.get("tags", [])}
     )
-    assert "/auth/login" in document["paths"]
-    assert "/auth/me" in document["paths"]
-    assert "/documents/pool/by-status/{status}" in document["paths"]
-    assert "/documents/versions/{document_id}/{version}" in document["paths"]
-    assert "/signature/templates/user" in document["paths"]
+    assert "/api/v1/auth/csrf" in document["paths"]
+    assert "/api/v1/auth/token" in document["paths"]
+    assert "/api/v1/auth/login" in document["paths"]
+    assert "/api/v1/auth/me" in document["paths"]
+    assert "/api/v1/documents/pool/by-status/{status}" in document["paths"]
+    assert "/api/v1/documents/versions/{document_id}/{version}" in document["paths"]
+    assert "/api/v1/signature/templates/user" in document["paths"]
 
 
 def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
     monkeypatch.delenv("QMTOOL_RUNTIME_PROFILE", raising=False)
     document = create_app().openapi()
     assert "BearerAuth" in document["components"]["securitySchemes"]
+    assert "CookieSessionAuth" in document["components"]["securitySchemes"]
+    assert "CsrfHeader" in document["components"]["securitySchemes"]
     assert "security" not in document["paths"]["/health"]["get"]
-    assert "security" not in document["paths"]["/auth/login"]["post"]
-    assert document["paths"]["/auth/me"]["get"]["security"] == [{"BearerAuth": []}]
+    assert "security" not in document["paths"]["/api/v1/auth/login"]["post"]
+    assert "security" not in document["paths"]["/api/v1/auth/token"]["post"]
+    assert "security" not in document["paths"]["/api/v1/auth/csrf"]["get"]
+    me_security = document["paths"]["/api/v1/auth/me"]["get"]["security"]
+    assert {"BearerAuth": []} in me_security
+    assert {"CookieSessionAuth": []} in me_security
 
-    mutation = document["paths"]["/documents/versions/{document_id}/{version}/workflow/start"]["post"]
+    mutation = document["paths"]["/api/v1/documents/versions/{document_id}/{version}/workflow/start"]["post"]
     if_match = _if_match_parameter(mutation)
     assert if_match is not None
     assert if_match["required"] is True
@@ -84,7 +92,7 @@ def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
     assert "428" in mutation["responses"]
     assert "ETag" in mutation["responses"]["200"]["headers"]
 
-    binary = document["paths"]["/documents/artifacts/{artifact_id}/content"]["get"]["responses"]["200"]
+    binary = document["paths"]["/api/v1/documents/artifacts/{artifact_id}/content"]["get"]["responses"]["200"]
     assert {"application/pdf", "image/png", "application/octet-stream"}.issubset(binary["content"])
     assert "ErrorDetail" in document["components"]["schemas"]
     raw = json.dumps(document, ensure_ascii=True)
