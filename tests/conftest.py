@@ -48,4 +48,4 @@ _load_dotenv(_ENV_PATH)
 _ensure_pg_dsn()
 
 # Central destructive PostgreSQL live fixtures (J04-M0 M3).
-pytest_plugins = ("postgres_live_support",)
+pytest_plugins = ("tests.postgres_live_support",)
