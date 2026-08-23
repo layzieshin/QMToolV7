@@ -14,7 +14,7 @@ from typing import Callable
 from .contracts import LabelLayoutInput, SignatureAsset
 from .errors import PasswordInvalidError, PasswordRequiredError, SignatureAssetError
 from .secure_store import EncryptedSignatureBlobStore
-from .sqlite_repository import SQLiteSignatureRepository
+from .repository import SignatureRepository
 
 
 def _safe_png_basename(filename_hint: str) -> str:
@@ -35,7 +35,7 @@ def _safe_png_basename(filename_hint: str) -> str:
 
 @dataclass
 class SignaturePolicyOps:
-    repository: SQLiteSignatureRepository | None
+    repository: SignatureRepository | None
     secure_store: EncryptedSignatureBlobStore | None
     password_verifier: Callable[[str, str], bool]
 

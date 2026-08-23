@@ -7,13 +7,14 @@ from pathlib import Path
 from typing import Iterator
 
 from .contracts import LabelLayoutInput, SignatureAsset, SignaturePlacementInput, UserSignatureTemplate
+from .repository import SignatureRepository
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class SQLiteSignatureRepository:
+class SQLiteSignatureRepository(SignatureRepository):
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
 

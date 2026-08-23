@@ -27,7 +27,7 @@ from .output_path_policy import OutputPathPolicy
 from .secure_store import EncryptedSignatureBlobStore
 from .signature_execute_ops import SignatureExecuteOps
 from .signature_policy_ops import SignaturePolicyOps
-from .sqlite_repository import SQLiteSignatureRepository
+from .repository import SignatureRepository
 from .template_use_cases import SignatureTemplateUseCases
 
 
@@ -43,7 +43,7 @@ class SignatureServiceV2:
     password_verifier: Callable[[str, str], bool]
     event_bus: object | None = None
     crypto_signer: CryptoSignerPort | None = None
-    repository: SQLiteSignatureRepository | None = None
+    repository: SignatureRepository | None = None
     secure_store: EncryptedSignatureBlobStore | None = None
 
     def __post_init__(self) -> None:

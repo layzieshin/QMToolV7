@@ -18,6 +18,7 @@ from .transport_dto import (
 
 __all__ = [
     "SignatureApi",
+    "ensure_postgres_schema_ready",
     "SignatureError",
     "PasswordInvalidError", "PasswordRequiredError", "SignatureTemplateError",
     "compute_target_height", "resolve_label_pdf_anchor",
@@ -26,6 +27,17 @@ __all__ = [
     "asset_to_payload", "layout_from_payload", "layout_to_payload",
     "placement_from_payload", "placement_to_payload", "template_to_payload",
 ]
+
+
+def ensure_postgres_schema_ready(container) -> int:
+    """Verify the Signature PostgreSQL schema matches the registered target.
+
+    Uses the runtime DSN only; never applies migrations.
+    """
+    from .postgres_schema import assert_runtime_schema_ready
+
+    dsn = container.get_port("signature_postgres_dsn")
+    return assert_runtime_schema_ready(str(dsn))
 
 
 @dataclass

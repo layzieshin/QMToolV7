@@ -130,6 +130,7 @@ def wire_backend_documents(
     from modules.documents.module import create_documents_module_contract
     from modules.documents.api import ensure_postgres_schema_ready as ensure_documents_postgres_schema_ready
     from modules.registry.api import ensure_postgres_schema_ready as ensure_registry_postgres_schema_ready
+    from modules.signature.api import ensure_postgres_schema_ready as ensure_signature_postgres_schema_ready
     from modules.registry.module import create_registry_module_contract
     from modules.signature.module import create_signature_module_contract
     from qm_platform.persistence.database_evolution import (
@@ -193,10 +194,16 @@ def wire_backend_documents(
         container.has_port("documents_postgres_dsn")
         and bool(str(container.get_port("documents_postgres_dsn")).strip())
     )
+    use_signature_postgres = (
+        container.has_port("signature_postgres_dsn")
+        and bool(str(container.get_port("signature_postgres_dsn")).strip())
+    )
     if use_registry_postgres:
         ensure_registry_postgres_schema_ready(container)
     if use_documents_postgres:
         ensure_documents_postgres_schema_ready(container)
+    if use_signature_postgres:
+        ensure_signature_postgres_schema_ready(container)
 
     # Include platform_settings so pre-migrate backups with residual archive are valid.
     contributions = (
@@ -214,6 +221,12 @@ def wire_backend_documents(
             contribution
             for contribution in contributions
             if contribution.database_id != "documents"
+        )
+    if use_signature_postgres:
+        contributions = tuple(
+            contribution
+            for contribution in contributions
+            if contribution.database_id != "signature"
         )
     specs = tuple(sorted((_spec_for(item) for item in contributions), key=lambda spec: spec.database_id))
 
