@@ -9,9 +9,10 @@ Die einzige **neue** UI-Source-of-Truth für QMToolV7 ist:
 
 - `webclient/*`
 
-Stand GOV00 / vor WEB00: das Verzeichnis und die produktive Web-UI sind **noch nicht
-implementiert**. Es darf keine nicht vorhandene Webfunktion als bereits geliefert
-dargestellt werden.
+Stand WEB00 (Foundation): `webclient/` enthält die Vue/TS/Vite-**Foundation** (Shell,
+Auth-/Connection-State, schmaler `/api/v1`-Fetch-Adapter). Volle Produkt-UI und DMS-Workflow
+(WEB01) sind **noch nicht** implementiert. Es darf keine nicht vorhandene Webfunktion als
+bereits geliefert dargestellt werden.
 
 ## Verbindliche Regel
 
@@ -24,7 +25,8 @@ dargestellt werden.
 
 ## Konsequenz für Entwicklung
 
-- Bis WEB00 existiert kein neuer produktiver Endbenutzerclient.
+- WEB00 liefert die zentrale SPA-Shell und den sicheren Browser-Transport; produktive
+  Endbenutzerfunktionen jenseits Login/Shell folgen in WEB01+.
 - Historische PyQt-Implementierung und -Tests bleiben als Referenz/Regression erhalten,
   sind aber keine Onboarding-Anweisung für neue Produkt-UI.
 - Neue Features: Service/`modules/*/api.py`/HTTP-Vertrag und Tests zuerst; Webclient-Adapter

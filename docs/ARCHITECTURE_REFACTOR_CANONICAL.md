@@ -33,7 +33,7 @@ Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
    Neue externe Imports aus Modul-Internals dürfen nicht mehr dazukommen.
 
 2. **Adapter bleiben Adapter**
-   Aktive Adapter für neue Arbeit: `webclient/*` (geplant ab WEB00; noch nicht implementiert)
+   Aktive Adapter für neue Arbeit: `webclient/*` (WEB00 Foundation vorhanden; Fach-UI ab WEB01)
    und `interfaces/cli/*` (Operator-/Testadapter). Sie sammeln Eingaben, rufen Ports/APIs
    bzw. `/api/v1` auf und rendern Ergebnisse. Sie tragen keine Workflow-Regeln, greifen
    nicht auf Repositories zu und konvertieren keine Dateien fachlich.

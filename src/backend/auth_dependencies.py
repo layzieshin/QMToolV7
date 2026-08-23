@@ -14,6 +14,8 @@ from qm_platform.organization.server_context import (
 )
 
 from modules.usermanagement import api as um_api
+from src.backend.cookie_csrf import SESSION_COOKIE_NAME
+
 from modules.usermanagement.api import (
     AuditUnavailableError,
     ExpiredSessionError,
@@ -141,9 +143,25 @@ def extract_bearer_token(
     return credentials.credentials
 
 
+def resolve_auth_token(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> str:
+    """Return Bearer token when Authorization is present (authoritative); else session cookie."""
+    auth_header = request.headers.get("Authorization")
+    if auth_header is not None and auth_header.strip():
+        if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
+            raise _unauthorized("invalid bearer token")
+        return credentials.credentials
+    session = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session:
+        raise _unauthorized("missing session credential")
+    return session
+
+
 def require_user_context(
     request: Request,
-    token: Annotated[str, Depends(extract_bearer_token)],
+    token: Annotated[str, Depends(resolve_auth_token)],
     request_id: Annotated[str, Depends(effective_request_id)],
     *,
     password_change_allowed: bool,
@@ -162,7 +180,7 @@ def require_user_context(
 
 def require_user_context_normal(
     request: Request,
-    token: Annotated[str, Depends(extract_bearer_token)],
+    token: Annotated[str, Depends(resolve_auth_token)],
     request_id: Annotated[str, Depends(effective_request_id)],
 ) -> UserContext:
     return require_user_context(
@@ -175,7 +193,7 @@ def require_user_context_normal(
 
 def require_user_context_password_change(
     request: Request,
-    token: Annotated[str, Depends(extract_bearer_token)],
+    token: Annotated[str, Depends(resolve_auth_token)],
     request_id: Annotated[str, Depends(effective_request_id)],
 ) -> UserContext:
     """Only ``/auth/change-password`` may use password_change_allowed=True."""

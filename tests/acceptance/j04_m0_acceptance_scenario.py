@@ -174,7 +174,7 @@ class AcceptanceHttpClient:
     def login(self, username: str, password: str) -> dict[str, Any]:
         payload = self.request(
             "POST",
-            "/auth/login",
+            "/api/v1/auth/token",
             body={"username": username, "password": password},
             auth=False,
         )
@@ -368,11 +368,11 @@ def complete_bootstrap_admin_session(client: AcceptanceHttpClient) -> tuple[dict
     """
     client.login(BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD)
     password = BOOTSTRAP_ADMIN_PASSWORD
-    status, _headers, payload = client.request_raw("GET", "/auth/me")
+    status, _headers, payload = client.request_raw("GET", "/api/v1/auth/me")
     if status == 409 and _http_error_code(payload) == "password_change_required":
         change_status, _change_headers, change_body = client.request_raw(
             "POST",
-            "/auth/change-password",
+            "/api/v1/auth/change-password",
             body={"new_password": BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE},
         )
         if change_status != 204:
@@ -381,7 +381,7 @@ def complete_bootstrap_admin_session(client: AcceptanceHttpClient) -> tuple[dict
                 f"status={change_status} body={_redact_http_payload(change_body)}"
             )
         password = BOOTSTRAP_ADMIN_PASSWORD_AFTER_CHANGE
-        status, _headers, payload = client.request_raw("GET", "/auth/me")
+        status, _headers, payload = client.request_raw("GET", "/api/v1/auth/me")
     if status != 200 or not isinstance(payload, dict):
         raise ScenarioFailure(
             "bootstrap admin /auth/me failed "
@@ -394,19 +394,19 @@ def capture_authenticated_user_id(
     client: AcceptanceHttpClient, *, expected_username: str
 ) -> str:
     """Read ``user_id`` from ``GET /auth/me`` after a role login; validate username."""
-    status, _headers, payload = client.request_raw("GET", "/auth/me")
+    status, _headers, payload = client.request_raw("GET", "/api/v1/auth/me")
     if status != 200 or not isinstance(payload, dict):
         raise ScenarioFailure(
-            f"/auth/me failed for {expected_username} "
+            f"/api/v1/auth/me failed for {expected_username} "
             f"status={status} body={_redact_http_payload(payload)}"
         )
     if payload.get("username") != expected_username:
         raise ScenarioFailure(
-            f"/auth/me username expected {expected_username!r}, got {payload.get('username')!r}"
+            f"/api/v1/auth/me username expected {expected_username!r}, got {payload.get('username')!r}"
         )
     user_id = str(payload.get("user_id") or "").strip()
     if not user_id:
-        raise ScenarioFailure(f"/auth/me missing user_id for {expected_username}")
+        raise ScenarioFailure(f"/api/v1/auth/me missing user_id for {expected_username}")
     return user_id
 
 
@@ -540,7 +540,7 @@ def _step_bootstrap_admin_login(ctx: ScenarioContext) -> str:
 def _seed_user(client: AcceptanceHttpClient, *, username: str, password: str, is_qmb: bool = False) -> None:
     status, _headers, _body = client.request_raw(
         "POST",
-        "/users",
+        "/api/v1/users",
         body={
             "username": username,
             "password": password,
@@ -579,7 +579,7 @@ def _step_seed_workflow_profile(ctx: ScenarioContext) -> str:
     client._token = ctx.tokens["qmb"]
     status, _headers, body = client.request_raw(
         "POST",
-        "/documents/workflow-profiles/definitions",
+        "/api/v1/documents/workflow-profiles/definitions",
         body={
             "payload": {
                 "profile_code": ACCEPTANCE_PROFILE_CODE,
@@ -641,7 +641,7 @@ def post_acceptance_document_create(client: AcceptanceHttpClient) -> dict[str, A
     """Create the acceptance document version; fail closed on non-200 responses."""
     status, _headers, payload = client.request_raw(
         "POST",
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         body={
             "document_id": ACCEPTANCE_DOC_ID,
             "version": 1,
@@ -664,7 +664,7 @@ def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
     etag = AcceptanceHttpClient.etag_from_version_payload(created)
     status, _headers, imported = client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-pdf",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-pdf",
         content=_MINIMAL_PDF,
         headers=_mutation_headers(qmb_token, etag, extra={"Content-Type": "application/pdf"}),
     )
@@ -675,7 +675,7 @@ def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
     )
     status, _headers, assigned = client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
         body=workflow_role_assignment(ctx.user_ids),
         headers=_mutation_headers(qmb_token, etag),
     )
@@ -688,7 +688,7 @@ def _step_document_baseline_flow(ctx: ScenarioContext) -> str:
     )
     status, _headers, started = client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/start",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/start",
         body={"profile_id": ACCEPTANCE_PROFILE_CODE},
         headers=_mutation_headers(qmb_token, etag),
     )
@@ -726,7 +726,7 @@ def _etag_race_worker_args(*, etag: str, body: dict[str, object]) -> list[str]:
         "--method",
         "POST",
         "--path",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/assign-roles",
         "--headers-json",
         json.dumps({"If-Match": etag}),
         "--body-json",
@@ -758,7 +758,7 @@ def _step_etag_concurrency_race(ctx: ScenarioContext) -> str:
 
 
 def _refresh_document_etag(client: AcceptanceHttpClient) -> str:
-    payload = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
+    payload = client.request("GET", f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1")
     return AcceptanceHttpClient.etag_from_version_payload(payload)
 
 
@@ -797,7 +797,7 @@ def _comments_docx_bytes() -> bytes:
 def _activate_signature_asset(client: AcceptanceHttpClient, *, token: str, username: str, password: str) -> None:
     status, _headers, _body = client.request_raw(
         "POST",
-        "/signature/assets/import-and-activate",
+        "/api/v1/signature/assets/import-and-activate",
         content=_MINIMAL_PNG,
         headers={
             "Authorization": f"Bearer {token}",
@@ -810,7 +810,7 @@ def _activate_signature_asset(client: AcceptanceHttpClient, *, token: str, usern
         raise ScenarioFailure(f"signature asset import failed for {username} HTTP {status}")
     verify = client.request(
         "POST",
-        "/signature/verify-password",
+        "/api/v1/signature/verify-password",
         body={"password": password},
     )
     if not isinstance(verify, dict) or not verify.get("ok"):
@@ -819,7 +819,7 @@ def _activate_signature_asset(client: AcceptanceHttpClient, *, token: str, usern
 
 def _step_artifacts_transport(ctx: ScenarioContext) -> str:
     client = authenticated_client(ctx.tokens["editor"], ctx.harness.backend_url)
-    listed = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts")
+    listed = client.request("GET", f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts")
     if not isinstance(listed, list) or not listed:
         raise ScenarioFailure("artifact list empty")
     row = listed[0]
@@ -830,11 +830,11 @@ def _step_artifacts_transport(ctx: ScenarioContext) -> str:
     listed_sha = str(row.get("sha256") or "").strip()
     if not artifact_id or not listed_sha:
         raise ScenarioFailure("artifact list missing artifact_id or sha256")
-    meta = client.request("GET", f"/documents/artifacts/{artifact_id}")
+    meta = client.request("GET", f"/api/v1/documents/artifacts/{artifact_id}")
     _assert_no_server_paths(meta, where="artifact metadata")
     status, headers, content = client.request_bytes(
         "GET",
-        f"/documents/artifacts/{artifact_id}/content",
+        f"/api/v1/documents/artifacts/{artifact_id}/content",
     )
     if status != 200:
         raise ScenarioFailure(f"artifact content download failed HTTP {status}")
@@ -877,7 +877,7 @@ def _step_signed_editing_complete(ctx: ScenarioContext) -> str:
     etag = _refresh_document_etag(editor_client)
     denied_status, _headers, denied_payload = editor_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete",
         body={},
         headers={"If-Match": etag},
     )
@@ -888,7 +888,7 @@ def _step_signed_editing_complete(ctx: ScenarioContext) -> str:
         )
     edited_status, _headers, edited_payload = editor_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete",
         body=_sign_intent_body(EDITOR_PASSWORD),
         headers={"If-Match": etag},
     )
@@ -910,7 +910,7 @@ def _step_pdf_comment_flow(ctx: ScenarioContext) -> str:
     etag = _refresh_document_etag(reviewer_client)
     status, _headers, payload = reviewer_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments",
         body={
             "context": "PDF_REVIEW",
             "page_number": 1,
@@ -927,7 +927,7 @@ def _step_pdf_comment_flow(ctx: ScenarioContext) -> str:
         raise ScenarioFailure("PDF comment create missing comment_id")
     listed = reviewer_client.request(
         "GET",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments?context=PDF_REVIEW",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments?context=PDF_REVIEW",
     )
     if not isinstance(listed, list) or not any(
         isinstance(row, dict) and row.get("comment_id") == comment_id for row in listed
@@ -943,7 +943,7 @@ def _step_docx_comment_sync(ctx: ScenarioContext) -> str:
     etag = _refresh_document_etag(qmb_client)
     imported_status, _headers, imported_payload = qmb_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-docx",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/import-docx",
         content=_comments_docx_bytes(),
         headers=_mutation_headers(
             ctx.tokens["qmb"],
@@ -960,7 +960,7 @@ def _step_docx_comment_sync(ctx: ScenarioContext) -> str:
     editor_client = authenticated_client(ctx.tokens["editor"], ctx.harness.backend_url)
     first_status, _headers, first_payload = editor_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments/sync-docx",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments/sync-docx",
         headers=_mutation_headers(ctx.tokens["editor"], etag),
     )
     if first_status != 200 or not isinstance(first_payload, list) or not first_payload:
@@ -975,7 +975,7 @@ def _step_docx_comment_sync(ctx: ScenarioContext) -> str:
         raise ScenarioFailure("DOCX sync reused the PDF_REVIEW comment_id")
     second_status, _headers, second_payload = editor_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments/sync-docx",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments/sync-docx",
         headers=_mutation_headers(ctx.tokens["editor"], etag),
     )
     if second_status != 200 or not isinstance(second_payload, list):
@@ -990,7 +990,7 @@ def _step_docx_comment_sync(ctx: ScenarioContext) -> str:
     reviewer_client = authenticated_client(ctx.tokens["reviewer"], ctx.harness.backend_url)
     pdf_listed = reviewer_client.request(
         "GET",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments?context=PDF_REVIEW",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments?context=PDF_REVIEW",
     )
     if ctx.pdf_comment_id and isinstance(pdf_listed, list):
         pdf_ids = {
@@ -1023,7 +1023,7 @@ def _step_signed_review_approval(ctx: ScenarioContext) -> str:
     etag = _refresh_document_etag(reviewer_client)
     reviewed_status, _headers, reviewed_payload = reviewer_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept",
         body=_sign_intent_body(REVIEWER_PASSWORD),
         headers={"If-Match": etag},
     )
@@ -1040,7 +1040,7 @@ def _step_signed_review_approval(ctx: ScenarioContext) -> str:
     approver_client = authenticated_client(ctx.tokens["approver"], ctx.harness.backend_url)
     approved_status, _headers, approved_payload = approver_client.request_raw(
         "POST",
-        f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept",
+        f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept",
         body=_sign_intent_body(APPROVER_PASSWORD),
         headers={"If-Match": etag},
     )
@@ -1055,7 +1055,7 @@ def _step_signed_review_approval(ctx: ScenarioContext) -> str:
         )
     ctx.document_etag = AcceptanceHttpClient.etag_from_version_payload(approved)
     listed = approver_client.request(
-        "GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts"
+        "GET", f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts"
     )
     _assert_artifact_types(listed, required=("SIGNED_PDF", "RELEASED_PDF"))
     return "signed review/approval reached APPROVED with SIGNED_PDF and RELEASED_PDF"
@@ -1063,7 +1063,7 @@ def _step_signed_review_approval(ctx: ScenarioContext) -> str:
 
 def _step_backend_restart(ctx: ScenarioContext) -> str:
     probe = authenticated_client(ctx.tokens["reviewer"], ctx.harness.backend_url)
-    persisted = probe.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
+    persisted = probe.request("GET", f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1")
     ctx.pre_restart_etag = AcceptanceHttpClient.etag_from_version_payload(persisted)
     ctx.pre_restart_status = str(
         persisted.get("state", {}).get("status") if isinstance(persisted, dict) else ""
@@ -1085,19 +1085,19 @@ def _step_persistence_and_session_contract(ctx: ScenarioContext) -> str:
     client._token = ctx.pre_restart_tokens.get("reviewer") or ctx.tokens.get("reviewer")
     if not client._token:
         raise ScenarioFailure("reviewer token missing for persistence check")
-    persisted = client.request("GET", f"/documents/versions/{ACCEPTANCE_DOC_ID}/1")
+    persisted = client.request("GET", f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1")
     status = persisted.get("state", {}).get("status") if isinstance(persisted, dict) else None
     etag = AcceptanceHttpClient.etag_from_version_payload(persisted)
     if status != "APPROVED":
         raise ScenarioFailure(f"expected APPROVED after restart, got {status}")
     if etag != ctx.pre_restart_etag:
         raise ScenarioFailure("document etag changed across backend restart")
-    me_status, _headers, me = client.request_raw("GET", "/auth/me")
+    me_status, _headers, me = client.request_raw("GET", "/api/v1/auth/me")
     if me_status != 200 or not isinstance(me, dict) or me.get("username") != "reviewer":
         raise ScenarioFailure("pre-restart reviewer session did not survive backend restart")
     editor_client = AcceptanceHttpClient(ctx.harness.backend_url)
     editor_client._token = ctx.pre_restart_tokens.get("editor") or ctx.tokens.get("editor")
-    editor_status, _headers, editor_me = editor_client.request_raw("GET", "/auth/me")
+    editor_status, _headers, editor_me = editor_client.request_raw("GET", "/api/v1/auth/me")
     if editor_status != 200 or editor_me.get("username") != "editor":
         raise ScenarioFailure("pre-restart editor session did not survive backend restart")
     return "document persisted in APPROVED; PG-backed sessions survived restart"

@@ -22,18 +22,18 @@ def test_artifact_list_metadata_and_download_omit_storage_key(tmp_path: Path) ->
     pdf = tmp_path / "source.pdf"
     pdf.write_bytes(b"%PDF-1.4 artifact-transport-test\n%%EOF\n")
 
-    detail = client.get("/documents/versions/DOC-ART-1/1", headers=_auth(tokens["editor"]))
+    detail = client.get("/api/v1/documents/versions/DOC-ART-1/1", headers=_auth(tokens["editor"]))
     assert detail.status_code == 200, detail.text
     etag = detail.json()["etag"]
 
     uploaded = client.post(
-        "/documents/versions/DOC-ART-1/1/import-pdf",
+        "/api/v1/documents/versions/DOC-ART-1/1/import-pdf",
         headers=_mutation_headers(tokens["admin"], etag, extra={"Content-Type": "application/pdf"}),
         content=pdf.read_bytes(),
     )
     assert uploaded.status_code == 200, uploaded.text
 
-    listed = client.get("/documents/versions/DOC-ART-1/1/artifacts", headers=_auth(tokens["editor"]))
+    listed = client.get("/api/v1/documents/versions/DOC-ART-1/1/artifacts", headers=_auth(tokens["editor"]))
     assert listed.status_code == 200, listed.text
     rows = listed.json()
     assert rows
@@ -44,12 +44,12 @@ def test_artifact_list_metadata_and_download_omit_storage_key(tmp_path: Path) ->
     assert row["sha256"]
     assert "storage_key" not in str(row.get("metadata", {})).lower()
 
-    meta = client.get(f"/documents/artifacts/{row['artifact_id']}", headers=_auth(tokens["editor"]))
+    meta = client.get(f"/api/v1/documents/artifacts/{row['artifact_id']}", headers=_auth(tokens["editor"]))
     assert meta.status_code == 200
     assert "storage_key" not in meta.json()
 
     content = client.get(
-        f"/documents/artifacts/{row['artifact_id']}/content",
+        f"/api/v1/documents/artifacts/{row['artifact_id']}/content",
         headers=_auth(tokens["editor"]),
     )
     assert content.status_code == 200
@@ -66,18 +66,18 @@ def test_ensure_source_pdf_after_import_returns_downloadable_artifact(tmp_path: 
     pdf = tmp_path / "source.pdf"
     pdf.write_bytes(b"%PDF-1.4 ensure-source-pdf\n%%EOF\n")
 
-    detail = client.get("/documents/versions/DOC-ENSURE-PDF/1", headers=_auth(tokens["editor"]))
+    detail = client.get("/api/v1/documents/versions/DOC-ENSURE-PDF/1", headers=_auth(tokens["editor"]))
     assert detail.status_code == 200, detail.text
 
     uploaded = client.post(
-        "/documents/versions/DOC-ENSURE-PDF/1/import-pdf",
+        "/api/v1/documents/versions/DOC-ENSURE-PDF/1/import-pdf",
         headers=_mutation_headers(tokens["admin"], detail, extra={"Content-Type": "application/pdf"}),
         content=pdf.read_bytes(),
     )
     assert uploaded.status_code == 200, uploaded.text
 
     ensured = client.post(
-        "/documents/versions/DOC-ENSURE-PDF/1/workflow/ensure-source-pdf",
+        "/api/v1/documents/versions/DOC-ENSURE-PDF/1/workflow/ensure-source-pdf",
         headers=_mutation_headers(tokens["editor"], uploaded),
         json={},
     )
@@ -85,7 +85,7 @@ def test_ensure_source_pdf_after_import_returns_downloadable_artifact(tmp_path: 
     body = ensured.json()
     assert body.get("artifact_id")
     download = client.get(
-        f"/documents/artifacts/{body['artifact_id']}/content",
+        f"/api/v1/documents/artifacts/{body['artifact_id']}/content",
         headers=_auth(tokens["editor"]),
     )
     assert download.status_code == 200
@@ -100,7 +100,7 @@ def test_oversized_pdf_upload_rejected(tmp_path: Path, monkeypatch) -> None:
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-ART-BIG", "version": 1},
     )
@@ -108,7 +108,7 @@ def test_oversized_pdf_upload_rejected(tmp_path: Path, monkeypatch) -> None:
     etag = created.json()["etag"]
     body = b"%PDF-1.4 " + (b"x" * 128)
     response = client.post(
-        "/documents/versions/DOC-ART-BIG/1/import-pdf",
+        "/api/v1/documents/versions/DOC-ART-BIG/1/import-pdf",
         headers=_mutation_headers(admin, etag, extra={"Content-Type": "application/pdf"}),
         content=body,
     )

@@ -112,7 +112,7 @@ class BackendIdentityAdapter:
 
     def list_users(self) -> list[DirectoryUser]:
         try:
-            rows = self._transport.request("GET", "/users/directory", auth=True)
+            rows = self._transport.request("GET", "/api/v1/users/directory", auth=True)
         except BackendTransportError as exc:
             _raise_admin_http(exc, action="Benutzerverzeichnis laden")
             raise  # pragma: no cover
@@ -147,7 +147,7 @@ class BackendIdentityAdapter:
         }
         # UI role "QMB" is a base role; keep is_qmb as provided (often False).
         try:
-            row = self._transport.request("POST", "/users", body=body, auth=True)
+            row = self._transport.request("POST", "/api/v1/users", body=body, auth=True)
         except BackendTransportError as exc:
             _raise_admin_http(exc, action="Benutzer anlegen")
             raise  # pragma: no cover
@@ -192,7 +192,7 @@ class BackendIdentityAdapter:
             body["is_qmb"] = bool(is_qmb)
         if not body:
             raise RuntimeError("Keine Admin-Zugriffsänderungen angegeben.")
-        path = f"/users/{quote(clean, safe='')}/access"
+        path = f"/api/v1/users/{quote(clean, safe='')}/access"
         try:
             row = self._transport.request("PATCH", path, body=body, auth=True)
         except BackendTransportError as exc:

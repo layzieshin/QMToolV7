@@ -51,7 +51,7 @@ class _MockAuthHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path != "/auth/me":
+        if self.path != "/api/v1/auth/me":
             self.send_response(404)
             self.end_headers()
             return

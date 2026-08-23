@@ -28,7 +28,7 @@ Technische Gates ersetzen keine menschliche Pilotfreigabe.
 | Governance / Docs | Kanonische Verträge und Ledger | `tests/docs/test_docs_consistency.py` |
 | Macro tooling / reviewer | TOOL00 Agent-/Skill-Vertrag, Snapshot und read-only Review | `tests/docs/test_cursor_macro_workflow.py` + nativer Reviewer-Smoke |
 | PostgreSQL foundation | PG00 Runner/Ownership/Org/Audit/Blob contracts | platform/migration gates (defined in PG00) |
-| Web foundation | WEB00 SPA shell, `/api/v1`, Cookie/CSRF | web/HTTP contract gates (defined in WEB00; **not implemented yet**) |
+| Web foundation | WEB00 SPA shell, `/api/v1`, Cookie/CSRF | web/HTTP contract gates (see WEB00 section below) |
 | DMS web slice | WEB01 Documents/Signature workflow | focused + broader web/API gates |
 | Operations | OPS00 service/HTTPS/backup/restore/export | restore drill, packaging/deployment when authorized |
 | Pilot | PILOT00/PILOT01 readiness + human smoke | security/restore/human approval — separate from automated green |
@@ -56,11 +56,36 @@ evidence levels. Do not promote TestClient green to real-process or human accept
 - Ist SQLite migration gate bleibt für Legacy-Stores relevant bis Cutover:
   `.\.venv\Scripts\python.exe scripts/database_migration_gate.py --output build/database-migration-gate-output.json`
 
-### Web foundation / DMS web slice (after WEB00/WEB01 exist)
-- Contract and foundation commands will be recorded in the owning checkpoint evidence.
-- Do not invent npm/Vite commands here before WEB00 lands them in-repo.
+### Web foundation (WEB00 — `webclient/` + `/api/v1` Cookie/CSRF)
 
-### Legacy PyQt regression (historical only)
+Prerequisites: Node.js **20.11.x** (see `webclient/.nvmrc`); backend test container or live backend for integration smoke.
+
+```powershell
+# Backend HTTP contract (Cookie/CSRF, Bearer token CLI path, OpenAPI)
+.\.venv\Scripts\python.exe -m pytest tests\backend\test_auth_api.py tests\backend\test_openapi_contract.py -q
+
+# OpenAPI snapshot reproducibility
+.\.venv\Scripts\python.exe scripts\export_openapi.py
+.\.venv\Scripts\python.exe -m pytest tests\backend\test_openapi_contract.py::test_openapi_snapshot_is_reproducible -q
+
+# Retargeted in-repo HTTP consumers
+.\.venv\Scripts\python.exe -m pytest tests\interfaces\test_backend_session_client.py -q
+
+# Webclient Vitest (shell + Web Storage negativetest)
+cd webclient
+npm ci
+npm test
+
+# Real-browser HTTPS smoke (Playwright Chromium + ephemeral self-signed TLS gateway)
+# Serves SPA same-origin with /api/v1; not OPS00 production HTTPS.
+npx playwright install chromium
+npm run smoke:browser
+cd ..
+```
+
+Controlled HTTPS browser-smoke evidence is recorded under `build/ap-029-web00/` (ephemeral local TLS; not OPS00 production).
+
+### DMS web slice (WEB01 — after WEB00 PASS)
 - `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q`
 - Optional historical navigation smoke:
   `.\.venv\Scripts\python.exe -m pytest tests/interfaces/test_pyqt_navigation_smoke.py -q`

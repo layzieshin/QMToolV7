@@ -17,17 +17,17 @@ from tests.backend.test_documents_http_api import (
 
 def _approve_document(client: TestClient, tokens: dict, *, doc_id: str) -> None:
     edited = client.post(
-        f"/documents/versions/{doc_id}/1/workflow/editing-complete",
+        f"/api/v1/documents/versions/{doc_id}/1/workflow/editing-complete",
         headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
     )
     assert edited.status_code == 200, edited.text
     reviewed = client.post(
-        f"/documents/versions/{doc_id}/1/workflow/review/accept",
+        f"/api/v1/documents/versions/{doc_id}/1/workflow/review/accept",
         headers=_mutation_headers(tokens["reviewer"], edited),
     )
     assert reviewed.status_code == 200, reviewed.text
     approved = client.post(
-        f"/documents/versions/{doc_id}/1/workflow/approval/accept",
+        f"/api/v1/documents/versions/{doc_id}/1/workflow/approval/accept",
         headers=_mutation_headers(tokens["approver"], reviewed),
     )
     assert approved.status_code == 200, approved.text
@@ -41,7 +41,7 @@ def test_open_confirm_and_receipt_use_session_actor(tmp_path: Path) -> None:
     _approve_document(client, tokens, doc_id="DOC-TRAIN-READ")
 
     opened = client.post(
-        "/documents/reads/open-released",
+        "/api/v1/documents/reads/open-released",
         headers=_auth(tokens["editor"]),
         json={"document_id": "DOC-TRAIN-READ", "version": 1, "source": "training"},
     )
@@ -51,13 +51,13 @@ def test_open_confirm_and_receipt_use_session_actor(tmp_path: Path) -> None:
     assert body["document_id"] == "DOC-TRAIN-READ"
 
     missing = client.get(
-        "/documents/reads/receipt/DOC-TRAIN-READ/1",
+        "/api/v1/documents/reads/receipt/DOC-TRAIN-READ/1",
         headers=_auth(tokens["editor"]),
     )
     assert missing.status_code == 204, missing.text
 
     confirmed = client.post(
-        "/documents/reads/confirm",
+        "/api/v1/documents/reads/confirm",
         headers=_auth(tokens["editor"]),
         json={
             "document_id": "DOC-TRAIN-READ",
@@ -71,7 +71,7 @@ def test_open_confirm_and_receipt_use_session_actor(tmp_path: Path) -> None:
     assert receipt["source"] == "training-http-test"
 
     fetched = client.get(
-        "/documents/reads/receipt/DOC-TRAIN-READ/1",
+        "/api/v1/documents/reads/receipt/DOC-TRAIN-READ/1",
         headers=_auth(tokens["editor"]),
     )
     assert fetched.status_code == 200, fetched.text
@@ -85,7 +85,7 @@ def test_tracked_read_session_is_scoped_to_session_actor(tmp_path: Path) -> None
     _approve_document(client, tokens, doc_id="DOC-TRAIN-TRACK")
 
     started = client.post(
-        "/documents/reads/tracked/start",
+        "/api/v1/documents/reads/tracked/start",
         headers=_auth(tokens["editor"]),
         json={
             "document_id": "DOC-TRAIN-TRACK",
@@ -102,14 +102,14 @@ def test_tracked_read_session_is_scoped_to_session_actor(tmp_path: Path) -> None
 
     observer = _login(client, "observer", "observerpass01")
     forbidden = client.post(
-        f"/documents/reads/tracked/{session_id}/dwell",
+        f"/api/v1/documents/reads/tracked/{session_id}/dwell",
         headers=_auth(observer),
         json={"page_number": 1, "dwell_seconds": 15},
     )
     assert forbidden.status_code == 403, forbidden.text
 
     progress = client.post(
-        f"/documents/reads/tracked/{session_id}/dwell",
+        f"/api/v1/documents/reads/tracked/{session_id}/dwell",
         headers=_auth(tokens["editor"]),
         json={"page_number": 1, "dwell_seconds": 15},
     )
@@ -117,7 +117,7 @@ def test_tracked_read_session_is_scoped_to_session_actor(tmp_path: Path) -> None
     assert progress.json()["is_complete"] is True
 
     finalized = client.post(
-        f"/documents/reads/tracked/{session_id}/finalize",
+        f"/api/v1/documents/reads/tracked/{session_id}/finalize",
         headers=_auth(tokens["editor"]),
         json={"source": "TRAINING_READ"},
     )
@@ -125,7 +125,7 @@ def test_tracked_read_session_is_scoped_to_session_actor(tmp_path: Path) -> None
     assert finalized.json()["user_id"] == "editor"
 
     status = client.get(
-        f"/documents/reads/tracked/{session_id}/progress",
+        f"/api/v1/documents/reads/tracked/{session_id}/progress",
         headers=_auth(tokens["editor"]),
     )
     assert status.status_code == 200, status.text

@@ -1,0 +1,37 @@
+{
+  "name": "qmtool-webclient",
+  "private": true,
+  "version": "0.0.0-web00",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0 <21"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate:types": "openapi-typescript ../docs/contracts/j04-m0-openapi.json -o src/api/openapi.d.ts",
+    "smoke:browser": "node ./scripts/run-https-browser-smoke.mjs",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.0",
+    "@types/node": "^22.13.10",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "http-proxy": "^1.18.1",
+    "jsdom": "^26.0.0",
+    "openapi-typescript": "^7.6.1",
+    "selfsigned": "^2.4.1",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.8",
+    "vue-tsc": "^2.2.8"
+  }
+}

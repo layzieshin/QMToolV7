@@ -155,7 +155,7 @@ class HttpSignatureApi:
         client = self._client()
         handle_payload = client._request(
             "POST",
-            "/signature/standalone/upload",
+            "/api/v1/signature/standalone/upload",
             raw_body=request.input_pdf.read_bytes(),
             content_type="application/pdf",
         )
@@ -166,7 +166,7 @@ class HttpSignatureApi:
             raise SignatureBackendTransportError("signature upload handle missing from backend response")
         signed_bytes = client._request_bytes(
             "POST",
-            "/signature/standalone/sign",
+            "/api/v1/signature/standalone/sign",
             body={
                 "upload_handle": handle,
                 "placement": {
@@ -196,7 +196,7 @@ class HttpSignatureApi:
     def resolve_runtime_layout(self, layout: LabelLayoutInput, *, signer_user: str | None = None) -> LabelLayoutInput:
         payload = self._client()._request(
             "POST",
-            "/signature/resolve-runtime-layout",
+            "/api/v1/signature/resolve-runtime-layout",
             body={"layout": layout_to_payload(layout), "signer_user": signer_user},
         )
         if not isinstance(payload, dict):
@@ -219,7 +219,7 @@ class HttpSignatureApi:
         del owner_user_id
         payload = self._client()._request(
             "POST",
-            "/signature/templates/user",
+            "/api/v1/signature/templates/user",
             body={
                 "name": name,
                 "placement": {
@@ -237,19 +237,19 @@ class HttpSignatureApi:
 
     def list_user_signature_templates(self, owner_user_id: str) -> list[UserSignatureTemplate]:
         del owner_user_id
-        rows = self._client()._request("GET", "/signature/templates/user")
+        rows = self._client()._request("GET", "/api/v1/signature/templates/user")
         if not isinstance(rows, list):
             raise SignatureBackendTransportError("invalid template list response")
         return [self._template_from_payload(row) for row in rows if isinstance(row, dict)]
 
     def list_global_signature_templates(self) -> list[UserSignatureTemplate]:
-        rows = self._client()._request("GET", "/signature/templates/global")
+        rows = self._client()._request("GET", "/api/v1/signature/templates/global")
         if not isinstance(rows, list):
             raise SignatureBackendTransportError("invalid global template list response")
         return [self._template_from_payload(row) for row in rows if isinstance(row, dict)]
 
     def delete_signature_template(self, template_id: str) -> None:
-        self._client()._request("DELETE", f"/signature/templates/{template_id}")
+        self._client()._request("DELETE", f"/api/v1/signature/templates/{template_id}")
 
     def update_signature_template(
         self,
@@ -276,14 +276,14 @@ class HttpSignatureApi:
             body["layout"] = layout_to_payload(layout)
         if signature_asset_id is not None:
             body["signature_asset_id"] = signature_asset_id
-        payload = self._client()._request("PUT", f"/signature/templates/{template_id}", body=body)
+        payload = self._client()._request("PUT", f"/api/v1/signature/templates/{template_id}", body=body)
         return self._template_from_payload(payload)
 
     def copy_global_template_to_user(self, template_id: str, owner_user_id: str, name: str | None = None) -> UserSignatureTemplate:
         del owner_user_id
         payload = self._client()._request(
             "POST",
-            f"/signature/templates/global/{template_id}/copy",
+            f"/api/v1/signature/templates/global/{template_id}/copy",
             body={"name": name},
         )
         return self._template_from_payload(payload)
@@ -292,13 +292,13 @@ class HttpSignatureApi:
         del owner_user_id
         self._client()._request(
             "POST",
-            "/signature/assets/active",
+            "/api/v1/signature/assets/active",
             body={"asset_id": asset_id, "password": password},
         )
 
     def get_active_signature_asset_id(self, owner_user_id: str) -> str | None:
         del owner_user_id
-        payload = self._client()._request("GET", "/signature/assets/active/id")
+        payload = self._client()._request("GET", "/api/v1/signature/assets/active/id")
         if not isinstance(payload, dict):
             return None
         asset_id = payload.get("asset_id")
@@ -306,11 +306,11 @@ class HttpSignatureApi:
 
     def clear_active_signature(self, owner_user_id: str, password: str | None = None) -> None:
         del owner_user_id
-        self._client()._request("DELETE", "/signature/assets/active", body={"password": password})
+        self._client()._request("DELETE", "/api/v1/signature/assets/active", body={"password": password})
 
     def export_active_signature(self, owner_user_id: str, target_path: Path) -> Path:
         del owner_user_id
-        content = self._client()._request_bytes("GET", "/signature/assets/active/content")
+        content = self._client()._request_bytes("GET", "/api/v1/signature/assets/active/content")
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_bytes(content)
         return target_path
@@ -319,7 +319,7 @@ class HttpSignatureApi:
         del owner_user_id
         payload = self._client()._request(
             "POST",
-            "/signature/assets/import",
+            "/api/v1/signature/assets/import",
             raw_body=png_bytes,
             content_type="image/png",
             headers={"X-Filename-Hint": filename_hint},
@@ -354,7 +354,7 @@ class HttpSignatureApi:
             headers["X-Signature-Password"] = password
         payload = self._client()._request(
             "POST",
-            "/signature/assets/import-and-activate",
+            "/api/v1/signature/assets/import-and-activate",
             raw_body=png_bytes,
             content_type="image/png",
             headers=headers,
@@ -400,5 +400,5 @@ class HttpSignatureApi:
         return self.sign_with_fixed_position(request)
 
     def verify_password(self, password: str) -> bool:
-        payload = self._client()._request("POST", "/signature/verify-password", body={"password": password})
+        payload = self._client()._request("POST", "/api/v1/signature/verify-password", body={"password": password})
         return isinstance(payload, dict) and bool(payload.get("ok"))

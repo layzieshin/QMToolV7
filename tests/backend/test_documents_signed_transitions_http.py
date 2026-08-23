@@ -111,7 +111,7 @@ def _activate_editor_signature(client: TestClient, tmp_path: Path, token: str, *
     png = tmp_path / "editor-sig.png"
     _create_signature_png(png)
     response = client.post(
-        "/signature/assets/import-and-activate",
+        "/api/v1/signature/assets/import-and-activate",
         headers={
             **_auth(token),
             "Content-Type": "image/png",
@@ -128,7 +128,7 @@ def test_signed_transition_requires_sign_intent(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={
             "document_id": "DOC-SIGNED-GATE",
@@ -138,26 +138,26 @@ def test_signed_transition_requires_sign_intent(tmp_path: Path) -> None:
     )
     assert created.status_code == 200, created.text
     imported = client.post(
-        "/documents/versions/DOC-SIGNED-GATE/1/import-pdf",
+        "/api/v1/documents/versions/DOC-SIGNED-GATE/1/import-pdf",
         headers={**_mutation_headers(admin, created), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
     assert imported.status_code == 200, imported.text
     assigned = client.post(
-        "/documents/versions/DOC-SIGNED-GATE/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-SIGNED-GATE/1/workflow/assign-roles",
         headers=_mutation_headers(admin, imported),
         json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
     )
     assert assigned.status_code == 200, assigned.text
     started = client.post(
-        "/documents/versions/DOC-SIGNED-GATE/1/workflow/start",
+        "/api/v1/documents/versions/DOC-SIGNED-GATE/1/workflow/start",
         headers=_mutation_headers(admin, assigned),
         json={"profile_id": "signed_http_profile"},
     )
     assert started.status_code == 200, started.text
     editor = _login(client, "editor", "editorpass01")
     denied = client.post(
-        "/documents/versions/DOC-SIGNED-GATE/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-SIGNED-GATE/1/workflow/editing-complete",
         headers=_mutation_headers(editor, started),
         json={},
     )
@@ -170,7 +170,7 @@ def test_signed_transition_rejects_sign_intent_without_password(tmp_path: Path) 
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={
             "document_id": "DOC-SIGNED-PW",
@@ -180,19 +180,19 @@ def test_signed_transition_rejects_sign_intent_without_password(tmp_path: Path) 
     )
     assert created.status_code == 200, created.text
     imported = client.post(
-        "/documents/versions/DOC-SIGNED-PW/1/import-pdf",
+        "/api/v1/documents/versions/DOC-SIGNED-PW/1/import-pdf",
         headers={**_mutation_headers(admin, created), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
     assert imported.status_code == 200, imported.text
     assigned = client.post(
-        "/documents/versions/DOC-SIGNED-PW/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-SIGNED-PW/1/workflow/assign-roles",
         headers=_mutation_headers(admin, imported),
         json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
     )
     assert assigned.status_code == 200, assigned.text
     started = client.post(
-        "/documents/versions/DOC-SIGNED-PW/1/workflow/start",
+        "/api/v1/documents/versions/DOC-SIGNED-PW/1/workflow/start",
         headers=_mutation_headers(admin, assigned),
         json={"profile_id": "signed_http_profile"},
     )
@@ -202,7 +202,7 @@ def test_signed_transition_rejects_sign_intent_without_password(tmp_path: Path) 
     intent = _sign_intent_body(EDITOR_HTTP_PASSWORD)
     intent["sign_intent"]["password"] = None
     denied = client.post(
-        "/documents/versions/DOC-SIGNED-PW/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-SIGNED-PW/1/workflow/editing-complete",
         headers=_mutation_headers(editor, started),
         json=intent,
     )
@@ -218,25 +218,25 @@ def test_signed_workflow_transition_http(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     admin = _login(client, "admin", "adminpass01")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(admin),
         json={"document_id": "DOC-SIGNED-OK", "version": 1, "workflow_profile_id": "signed_http_profile"},
     )
     assert created.status_code == 200, created.text
     imported = client.post(
-        "/documents/versions/DOC-SIGNED-OK/1/import-pdf",
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/import-pdf",
         headers={**_mutation_headers(admin, created), "Content-Type": "application/pdf"},
         content=_minimal_pdf_bytes(),
     )
     assert imported.status_code == 200, imported.text
     assigned = client.post(
-        "/documents/versions/DOC-SIGNED-OK/1/workflow/assign-roles",
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/workflow/assign-roles",
         headers=_mutation_headers(admin, imported),
         json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
     )
     assert assigned.status_code == 200, assigned.text
     started = client.post(
-        "/documents/versions/DOC-SIGNED-OK/1/workflow/start",
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/workflow/start",
         headers=_mutation_headers(admin, assigned),
         json={"profile_id": "signed_http_profile"},
     )
@@ -245,7 +245,7 @@ def test_signed_workflow_transition_http(tmp_path: Path) -> None:
     editor = _login(client, "editor", EDITOR_HTTP_PASSWORD)
     _activate_editor_signature(client, tmp_path, editor, password=EDITOR_HTTP_PASSWORD)
     edited = client.post(
-        "/documents/versions/DOC-SIGNED-OK/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/workflow/editing-complete",
         headers=_mutation_headers(editor, started),
         json=_sign_intent_body(EDITOR_HTTP_PASSWORD),
     )
@@ -255,7 +255,7 @@ def test_signed_workflow_transition_http(tmp_path: Path) -> None:
     reviewer = _login(client, "reviewer", REVIEWER_HTTP_PASSWORD)
     _activate_editor_signature(client, tmp_path, reviewer, password=REVIEWER_HTTP_PASSWORD)
     reviewed = client.post(
-        "/documents/versions/DOC-SIGNED-OK/1/workflow/review/accept",
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/workflow/review/accept",
         headers=_mutation_headers(reviewer, edited),
         json=_sign_intent_body(REVIEWER_HTTP_PASSWORD),
     )
@@ -265,14 +265,14 @@ def test_signed_workflow_transition_http(tmp_path: Path) -> None:
     approver = _login(client, "approver", APPROVER_HTTP_PASSWORD)
     _activate_editor_signature(client, tmp_path, approver, password=APPROVER_HTTP_PASSWORD)
     approved = client.post(
-        "/documents/versions/DOC-SIGNED-OK/1/workflow/approval/accept",
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/workflow/approval/accept",
         headers=_mutation_headers(approver, reviewed),
         json=_sign_intent_body(APPROVER_HTTP_PASSWORD),
     )
     assert approved.status_code == 200, approved.text
     assert approved.json()["state"]["status"] == "APPROVED"
 
-    artifacts = client.get("/documents/versions/DOC-SIGNED-OK/1/artifacts", headers=_auth(admin))
+    artifacts = client.get("/api/v1/documents/versions/DOC-SIGNED-OK/1/artifacts", headers=_auth(admin))
     assert artifacts.status_code == 200
     assert any(row.get("artifact_type") == "SIGNED_PDF" for row in artifacts.json())
     workflow_scratch = tmp_path / "scratch" / "workflow-sign"
@@ -283,7 +283,7 @@ def test_signed_workflow_transition_http(tmp_path: Path) -> None:
     ]
     assert source_still
     source_bytes = client.get(
-        f"/documents/artifacts/{source_still[0]['artifact_id']}/content",
+        f"/api/v1/documents/artifacts/{source_still[0]['artifact_id']}/content",
         headers=_auth(admin),
     )
     assert source_bytes.status_code == 200, source_bytes.text
@@ -292,7 +292,7 @@ def test_signed_workflow_transition_http(tmp_path: Path) -> None:
     qmb = _login(client, "qmb", QMB_HTTP_PASSWORD)
     _activate_editor_signature(client, tmp_path, qmb, password=QMB_HTTP_PASSWORD)
     extended = client.post(
-        "/documents/versions/DOC-SIGNED-OK/1/lifecycle/extend-annual",
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/lifecycle/extend-annual",
         headers=_mutation_headers(qmb, approved),
         json={
             **_sign_intent_body(QMB_HTTP_PASSWORD),
@@ -304,7 +304,7 @@ def test_signed_workflow_transition_http(tmp_path: Path) -> None:
     assert extended.status_code == 200, extended.text
     assert extended.json()["state"]["extension_count"] == 1
     after_extension = client.get(
-        "/documents/versions/DOC-SIGNED-OK/1/artifacts", headers=_auth(qmb)
+        "/api/v1/documents/versions/DOC-SIGNED-OK/1/artifacts", headers=_auth(qmb)
     )
     assert after_extension.status_code == 200
     assert len([row for row in after_extension.json() if row.get("artifact_type") == "SIGNED_PDF"]) >= 4

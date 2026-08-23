@@ -304,7 +304,7 @@ def test_http_login_writes_audit_and_body_cannot_set_actor(tmp_path, monkeypatch
         client = TestClient(create_app(container))
 
         login = client.post(
-            "/auth/login",
+            "/api/v1/auth/token",
             json={
                 "username": "opsadmin",
                 "password": "ops-secret-1",
@@ -317,7 +317,7 @@ def test_http_login_writes_audit_and_body_cannot_set_actor(tmp_path, monkeypatch
         assert set(login.json()) == {"token"}
 
         change = client.post(
-            "/auth/change-password",
+            "/api/v1/auth/change-password",
             headers={"Authorization": f"Bearer {token}", "X-Request-ID": "http-pw"},
             json={"new_password": "ops-secret-2"},
         )
@@ -365,7 +365,7 @@ def test_http_login_returns_503_and_rolls_back_when_audit_is_unavailable(
             admin.execute("REVOKE INSERT ON usermanagement.audit_events FROM qmtool_runtime")
 
         response = client.post(
-            "/auth/login",
+            "/api/v1/auth/token",
             json={"username": "opsadmin", "password": "ops-secret-1"},
             headers={"X-Request-ID": "http-audit-unavailable"},
         )

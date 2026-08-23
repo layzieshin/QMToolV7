@@ -189,13 +189,13 @@ def test_header_update_without_if_match_is_428(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     qmb = _login(client, "qmb", "qmbpass001")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(qmb),
         json={"document_id": "DOC-HDR-428", "version": 1, "workflow_profile_id": "http_flow_profile"},
     )
     assert created.status_code == 200, created.text
     denied = client.put(
-        "/documents/headers/DOC-HDR-428",
+        "/api/v1/documents/headers/DOC-HDR-428",
         headers=_auth(qmb),
         json={"department": "QA"},
     )
@@ -210,22 +210,22 @@ def test_header_stale_if_match_is_409_without_mutation(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     qmb = _login(client, "qmb", "qmbpass001")
     created = client.post(
-        "/documents/versions/create",
+        "/api/v1/documents/versions/create",
         headers=_auth(qmb),
         json={"document_id": "DOC-HDR-409", "version": 1, "workflow_profile_id": "http_flow_profile"},
     )
     assert created.status_code == 200, created.text
-    before = client.get("/documents/headers/DOC-HDR-409", headers=_auth(qmb))
+    before = client.get("/api/v1/documents/headers/DOC-HDR-409", headers=_auth(qmb))
     assert before.status_code == 200
     etag = before.headers["etag"]
     first = client.put(
-        "/documents/headers/DOC-HDR-409",
+        "/api/v1/documents/headers/DOC-HDR-409",
         headers={**_auth(qmb), "If-Match": etag},
         json={"department": "QA-1"},
     )
     assert first.status_code == 200, first.text
     stale = client.put(
-        "/documents/headers/DOC-HDR-409",
+        "/api/v1/documents/headers/DOC-HDR-409",
         headers={**_auth(qmb), "If-Match": etag},
         json={"department": "QA-2"},
     )
@@ -233,7 +233,7 @@ def test_header_stale_if_match_is_409_without_mutation(tmp_path: Path) -> None:
     detail = stale.json()["detail"]
     assert detail["error"] == "header_conflict"
     assert detail.get("message")
-    current = client.get("/documents/headers/DOC-HDR-409", headers=_auth(qmb))
+    current = client.get("/api/v1/documents/headers/DOC-HDR-409", headers=_auth(qmb))
     assert current.json()["department"] == "QA-1"
 
 
@@ -242,19 +242,19 @@ def test_comment_status_without_if_match_is_428(tmp_path: Path) -> None:
     client = TestClient(create_app(container))
     tokens = _create_assign_start(client, users, doc_id="DOC-CMT-428")
     edited = client.post(
-        "/documents/versions/DOC-CMT-428/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-CMT-428/1/workflow/editing-complete",
         headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
     )
     assert edited.status_code == 200, edited.text
     created = client.post(
-        "/documents/versions/DOC-CMT-428/1/comments",
+        "/api/v1/documents/versions/DOC-CMT-428/1/comments",
         headers=_mutation_headers(tokens["reviewer"], edited),
         json={"context": "PDF_REVIEW", "page_number": 1, "comment_text": "note"},
     )
     assert created.status_code == 200, created.text
     comment_id = created.json()["comment_id"]
     denied = client.post(
-        f"/documents/comments/{comment_id}/status",
+        f"/api/v1/documents/comments/{comment_id}/status",
         headers=_auth(tokens["reviewer"]),
         json={"new_status": "RESOLVED", "note": "done"},
     )
@@ -269,18 +269,18 @@ def test_comment_list_exposes_updated_at_and_stale_status_is_409(tmp_path: Path)
     client = TestClient(create_app(container))
     tokens = _create_assign_start(client, users, doc_id="DOC-CMT-409")
     edited = client.post(
-        "/documents/versions/DOC-CMT-409/1/workflow/editing-complete",
+        "/api/v1/documents/versions/DOC-CMT-409/1/workflow/editing-complete",
         headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
     )
     assert edited.status_code == 200, edited.text
     created = client.post(
-        "/documents/versions/DOC-CMT-409/1/comments",
+        "/api/v1/documents/versions/DOC-CMT-409/1/comments",
         headers=_mutation_headers(tokens["reviewer"], edited),
         json={"context": "PDF_REVIEW", "page_number": 1, "comment_text": "note"},
     )
     assert created.status_code == 200, created.text
     listed = client.get(
-        "/documents/versions/DOC-CMT-409/1/comments?context=PDF_REVIEW",
+        "/api/v1/documents/versions/DOC-CMT-409/1/comments?context=PDF_REVIEW",
         headers=_auth(tokens["reviewer"]),
     )
     assert listed.status_code == 200, listed.text
@@ -290,13 +290,13 @@ def test_comment_list_exposes_updated_at_and_stale_status_is_409(tmp_path: Path)
     token = row["updated_at"]
     comment_id = row["comment_id"]
     first = client.post(
-        f"/documents/comments/{comment_id}/status",
+        f"/api/v1/documents/comments/{comment_id}/status",
         headers={**_auth(tokens["reviewer"]), "If-Match": token},
         json={"new_status": "RESOLVED", "note": "done"},
     )
     assert first.status_code == 200, first.text
     stale = client.post(
-        f"/documents/comments/{comment_id}/status",
+        f"/api/v1/documents/comments/{comment_id}/status",
         headers={**_auth(tokens["reviewer"]), "If-Match": token},
         json={"new_status": "ACTIVE", "note": "replay"},
     )
@@ -305,7 +305,7 @@ def test_comment_list_exposes_updated_at_and_stale_status_is_409(tmp_path: Path)
     assert detail["error"] == "comment_conflict"
     assert detail.get("message")
     listed_after = client.get(
-        "/documents/versions/DOC-CMT-409/1/comments?context=PDF_REVIEW",
+        "/api/v1/documents/versions/DOC-CMT-409/1/comments?context=PDF_REVIEW",
         headers=_auth(tokens["reviewer"]),
     )
     assert listed_after.json()[0]["status"] == "RESOLVED"

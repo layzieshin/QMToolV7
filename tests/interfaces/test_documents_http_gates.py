@@ -87,7 +87,7 @@ def test_pyqt_runtime_binds_session_token_provider_not_env() -> None:
 def test_pyqt_backend_identity_has_no_shadow_login() -> None:
     identity = (ROOT / "interfaces/clients/backend_identity.py").read_text(encoding="utf-8")
     assert "BackendIdentityAdapter" in identity
-    assert "/users/directory" in identity
+    assert "/api/v1/users/directory" in identity
     assert "lokales Login" in identity
     # Must not call local UM login to fabricate a session.
     assert "usermanagement_service.login" not in identity

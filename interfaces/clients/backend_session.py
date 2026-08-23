@@ -42,7 +42,7 @@ def _role_for_ui(*, global_roles: list[str], is_qmb: bool) -> str:
 
 
 class BackendSessionApi:
-    """login / me / change_password / logout against /auth/*."""
+    """login / me / change_password / logout against /api/v1/auth/*."""
 
     def __init__(self, transport: BackendHttpTransport | None = None) -> None:
         self._token: str | None = None
@@ -68,7 +68,7 @@ class BackendSessionApi:
             raise BackendTransportError("username is required")
         payload = self._transport.request(
             "POST",
-            "/auth/login",
+            "/api/v1/auth/token",
             body={"username": clean_user, "password": password},
             auth=False,
         )
@@ -97,7 +97,7 @@ class BackendSessionApi:
         if not self._token:
             raise BackendTransportError("not authenticated", status_code=401)
         try:
-            payload = self._transport.request("GET", "/auth/me", auth=True)
+            payload = self._transport.request("GET", "/api/v1/auth/me", auth=True)
         except BackendTransportError as exc:
             if exc.status_code == 401:
                 self.clear()
@@ -126,7 +126,7 @@ class BackendSessionApi:
             raise BackendTransportError("not authenticated", status_code=401)
         self._transport.request(
             "POST",
-            "/auth/change-password",
+            "/api/v1/auth/change-password",
             body={"new_password": new_password},
             auth=True,
             expect_json=False,
@@ -139,7 +139,7 @@ class BackendSessionApi:
             try:
                 self._transport.request(
                     "POST",
-                    "/auth/logout",
+                    "/api/v1/auth/logout",
                     auth=True,
                     expect_json=False,
                 )
@@ -151,7 +151,7 @@ class BackendSessionApi:
     @staticmethod
     def _user_from_me_payload(payload: Any) -> BackendSessionUser:
         if not isinstance(payload, dict):
-            raise BackendTransportError("invalid /auth/me payload")
+            raise BackendTransportError("invalid /api/v1/auth/me payload")
         roles = payload.get("global_roles") or []
         if not isinstance(roles, list):
             roles = []

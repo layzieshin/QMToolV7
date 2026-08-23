@@ -90,10 +90,10 @@ class _BootstrapAuthHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path == "/auth/login":
+        if self.path == "/api/v1/auth/token":
             self._send(200, b'{"token":"bootstrap-session-token"}')
             return
-        if self.path == "/auth/change-password":
+        if self.path == "/api/v1/auth/change-password":
             auth = self.headers.get("Authorization", "")
             payload = self._read_json()
             if auth != "Bearer bootstrap-session-token":
@@ -109,7 +109,7 @@ class _BootstrapAuthHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path != "/auth/me":
+        if self.path != "/api/v1/auth/me":
             self.send_response(404)
             self.end_headers()
             return
@@ -222,7 +222,7 @@ def test_forbidden_scope_is_absent_from_handlers_and_live_gate() -> None:
     handlers_src = "".join(inspect.getsource(handler) for handler in _STEP_HANDLERS.values())
     live_src = inspect.getsource(live_gate.test_j04_m0_full_realprocess_acceptance)
     for token in (
-        "/documents/reads/",
+        "/api/v1/documents/reads/",
         "/change-requests",
         "/lifecycle/archive",
         "read_receipt",
@@ -330,7 +330,7 @@ class _DocumentCreateHandler(BaseHTTPRequestHandler):
         return
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/documents/versions/create":
+        if self.path != "/api/v1/documents/versions/create":
             self.send_response(404)
             self.end_headers()
             return
@@ -501,7 +501,7 @@ class _AuthMeHandler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path != "/auth/me":
+        if self.path != "/api/v1/auth/me":
             self.send_response(404)
             self.end_headers()
             return
@@ -570,10 +570,10 @@ class _DirectorySeedHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path == "/users":
+        if self.path == "/api/v1/users":
             self._send(201, b'{"ok":true}')
             return
-        if self.path == "/auth/login":
+        if self.path == "/api/v1/auth/token":
             username = str(self._read_json().get("username", ""))
             token = f"token-{username}"
             self._send(200, json.dumps({"token": token}).encode("utf-8"))
@@ -582,7 +582,7 @@ class _DirectorySeedHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path != "/auth/me":
+        if self.path != "/api/v1/auth/me":
             self.send_response(404)
             self.end_headers()
             return
@@ -653,7 +653,7 @@ class _BaselineAssignHandler(BaseHTTPRequestHandler):
             self._send_version()
             return
         if (
-            self.path == "/documents/versions/create"
+            self.path == "/api/v1/documents/versions/create"
             or self.path.endswith("/import-pdf")
             or self.path.endswith("/workflow/start")
         ):
@@ -747,7 +747,7 @@ class _ArtifactTransportHandler(_JsonHandler):
     leaked = False
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts":
             row = {
                 "artifact_id": "art-source-1",
                 "sha256": type(self).listed_sha,
@@ -757,10 +757,10 @@ class _ArtifactTransportHandler(_JsonHandler):
                 row["storage_key"] = "objects/ab/secret.pdf"
             self._send_json(200, [row])
             return
-        if self.path == "/documents/artifacts/art-source-1":
+        if self.path == "/api/v1/documents/artifacts/art-source-1":
             self._send_json(200, {"artifact_id": "art-source-1", "sha256": type(self).listed_sha})
             return
-        if self.path == "/documents/artifacts/art-source-1/content":
+        if self.path == "/api/v1/documents/artifacts/art-source-1/content":
             import hashlib
 
             digest = hashlib.sha256(type(self).pdf_bytes).hexdigest()
@@ -807,7 +807,7 @@ def test_artifacts_transport_checks_content_hash_etag_and_length(artifact_transp
     assert ctx.source_artifact_sha256 == digest
     assert digest[:16] in detail
     source = inspect.getsource(_step_artifacts_transport)
-    assert "/documents/artifacts/" in source
+    assert "/api/v1/documents/artifacts/" in source
     assert "/content" in source
     assert "X-Content-SHA256" in source
     assert "Content-Length" in source
@@ -828,7 +828,7 @@ class _SignatureVerifyHandler(_JsonHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         token = self._auth_token()
-        if self.path == "/signature/assets/import-and-activate":
+        if self.path == "/api/v1/signature/assets/import-and-activate":
             length = int(self.headers.get("Content-Length", "0") or "0")
             if length:
                 self.rfile.read(length)
@@ -845,7 +845,7 @@ class _SignatureVerifyHandler(_JsonHandler):
                 return
             self._send_json(200, {"ok": True})
             return
-        if self.path == "/signature/verify-password":
+        if self.path == "/api/v1/signature/verify-password":
             type(self).verified.append(token)
             body = self._read_json()
             expected = {
@@ -907,7 +907,7 @@ class _SignedEditingHandler(_JsonHandler):
     saw_empty_intent = False
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path != f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+        if self.path != f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1":
             self.send_response(404)
             self.end_headers()
             return
@@ -916,7 +916,7 @@ class _SignedEditingHandler(_JsonHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         token = self._auth_token()
-        if self.path != f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete":
+        if self.path != f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/editing-complete":
             self.send_response(404)
             self.end_headers()
             return
@@ -975,11 +975,11 @@ class _SignedReviewHandler(_JsonHandler):
     review_status = 200
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1":
             type(self).actor_sequence.append(("GET version", self._auth_token()))
             self._send_json(200, {"etag": "etag-review", "state": {"status": "IN_REVIEW"}})
             return
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/artifacts":
             type(self).actor_sequence.append(("GET artifacts", self._auth_token()))
             self._send_json(
                 200,
@@ -1001,7 +1001,7 @@ class _SignedReviewHandler(_JsonHandler):
             "reviewer-token": REVIEWER_PASSWORD,
             "approver-token": APPROVER_PASSWORD,
         }.get(token)
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/review/accept":
             type(self).actor_sequence.append(("review/accept", token))
             type(self).passwords.append((token, password))
             if type(self).review_status != 200:
@@ -1018,7 +1018,7 @@ class _SignedReviewHandler(_JsonHandler):
                 return
             self._send_json(200, {"etag": "etag-approval", "state": {"status": "IN_APPROVAL"}})
             return
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/workflow/approval/accept":
             type(self).actor_sequence.append(("approval/accept", token))
             type(self).passwords.append((token, password))
             if not intent:
@@ -1085,13 +1085,13 @@ class _CommentFlowHandler(_JsonHandler):
     version_etag = "etag-review"
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1":
             self._send_json(
                 200,
                 {"etag": type(self).version_etag, "state": {"status": "IN_REVIEW"}},
             )
             return
-        if self.path.startswith(f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments"):
+        if self.path.startswith(f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments"):
             if "PDF_REVIEW" in self.path:
                 self._send_json(200, [{"comment_id": "pdf-1", "context": "PDF_REVIEW"}])
                 return
@@ -1101,7 +1101,7 @@ class _CommentFlowHandler(_JsonHandler):
         self.end_headers()
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1/comments":
             body = self._read_json()
             type(self).pdf_created += 1
             assert body.get("context") == "PDF_REVIEW"
@@ -1156,10 +1156,10 @@ def test_pdf_and_docx_comments_stay_separate_and_docx_sync_is_idempotent(
 
 class _PersistenceHandler(_JsonHandler):
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == f"/documents/versions/{ACCEPTANCE_DOC_ID}/1":
+        if self.path == f"/api/v1/documents/versions/{ACCEPTANCE_DOC_ID}/1":
             self._send_json(200, {"etag": "etag-approved", "state": {"status": "APPROVED"}})
             return
-        if self.path == "/auth/me":
+        if self.path == "/api/v1/auth/me":
             token = self._auth_token()
             username = "reviewer" if token == "reviewer-token" else "editor"
             self._send_json(200, {"username": username, "user_id": "u"})
@@ -1362,11 +1362,11 @@ def test_acceptance_http_client_timeout_during_body_read_reports_method_path_and
     client._token = "secret-bearer-token"
     with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
         with pytest.raises(ScenarioFailure) as exc_info:
-            client.request("POST", "/documents/versions/DOC-1/1/comments", body={"password": "request-body-secret"})
+            client.request("POST", "/api/v1/documents/versions/DOC-1/1/comments", body={"password": "request-body-secret"})
 
     msg = str(exc_info.value)
     assert "POST" in msg
-    assert "/documents/versions/DOC-1/1/comments" in msg
+    assert "/api/v1/documents/versions/DOC-1/1/comments" in msg
     assert "beim Lesen des Response-Bodys" in msg
     # no tokens, auth headers, or request body values in the message
     assert "secret-bearer-token" not in msg

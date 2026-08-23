@@ -598,19 +598,6 @@
         "title": "LoginRequest",
         "type": "object"
       },
-      "LoginResponse": {
-        "properties": {
-          "token": {
-            "title": "Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "title": "LoginResponse",
-        "type": "object"
-      },
       "MeResponse": {
         "properties": {
           "authenticated_at": {
@@ -627,6 +614,10 @@
           "is_qmb": {
             "title": "Is Qmb",
             "type": "boolean"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
           },
           "request_id": {
             "title": "Request Id",
@@ -649,6 +640,7 @@
           "user_id",
           "session_id",
           "request_id",
+          "organization_id",
           "username",
           "global_roles",
           "is_qmb",
@@ -1157,6 +1149,19 @@
         "title": "TemplateUpdateBody",
         "type": "object"
       },
+      "TokenResponse": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
       "UserAccessResponse": {
         "properties": {
           "is_active": {
@@ -1329,9 +1334,21 @@
     "securitySchemes": {
       "BearerAuth": {
         "bearerFormat": "opaque session token",
-        "description": "Opaque Bearer-Session aus POST /auth/login; nicht persistieren.",
+        "description": "Opaque Bearer-Session aus POST /api/v1/auth/token; nicht persistieren.",
         "scheme": "bearer",
         "type": "http"
+      },
+      "CookieSessionAuth": {
+        "description": "HttpOnly session cookie fuer Browser-Clients (Same-Origin).",
+        "in": "cookie",
+        "name": "qmtool_session",
+        "type": "apiKey"
+      },
+      "CsrfHeader": {
+        "description": "CSRF double-submit header; muss qmtool_csrf Cookie entsprechen.",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "type": "apiKey"
       },
       "HTTPBearer": {
         "scheme": "bearer",
@@ -1347,11 +1364,27 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/auth/change-password": {
+    "/api/v1/auth/change-password": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_auth_change_password",
+        "operationId": "post_api_v1_auth_change_password",
         "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
           {
             "description": "Optional correlation identifier echoed by the backend.",
             "in": "header",
@@ -1478,6 +1511,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Change Password",
@@ -1486,11 +1523,159 @@
         ]
       }
     },
-    "/auth/login": {
-      "post": {
-        "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_auth_login",
+    "/api/v1/auth/csrf": {
+      "get": {
+        "description": "Issue a readable CSRF cookie for browser Same-Origin clients.",
+        "operationId": "get_api_v1_auth_csrf",
         "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier echoed by the backend.",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          }
+        },
+        "summary": "Csrf Bootstrap",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Browser login: HttpOnly session cookie, no credential in body.",
+        "operationId": "post_api_v1_auth_login",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
           {
             "description": "Optional correlation identifier echoed by the backend.",
             "in": "header",
@@ -1520,14 +1705,7 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LoginResponse"
-                }
-              }
-            },
+          "204": {
             "description": "Successful Response"
           },
           "400": {
@@ -1621,17 +1799,38 @@
             "description": "Structured QMTool error response."
           }
         },
-        "summary": "Login",
+        "security": [
+          {
+            "CsrfHeader": []
+          }
+        ],
+        "summary": "Login Browser",
         "tags": [
           "auth"
         ]
       }
     },
-    "/auth/logout": {
+    "/api/v1/auth/logout": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_auth_logout",
+        "operationId": "post_api_v1_auth_logout",
         "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
           {
             "description": "Optional correlation identifier echoed by the backend.",
             "in": "header",
@@ -1748,6 +1947,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Logout",
@@ -1756,11 +1959,27 @@
         ]
       }
     },
-    "/auth/logout-all": {
+    "/api/v1/auth/logout-all": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_auth_logout_all",
+        "operationId": "post_api_v1_auth_logout_all",
         "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
           {
             "description": "Optional correlation identifier echoed by the backend.",
             "in": "header",
@@ -1877,6 +2096,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Logout All",
@@ -1885,11 +2108,27 @@
         ]
       }
     },
-    "/auth/me": {
+    "/api/v1/auth/me": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_auth_me",
+        "operationId": "get_api_v1_auth_me",
         "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
           {
             "description": "Optional correlation identifier echoed by the backend.",
             "in": "header",
@@ -2013,6 +2252,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Me",
@@ -2021,10 +2263,167 @@
         ]
       }
     },
-    "/documents/artifacts/{artifact_id}": {
+    "/api/v1/auth/token": {
+      "post": {
+        "description": "CLI/operator login: opaque Bearer token, no Set-Cookie.",
+        "operationId": "post_api_v1_auth_token",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier echoed by the backend.",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          }
+        },
+        "summary": "Login Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/documents/artifacts/{artifact_id}": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_artifacts_by_artifact_id",
+        "operationId": "get_api_v1_documents_artifacts_by_artifact_id",
         "parameters": [
           {
             "in": "path",
@@ -2059,7 +2458,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Get Documents Artifacts By Artifact Id",
+                  "title": "Response Get Api V1 Documents Artifacts By Artifact Id",
                   "type": "object"
                 }
               }
@@ -2160,6 +2559,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Artifact",
@@ -2168,10 +2570,10 @@
         ]
       }
     },
-    "/documents/artifacts/{artifact_id}/content": {
+    "/api/v1/documents/artifacts/{artifact_id}/content": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_artifacts_by_artifact_id_content",
+        "operationId": "get_api_v1_documents_artifacts_by_artifact_id_content",
         "parameters": [
           {
             "in": "path",
@@ -2330,6 +2732,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Artifact Content",
@@ -2338,10 +2743,10 @@
         ]
       }
     },
-    "/documents/capabilities": {
+    "/api/v1/documents/capabilities": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_capabilities",
+        "operationId": "get_api_v1_documents_capabilities",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -2369,7 +2774,7 @@
                   "additionalProperties": {
                     "type": "boolean"
                   },
-                  "title": "Response Get Documents Capabilities",
+                  "title": "Response Get Api V1 Documents Capabilities",
                   "type": "object"
                 }
               }
@@ -2470,6 +2875,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Documents Capabilities",
@@ -2478,10 +2886,10 @@
         ]
       }
     },
-    "/documents/comments/{comment_id}": {
+    "/api/v1/documents/comments/{comment_id}": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_comments_by_comment_id",
+        "operationId": "get_api_v1_documents_comments_by_comment_id",
         "parameters": [
           {
             "in": "path",
@@ -2516,7 +2924,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Get Documents Comments By Comment Id",
+                  "title": "Response Get Api V1 Documents Comments By Comment Id",
                   "type": "object"
                 }
               }
@@ -2617,6 +3025,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Workflow Comment Detail",
@@ -2625,10 +3036,10 @@
         ]
       }
     },
-    "/documents/comments/{comment_id}/status": {
+    "/api/v1/documents/comments/{comment_id}/status": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_comments_by_comment_id_status",
+        "operationId": "post_api_v1_documents_comments_by_comment_id_status",
         "parameters": [
           {
             "in": "path",
@@ -2690,7 +3101,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Documents Comments By Comment Id Status",
+                  "title": "Response Post Api V1 Documents Comments By Comment Id Status",
                   "type": "object"
                 }
               }
@@ -2809,6 +3220,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Set Workflow Comment Status",
@@ -2817,10 +3232,10 @@
         ]
       }
     },
-    "/documents/headers/{document_id}": {
+    "/api/v1/documents/headers/{document_id}": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_headers_by_document_id",
+        "operationId": "get_api_v1_documents_headers_by_document_id",
         "parameters": [
           {
             "in": "path",
@@ -2952,6 +3367,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Header",
@@ -2961,7 +3379,7 @@
       },
       "put": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "put_documents_headers_by_document_id",
+        "operationId": "put_api_v1_documents_headers_by_document_id",
         "parameters": [
           {
             "in": "path",
@@ -3138,6 +3556,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Update Header",
@@ -3146,10 +3568,10 @@
         ]
       }
     },
-    "/documents/home/recent": {
+    "/api/v1/documents/home/recent": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_home_recent",
+        "operationId": "get_api_v1_documents_home_recent",
         "parameters": [
           {
             "in": "query",
@@ -3288,6 +3710,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Home Recent",
@@ -3296,10 +3721,10 @@
         ]
       }
     },
-    "/documents/home/review-actions": {
+    "/api/v1/documents/home/review-actions": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_home_review_actions",
+        "operationId": "get_api_v1_documents_home_review_actions",
         "parameters": [
           {
             "in": "query",
@@ -3438,6 +3863,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Home Review Actions",
@@ -3446,10 +3874,10 @@
         ]
       }
     },
-    "/documents/home/tasks": {
+    "/api/v1/documents/home/tasks": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_home_tasks",
+        "operationId": "get_api_v1_documents_home_tasks",
         "parameters": [
           {
             "in": "query",
@@ -3604,6 +4032,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Home Tasks",
@@ -3612,10 +4043,10 @@
         ]
       }
     },
-    "/documents/pool/by-status/{status}": {
+    "/api/v1/documents/pool/by-status/{status}": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_pool_by_status_by_status",
+        "operationId": "get_api_v1_documents_pool_by_status_by_status",
         "parameters": [
           {
             "in": "path",
@@ -3653,7 +4084,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
-                  "title": "Response Get Documents Pool By Status By Status",
+                  "title": "Response Get Api V1 Documents Pool By Status By Status",
                   "type": "array"
                 }
               }
@@ -3754,6 +4185,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List By Status",
@@ -3762,10 +4196,10 @@
         ]
       }
     },
-    "/documents/reads/confirm": {
+    "/api/v1/documents/reads/confirm": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_reads_confirm",
+        "operationId": "post_api_v1_documents_reads_confirm",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -3801,7 +4235,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Documents Reads Confirm",
+                  "title": "Response Post Api V1 Documents Reads Confirm",
                   "type": "object"
                 }
               }
@@ -3902,6 +4336,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Confirm Released Document",
@@ -3910,10 +4348,10 @@
         ]
       }
     },
-    "/documents/reads/open-released": {
+    "/api/v1/documents/reads/open-released": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_reads_open_released",
+        "operationId": "post_api_v1_documents_reads_open_released",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -3949,7 +4387,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Documents Reads Open Released",
+                  "title": "Response Post Api V1 Documents Reads Open Released",
                   "type": "object"
                 }
               }
@@ -4050,6 +4488,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Open Released Document",
@@ -4058,10 +4500,10 @@
         ]
       }
     },
-    "/documents/reads/receipt/{document_id}/{version}": {
+    "/api/v1/documents/reads/receipt/{document_id}/{version}": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_reads_receipt_by_document_id_by_version",
+        "operationId": "get_api_v1_documents_reads_receipt_by_document_id_by_version",
         "parameters": [
           {
             "in": "path",
@@ -4202,6 +4644,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Read Receipt",
@@ -4210,10 +4655,10 @@
         ]
       }
     },
-    "/documents/reads/tracked/start": {
+    "/api/v1/documents/reads/tracked/start": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_reads_tracked_start",
+        "operationId": "post_api_v1_documents_reads_tracked_start",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -4249,7 +4694,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Documents Reads Tracked Start",
+                  "title": "Response Post Api V1 Documents Reads Tracked Start",
                   "type": "object"
                 }
               }
@@ -4350,6 +4795,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Start Tracked Read",
@@ -4358,10 +4807,10 @@
         ]
       }
     },
-    "/documents/reads/tracked/{session_id}/dwell": {
+    "/api/v1/documents/reads/tracked/{session_id}/dwell": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_reads_tracked_by_session_id_dwell",
+        "operationId": "post_api_v1_documents_reads_tracked_by_session_id_dwell",
         "parameters": [
           {
             "in": "path",
@@ -4406,7 +4855,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Documents Reads Tracked By Session Id Dwell",
+                  "title": "Response Post Api V1 Documents Reads Tracked By Session Id Dwell",
                   "type": "object"
                 }
               }
@@ -4507,6 +4956,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Record Tracked Dwell",
@@ -4515,10 +4968,10 @@
         ]
       }
     },
-    "/documents/reads/tracked/{session_id}/finalize": {
+    "/api/v1/documents/reads/tracked/{session_id}/finalize": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_reads_tracked_by_session_id_finalize",
+        "operationId": "post_api_v1_documents_reads_tracked_by_session_id_finalize",
         "parameters": [
           {
             "in": "path",
@@ -4660,6 +5113,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Finalize Tracked Read",
@@ -4668,10 +5125,10 @@
         ]
       }
     },
-    "/documents/reads/tracked/{session_id}/progress": {
+    "/api/v1/documents/reads/tracked/{session_id}/progress": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_reads_tracked_by_session_id_progress",
+        "operationId": "get_api_v1_documents_reads_tracked_by_session_id_progress",
         "parameters": [
           {
             "in": "path",
@@ -4706,7 +5163,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Get Documents Reads Tracked By Session Id Progress",
+                  "title": "Response Get Api V1 Documents Reads Tracked By Session Id Progress",
                   "type": "object"
                 }
               }
@@ -4807,6 +5264,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Tracked Progress",
@@ -4815,10 +5275,10 @@
         ]
       }
     },
-    "/documents/released": {
+    "/api/v1/documents/released": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_released",
+        "operationId": "get_api_v1_documents_released",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -4941,6 +5401,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Released Documents",
@@ -4949,10 +5412,10 @@
         ]
       }
     },
-    "/documents/versions/create": {
+    "/api/v1/documents/versions/create": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_create",
+        "operationId": "post_api_v1_documents_versions_create",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -5087,6 +5550,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Version",
@@ -5095,10 +5562,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}": {
+    "/api/v1/documents/versions/{document_id}/{version}": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_versions_by_document_id_by_version",
+        "operationId": "get_api_v1_documents_versions_by_document_id_by_version",
         "parameters": [
           {
             "in": "path",
@@ -5241,6 +5708,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Version",
@@ -5249,10 +5719,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/artifacts": {
+    "/api/v1/documents/versions/{document_id}/{version}/artifacts": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_versions_by_document_id_by_version_artifacts",
+        "operationId": "get_api_v1_documents_versions_by_document_id_by_version_artifacts",
         "parameters": [
           {
             "in": "path",
@@ -5299,7 +5769,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
-                  "title": "Response Get Documents Versions By Document Id By Version Artifacts",
+                  "title": "Response Get Api V1 Documents Versions By Document Id By Version Artifacts",
                   "type": "array"
                 }
               }
@@ -5400,6 +5870,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Artifacts",
@@ -5408,10 +5881,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/change-requests": {
+    "/api/v1/documents/versions/{document_id}/{version}/change-requests": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_versions_by_document_id_by_version_change_requests",
+        "operationId": "get_api_v1_documents_versions_by_document_id_by_version_change_requests",
         "parameters": [
           {
             "in": "path",
@@ -5458,7 +5931,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
-                  "title": "Response Get Documents Versions By Document Id By Version Change Requests",
+                  "title": "Response Get Api V1 Documents Versions By Document Id By Version Change Requests",
                   "type": "array"
                 }
               }
@@ -5559,6 +6032,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Change Requests",
@@ -5568,7 +6044,7 @@
       },
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_change_requests",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_change_requests",
         "parameters": [
           {
             "in": "path",
@@ -5756,6 +6232,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Add Change Request",
@@ -5764,10 +6244,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/comments": {
+    "/api/v1/documents/versions/{document_id}/{version}/comments": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_versions_by_document_id_by_version_comments",
+        "operationId": "get_api_v1_documents_versions_by_document_id_by_version_comments",
         "parameters": [
           {
             "in": "path",
@@ -5824,7 +6304,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
-                  "title": "Response Get Documents Versions By Document Id By Version Comments",
+                  "title": "Response Get Api V1 Documents Versions By Document Id By Version Comments",
                   "type": "array"
                 }
               }
@@ -5925,6 +6405,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Workflow Comments",
@@ -5934,7 +6417,7 @@
       },
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_comments",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_comments",
         "parameters": [
           {
             "in": "path",
@@ -6005,7 +6488,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Documents Versions By Document Id By Version Comments",
+                  "title": "Response Post Api V1 Documents Versions By Document Id By Version Comments",
                   "type": "object"
                 }
               }
@@ -6124,6 +6607,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Pdf Workflow Comment",
@@ -6132,10 +6619,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/comments/sync-docx": {
+    "/api/v1/documents/versions/{document_id}/{version}/comments/sync-docx": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_comments_sync_docx",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_comments_sync_docx",
         "parameters": [
           {
             "in": "path",
@@ -6199,7 +6686,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
-                  "title": "Response Post Documents Versions By Document Id By Version Comments Sync Docx",
+                  "title": "Response Post Api V1 Documents Versions By Document Id By Version Comments Sync Docx",
                   "type": "array"
                 }
               }
@@ -6318,6 +6805,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Sync Docx Comments",
@@ -6326,10 +6817,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/create-from-template": {
+    "/api/v1/documents/versions/{document_id}/{version}/create-from-template": {
       "post": {
         "description": "Create a document version from a template. If-Match is optional when the target version does not exist yet; when the target already exists, If-Match is mandatory and missing headers yield HTTP 428.",
-        "operationId": "post_documents_versions_by_document_id_by_version_create_from_template",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_create_from_template",
         "parameters": [
           {
             "in": "path",
@@ -6542,6 +7033,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create From Template",
@@ -6550,10 +7045,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/import-docx": {
+    "/api/v1/documents/versions/{document_id}/{version}/import-docx": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_import_docx",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_import_docx",
         "parameters": [
           {
             "in": "path",
@@ -6766,6 +7261,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import Docx",
@@ -6774,10 +7273,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/import-pdf": {
+    "/api/v1/documents/versions/{document_id}/{version}/import-pdf": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_import_pdf",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_import_pdf",
         "parameters": [
           {
             "in": "path",
@@ -6990,6 +7489,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import Pdf",
@@ -6998,10 +7501,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/lifecycle/archive": {
+    "/api/v1/documents/versions/{document_id}/{version}/lifecycle/archive": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_lifecycle_archive",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_lifecycle_archive",
         "parameters": [
           {
             "in": "path",
@@ -7179,6 +7682,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Archive Approved Version",
@@ -7187,10 +7694,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/lifecycle/extend-annual": {
+    "/api/v1/documents/versions/{document_id}/{version}/lifecycle/extend-annual": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_lifecycle_extend_annual",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_lifecycle_extend_annual",
         "parameters": [
           {
             "in": "path",
@@ -7378,6 +7885,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Extend Annual Validity Route",
@@ -7386,10 +7897,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/lifecycle/new-version-after-archive": {
+    "/api/v1/documents/versions/{document_id}/{version}/lifecycle/new-version-after-archive": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_lifecycle_new_version_after_archive",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_lifecycle_new_version_after_archive",
         "parameters": [
           {
             "in": "path",
@@ -7577,6 +8088,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "New Version After Archive",
@@ -7585,10 +8100,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/metadata": {
+    "/api/v1/documents/versions/{document_id}/{version}/metadata": {
       "patch": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "patch_documents_versions_by_document_id_by_version_metadata",
+        "operationId": "patch_api_v1_documents_versions_by_document_id_by_version_metadata",
         "parameters": [
           {
             "in": "path",
@@ -7776,6 +8291,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Patch Version Metadata",
@@ -7784,10 +8303,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/abort": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/abort": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_abort",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_abort",
         "parameters": [
           {
             "in": "path",
@@ -7965,6 +8484,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Abort Workflow",
@@ -7973,10 +8496,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/approval/accept": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/approval/accept": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_approval_accept",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_approval_accept",
         "parameters": [
           {
             "in": "path",
@@ -8171,6 +8694,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Approval Accept",
@@ -8179,10 +8706,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/approval/reject": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/approval/reject": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_approval_reject",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_approval_reject",
         "parameters": [
           {
             "in": "path",
@@ -8370,6 +8897,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Approval Reject",
@@ -8378,10 +8909,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/assign-roles": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/assign-roles": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_assign_roles",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_assign_roles",
         "parameters": [
           {
             "in": "path",
@@ -8569,6 +9100,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Assign Roles",
@@ -8577,10 +9112,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/editing-complete": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/editing-complete": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_editing_complete",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_editing_complete",
         "parameters": [
           {
             "in": "path",
@@ -8775,6 +9310,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Editing Complete",
@@ -8783,10 +9322,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/ensure-source-pdf": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/ensure-source-pdf": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_ensure_source_pdf",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_ensure_source_pdf",
         "parameters": [
           {
             "in": "path",
@@ -8964,6 +9503,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Ensure Source Pdf For Signing Route",
@@ -8972,10 +9515,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/review/accept": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/review/accept": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_review_accept",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_review_accept",
         "parameters": [
           {
             "in": "path",
@@ -9170,6 +9713,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Review Accept",
@@ -9178,10 +9725,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/review/reject": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/review/reject": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_review_reject",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_review_reject",
         "parameters": [
           {
             "in": "path",
@@ -9369,6 +9916,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Review Reject",
@@ -9377,10 +9928,10 @@
         ]
       }
     },
-    "/documents/versions/{document_id}/{version}/workflow/start": {
+    "/api/v1/documents/versions/{document_id}/{version}/workflow/start": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_versions_by_document_id_by_version_workflow_start",
+        "operationId": "post_api_v1_documents_versions_by_document_id_by_version_workflow_start",
         "parameters": [
           {
             "in": "path",
@@ -9568,6 +10119,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Start Workflow",
@@ -9576,10 +10131,10 @@
         ]
       }
     },
-    "/documents/workflow-profiles/bindings": {
+    "/api/v1/documents/workflow-profiles/bindings": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_workflow_profiles_bindings",
+        "operationId": "post_api_v1_documents_workflow_profiles_bindings",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -9712,6 +10267,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Bind Document Type Profile",
@@ -9720,10 +10279,10 @@
         ]
       }
     },
-    "/documents/workflow-profiles/definitions": {
+    "/api/v1/documents/workflow-profiles/definitions": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_workflow_profiles_definitions",
+        "operationId": "get_api_v1_documents_workflow_profiles_definitions",
         "parameters": [
           {
             "in": "query",
@@ -9856,6 +10415,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Profile Definitions",
@@ -9865,7 +10427,7 @@
       },
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_workflow_profiles_definitions",
+        "operationId": "post_api_v1_documents_workflow_profiles_definitions",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -9998,6 +10560,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Profile Definition",
@@ -10006,10 +10572,10 @@
         ]
       }
     },
-    "/documents/workflow-profiles/definitions/{profile_code}/activate": {
+    "/api/v1/documents/workflow-profiles/definitions/{profile_code}/activate": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_workflow_profiles_definitions_by_profile_code_activate",
+        "operationId": "post_api_v1_documents_workflow_profiles_definitions_by_profile_code_activate",
         "parameters": [
           {
             "in": "path",
@@ -10151,6 +10717,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Activate Profile Definition",
@@ -10159,10 +10729,10 @@
         ]
       }
     },
-    "/documents/workflow-profiles/definitions/{profile_code}/deactivate": {
+    "/api/v1/documents/workflow-profiles/definitions/{profile_code}/deactivate": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_workflow_profiles_definitions_by_profile_code_deactivate",
+        "operationId": "post_api_v1_documents_workflow_profiles_definitions_by_profile_code_deactivate",
         "parameters": [
           {
             "in": "path",
@@ -10304,6 +10874,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Deactivate Profile Definition",
@@ -10312,10 +10886,10 @@
         ]
       }
     },
-    "/documents/workflow-profiles/definitions/{profile_code}/versions": {
+    "/api/v1/documents/workflow-profiles/definitions/{profile_code}/versions": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_documents_workflow_profiles_definitions_by_profile_code_versions",
+        "operationId": "get_api_v1_documents_workflow_profiles_definitions_by_profile_code_versions",
         "parameters": [
           {
             "in": "path",
@@ -10447,6 +11021,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Profile Versions",
@@ -10456,7 +11033,7 @@
       },
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_documents_workflow_profiles_definitions_by_profile_code_versions",
+        "operationId": "post_api_v1_documents_workflow_profiles_definitions_by_profile_code_versions",
         "parameters": [
           {
             "in": "path",
@@ -10598,6 +11175,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create Profile Version",
@@ -10606,133 +11187,10 @@
         ]
       }
     },
-    "/health": {
-      "get": {
-        "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_health",
-        "parameters": [
-          {
-            "description": "Optional correlation identifier echoed by the backend.",
-            "in": "header",
-            "name": "X-Request-ID",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "413": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "501": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Structured QMTool error response."
-          }
-        },
-        "summary": " Health",
-        "tags": [
-          "health"
-        ]
-      }
-    },
-    "/signature/assets/active": {
+    "/api/v1/signature/assets/active": {
       "delete": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "delete_signature_assets_active",
+        "operationId": "delete_api_v1_signature_assets_active",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -10860,6 +11318,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Clear Active Asset",
@@ -10869,7 +11331,7 @@
       },
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_assets_active",
+        "operationId": "post_api_v1_signature_assets_active",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -10907,7 +11369,7 @@
                   "additionalProperties": {
                     "type": "boolean"
                   },
-                  "title": "Response Post Signature Assets Active",
+                  "title": "Response Post Api V1 Signature Assets Active",
                   "type": "object"
                 }
               }
@@ -11008,6 +11470,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Set Active Asset",
@@ -11016,10 +11482,10 @@
         ]
       }
     },
-    "/signature/assets/active/content": {
+    "/api/v1/signature/assets/active/content": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_signature_assets_active_content",
+        "operationId": "get_api_v1_signature_assets_active_content",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -11169,6 +11635,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Export Active Asset",
@@ -11177,10 +11646,10 @@
         ]
       }
     },
-    "/signature/assets/active/id": {
+    "/api/v1/signature/assets/active/id": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_signature_assets_active_id",
+        "operationId": "get_api_v1_signature_assets_active_id",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -11215,7 +11684,7 @@
                       }
                     ]
                   },
-                  "title": "Response Get Signature Assets Active Id",
+                  "title": "Response Get Api V1 Signature Assets Active Id",
                   "type": "object"
                 }
               }
@@ -11316,6 +11785,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "Get Active Asset Id",
@@ -11324,10 +11796,10 @@
         ]
       }
     },
-    "/signature/assets/import": {
+    "/api/v1/signature/assets/import": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_assets_import",
+        "operationId": "post_api_v1_signature_assets_import",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -11388,7 +11860,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Signature Assets Import",
+                  "title": "Response Post Api V1 Signature Assets Import",
                   "type": "object"
                 }
               }
@@ -11489,6 +11961,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import Asset Bytes",
@@ -11497,10 +11973,10 @@
         ]
       }
     },
-    "/signature/assets/import-and-activate": {
+    "/api/v1/signature/assets/import-and-activate": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_assets_import_and_activate",
+        "operationId": "post_api_v1_signature_assets_import_and_activate",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -11561,7 +12037,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Signature Assets Import And Activate",
+                  "title": "Response Post Api V1 Signature Assets Import And Activate",
                   "type": "object"
                 }
               }
@@ -11662,6 +12138,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Import And Activate Asset",
@@ -11670,10 +12150,10 @@
         ]
       }
     },
-    "/signature/resolve-runtime-layout": {
+    "/api/v1/signature/resolve-runtime-layout": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_resolve_runtime_layout",
+        "operationId": "post_api_v1_signature_resolve_runtime_layout",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -11711,7 +12191,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Signature Resolve Runtime Layout",
+                  "title": "Response Post Api V1 Signature Resolve Runtime Layout",
                   "type": "object"
                 }
               }
@@ -11812,6 +12292,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Resolve Runtime Layout Route",
@@ -11820,10 +12304,10 @@
         ]
       }
     },
-    "/signature/standalone/sign": {
+    "/api/v1/signature/standalone/sign": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_standalone_sign",
+        "operationId": "post_api_v1_signature_standalone_sign",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -11956,6 +12440,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Standalone Sign",
@@ -11964,10 +12452,10 @@
         ]
       }
     },
-    "/signature/standalone/upload": {
+    "/api/v1/signature/standalone/upload": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_standalone_upload",
+        "operationId": "post_api_v1_signature_standalone_upload",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -11995,7 +12483,7 @@
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "title": "Response Post Signature Standalone Upload",
+                  "title": "Response Post Api V1 Signature Standalone Upload",
                   "type": "object"
                 }
               }
@@ -12096,6 +12584,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Standalone Upload Pdf",
@@ -12104,10 +12596,10 @@
         ]
       }
     },
-    "/signature/templates/global": {
+    "/api/v1/signature/templates/global": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_signature_templates_global",
+        "operationId": "get_api_v1_signature_templates_global",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -12136,7 +12628,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
-                  "title": "Response Get Signature Templates Global",
+                  "title": "Response Get Api V1 Signature Templates Global",
                   "type": "array"
                 }
               }
@@ -12237,6 +12729,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Global Templates",
@@ -12245,10 +12740,10 @@
         ]
       }
     },
-    "/signature/templates/global/{template_id}/copy": {
+    "/api/v1/signature/templates/global/{template_id}/copy": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_templates_global_by_template_id_copy",
+        "operationId": "post_api_v1_signature_templates_global_by_template_id_copy",
         "parameters": [
           {
             "in": "path",
@@ -12293,7 +12788,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Signature Templates Global By Template Id Copy",
+                  "title": "Response Post Api V1 Signature Templates Global By Template Id Copy",
                   "type": "object"
                 }
               }
@@ -12394,6 +12889,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Copy Global Template",
@@ -12402,10 +12901,10 @@
         ]
       }
     },
-    "/signature/templates/user": {
+    "/api/v1/signature/templates/user": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_signature_templates_user",
+        "operationId": "get_api_v1_signature_templates_user",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -12434,7 +12933,7 @@
                     "additionalProperties": true,
                     "type": "object"
                   },
-                  "title": "Response Get Signature Templates User",
+                  "title": "Response Get Api V1 Signature Templates User",
                   "type": "array"
                 }
               }
@@ -12535,6 +13034,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List User Templates",
@@ -12544,7 +13046,7 @@
       },
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_templates_user",
+        "operationId": "post_api_v1_signature_templates_user",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -12580,7 +13082,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Post Signature Templates User",
+                  "title": "Response Post Api V1 Signature Templates User",
                   "type": "object"
                 }
               }
@@ -12681,6 +13183,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create User Template",
@@ -12689,10 +13195,10 @@
         ]
       }
     },
-    "/signature/templates/{template_id}": {
+    "/api/v1/signature/templates/{template_id}": {
       "delete": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "delete_signature_templates_by_template_id",
+        "operationId": "delete_api_v1_signature_templates_by_template_id",
         "parameters": [
           {
             "in": "path",
@@ -12819,6 +13325,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Delete Template",
@@ -12828,7 +13338,7 @@
       },
       "put": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "put_signature_templates_by_template_id",
+        "operationId": "put_api_v1_signature_templates_by_template_id",
         "parameters": [
           {
             "in": "path",
@@ -12873,7 +13383,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Put Signature Templates By Template Id",
+                  "title": "Response Put Api V1 Signature Templates By Template Id",
                   "type": "object"
                 }
               }
@@ -12974,6 +13484,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Update Template",
@@ -12982,10 +13496,10 @@
         ]
       }
     },
-    "/signature/verify-password": {
+    "/api/v1/signature/verify-password": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_signature_verify_password",
+        "operationId": "post_api_v1_signature_verify_password",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -13023,7 +13537,7 @@
                   "additionalProperties": {
                     "type": "boolean"
                   },
-                  "title": "Response Post Signature Verify Password",
+                  "title": "Response Post Api V1 Signature Verify Password",
                   "type": "object"
                 }
               }
@@ -13124,6 +13638,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Verify Password",
@@ -13132,10 +13650,10 @@
         ]
       }
     },
-    "/users": {
+    "/api/v1/users": {
       "post": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "post_users",
+        "operationId": "post_api_v1_users",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -13270,6 +13788,10 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Create User",
@@ -13278,10 +13800,10 @@
         ]
       }
     },
-    "/users/directory": {
+    "/api/v1/users/directory": {
       "get": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "get_users_directory",
+        "operationId": "get_api_v1_users_directory",
         "parameters": [
           {
             "description": "Optional correlation identifier echoed by the backend.",
@@ -13309,7 +13831,7 @@
                   "items": {
                     "$ref": "#/components/schemas/UserDirectoryItem"
                   },
-                  "title": "Response Get Users Directory",
+                  "title": "Response Get Api V1 Users Directory",
                   "type": "array"
                 }
               }
@@ -13410,6 +13932,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
           }
         ],
         "summary": "List Directory",
@@ -13418,10 +13943,10 @@
         ]
       }
     },
-    "/users/{username}/access": {
+    "/api/v1/users/{username}/access": {
       "patch": {
         "description": "QMTool J04-M0 HTTP operation.",
-        "operationId": "patch_users_by_username_access",
+        "operationId": "patch_api_v1_users_by_username_access",
         "parameters": [
           {
             "in": "path",
@@ -13565,11 +14090,138 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": [],
+            "CsrfHeader": []
           }
         ],
         "summary": "Patch User Access",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "QMTool J04-M0 HTTP operation.",
+        "operationId": "get_health",
+        "parameters": [
+          {
+            "description": "Optional correlation identifier echoed by the backend.",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          }
+        },
+        "summary": " Health",
+        "tags": [
+          "health"
         ]
       }
     }
