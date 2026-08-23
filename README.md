@@ -8,7 +8,8 @@ Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 Diese Arbeitskopie liegt unter **QMToolV7** (siehe `docs/QMToolV7_ENTWICKLUNG.md` für Pfad, Startbefehle und Build).
 
 CLI-first modular quality management platform transitioning to a Web + PostgreSQL target
-architecture (AP-029). The productive web end-user client is **not implemented yet** (WEB00 pending).
+architecture (AP-029). WEB00 landed the `webclient/` foundation (Vue/TS/Vite shell + `/api/v1`
+Cookie/CSRF); full DMS web workflow remains WEB01 after INT00.
 
 ## Python version policy
 
@@ -24,7 +25,7 @@ architecture (AP-029). The productive web end-user client is **not implemented y
 - Backend host (transport only): `.\.venv\Scripts\python.exe -m src.backend`
 - First-run init: `.\.venv\Scripts\python.exe -m interfaces.cli.main init --non-interactive --admin-password "<password>"`
 - Runtime diagnostics: `.\.venv\Scripts\python.exe -m interfaces.cli.main doctor`
-- Target end-user UI: `webclient/*` after WEB00 (not implemented yet — do not invent npm/Vite commands here)
+- Target end-user UI: `webclient/*` (WEB00 foundation; see `webclient/README.md` and `docs/TEST_SMOKE_GATES.md`)
 - Legacy/reference PyQt GUI (frozen; no new product work): `.\.venv\Scripts\python.exe -m interfaces.pyqt`
 - UI MVP (legacy/test-only Tk): `.\.venv\Scripts\python.exe -m interfaces.gui.main`
 - Legacy PyQt production build (Ist packaging): `.\.venv\Scripts\python.exe packaging/build_onedir.py` — see [`packaging/README.md`](packaging/README.md)
@@ -36,7 +37,7 @@ architecture (AP-029). The productive web end-user client is **not implemented y
 - `modules/`: domain modules (`documents`, `signature`, `usermanagement`, `registry`, `training`, `incident_management`)
 - `src/backend/`: HTTP transport host (`/api/v1` is the target browser boundary)
 - `interfaces/`: CLI operator/test adapter; frozen PyQt/Tk legacy UI
-- `webclient/`: sole new end-user UI source (planned; not present until WEB00)
+- `webclient/`: sole new end-user UI source (WEB00 foundation present)
 - `tests/`: module, e2e CLI, and smoke/regression coverage
 - Productive persistence target: PostgreSQL-only (SQLite limited to inventory/import/tests)
 

@@ -2,7 +2,7 @@
 
 Single entry point for developers. QMToolV7 is a modular quality-management platform
 (domain modules under `modules/*`, runtime under `qm_platform/*`, adapters under
-`interfaces/*` and future `webclient/*`) transitioning to Web + PostgreSQL per
+`interfaces/*` and `webclient/*`) transitioning to Web + PostgreSQL per
 [`docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`](docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md).
 
 For AI-assisted work, see [`AGENTS.md`](AGENTS.md) and `.cursor/rules/00-agent-workflow.mdc`.
@@ -29,7 +29,7 @@ Entry points (run from the project root):
 | Tests | `.\.venv\Scripts\python.exe -m pytest` |
 | Ist packaging (legacy desktop) | `.\.venv\Scripts\python.exe packaging/build_onedir.py` |
 | Legacy PyQt GUI (frozen reference) | `.\.venv\Scripts\python.exe -m interfaces.pyqt` |
-| Target web UI | `webclient/` after WEB00 — not implemented yet; do not invent npm/Vite commands |
+| Target web UI | `webclient/` (WEB00 foundation; commands in `webclient/README.md` / `docs/TEST_SMOKE_GATES.md`) |
 
 ### Lokaler PostgreSQL-Labserver (AP-028 / Übergang)
 
@@ -76,7 +76,7 @@ Recommended reading order follows the "Mandatory Reading Order" in [`docs/OPERAT
   capabilities and events are integration mechanisms, not alternative import surfaces.
 - State-changing operations from outside a module must use explicit public API contracts.
 - Enforce auth/roles in the service layer, not in UI or CLI parsers.
-- New features: service/API/HTTP contract and tests first, then `webclient/` (after WEB00).
+- New features: service/API/HTTP contract and tests first, then `webclient/` adapter.
 - New productive persistence is PostgreSQL-only; no SQLite product fallback.
 - Do not add new PyQt product UI.
 
