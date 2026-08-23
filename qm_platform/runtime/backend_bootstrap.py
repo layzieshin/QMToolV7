@@ -128,6 +128,7 @@ def wire_backend_documents(
     from types import MappingProxyType
 
     from modules.documents.module import create_documents_module_contract
+    from modules.documents.api import ensure_postgres_schema_ready as ensure_documents_postgres_schema_ready
     from modules.registry.api import ensure_postgres_schema_ready as ensure_registry_postgres_schema_ready
     from modules.registry.module import create_registry_module_contract
     from modules.signature.module import create_signature_module_contract
@@ -188,8 +189,14 @@ def wire_backend_documents(
         container.has_port("registry_postgres_dsn")
         and bool(str(container.get_port("registry_postgres_dsn")).strip())
     )
+    use_documents_postgres = (
+        container.has_port("documents_postgres_dsn")
+        and bool(str(container.get_port("documents_postgres_dsn")).strip())
+    )
     if use_registry_postgres:
         ensure_registry_postgres_schema_ready(container)
+    if use_documents_postgres:
+        ensure_documents_postgres_schema_ready(container)
 
     # Include platform_settings so pre-migrate backups with residual archive are valid.
     contributions = (
@@ -201,6 +208,12 @@ def wire_backend_documents(
             contribution
             for contribution in contributions
             if contribution.database_id != "registry"
+        )
+    if use_documents_postgres:
+        contributions = tuple(
+            contribution
+            for contribution in contributions
+            if contribution.database_id != "documents"
         )
     specs = tuple(sorted((_spec_for(item) for item in contributions), key=lambda spec: spec.database_id))
 

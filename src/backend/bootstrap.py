@@ -256,6 +256,7 @@ def build_backend_container() -> RuntimeContainer:
     container = build_platform_ports(fail_closed_license=True)
     container.register_port("usermanagement_postgres_dsn", dsn)
     container.register_port("registry_postgres_dsn", dsn)
+    container.register_port("documents_postgres_dsn", dsn)
     lifecycle = wire_backend_usermanagement(container)
     wire_backend_documents(container, lifecycle=lifecycle)
     return container

@@ -14,6 +14,7 @@ from .api import DocumentsArtifactsApi, DocumentsCommentsApi, DocumentsPoolApi, 
 from .workflow_profile_seed_reader import WorkflowProfileSeedReader
 from .workflow_profile_store import WorkflowProfileRelationalStore
 from .service import DocumentsService
+from .postgres_repository import PostgresDocumentsRepository
 from .sqlite_repository import SQLiteDocumentsRepository
 from .storage import FileSystemDocumentsStorage
 
@@ -39,7 +40,13 @@ def register_documents_ports(container) -> None:
     import adapter implementation packages.
     """
     if _should_register_sqlite(container):
-        _register_documents_sqlite_ports(container)
+        if (
+            container.has_port("documents_postgres_dsn")
+            and bool(str(container.get_port("documents_postgres_dsn")).strip())
+        ):
+            _register_documents_postgres_ports(container)
+        else:
+            _register_documents_sqlite_ports(container)
         return
     if not container.has_port("documents_client_ports_registrar"):
         raise RuntimeError(
@@ -56,7 +63,15 @@ def register_documents_ports(container) -> None:
     registrar(container)
 
 
+def _register_documents_postgres_ports(container) -> None:
+    _register_documents_backend_ports(container, postgres=True)
+
+
 def _register_documents_sqlite_ports(container) -> None:
+    _register_documents_backend_ports(container, postgres=False)
+
+
+def _register_documents_backend_ports(container, *, postgres: bool) -> None:
     app_home = container.get_port("app_home") if container.has_port("app_home") else Path.cwd()
     module_root = Path(__file__).resolve().parents[2]
     resource_root = container.get_port("resource_root") if container.has_port("resource_root") else module_root
@@ -76,8 +91,11 @@ def _register_documents_sqlite_ports(container) -> None:
     provenance = resolve_documents_bootstrap_provenance(container)
 
     artifacts_root = resolve_bootstrap_absolute_path(app_home, "documents", "artifacts_root")
-    db_path = resolve_bootstrap_absolute_path(app_home, "documents", "documents_db_path")
-    repository = SQLiteDocumentsRepository(db_path=db_path)
+    if postgres:
+        repository = PostgresDocumentsRepository(str(container.get_port("documents_postgres_dsn")))
+    else:
+        db_path = resolve_bootstrap_absolute_path(app_home, "documents", "documents_db_path")
+        repository = SQLiteDocumentsRepository(db_path=db_path)
     profile_store = WorkflowProfileRelationalStore(
         repository,
         bundled_seed_path=bundled_seed_path,

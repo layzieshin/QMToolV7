@@ -48,6 +48,15 @@ from .errors import (
 from modules.usermanagement.api import UserContext
 
 from .actor_context import actor_user_and_role
+
+
+def ensure_postgres_schema_ready(container) -> int:
+    """Verify the Documents PostgreSQL schema matches the registered target."""
+    from .postgres_schema import assert_runtime_schema_ready
+
+    dsn = container.get_port("documents_postgres_dsn")
+    return assert_runtime_schema_ready(str(dsn))
+
 from .capabilities import (
     ACTION_IDS,
     available_actions_for_actor,
