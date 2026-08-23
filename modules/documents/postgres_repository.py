@@ -357,6 +357,7 @@ class PostgresDocumentsRepository(DocumentsRepository):
             return
         conn = self._open_connection()
         try:
+            conn.execute("BEGIN")
             self._set_txn_conn(conn)
             yield
             conn.commit()
@@ -806,48 +807,3 @@ class PostgresDocumentsRepository(DocumentsRepository):
             created_at=self._parse_dt(str(row["created_at"])) or datetime.now(timezone.utc),
             updated_at=self._parse_dt(str(row["updated_at"])) or datetime.now(timezone.utc),
         )
-
-    def _txn_conn(self) -> psycopg.Connection | None:
-        return getattr(self._txn_local, "conn", None)
-
-    def _set_txn_conn(self, conn: psycopg.Connection | None) -> None:
-        if conn is None:
-            if hasattr(self._txn_local, "conn"):
-                delattr(self._txn_local, "conn")
-            return
-        self._txn_local.conn = conn
-
-    @contextmanager
-    def write_transaction(self):
-        if self._txn_conn() is not None:
-            yield
-            return
-        conn = self._open_connection()
-        try:
-            conn.execute("BEGIN")
-            self._set_txn_conn(conn)
-            yield
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            self._set_txn_conn(None)
-            conn.close()
-
-    @contextmanager
-    def _connect(self):
-        existing = self._txn_conn()
-        if existing is not None:
-            yield existing
-            return
-        conn = self._open_connection()
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-    def _commit_if_needed(self, conn: psycopg.Connection) -> None:
-        txn = self._txn_conn()
-        if txn is None or conn is not txn:
-            conn.commit()
