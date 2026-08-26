@@ -86,3 +86,155 @@ def test_discover_migrations_rejects_invalid_filenames(tmp_path: Path) -> None:
     (tmp_path / "1_bad.sql").write_text("SELECT 1;", encoding="utf-8")
     with pytest.raises(pgs.PostgresSchemaError, match="invalid migration filename"):
         pgs.discover_migrations(tmp_path)
+
+
+class _FakeResult:
+    def __init__(self, rows: list[tuple]) -> None:
+        self._rows = rows
+
+    def fetchall(self) -> list[tuple]:
+        return list(self._rows)
+
+    def fetchone(self) -> tuple | None:
+        return self._rows[0] if self._rows else None
+
+
+class _FakeConn:
+    """Minimal connection stand-in for `_validate_schema_contracts` behavior tests."""
+
+    def __init__(
+        self,
+        *,
+        tables: set[str],
+        columns: dict[str, set[str]],
+        checks: set[str],
+        table_owners: dict[str, str] | None = None,
+    ) -> None:
+        self.tables = set(tables)
+        self.columns = {k: set(v) for k, v in columns.items()}
+        self.checks = set(checks)
+        self.table_owners = table_owners or {}
+        self.queries: list[tuple[str, tuple | None]] = []
+
+    def execute(self, query: str, params: tuple | None = None) -> _FakeResult:
+        sql = " ".join(str(query).split())
+        self.queries.append((sql, params))
+        low = sql.lower()
+
+        if "from information_schema.tables" in low:
+            return _FakeResult([(name,) for name in sorted(self.tables)])
+
+        if "from information_schema.columns" in low and params and len(params) >= 2:
+            table = str(params[1])
+            return _FakeResult([(col,) for col in sorted(self.columns.get(table, set()))])
+
+        if "from pg_constraint" in low and "con.contype = 'c'" in low.replace(" ", ""):
+            # tolerate spacing variants
+            pass
+        if "from pg_constraint" in low and "contype" in low:
+            return _FakeResult([(name,) for name in sorted(self.checks)])
+
+        if "from pg_tables" in low and params and len(params) >= 2:
+            table = str(params[1])
+            owner = self.table_owners.get(table, pgs.MIGRATOR_ROLE)
+            return _FakeResult([(owner,)])
+
+        if "has_schema_privilege" in low and params:
+            role, _schema, priv = params
+            if role == pgs.RUNTIME_ROLE and priv == "USAGE":
+                return _FakeResult([(True,)])
+            if role == pgs.RUNTIME_ROLE and priv == "CREATE":
+                return _FakeResult([(False,)])
+            return _FakeResult([(False,)])
+
+        if "has_table_privilege" in low and params:
+            role, qualified, priv = params
+            if role != pgs.RUNTIME_ROLE:
+                return _FakeResult([(False,)])
+            if qualified.endswith(f".{pgs.MIGRATIONS_TABLE}"):
+                # history defaults: no SELECT unless test opts in via require_history_select callers
+                return _FakeResult([(False,)])
+            if priv in {"SELECT", "INSERT", "UPDATE", "DELETE"}:
+                return _FakeResult([(True,)])
+            return _FakeResult([(False,)])
+
+        if "aclexplode" in low or "grantee = 0" in low:
+            return _FakeResult([(False,)])
+
+        raise AssertionError(f"unexpected fake query: {sql!r} params={params!r}")
+
+
+def _v1_columns() -> dict[str, set[str]]:
+    return {
+        "document_headers": set(pgs.EXPECTED_DOCUMENT_HEADERS_COLUMNS),
+        "document_versions": set(pgs.EXPECTED_DOCUMENT_VERSIONS_COLUMNS),
+        pgs.MIGRATIONS_TABLE: set(pgs.EXPECTED_HISTORY_COLUMNS),
+        # other V1 tables: empty column sets are fine; validator only checks headers/versions/history
+    }
+
+
+def test_validate_schema_contracts_require_full_false_skips_v2_contracts() -> None:
+    conn = _FakeConn(
+        tables=set(pgs.EXPECTED_TABLES),
+        columns=_v1_columns(),
+        checks=set(),  # V2 checks absent; must not be queried
+    )
+    pgs._validate_schema_contracts(
+        conn,  # type: ignore[arg-type]
+        require_history_select=False,
+        require_full=False,
+    )
+    joined = "\n".join(q for q, _ in conn.queries).lower()
+    assert "workflow_profile_definitions" not in joined
+    assert "pg_constraint" not in joined
+
+
+def test_validate_schema_contracts_require_full_true_enforces_v2_columns() -> None:
+    columns = _v1_columns()
+    columns["workflow_profile_definitions"] = set()  # present table, missing columns
+    conn = _FakeConn(
+        tables=set(pgs.EXPECTED_TABLES_FULL),
+        columns=columns,
+        checks=set(pgs.EXPECTED_CHECK_CONSTRAINTS),
+    )
+    with pytest.raises(pgs.PostgresSchemaError, match="workflow_profile_definitions missing columns"):
+        pgs._validate_schema_contracts(
+            conn,  # type: ignore[arg-type]
+            require_history_select=False,
+            require_full=True,
+        )
+
+
+def test_validate_schema_contracts_require_full_true_enforces_v2_check_constraints() -> None:
+    columns = _v1_columns()
+    columns["workflow_profile_definitions"] = set(pgs.EXPECTED_WORKFLOW_PROFILE_DEFINITIONS_COLUMNS)
+    conn = _FakeConn(
+        tables=set(pgs.EXPECTED_TABLES_FULL),
+        columns=columns,
+        checks=set(),  # missing all V2 checks
+    )
+    with pytest.raises(pgs.PostgresSchemaError, match="missing check constraints"):
+        pgs._validate_schema_contracts(
+            conn,  # type: ignore[arg-type]
+            require_history_select=False,
+            require_full=True,
+        )
+
+
+def test_validate_schema_contracts_require_full_true_accepts_complete_v2_contract() -> None:
+    columns = _v1_columns()
+    columns["workflow_profile_definitions"] = set(pgs.EXPECTED_WORKFLOW_PROFILE_DEFINITIONS_COLUMNS)
+    conn = _FakeConn(
+        tables=set(pgs.EXPECTED_TABLES_FULL),
+        columns=columns,
+        checks=set(pgs.EXPECTED_CHECK_CONSTRAINTS),
+    )
+    pgs._validate_schema_contracts(
+        conn,  # type: ignore[arg-type]
+        require_history_select=False,
+        require_full=True,
+    )
+    param_blobs = " ".join(str(params) for _, params in conn.queries)
+    joined = "\n".join(q for q, _ in conn.queries).lower()
+    assert "workflow_profile_definitions" in param_blobs
+    assert "pg_constraint" in joined

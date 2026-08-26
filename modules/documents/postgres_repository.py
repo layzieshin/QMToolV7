@@ -236,10 +236,13 @@ class PostgresDocumentsRepository(DocumentsRepository):
 
     def get(self, document_id: str, version: int) -> DocumentVersionState | None:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM documents.document_versions WHERE document_id = %s AND version = %s",
-                (document_id, version),
-            ).fetchone()
+            sql = (
+                "SELECT * FROM documents.document_versions "
+                "WHERE document_id = %s AND version = %s"
+            )
+            if self._txn_conn() is not None:
+                sql += " FOR UPDATE"
+            row = conn.execute(sql, (document_id, version)).fetchone()
         return self._row_to_state(row) if row else None
 
     def list_by_status(self, status: DocumentStatus) -> list[DocumentVersionState]:

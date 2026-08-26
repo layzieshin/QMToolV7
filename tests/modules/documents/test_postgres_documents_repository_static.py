@@ -161,6 +161,44 @@ def test_postgres_repository_has_exactly_one_transaction_helper_definition() -> 
         assert counts.get(name) == 1, f"{name} defined {counts.get(name, 0)} times"
 
 
+def test_get_uses_for_update_only_inside_write_transaction(monkeypatch) -> None:
+    recorded: list[str] = []
+
+    class _FakeCursor:
+        def fetchone(self):
+            return None
+
+    class _FakeConn:
+        def execute(self, sql, *_args, **_kwargs):
+            recorded.append(str(sql))
+            return _FakeCursor()
+
+        def commit(self) -> None:
+            pass
+
+        def rollback(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    repo = PostgresDocumentsRepository("postgresql://example.invalid/db")
+    monkeypatch.setattr(repo, "_open_connection", lambda: _FakeConn())
+
+    repo.get("DOC-1", 1)
+    assert recorded == [
+        "SELECT * FROM documents.document_versions WHERE document_id = %s AND version = %s"
+    ]
+
+    recorded.clear()
+    with repo.write_transaction():
+        repo.get("DOC-1", 1)
+    assert recorded == [
+        "BEGIN",
+        "SELECT * FROM documents.document_versions WHERE document_id = %s AND version = %s FOR UPDATE",
+    ]
+
+
 def test_write_transaction_nested_is_noop_and_outer_commits(monkeypatch) -> None:
     events: list[str] = []
 

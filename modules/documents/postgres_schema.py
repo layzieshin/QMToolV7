@@ -498,9 +498,16 @@ def _validate_schema_contracts(
     if missing_document_versions:
         raise PostgresSchemaError(f"document_versions missing columns: {sorted(missing_document_versions)}")
 
-    missing_workflow_profile_definitions = EXPECTED_WORKFLOW_PROFILE_DEFINITIONS_COLUMNS - columns_for("workflow_profile_definitions")
-    if missing_workflow_profile_definitions:
-        raise PostgresSchemaError(f"workflow_profile_definitions missing columns: {sorted(missing_workflow_profile_definitions)}")
+    if require_full:
+        missing_workflow_profile_definitions = (
+            EXPECTED_WORKFLOW_PROFILE_DEFINITIONS_COLUMNS
+            - columns_for("workflow_profile_definitions")
+        )
+        if missing_workflow_profile_definitions:
+            raise PostgresSchemaError(
+                f"workflow_profile_definitions missing columns: "
+                f"{sorted(missing_workflow_profile_definitions)}"
+            )
 
     missing_history = EXPECTED_HISTORY_COLUMNS - columns_for(MIGRATIONS_TABLE)
     if missing_history:
@@ -508,7 +515,7 @@ def _validate_schema_contracts(
             f"{MIGRATIONS_TABLE} missing columns: {sorted(missing_history)}"
         )
 
-    if EXPECTED_CHECK_CONSTRAINTS:
+    if require_full and EXPECTED_CHECK_CONSTRAINTS:
         checks = {
             str(row[0])
             for row in conn.execute(
