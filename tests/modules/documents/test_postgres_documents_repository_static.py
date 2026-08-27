@@ -7,6 +7,7 @@ from types import MappingProxyType
 
 import pytest
 
+from modules.documents.bootstrap_provenance import DocumentsBootstrapProvenance
 from modules.documents.api import ensure_postgres_schema_ready
 from modules.documents.postgres_repository import PostgresDocumentsRepository
 from modules.documents.service import DocumentsService
@@ -47,12 +48,14 @@ def _container(root: Path, *, postgres_dsn: str | None = None) -> RuntimeContain
     container.register_port("documents_runtime_owner", "backend")
     container.register_port("signature_api", object())
     container.register_port("registry_projection_api", object())
-    container.register_port(
-        DATABASE_PREFLIGHT_STATUSES_PORT,
-        MappingProxyType({"documents": _fresh_documents_status(root)}),
-    )
-    if postgres_dsn is not None:
+    if postgres_dsn is None:
+        container.register_port(
+            DATABASE_PREFLIGHT_STATUSES_PORT,
+            MappingProxyType({"documents": _fresh_documents_status(root)}),
+        )
+    else:
         container.register_port("documents_postgres_dsn", postgres_dsn)
+        container.register_port(DATABASE_PREFLIGHT_STATUSES_PORT, MappingProxyType({}))
     return container
 
 
@@ -71,10 +74,12 @@ def test_register_documents_ports_uses_postgres_when_dsn_present(monkeypatch) ->
     )
     with tempfile.TemporaryDirectory() as tmp:
         container = _container(Path(tmp), postgres_dsn="postgresql://example.invalid/db")
+        assert "documents" not in container.get_port(DATABASE_PREFLIGHT_STATUSES_PORT)
         register_documents_ports(container)
         service = container.get_port("documents_service")
         assert isinstance(service, DocumentsService)
         assert isinstance(service._repository, PostgresDocumentsRepository)
+        assert service._profile_store._bootstrap_provenance == DocumentsBootstrapProvenance.POST_J03_SCHEMA
 
 
 def test_register_documents_ports_uses_sqlite_without_dsn(monkeypatch) -> None:

@@ -8,7 +8,10 @@ from qm_platform.persistence.path_resolver import (
     resolve_bootstrap_relative_path,
 )
 
-from .bootstrap_provenance import resolve_documents_bootstrap_provenance
+from .bootstrap_provenance import (
+    DocumentsBootstrapProvenance,
+    resolve_documents_bootstrap_provenance,
+)
 from .docx_to_pdf import convert_docx_to_pdf
 from .api import DocumentsArtifactsApi, DocumentsCommentsApi, DocumentsPoolApi, DocumentsReadApi, DocumentsWorkflowApi
 from .workflow_profile_seed_reader import WorkflowProfileSeedReader
@@ -90,14 +93,15 @@ def _register_documents_backend_ports(container, *, postgres: bool, postgres_dsn
         bundled = resource_root / raw
         return bundled if bundled.exists() else preferred
 
-    provenance = resolve_documents_bootstrap_provenance(container)
-
     artifacts_root = resolve_bootstrap_absolute_path(app_home, "documents", "artifacts_root")
     if postgres:
         repository = PostgresDocumentsRepository(postgres_dsn)
+        # Option 2: migrated PG schema is never Fresh; empty stock fail-closes in ensure_seeded.
+        provenance = DocumentsBootstrapProvenance.POST_J03_SCHEMA
     else:
         db_path = resolve_bootstrap_absolute_path(app_home, "documents", "documents_db_path")
         repository = SQLiteDocumentsRepository(db_path=db_path)
+        provenance = resolve_documents_bootstrap_provenance(container)
     profile_store = WorkflowProfileRelationalStore(
         repository,
         bundled_seed_path=bundled_seed_path,

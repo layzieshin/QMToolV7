@@ -58,6 +58,65 @@ def ensure_postgres_schema_ready(container) -> int:
     return assert_runtime_schema_ready(str(dsn))
 
 
+# Transaction-scoped seed lock ("QTM_SEED"); distinct from migrate "QTM_DOCS".
+DOCUMENTS_PG_SEED_ADVISORY_LOCK_KEY = 0x5154_4D5F_5345_4544
+
+
+def seed_postgres_workflow_profiles(postgres_dsn: str, *, resource_root: Path | None = None) -> None:
+    """Explicit PostgreSQL workflow-profile seed (operator/provision step).
+
+    Runtime wiring never auto-seeds empty PG stock. Guard, stock observation and
+    ``import_seed`` share one write transaction. Concurrent seeders serialize on
+    ``pg_advisory_xact_lock``; a waiter becomes the populated consistency path.
+    """
+    from .bootstrap_provenance import (
+        DocumentsBootstrapProvenance,
+        observe_postgres_profile_stock,
+    )
+    from .postgres_repository import PostgresDocumentsRepository
+    from .workflow_profile_seed_reader import WorkflowProfileSeedReader
+    from .workflow_profile_store import WorkflowProfileRelationalStore
+
+    dsn = str(postgres_dsn).strip()
+    if not dsn:
+        raise ValidationError("PostgreSQL DSN is required")
+    module_root = Path(__file__).resolve().parents[2]
+    root = resource_root if resource_root is not None else module_root
+    bundled_seed_path = root / "modules" / "documents" / "workflow_profiles.json"
+    if not bundled_seed_path.exists():
+        bundled_seed_path = module_root / "modules" / "documents" / "workflow_profiles.json"
+    repository = PostgresDocumentsRepository(dsn)
+    with repository.write_transaction():
+        with repository._connect() as conn:
+            conn.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (DOCUMENTS_PG_SEED_ADVISORY_LOCK_KEY,),
+            )
+        stock = observe_postgres_profile_stock(repository)
+        if stock.definitions > 0:
+            store = WorkflowProfileRelationalStore(
+                repository,
+                bundled_seed_path=bundled_seed_path,
+                legacy_profiles_path=bundled_seed_path,
+                bootstrap_provenance=DocumentsBootstrapProvenance.POST_J03_SCHEMA,
+            )
+            store.ensure_seeded(WorkflowProfileSeedReader())
+            return
+        if stock.imports > 0 or stock.types > 0:
+            raise ValidationError(
+                "documents schema is already at J03 workflow-profile version but "
+                "workflow_profile_definitions is empty; refusing silent re-seed"
+            )
+        store = WorkflowProfileRelationalStore(
+            repository,
+            bundled_seed_path=bundled_seed_path,
+            legacy_profiles_path=bundled_seed_path,
+            bootstrap_provenance=DocumentsBootstrapProvenance.FRESH_INSTALL,
+        )
+        store.ensure_seeded(WorkflowProfileSeedReader())
+
+
+
 def import_sqlite_to_postgres(*, sqlite_path, postgres_dsn, report_dir, artifacts_root=None, target_repository=None):
     """Public Documents SQLite→PostgreSQL import (AP-029 PG01-E)."""
     from .sqlite_pg_import import import_sqlite_to_postgres as _import

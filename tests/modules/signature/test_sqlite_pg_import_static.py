@@ -179,6 +179,10 @@ def test_live_contract_r2_cutover_source_instruments_sqlite_paths() -> None:
     assert "register_documents_ports" in live
     assert "wire_backend_usermanagement" in live
     assert "usermanagement_postgres_dsn" in live
+    assert "documents_postgres_dsn" in live
+    assert "seed_postgres_workflow_profiles" in live
+    assert "adoptable_v1" not in live
+    assert "DatabaseStatus(" not in live
     assert "forbidden_sqlite_paths" in live
     assert "get_active_signature_asset_id" in live
     assert "set_active_signature_asset" in live

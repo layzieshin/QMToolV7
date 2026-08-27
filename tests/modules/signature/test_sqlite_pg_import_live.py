@@ -21,6 +21,7 @@ from modules.documents.contracts import (
     DocumentVersionState,
 )
 from modules.documents.sqlite_pg_import import import_sqlite_to_postgres as import_documents
+from modules.documents.api import seed_postgres_workflow_profiles
 from modules.documents.sqlite_repository import SQLiteDocumentsRepository
 from modules.registry import postgres_schema as registry_schema
 from modules.registry.contracts import RegisterState, RegistryEntry, ReleaseEvidenceMode
@@ -150,12 +151,10 @@ def test_live_signature_storage_negative_missing_reader(
 _CUTOVER_PROBE = r"""
 import json, os, sqlite3, sys
 from pathlib import Path
-from types import MappingProxyType
 
 from modules.documents.wiring import register_documents_ports
 from modules.registry.wiring import register_registry_ports
 from modules.signature.wiring import register_signature_ports
-from qm_platform.persistence.database_evolution import DATABASE_PREFLIGHT_STATUSES_PORT, DatabaseStatus
 from qm_platform.runtime.backend_bootstrap import wire_backend_usermanagement
 from src.backend.bootstrap import build_platform_ports
 
@@ -199,23 +198,6 @@ container.register_port("registry_postgres_dsn", dsn)
 container.register_port("signature_postgres_dsn", dsn)
 container.register_port("documents_runtime_owner", "backend")
 container.register_port("signature_runtime_owner", "backend")
-container.register_port(
-    DATABASE_PREFLIGHT_STATUSES_PORT,
-    MappingProxyType(
-        {
-            "documents": DatabaseStatus(
-                database_id="documents",
-                path=payload["forbidden_sqlite_paths"][0],
-                state="adoptable_v1",
-                current_version=2,
-                target_version=2,
-                pending_versions=(),
-                integrity="ok",
-                detail=None,
-            )
-        }
-    ),
-)
 
 wire_backend_usermanagement(container)
 
@@ -337,6 +319,8 @@ def test_live_cutover_rehearsal_documents_registry_signature(
         blob_reader=store,
     )
     assert d.status == r.status == s.status == "completed"
+
+    seed_postgres_workflow_profiles(live_cutover.runtime_dsn)
 
     # Productive SQLite paths become unavailable after cutover (rename to sentinel).
     docs_disabled = docs.with_suffix(".db.cutover-disabled")
