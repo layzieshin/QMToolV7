@@ -283,7 +283,7 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: PG01
+Current checkpoint: OPS00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -294,8 +294,8 @@ Current checkpoint: PG01
 | INV00 | Read-only SQLite store inventory | PASS | 3484d6df6f3d814ce657352a60066d0adf57623c | R1 build/ap-029-inv00/r1-20260822T104500000Z/ gate-a 18 passed; gate-b 16 passed; gate-c 40 passed; Gate E attempt1 PASS CONTROL_PLANE_PINNED agent cf156ee0-1976-47ca-8668-bdc6eae6401e; 7 stores classified | read-only; Current advances to PG00 |
 | PG00 | PostgreSQL platform foundation | PASS | 90cefa498d05f708ad54d4d673a41e245957d63f | A–D passed; full regression passed; merged `8a67f67` PR #32; evidence build/ap-029-pg00/final/ | Current advances to WEB00 |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | PASS | dc65b36104436389481926fdd396af5ba6d869a5 | A–D N/A (single checkpoint); full regression passed; Vitest/browser smoke passed; commit `da9db323…`; contract SHA256 `974b16b5…`; Gate E PASS CONTROL_PLANE_PINNED agent `32cdb2b4…`; evidence `build/ap-029-web00/`; 10 postgres live skips N/A | Current advances to PG01 |
-| PG01 | Documents/Registry/Signature PostgreSQL migration | TODO | — | — | prepared, not started; requires explicit authorization; preserve existing domain behavior |
-| OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | shared PG+blob backup contract |
+| PG01 | Documents/Registry/Signature PostgreSQL migration | PASS | 47ba80cc16ce89db546617d36c4474df37e8b600 | A–D prior PASS preserved; E PASS (HUMAN_GOVERNANCE_EXCEPTION) @ `667c8b9f3f48cd280e8d2147b1d2b623d0df3719`; historical Gate E FAIL UNVERIFIED `a9fbff7a-9536-4c02-9d32-b3954a75b857` and escalation FAIL UNVERIFIED `c27f0727-0f74-40ad-8cb8-4554e64b9881` not overwritten (`formal-review-r1/`); Live R6 15 tests passed (`build/ap-029-pg01/e/slot2-live-r6/`, NOT RERUN); full regression R4 passed (`build/ap-029-pg01/final/r6-regression-r4/`, first_red null); R13 contract SHA256 `A2F63B2C47A269A3B3BAF597F0CDD6D3A1D8D09767735202C9C71F620AF26F52`; Grok closeout READY_FOR_HUMAN_GOVERNANCE_COMMIT agent `91b29a1a-64bb-414a-8903-24ca60dcb143`; PR #39 published @ `f3e107ac`; premerge R1 FIRST RED harness (`premerge-recovery-r1/`); R2 provenance HUMAN_GATE (`premerge-recovery-r2/`); R3A explicit PostgreSQL seed (atomic `pg_advisory_xact_lock` + one three-table stock snapshot + one outer write txn); contract SHA256 `D89EB24B9DDEE80DEE2095345AB169C7556D24446900297CEE01629182E057AD`; product commit `9e5bd0c695751a7589bace8bcac971861a4fc5b2`; full collect-only 1309 primarily evidenced (`gates/full-collect-only-result.json`); combined Slot-2 Live R2 18/18 PASS (`slot2-live-r2/`); historical Grok FAIL `8caf36f1-945f-4c6a-ba0a-f3d90e75ba82` preserved (`GROK_POST_REVIEW.md`); evidence `build/ap-029-pg01/final/premerge-recovery-r3a/` and `build/ap-029-pg01/` | Parent PASS; PR #39 finalization pending; Merge NOT RUN; OPS00 TODO / NOT STARTED; Current remains OPS00 |
+| OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | prepared/not started; explicit authorization required; Push/PR/Merge of PG01 NOT RUN |
 | INT00 | Joint integration gate PG00/WEB00/PG01/OPS00 | TODO | — | — | blocks WEB01 |
 | WEB01 | Full Documents/Signature web workflow | TODO | — | — | after INT00 |
 | PILOT00 | Pilot readiness security/restore/ops/human-smoke | TODO | — | — | blocks live data |

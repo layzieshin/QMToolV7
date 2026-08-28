@@ -4,6 +4,7 @@ from __future__ import annotations
 from qm_platform.persistence.path_resolver import resolve_bootstrap_absolute_path
 
 from .api import SignatureApi
+from .postgres_repository import PostgresSignatureRepository
 from .secure_store import EncryptedSignatureBlobStore
 from .service import SignatureServiceV2
 from .sqlite_repository import SQLiteSignatureRepository
@@ -28,7 +29,15 @@ def _should_register_sqlite(container) -> bool:
 
 def register_signature_ports(container) -> None:
     if _should_register_sqlite(container):
-        _register_signature_sqlite_ports(container)
+        captured = (
+            container.get_port("signature_postgres_dsn")
+            if container.has_port("signature_postgres_dsn")
+            else None
+        )
+        if captured is not None and bool(str(captured).strip()):
+            _register_signature_postgres_ports(container, str(captured))
+        else:
+            _register_signature_sqlite_ports(container)
         return
     if not container.has_port("signature_client_ports_registrar"):
         raise RuntimeError(
@@ -45,14 +54,25 @@ def register_signature_ports(container) -> None:
     registrar(container)
 
 
+def _register_signature_postgres_ports(container, postgres_dsn: str) -> None:
+    _register_signature_backend_ports(container, postgres=True, postgres_dsn=postgres_dsn)
+
+
 def _register_signature_sqlite_ports(container) -> None:
+    _register_signature_backend_ports(container, postgres=False)
+
+
+def _register_signature_backend_ports(container, *, postgres: bool, postgres_dsn: str | None = None) -> None:
     settings_service = container.get_port("settings_service")
     usermanagement = container.get_port("usermanagement_service")
     app_home = container.get_port("app_home")
-    templates_db = resolve_bootstrap_absolute_path(app_home, "signature", "templates_db_path")
     assets_root = resolve_bootstrap_absolute_path(app_home, "signature", "assets_root")
     key_path = resolve_bootstrap_absolute_path(app_home, "signature", "master_key_path")
-    repository = SQLiteSignatureRepository(db_path=templates_db)
+    if postgres:
+        repository = PostgresSignatureRepository(postgres_dsn)
+    else:
+        templates_db = resolve_bootstrap_absolute_path(app_home, "signature", "templates_db_path")
+        repository = SQLiteSignatureRepository(db_path=templates_db)
     secure_store = EncryptedSignatureBlobStore(root=assets_root, key_file=key_path)
     service = SignatureServiceV2(
         settings_service=settings_service,

@@ -18,6 +18,8 @@ from .transport_dto import (
 
 __all__ = [
     "SignatureApi",
+    "ensure_postgres_schema_ready",
+    "import_sqlite_to_postgres",
     "SignatureError",
     "PasswordInvalidError", "PasswordRequiredError", "SignatureTemplateError",
     "compute_target_height", "resolve_label_pdf_anchor",
@@ -26,6 +28,39 @@ __all__ = [
     "asset_to_payload", "layout_from_payload", "layout_to_payload",
     "placement_from_payload", "placement_to_payload", "template_to_payload",
 ]
+
+
+def ensure_postgres_schema_ready(container) -> int:
+    """Verify the Signature PostgreSQL schema matches the registered target.
+
+    Uses the runtime DSN only; never applies migrations.
+    """
+    from .postgres_schema import assert_runtime_schema_ready
+
+    dsn = container.get_port("signature_postgres_dsn")
+    return assert_runtime_schema_ready(str(dsn))
+
+
+def import_sqlite_to_postgres(
+    *,
+    sqlite_path,
+    postgres_dsn,
+    report_dir,
+    assets_root=None,
+    blob_reader=None,
+    target_repository=None,
+):
+    """Public Signature SQLite→PostgreSQL metadata import (AP-029 PG01-E)."""
+    from .sqlite_pg_import import import_sqlite_to_postgres as _import
+
+    return _import(
+        sqlite_path=sqlite_path,
+        postgres_dsn=postgres_dsn,
+        report_dir=report_dir,
+        assets_root=assets_root,
+        blob_reader=blob_reader,
+        target_repository=target_repository,
+    )
 
 
 @dataclass

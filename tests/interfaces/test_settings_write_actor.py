@@ -15,6 +15,7 @@ from qm_platform.settings.errors import (
     ResidualPolicyReadonlyError,
     SettingsActorRequiredError,
 )
+from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from qm_platform.settings.testing import build_settings_service_for_tests
 
 
@@ -98,7 +99,6 @@ def test_settings_adapter_resolves_actor_and_writes_without_local_session_storag
     resolved = resolve_confirmed_settings_actor(
         container,
         request_id="settings-adapter-test",
-        organization_id=INSTALLATION_ORGANIZATION_ID,
     )
     service.set_module_settings(
         "signature",

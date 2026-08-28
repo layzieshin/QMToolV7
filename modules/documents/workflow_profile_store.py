@@ -179,6 +179,27 @@ class WorkflowProfileRelationalStore:
         )
         self.last_import_report: tuple[WorkflowProfileImportReportRow, ...] = ()
 
+    def _execute(self, conn, sql: str, params=()):
+        sql_text = sql
+        param_tuple = tuple(params) if params else ()
+        adapt_sql = getattr(self._repository, "adapt_sql", None)
+        if adapt_sql is not None:
+            sql_text = adapt_sql(sql_text)
+        adapt_params = getattr(self._repository, "adapt_params", None)
+        if adapt_params is not None:
+            param_tuple = adapt_params(param_tuple)
+        if param_tuple:
+            return conn.execute(sql_text, param_tuple)
+        return conn.execute(sql_text)
+
+    @staticmethod
+    def _scalar_count(row) -> int:
+        if row is None:
+            return 0
+        if isinstance(row, dict):
+            return int(next(iter(row.values())))
+        return int(row[0])
+
     def ensure_seeded(self, seed_reader) -> None:
         if self.has_profiles():
             self._consistency_check(seed_reader)
@@ -201,8 +222,8 @@ class WorkflowProfileRelationalStore:
 
     def has_profiles(self) -> bool:
         with self._repository._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM workflow_profile_definitions").fetchone()
-        return bool(row and int(row[0]) > 0)
+            row = self._execute(conn,"SELECT COUNT(*) FROM workflow_profile_definitions").fetchone()
+        return bool(self._scalar_count(row) > 0)
 
     def get(self, profile_code: str) -> WorkflowProfile:
         return self.get_active_definition(profile_code).to_runtime_profile()
@@ -210,7 +231,7 @@ class WorkflowProfileRelationalStore:
     def get_active_definition(self, profile_code: str) -> WorkflowProfileVersionDefinition:
         now = _utcnow_iso()
         with self._repository._connect() as conn:
-            row = conn.execute(
+            row = self._execute(conn,
                 """
                 SELECT d.profile_code, d.label, d.control_class,
                        v.profile_version_id, v.version_no, v.release_evidence_mode,
@@ -244,7 +265,7 @@ class WorkflowProfileRelationalStore:
 
     def resolve_default_profile_code(self, doc_type: DocumentType) -> tuple[str, bool]:
         with self._repository._connect() as conn:
-            row = conn.execute(
+            row = self._execute(conn,
                 """
                 SELECT default_profile_code, allows_profile_override
                 FROM document_type_definitions
@@ -265,7 +286,7 @@ class WorkflowProfileRelationalStore:
             sql += " WHERE is_active = 1"
         sql += " ORDER BY profile_code ASC"
         with self._repository._connect() as conn:
-            rows = conn.execute(sql).fetchall()
+            rows = self._execute(conn,sql).fetchall()
         return [
             {
                 "profile_code": str(row["profile_code"]),
@@ -279,7 +300,7 @@ class WorkflowProfileRelationalStore:
 
     def list_versions(self, profile_code: str) -> list[dict[str, object]]:
         with self._repository._connect() as conn:
-            versions = conn.execute(
+            versions = self._execute(conn,
                 """
                 SELECT profile_version_id, profile_code, version_no, source_kind, change_reason,
                        definition_hash, effective_from, release_evidence_mode,
@@ -318,7 +339,7 @@ class WorkflowProfileRelationalStore:
 
     def list_profile_ids_for_control_class(self, control_class: ControlClass) -> list[str]:
         with self._repository._connect() as conn:
-            rows = conn.execute(
+            rows = self._execute(conn,
                 """
                 SELECT profile_code
                 FROM workflow_profile_definitions
@@ -343,13 +364,13 @@ class WorkflowProfileRelationalStore:
         now = _utcnow_iso()
         with self._repository.write_transaction():
             with self._repository._connect() as conn:
-                exists = conn.execute(
+                exists = self._execute(conn,
                     "SELECT 1 FROM workflow_profile_definitions WHERE profile_code = ?",
                     (payload.profile_code,),
                 ).fetchone()
                 if exists is not None:
                     raise ValidationError(f"workflow profile definition already exists: {payload.profile_code}")
-                conn.execute(
+                self._execute(conn,
                     """
                     INSERT INTO workflow_profile_definitions (
                         profile_code, label, control_class, is_active, active_version,
@@ -360,7 +381,7 @@ class WorkflowProfileRelationalStore:
                         payload.profile_code,
                         payload.label,
                         payload.control_class.value,
-                        1,
+                        True,
                         1,
                         now,
                         actor_user_id,
@@ -393,7 +414,7 @@ class WorkflowProfileRelationalStore:
         now = _utcnow_iso()
         with self._repository.write_transaction():
             with self._repository._connect() as conn:
-                current = conn.execute(
+                current = self._execute(conn,
                     """
                     SELECT d.label, d.control_class, COALESCE(MAX(v.version_no), 0) AS latest_version
                     FROM workflow_profile_definitions d
@@ -419,7 +440,7 @@ class WorkflowProfileRelationalStore:
                     actor_user_id=actor_user_id,
                     effective_from=now,
                 )
-                conn.execute(
+                self._execute(conn,
                     """
                     UPDATE workflow_profile_definitions
                     SET active_version = ?, updated_at = ?, updated_by = ?
@@ -434,19 +455,19 @@ class WorkflowProfileRelationalStore:
             raise ValidationError("actor_user_id is required")
         with self._repository.write_transaction():
             with self._repository._connect() as conn:
-                row = conn.execute(
+                row = self._execute(conn,
                     "SELECT profile_code FROM workflow_profile_definitions WHERE profile_code = ?",
                     (profile_code,),
                 ).fetchone()
                 if row is None:
                     raise ValidationError(f"workflow profile definition not found: {profile_code}")
-                conn.execute(
+                self._execute(conn,
                     """
                     UPDATE workflow_profile_definitions
                     SET is_active = ?, updated_at = ?, updated_by = ?
                     WHERE profile_code = ?
                     """,
-                    (1 if is_active else 0, _utcnow_iso(), actor_user_id, profile_code),
+                    (is_active, _utcnow_iso(), actor_user_id, profile_code),
                 )
         return {"profile_code": profile_code, "is_active": is_active}
 
@@ -462,14 +483,14 @@ class WorkflowProfileRelationalStore:
             raise ValidationError("actor_user_id is required")
         with self._repository.write_transaction():
             with self._repository._connect() as conn:
-                profile = conn.execute(
+                profile = self._execute(conn,
                     "SELECT control_class FROM workflow_profile_definitions WHERE profile_code = ? AND is_active = 1",
                     (profile_code,),
                 ).fetchone()
                 if profile is None:
                     raise ValidationError(f"active workflow profile definition not found: {profile_code}")
                 control_class = str(profile["control_class"])
-                existing = conn.execute(
+                existing = self._execute(conn,
                     "SELECT allows_profile_override FROM document_type_definitions WHERE document_type = ?",
                     (doc_type.value,),
                 ).fetchone()
@@ -480,7 +501,7 @@ class WorkflowProfileRelationalStore:
                 )
                 now = _utcnow_iso()
                 if existing is None:
-                    conn.execute(
+                    self._execute(conn,
                         """
                         INSERT INTO document_type_definitions (
                             document_type, control_class, default_profile_code, allows_profile_override,
@@ -491,14 +512,14 @@ class WorkflowProfileRelationalStore:
                             doc_type.value,
                             control_class,
                             profile_code,
-                            1 if override else 0,
+                            bool(override),
                             f"admin:{actor_user_id}",
                             now,
                             now,
                         ),
                     )
                 else:
-                    conn.execute(
+                    self._execute(conn,
                         """
                         UPDATE document_type_definitions
                         SET default_profile_code = ?, control_class = ?, allows_profile_override = ?,
@@ -508,7 +529,7 @@ class WorkflowProfileRelationalStore:
                         (
                             profile_code,
                             control_class,
-                            1 if override else 0,
+                            bool(override),
                             f"admin:{actor_user_id}",
                             now,
                             doc_type.value,
@@ -588,17 +609,19 @@ class WorkflowProfileRelationalStore:
                 with self._repository._connect() as conn:
                     for item, classification in to_import:
                         now = _utcnow_iso()
-                        conn.execute(
+                        self._execute(conn,
                             """
                             INSERT INTO workflow_profile_definitions (
                                 profile_code, label, control_class, is_active, active_version,
                                 created_at, created_by, updated_at, updated_by
-                            ) VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 item.profile_code,
                                 item.label,
                                 item.control_class.value,
+                                True,
+                                1,
                                 now,
                                 "seed-import",
                                 now,
@@ -631,7 +654,7 @@ class WorkflowProfileRelationalStore:
                             )
                         else:
                             finalized.append(row)
-                    conn.execute(
+                    self._execute(conn,
                         """
                         INSERT INTO workflow_profile_imports (
                             import_id, source_path, source_kind, raw_sha256, semantic_sha256,
@@ -669,12 +692,12 @@ class WorkflowProfileRelationalStore:
 
     def _consistency_check(self, seed_reader) -> None:
         with self._repository._connect() as conn:
-            count = conn.execute("SELECT COUNT(*) FROM workflow_profile_definitions").fetchone()
-            if not count or int(count[0]) <= 0:
+            count = self._execute(conn,"SELECT COUNT(*) FROM workflow_profile_definitions").fetchone()
+            if self._scalar_count(count) <= 0:
                 raise ValidationError("workflow profile store consistency check failed: empty definitions")
             missing_types = []
             for doc_type in DocumentType:
-                row = conn.execute(
+                row = self._execute(conn,
                     "SELECT 1 FROM document_type_definitions WHERE document_type = ?",
                     (doc_type.value,),
                 ).fetchone()
@@ -711,7 +734,7 @@ class WorkflowProfileRelationalStore:
                     f"which is not present in the import source ({source})"
                 )
             now = _utcnow_iso()
-            conn.execute(
+            self._execute(conn,
                 """
                 INSERT INTO document_type_definitions (
                     document_type, control_class, default_profile_code, allows_profile_override,
@@ -723,7 +746,7 @@ class WorkflowProfileRelationalStore:
                     doc_type,
                     control[doc_type],
                     profile_code,
-                    1 if override else 0,
+                    bool(override),
                     source,
                     now,
                     now,
@@ -742,7 +765,7 @@ class WorkflowProfileRelationalStore:
         effective_from: str,
     ) -> str:
         profile_version_id = uuid4().hex
-        conn.execute(
+        self._execute(conn,
             """
             INSERT INTO workflow_profile_versions (
                 profile_version_id, profile_code, version_no, source_kind, change_reason,
@@ -760,17 +783,17 @@ class WorkflowProfileRelationalStore:
                 payload.definition_hash(),
                 effective_from,
                 payload.release_evidence_mode,
-                1 if payload.four_eyes_required else 0,
-                1 if payload.requires_editors else 0,
-                1 if payload.requires_reviewers else 0,
-                1 if payload.requires_approvers else 0,
-                1 if payload.allows_content_changes else 0,
+                bool(payload.four_eyes_required),
+                bool(payload.requires_editors),
+                bool(payload.requires_reviewers),
+                bool(payload.requires_approvers),
+                bool(payload.allows_content_changes),
                 _utcnow_iso(),
                 actor_user_id,
             ),
         )
         for item in payload.transitions:
-            conn.execute(
+            self._execute(conn,
                 """
                 INSERT INTO workflow_profile_transitions (
                     profile_transition_id, profile_version_id, transition_no, from_status, to_status,
@@ -786,17 +809,17 @@ class WorkflowProfileRelationalStore:
                     item.to_status,
                     item.required_role,
                     item.decision_policy,
-                    1 if item.signature_required else 0,
-                    1 if item.four_eyes_required else 0,
-                    1 if item.revoke_if_changed else 0,
+                    bool(item.signature_required),
+                    bool(item.four_eyes_required),
+                    bool(item.revoke_if_changed),
                     item.deadline_seconds,
-                    1 if item.is_enabled else 0,
+                    bool(item.is_enabled),
                 ),
             )
         return profile_version_id
 
     def _load_transitions(self, conn: sqlite3.Connection, profile_version_id: str) -> tuple[WorkflowProfileTransitionDefinition, ...]:
-        rows = conn.execute(
+        rows = self._execute(conn,
             """
             SELECT transition_no, from_status, to_status, required_role, decision_policy,
                    signature_required, four_eyes_required, revoke_if_changed, deadline_seconds, is_enabled

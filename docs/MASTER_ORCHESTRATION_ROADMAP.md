@@ -185,8 +185,11 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste autorisierte Aktion ist ausschliesslich PG01 (Documents/Registry/Signature → PostgreSQL; **TODO**, vorbereitet, nicht gestartet — erfordert explizite Freigabe).
-**WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`). Kein späterer Produktcheckpoint ist freigegeben.
+Die naechste freizugebende Aktion ist ausschliesslich OPS00
+(Windows service, HTTPS, backup/restore, export; TODO, vorbereitet,
+nicht gestartet — erfordert explizite Freigabe).
+**PG01** ist lokal `PASS` @ `667c8b9f` (`HUMAN_GOVERNANCE_EXCEPTION`). Push/PR/Merge fuer PG01 sind NOT RUN. OPS00 ist nicht gestartet. INT00 und spaetere Checkpoints sind nicht freigegeben.
+**WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`).
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
 autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
