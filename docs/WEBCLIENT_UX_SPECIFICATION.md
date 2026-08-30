@@ -1,11 +1,11 @@
 # QMToolV7 — WEBCLIENT UX SPECIFICATION
 
-Status: Canonical (P0)  
-**Dokumenttyp:** Produkt-/UX-Spezifikation für den Webclient  
-**Gültig ab:** UX00  
-**Zielphase:** WEB01 und alle nachfolgenden Webclient-Arbeitspakete  
-**Sprache:** Deutsch als erste Produktsprache; technische IDs/Contracts Englisch  
-**Adressaten:** Entwickler, Cursor-/Codex-Agenten, Reviewer, UX-/QA-Verantwortliche  
+Status: Canonical (P0)
+**Dokumenttyp:** Produkt-/UX-Spezifikation für den Webclient
+**Gültig ab:** UX00
+**Zielphase:** WEB01 und alle nachfolgenden Webclient-Arbeitspakete
+**Sprache:** Deutsch als erste Produktsprache; technische IDs/Contracts Englisch
+**Adressaten:** Entwickler, Cursor-/Codex-Agenten, Reviewer, UX-/QA-Verantwortliche
 **Zweck:** Eine so konkrete und missverständnisarme Bauanleitung liefern, dass ein Implementierungsagent Ansichten nicht „frei interpretiert“, sondern reproduzierbar gemäß Produktentscheidung umsetzt.
 
 WEB00 hat die zentrale Webclient-Foundation geliefert. Die vollständige Documents-/Signature-

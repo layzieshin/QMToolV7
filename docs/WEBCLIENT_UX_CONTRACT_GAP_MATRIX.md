@@ -2,8 +2,8 @@
 
 Status: Active transition detail (P1)
 
-Canonical UX: `docs/WEBCLIENT_UX_SPECIFICATION.md`  
-Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`  
+Canonical UX: `docs/WEBCLIENT_UX_SPECIFICATION.md`
+Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 Baseline: `main` @ `58caddac224ab46ed63392fba92fc11b94e9ddf2`
 
 ## Purpose and authority
