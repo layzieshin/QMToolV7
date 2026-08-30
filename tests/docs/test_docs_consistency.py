@@ -20,6 +20,7 @@ P0_DOCS = [
     ROOT / "README.md",
     DOCS / "GUI_SOURCE_OF_TRUTH.md",
     DOCS / "GUI_ARCHITECTURE_PROJECT.md",
+    DOCS / "WEBCLIENT_UX_SPECIFICATION.md",
     DOCS / "MODULES_DEVELOPER_GUIDE.md",
     DOCS / "OPERATIONS_CANONICAL.md",
     DOCS / "TEST_SMOKE_GATES.md",
@@ -458,6 +459,8 @@ GUI_SOURCE_OF_TRUTH = DOCS / "GUI_SOURCE_OF_TRUTH.md"
 DOCS_CANONICAL_INDEX = DOCS / "DOCS_CANONICAL_INDEX.md"
 MODULE_INTEGRATION_POLICY = DOCS / "MODULE_INTEGRATION_POLICY.md"
 ARCHITECTURE_REFACTOR = DOCS / "ARCHITECTURE_REFACTOR_CANONICAL.md"
+WEBCLIENT_UX_SPECIFICATION = DOCS / "WEBCLIENT_UX_SPECIFICATION.md"
+WEBCLIENT_UX_CONTRACT_GAP_MATRIX = DOCS / "WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md"
 
 AP029_LEDGER_START = "<!-- AP029_LEDGER_START -->"
 AP029_LEDGER_END = "<!-- AP029_LEDGER_END -->"
@@ -625,7 +628,9 @@ def test_webclient_is_only_active_gui_source() -> None:
 
     assert "webclient/*" in gui_sot or "`webclient/*`" in gui_sot
     assert "WEB00" in gui_sot
-    assert "noch nicht" in gui_sot.lower() or "not implemented" in gui_sot.lower()
+    assert "Foundation" in gui_sot
+    assert "WEB01" in gui_sot
+    assert "noch nicht" in gui_sot.lower() or "does not yet" in gui_arch.lower()
     assert "frozen" in gui_sot.lower()
     assert "Legacy/Reference" in gui_sot or "legacy/reference" in gui_sot.lower()
     assert "keine neuen PyQt-Contributions" in gui_sot or "no new PyQt" in gui_sot
@@ -640,6 +645,130 @@ def test_webclient_is_only_active_gui_source() -> None:
     assert "`docs/PYQT_CONTRIBUTIONS_REFERENCE.md`" in p2
     assert "Status: Legacy/History (P2" in pyqt_ref
     assert "Frozen" in pyqt_ref or "frozen" in pyqt_ref
+
+
+def test_webclient_ux_spec_is_canonical_and_linked() -> None:
+    spec = _read(WEBCLIENT_UX_SPECIFICATION)
+    matrix = _read(WEBCLIENT_UX_CONTRACT_GAP_MATRIX)
+    index = _read(DOCS_CANONICAL_INDEX)
+    gui_sot = _read(GUI_SOURCE_OF_TRUTH)
+    gui_arch = _read(DOCS / "GUI_ARCHITECTURE_PROJECT.md")
+
+    assert "Status: Canonical (P0)" in spec
+    assert "keine zweite Source of Truth" in spec
+    assert "Quellenpriorität" in spec
+    assert "Backend ist fachlich autoritativ" in spec
+    assert "keine neue Fachsemantik erfinden" in spec
+    assert "DEFERRED" in spec and "BACKEND REQUIRED" in spec
+    assert "WEB00" in spec and "WEB01" in spec
+    assert "`docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md`" in spec
+    assert "WCON00" in spec
+    assert "Recipient-, Envelope-, Send-, Public-Link- und Multi-Party-Signing-Flows" in spec
+    assert "zentrale UI-Zuordnung besitzen" not in spec
+    assert "initial über PrintAdapter/IPP" not in spec
+    assert "IPP" not in spec
+    assert "Zunächst zentral koordiniertes Polling" not in spec
+    assert "Status: Active transition detail (P1)" in matrix
+
+    p0 = _p0_section(index)
+    assert "`docs/WEBCLIENT_UX_SPECIFICATION.md`" in p0
+    assert "`docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md`" in index.split(
+        "## P1 (important, domain/process detail)", 1
+    )[1]
+    for owner in (gui_sot, gui_arch):
+        assert "`docs/WEBCLIENT_UX_SPECIFICATION.md`" in owner
+        assert "`docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md`" in owner
+
+
+def test_ux00_history_disposition_is_complete() -> None:
+    matrix = _read(WEBCLIENT_UX_CONTRACT_GAP_MATRIX)
+    rows = re.findall(
+        r"(?m)^\| (D\d{2}) \| .*? \| "
+        r"(CURRENT|SUPERSEDED|REFERENCE_ONLY|CONFLICT|MISSING_FROM_CANONICAL_DOCS) \|",
+        matrix,
+    )
+    ids = [decision_id for decision_id, _ in rows]
+    assert ids == [f"D{number:02d}" for number in range(1, 93)]
+    assert len(ids) == len(set(ids)) == 92
+
+    expected = {
+        "CURRENT": {
+            "D01", "D02", "D03", "D04", "D18", "D21", "D36", "D60",
+            "D74", "D75", "D76", "D79", "D82", "D85", "D88", "D89",
+        },
+        "SUPERSEDED": {"D38", "D39", "D56", "D57", "D92"},
+        "REFERENCE_ONLY": {
+            "D23", "D24", "D25", "D51", "D52", "D64", "D70", "D81",
+            "D83", "D84", "D86", "D90", "D91",
+        },
+    }
+    actual = {status: {decision_id for decision_id, value in rows if value == status} for status in expected}
+    assert actual == expected
+    all_ids = set(ids)
+    assigned = set().union(*expected.values())
+    assert {decision_id for decision_id, value in rows if value == "CONFLICT"} == set()
+    assert {decision_id for decision_id, value in rows if value == "MISSING_FROM_CANONICAL_DOCS"} == (
+        all_ids - assigned
+    )
+    assert "| D" not in matrix.split("## Review rule", 1)[1]
+
+
+def test_ux00_contract_gap_matrix_is_complete() -> None:
+    matrix = _read(WEBCLIENT_UX_CONTRACT_GAP_MATRIX)
+    required_areas = (
+        "Allowed Actions / Action Metadata",
+        "ETag / Conflict Handling",
+        "Preferences",
+        "Saved Views",
+        "Signature Presets",
+        "Edit Locks",
+        "Tasks",
+        "Notifications",
+        "Jobs",
+        "Attachments",
+        "Object Picker",
+        "Controlled Download",
+        "Controlled Print / IPP",
+        "Global Search",
+        "Audit / History",
+        "Connection State",
+        "Reauthentication",
+        "UI Bootstrap / Module Manifest",
+        "Documents List Query / Pagination / Filter / Sort",
+        "Structured Field Errors",
+        "PDF Inline Preview",
+    )
+    for area in required_areas:
+        assert f"| {area} |" in matrix
+
+    statuses = {
+        "Already Supported",
+        "UX-only / WEB01",
+        "Backend Contract Required Before WEB01",
+        "OPS00/INT00 Relevant",
+        "Deferred",
+    }
+    gap_rows = [line for line in matrix.splitlines() if re.match(r"^\| GAP-\d{2} \|", line)]
+    assert len(gap_rows) == len(required_areas)
+    for row in gap_rows:
+        cells = [cell.strip() for cell in row.strip("|").split("|")]
+        assert cells[3] in statuses, row
+
+    gap_status = {
+        cells[0]: cells[3]
+        for row in gap_rows
+        for cells in ([cell.strip() for cell in row.strip("|").split("|")],)
+    }
+    assert gap_status["GAP-06"] == "Deferred"
+    assert gap_status["GAP-08"] == "Deferred"
+    assert gap_status["GAP-14"] == "Deferred"
+    assert gap_status["GAP-09"] == "OPS00/INT00 Relevant"
+    assert gap_status["GAP-13"] == "OPS00/INT00 Relevant"
+
+    for gap_id in ("GAP-01", "GAP-05", "GAP-12", "GAP-15", "GAP-18", "GAP-19", "GAP-20", "GAP-21"):
+        row = next(line for line in gap_rows if line.startswith(f"| {gap_id} |"))
+        assert "Backend Contract Required Before WEB01" in row
+        assert "WCON00" in row
 
 
 def test_product_runtime_target_is_postgres_only() -> None:

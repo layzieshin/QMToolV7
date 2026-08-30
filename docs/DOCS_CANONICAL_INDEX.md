@@ -14,6 +14,7 @@ This file defines document priority and decision authority for the repository.
 - `README.md`
 - `docs/GUI_SOURCE_OF_TRUTH.md`
 - `docs/GUI_ARCHITECTURE_PROJECT.md`
+- `docs/WEBCLIENT_UX_SPECIFICATION.md` — binding product UX for WEB01 and later webclient work
 - `docs/MODULES_DEVELOPER_GUIDE.md`
 - `docs/MODULE_INTEGRATION_POLICY.md`
 - `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`
@@ -28,6 +29,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md` — local Cursor-native work-package operation guide
 - `docs/MASTER_ORCHESTRATION_ROADMAP.md` — active work-package steering (planning only; P0 architecture docs win on boundaries)
 - `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` — Web/PostgreSQL target architecture and executable checkpoint ledger
+- `docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md` — current support, WEB01 blockers, deferred UX targets, and historical disposition
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`
 - `docs/INCIDENT_MANAGEMENT_ARCHITECTURE_CONTRACT.md`
 - `docs/DOCUMENTS_CLI_REFERENCE.md`
