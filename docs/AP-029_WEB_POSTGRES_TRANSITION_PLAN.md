@@ -283,7 +283,7 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: UX00
+Current checkpoint: OPS00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -295,10 +295,11 @@ Current checkpoint: UX00
 | PG00 | PostgreSQL platform foundation | PASS | 90cefa498d05f708ad54d4d673a41e245957d63f | A–D passed; full regression passed; merged `8a67f67` PR #32; evidence build/ap-029-pg00/final/ | Current advances to WEB00 |
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | PASS | dc65b36104436389481926fdd396af5ba6d869a5 | A–D N/A (single checkpoint); full regression passed; Vitest/browser smoke passed; commit `da9db323…`; contract SHA256 `974b16b5…`; Gate E PASS CONTROL_PLANE_PINNED agent `32cdb2b4…`; evidence `build/ap-029-web00/`; 10 postgres live skips N/A | Current advances to PG01 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | PASS | 47ba80cc16ce89db546617d36c4474df37e8b600 | A–D prior PASS preserved; E PASS (HUMAN_GOVERNANCE_EXCEPTION) @ `667c8b9f3f48cd280e8d2147b1d2b623d0df3719`; historical Gate E FAIL UNVERIFIED `a9fbff7a-9536-4c02-9d32-b3954a75b857` and escalation FAIL UNVERIFIED `c27f0727-0f74-40ad-8cb8-4554e64b9881` not overwritten (`formal-review-r1/`); Live R6 15 tests passed (`build/ap-029-pg01/e/slot2-live-r6/`, NOT RERUN); full regression R4 passed (`build/ap-029-pg01/final/r6-regression-r4/`, first_red null); R13 contract SHA256 `A2F63B2C47A269A3B3BAF597F0CDD6D3A1D8D09767735202C9C71F620AF26F52`; Grok closeout READY_FOR_HUMAN_GOVERNANCE_COMMIT agent `91b29a1a-64bb-414a-8903-24ca60dcb143`; PR #39 published @ `f3e107ac`; premerge R1 FIRST RED harness (`premerge-recovery-r1/`); R2 provenance HUMAN_GATE (`premerge-recovery-r2/`); R3A explicit PostgreSQL seed (atomic `pg_advisory_xact_lock` + one three-table stock snapshot + one outer write txn); contract SHA256 `D89EB24B9DDEE80DEE2095345AB169C7556D24446900297CEE01629182E057AD`; product commit `9e5bd0c695751a7589bace8bcac971861a4fc5b2`; full collect-only 1309 primarily evidenced (`gates/full-collect-only-result.json`); combined Slot-2 Live R2 18/18 PASS (`slot2-live-r2/`); historical Grok FAIL `8caf36f1-945f-4c6a-ba0a-f3d90e75ba82` preserved (`GROK_POST_REVIEW.md`); evidence `build/ap-029-pg01/final/premerge-recovery-r3a/` and `build/ap-029-pg01/`; PR #39 squash-merged to `main` @ `58caddac224ab46ed63392fba92fc11b94e9ddf2` | Parent PASS; Current advances to UX00 |
-| UX00 | Canonical webclient product UX and contract review | IN_PROGRESS | 58caddac224ab46ed63392fba92fc11b94e9ddf2 | baseline `build/ap-029-ux00/preflight-20260830/junit.xml`: 16 passed | docs/governance/contract review only; no product implementation |
+| UX00 | Canonical webclient product UX and contract review | PASS | 58caddac224ab46ed63392fba92fc11b94e9ddf2 | baseline `build/ap-029-ux00/preflight-20260830/junit.xml`: 16 passed; focused A 4 passed and B 5 passed; independent reviews PASS; evidence `build/ap-029-ux00/` | P0 UX plus P1 gap/disposition matrix; no product implementation; Current advances to OPS00 |
 | OPS00 | Windows service, HTTPS, backup/restore, export | TODO | — | — | prepared/not started; explicit authorization required |
-| INT00 | Joint integration gate PG00/WEB00/PG01/OPS00 | TODO | — | — | blocks WEB01 |
-| WEB01 | Full Documents/Signature web workflow | TODO | — | — | after INT00 |
+| WCON00 | Webclient contract completion for WEB01 | TODO | — | — | after OPS00; closes only UX00-classified WEB01 blockers |
+| INT00 | Joint integration gate PG00/WEB00/PG01/OPS00/WCON00 | TODO | — | — | blocks WEB01 |
+| WEB01 | Full Documents/Signature web workflow | TODO | — | — | after INT00; bound to canonical UX |
 | PILOT00 | Pilot readiness security/restore/ops/human-smoke | TODO | — | — | blocks live data |
 | PILOT01 | Limited live-data pilot with human approval | TODO | — | — | human gate |
 | CB01 | Container productization after proven DMS web pattern | TODO | — | — | not a pilot blocker; PostgreSQL and central web patterns only |
@@ -324,7 +325,9 @@ No later work may be described as started or completed by GOV00 alone.
   Analyse sind nur nach einer späteren ausdrücklichen Steuerungsentscheidung zulässig und dürfen
   weder Ledger-Reihenfolge noch Current-checkpoint-Semantik umgehen.
 - Zentrale Composition-/Bootstrap-Dateien nur in kurzen seriellen Integrationsfenstern.
-- **INT00** blockiert **WEB01**, bis PG00/WEB00/PG01/OPS00 gemeinsam grün sind.
+- **UX00** bindet die Produkt-UX; **WCON00** schließt nur die als WEB01-blockierend
+  klassifizierten technischen Verträge.
+- **INT00** blockiert **WEB01**, bis PG00/WEB00/PG01/UX00/OPS00/WCON00 gemeinsam grün sind.
 - **PILOT00** blockiert Echtdaten.
 - **J04-M1** darf den Pilot nicht verzögern.
 - **CB01** folgt erst nach dem bewiesenen DMS-Webmuster und blockiert PILOT01 nicht.
@@ -341,8 +344,10 @@ No later work may be described as started or completed by GOV00 alone.
 | M2 PostgreSQL-Fundament | PG00 | Migration, Organisation, Audit, Blob-Vertrag |
 | M3 Web-Fundament | WEB00 | zentrale Web-Shell und sicherer HTTP-Rand |
 | M4 DMS-Persistenz | PG01 | Documents/Registry/Signature auf PostgreSQL |
+| M4.5 Produkt-UX | UX00 | kanonische Webclient-UX und Contract-Disposition |
 | M5 Betrieb | OPS00 | Dienst, HTTPS, Backup/Restore, Update, Export |
-| M6 DMS-Webslice | INT00 → WEB01 | integrierter Browserworkflow |
+| M5.5 Web-Verträge | WCON00 | nur die vor WEB01 zwingenden technischen Contracts |
+| M6 DMS-Webslice | INT00 → WEB01 | integrierter Browserworkflow gegen kanonische UX |
 | M7 Pilotbereitschaft | PILOT00 | Security, Restore, Betrieb und Human-Smoke |
 
 Ein Makro setzt keine Berechtigung für destruktive PostgreSQL-Läufe, Human Gates, Echtdaten,
@@ -480,7 +485,7 @@ separat freizugeben.
 - **DoD:** Foundation läuft gegen `/api/v1` Same-Origin; keine Fachmodule-UI-Vollständigkeit nötig.
 - **Evidence:** `build/ap-029-web00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`PG01`.
-- **Hinweis:** WEB00 ist **PASS** (commit `da9db323…`; Evidence `build/ap-029-web00/`; nach PASS wurde Current historisch auf PG01 gesetzt; PG01 ist PASS @ `58cadda…`; Current ist UX00).
+- **Hinweis:** WEB00 ist **PASS** (commit `da9db323…`; Evidence `build/ap-029-web00/`; nach PASS wurde Current historisch auf PG01 gesetzt; PG01 ist PASS @ `58cadda…`; Current ist OPS00).
 
 ### PG01 — Documents/Registry/Signature → PostgreSQL
 
@@ -503,6 +508,24 @@ separat freizugeben.
 - **Evidence:** `build/ap-029-pg01/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`UX00`.
 
+### UX00 — Canonical webclient product UX and contract review
+
+- **Ziel:** Verbindliche Produkt-UX vor WEB01 kanonisieren und historische Entscheidungen sowie
+  aktuelle technische Contract-Gaps eindeutig disponieren.
+- **Erlaubter Scope:** P0-/P1-Dokumentation, Ledger/Roadmap, Docs-Consistency-Tests; keine
+  Produkt- oder Contract-Implementierung.
+- **Ausschlüsse:** Vue-Screens, Fachlogik, PostgreSQL-Schema, PyQt, PG01-Rework, OPS00-Arbeit.
+- **Vorbedingungen:** PG01 PASS und nach `main` integriert.
+- **Deliverables:** `docs/WEBCLIENT_UX_SPECIFICATION.md` (P0) und
+  `docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md` (P1) mit D01–D92-Disposition und WEB01-Gaps.
+- **Tests:** fokussierte Status-/Link-/Disposition-/Gap-Tests und vollständiges `tests/docs`.
+- **Fail-fast:** historische Quelle als zweite Autorität, neue Fachlogik, unklassifizierter
+  WEB01-Pflichtvertrag oder Diff außerhalb der Docs-Allowlist stoppt.
+- **DoD:** P0/P1 konsistent; UX00 PASS; WCON00 als schmale Voraussetzung dokumentiert;
+  keine neue API, kein Service und kein Persistenzpfad.
+- **Evidence:** `build/ap-029-ux00/`.
+- **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`OPS00`.
+
 ### OPS00 — Operations foundation
 
 - **Ziel:** Windows-Service, HTTPS, Backup/Restore (PG+Blob), Update/Rollback, Datenexport-Trennung.
@@ -518,13 +541,33 @@ separat freizugeben.
 - **Fail-fast:** unvollständiges Backup-Set, fehlender Restore-Nachweis oder Secret-Leak stoppt.
 - **DoD:** Alle Subcheckpoints PASS; Restore-Drill erfolgreich; Runbooks und Diagnosebundle vorhanden.
 - **Evidence:** `build/ap-029-ops00/`.
+- **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`WCON00`.
+
+### WCON00 — Webclient contract completion for WEB01
+
+- **Ziel:** Ausschließlich die in `docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md` als
+  `Backend Contract Required Before WEB01` klassifizierten Lücken schließen.
+- **Erlaubter Scope:** UI-Bootstrap/Module-Capability-Manifest, Action Descriptors/Namensgrenze,
+  Documents Pagination/Filter/Sort, strukturierte Feldfehler, Audit-/History-Read-Modell,
+  PDF-Inline-Preview versus Controlled Download sowie die von P0 verlangten Signature-Preset-Felder.
+- **Ausschlüsse:** WEB01-Komponenten/Screens; Notifications; Global Search; generische Jobs;
+  Edit Locks; IPP/Controlled Print; generische Cross-Module-Attachments; neue Fachlogik.
+- **Vorbedingungen:** UX00 und OPS00 PASS; bestehende öffentliche Modul-APIs bleiben Owner.
+- **Invarianten:** Backend bleibt dünner `/api/v1`-Transport; Services autorisieren; keine
+  parallele API, kein clientseitiger Ersatzvertrag, keine neue produktive Persistenz ohne Paketfreigabe.
+- **Tests:** öffentliche Modul-/HTTP-/OpenAPI-Contracttests, negative Autorisierungs-/Fehlerpfade,
+  Reproduzierbarkeit generierter Clients und fokussierte Architektur-/Docs-Gates.
+- **Fail-fast:** Fachregel im Transport, interner Modulimport, Scope-Aufnahme eines deferred Gaps
+  oder nicht reproduzierbarer Contract stoppt.
+- **DoD:** alle acht GAP-Owner aus der P1-Matrix nachweislich geschlossen; kein WEB01-UI-Code.
+- **Evidence:** `build/ap-029-wcon00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`INT00`.
 
 ### INT00 — Joint integration gate
 
-- **Ziel:** PG00/WEB00/PG01/OPS00 gemeinsam grün.
+- **Ziel:** PG00/WEB00/PG01/UX00/OPS00/WCON00 gemeinsam grün.
 - **Ausschlüsse:** WEB01 vor INT00; Pilot-Echtdaten.
-- **Vorbedingungen:** Alle vier Elterncheckpoints PASS auf derselben integrierten Basis.
+- **Vorbedingungen:** Alle sechs Elterncheckpoints PASS auf derselben integrierten Basis.
 - **Gates:** frische gemeinsame Regression; HTTP/OpenAPI; realprocess PostgreSQL; Browser-Login;
   Restart/Persistenz; Backup-Set-Referenz; Diff-/Evidence-Kohärenz.
 - **Fail-fast:** erste Versions-, Vertrags- oder Runtimeabweichung stoppt WEB01.
@@ -535,7 +578,8 @@ separat freizugeben.
 ### WEB01 — Documents/Signature web workflow
 
 - **Ziel:** Vollständiger DMS-Webslice gemäß D11 (ohne Converter-Härtung CONV00).
-- **Vorbedingungen:** INT00 PASS.
+- **Vorbedingungen:** UX00, WCON00 und INT00 PASS; Umsetzung gegen
+  `docs/WEBCLIENT_UX_SPECIFICATION.md`.
 - **Ausschlüsse:** QES; Multi-Tenant-Admin; weitere Module außer freigegebenem Scope.
 - **Interne Slices:** Login/minimale Nutzerverwaltung; Dokumentliste/-detail; PDF-/DOCX-Import;
   Rollen/`allowed_actions`; ETag/If-Match; PDF-/DOCX-Kommentare; Signatur-Reauthentifizierung;
@@ -942,4 +986,4 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - CI substitute (Actions quota exhausted): quality-gates regression suite green locally (226 passed, 5 skipped);
   `platform_postgres_migration_gate` and `postgres_migration_gate` 12/12 each vs `90cefa4`;
   evidence under `build/ap-029-pg00/final/ci-local-substitute/`.
-- Status: **PG00 PASS** (merged); Current → **WEB00** (historisch; WEB00 PASS; PG01 PASS @ `58cadda…`; Current ist UX00).
+- Status: **PG00 PASS** (merged); Current → **WEB00** (historisch; WEB00 PASS; PG01 PASS @ `58cadda…`; Current ist OPS00).

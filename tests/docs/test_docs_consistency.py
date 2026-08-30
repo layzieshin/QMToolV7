@@ -477,7 +477,8 @@ AP029_LEDGER_CHECKPOINTS = (
     ("PG01", "Documents/Registry/Signature PostgreSQL migration"),
     ("UX00", "Canonical webclient product UX and contract review"),
     ("OPS00", "Windows service, HTTPS, backup/restore, export"),
-    ("INT00", "Joint integration gate PG00/WEB00/PG01/OPS00"),
+    ("WCON00", "Webclient contract completion for WEB01"),
+    ("INT00", "Joint integration gate PG00/WEB00/PG01/OPS00/WCON00"),
     ("WEB01", "Full Documents/Signature web workflow"),
     ("PILOT00", "Pilot readiness security/restore/ops/human-smoke"),
     ("PILOT01", "Limited live-data pilot with human approval"),
@@ -883,6 +884,45 @@ def test_pg01_post_merge_steering_is_current() -> None:
     pg01_section = plan.split("### PG01", 1)[1].split("\n### ", 1)[0]
     assert "bei PASS Current=`UX00`" in pg01_section
     assert "bei PASS Current=`OPS00`" not in pg01_section
+
+
+def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
+    plan = _read(AP029_PLAN)
+    roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
+    smoke_gates = _read(DOCS / "TEST_SMOKE_GATES.md")
+    current, rows = _parse_ap029_ledger(plan)
+    rows_by_id = {row["id"]: row for row in rows}
+
+    assert current == "OPS00"
+    assert "Current ist UX00" not in plan
+    assert rows_by_id["UX00"]["status"] == "PASS"
+    assert "build/ap-029-ux00/" in rows_by_id["UX00"]["result_evidence"]
+    assert rows_by_id["OPS00"]["status"] == "TODO"
+    assert rows_by_id["WCON00"]["status"] == "TODO"
+    assert rows_by_id["INT00"]["status"] == "TODO"
+    assert rows_by_id["WEB01"]["status"] == "TODO"
+
+    sequence = (
+        "GOV00 → GOV01 → TOOL00 → CB00 → INV00 → PG00 → WEB00 → PG01 → "
+        "UX00 → OPS00 → WCON00 → INT00 → WEB01 → PILOT00"
+    )
+    assert sequence in roadmap
+    assert "ausschliesslich OPS00" in roadmap or "ausschließlich OPS00" in roadmap
+
+    ux00_section = plan.split("### UX00", 1)[1].split("\n### ", 1)[0]
+    wcon00_section = plan.split("### WCON00", 1)[1].split("\n### ", 1)[0]
+    int00_section = plan.split("### INT00", 1)[1].split("\n### ", 1)[0]
+    web01_section = plan.split("### WEB01", 1)[1].split("\n### ", 1)[0]
+    assert "bei PASS Current=`OPS00`" in ux00_section
+    assert "bei PASS Current=`INT00`" in wcon00_section
+    assert "Notifications" in wcon00_section and "Edit Locks" in wcon00_section
+    assert "PG00/WEB00/PG01/UX00/OPS00/WCON00" in int00_section
+    assert "`docs/WEBCLIENT_UX_SPECIFICATION.md`" in web01_section
+
+    assert "Webclient product UX governance (UX00)" in smoke_gates
+    assert "Webclient contract completion (WCON00" in smoke_gates
+    assert "DMS web slice (WEB01 — after WCON00 and INT00 PASS)" in smoke_gates
+    assert "not WEB01 onboarding" in smoke_gates
 
 
 def test_ap029_macro_governance_is_explicit_and_serial() -> None:

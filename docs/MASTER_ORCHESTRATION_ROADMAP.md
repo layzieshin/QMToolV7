@@ -102,7 +102,7 @@ Offene Feinheiten (nicht erneut als Architektur-Grundsatzentscheidungen):
 
 ## AP-029 Checkpoint-Reihenfolge (verbindlich)
 
-GOV00 → GOV01 → TOOL00 → CB00 → INV00 → PG00 → WEB00 → PG01 → UX00 → OPS00 → INT00 → WEB01 → PILOT00 → PILOT01 → CB01 → CONV00 → J04-M1 → MOD00
+GOV00 → GOV01 → TOOL00 → CB00 → INV00 → PG00 → WEB00 → PG01 → UX00 → OPS00 → WCON00 → INT00 → WEB01 → PILOT00 → PILOT01 → CB01 → CONV00 → J04-M1 → MOD00
 
 Nach erfolgreichem GOV00 ist die **naechste autorisierte Aktion ausschliesslich GOV01** als Teil
 des ausdrücklich freigegebenen Makros M0 (GOV01 → TOOL00). Produktcheckpoints beginnen erst nach
@@ -159,6 +159,8 @@ Siehe Risikoregister in `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (R01–R22
 Aktive Grundlagen:
 - `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 - `docs/DOCS_CANONICAL_INDEX.md`
+- `docs/WEBCLIENT_UX_SPECIFICATION.md`
+- `docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md`
 - `docs/ARCHITECTURE_REFACTOR_CANONICAL.md`
 - `docs/MODULE_INTEGRATION_POLICY.md`
 - `docs/MODULES_DEVELOPER_GUIDE.md`
@@ -185,11 +187,13 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freigegebene Aktion ist ausschliesslich UX00
-(kanonische Webclient-Produkt-UX und Contract Review; `IN_PROGRESS`, Docs/Governance only).
+Die naechste freizugebende Aktion ist ausschliesslich OPS00
+(Windows service, HTTPS, backup/restore, export; TODO, vorbereitet,
+nicht gestartet — erfordert explizite Freigabe).
 **PG01** ist `PASS`; PR #39 wurde per Squash nach `main` @
-`58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. OPS00 ist nicht gestartet.
-INT00 und spaetere Checkpoints sind nicht freigegeben.
+`58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. **UX00 ist PASS** auf
+`feature/ap-029-ux00`; kanonische P0-UX und P1-Gap-Matrix liegen vor. OPS00 ist nicht gestartet.
+WCON00, INT00 und spaetere Checkpoints sind nicht freigegeben.
 **WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`).
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
