@@ -472,6 +472,7 @@ AP029_LEDGER_CHECKPOINTS = (
     ("PG00", "PostgreSQL platform foundation"),
     ("WEB00", "webclient foundation and /api/v1 cookie/CSRF shell"),
     ("PG01", "Documents/Registry/Signature PostgreSQL migration"),
+    ("UX00", "Canonical webclient product UX and contract review"),
     ("OPS00", "Windows service, HTTPS, backup/restore, export"),
     ("INT00", "Joint integration gate PG00/WEB00/PG01/OPS00"),
     ("WEB01", "Full Documents/Signature web workflow"),
@@ -729,6 +730,30 @@ def test_ap029_unqualified_current_checkpoint_claims_match_ledger() -> None:
             f"unqualified claim {claimed!r} ist Current checkpoint conflicts with "
             f"ledger Current checkpoint {current!r} (line context: {match.group(0)!r})"
         )
+
+
+def test_pg01_post_merge_steering_is_current() -> None:
+    plan = _read(AP029_PLAN)
+    roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
+
+    stale_claims = (
+        "PR #39 finalization pending",
+        "Merge NOT RUN",
+        "Push/PR/Merge fuer PG01 sind NOT RUN",
+        "Push/PR/Merge of PG01 NOT RUN",
+        "prepared, not started",
+    )
+    for claim in stale_claims:
+        assert claim not in plan
+        assert claim not in roadmap
+
+    for text in (plan, roadmap):
+        assert "PR #39" in text
+        assert "58caddac224ab46ed63392fba92fc11b94e9ddf2" in text
+
+    pg01_section = plan.split("### PG01", 1)[1].split("\n### ", 1)[0]
+    assert "bei PASS Current=`UX00`" in pg01_section
+    assert "bei PASS Current=`OPS00`" not in pg01_section
 
 
 def test_ap029_macro_governance_is_explicit_and_serial() -> None:
