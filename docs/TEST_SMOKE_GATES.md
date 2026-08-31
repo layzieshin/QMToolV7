@@ -26,9 +26,11 @@ Technische Gates ersetzen keine menschliche Pilotfreigabe.
 | Gruppe | Zweck | Beispiele |
 | --- | --- | --- |
 | Governance / Docs | Kanonische Verträge und Ledger | `tests/docs/test_docs_consistency.py` |
+| Product UX governance | UX00 P0/P1 links, D01–D92 disposition, contract-gap ownership | focused UX00 docs tests + full `tests/docs` |
 | Macro tooling / reviewer | TOOL00 Agent-/Skill-Vertrag, Snapshot und read-only Review | `tests/docs/test_cursor_macro_workflow.py` + nativer Reviewer-Smoke |
 | PostgreSQL foundation | PG00 Runner/Ownership/Org/Audit/Blob contracts | platform/migration gates (defined in PG00) |
 | Web foundation | WEB00 SPA shell, `/api/v1`, Cookie/CSRF | web/HTTP contract gates (see WEB00 section below) |
+| Web contract completion | WCON00 closes only UX00-classified WEB01 blockers | module/API/OpenAPI contract and negative boundary gates |
 | DMS web slice | WEB01 Documents/Signature workflow | focused + broader web/API gates |
 | Operations | OPS00 service/HTTPS/backup/restore/export | restore drill, packaging/deployment when authorized |
 | Pilot | PILOT00/PILOT01 readiness + human smoke | security/restore/human approval — separate from automated green |
@@ -50,6 +52,14 @@ evidence levels. Do not promote TestClient green to real-process or human accept
 ### Docs / Governance Paket
 - `.\.venv\Scripts\python.exe -m pytest tests/docs -q`
 - Konsistenzcheck gegen Entry-Points und AP-029-Ledger.
+
+### Webclient product UX governance (UX00)
+
+- Focused: canonical P0/P1 links, D01–D92 disposition and every required contract-gap owner in
+  `tests/docs/test_docs_consistency.py`.
+- Broader: `.\.venv\Scripts\python.exe -m pytest tests/docs -q`.
+- Additionally prove that no tracked path outside the UX00 allowlist changed.
+- PostgreSQL, backend, browser and PyQt runtime suites are `N/A` for the Docs-only diff, not PASS.
 
 ### PostgreSQL / persistence package
 - Gates laut `docs/DATABASE_EVOLUTION_POLICY.md` und PG00/OPS00 Evidence-Verträgen.
@@ -85,11 +95,54 @@ cd ..
 
 Controlled HTTPS browser-smoke evidence is recorded under `build/ap-029-web00/` (ephemeral local TLS; not OPS00 production).
 
-### DMS web slice (WEB01 — after WEB00 PASS)
-- `.\.venv\Scripts\python.exe -m pytest tests/interfaces -q`
-- Optional historical navigation smoke:
-  `.\.venv\Scripts\python.exe -m pytest tests/interfaces/test_pyqt_navigation_smoke.py -q`
-- These protect frozen desktop paths; they are **not** onboarding for new product UI.
+### Webclient contract completion (WCON00 — after UX00 and OPS00 PASS)
+
+WCON00 must name exact tests for each approved contract change. Its minimum gate includes the
+affected public module tests, backend HTTP/OpenAPI contract tests, negative authorization/error
+paths, reproducible OpenAPI/client generation and architecture/docs gates. WCON00 also closes
+the versioned browser connection/readiness contract (GAP-16) and the administrative
+user list/detail contract distinct from the assignment-directory picker (GAP-22), and must not absorb deferred
+notifications, jobs, global search, locks or print. WCON00 may not add WEB01 screens.
+
+Current contract suites that normally form part of the focused selection include:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest `
+  tests\backend\test_documents_http_api.py `
+  tests\backend\test_documents_concurrency_http.py `
+  tests\backend\test_documents_artifacts_http.py `
+  tests\backend\test_signature_http_api.py `
+  tests\backend\test_openapi_contract.py -q
+```
+
+### DMS web slice (WEB01 — after WCON00 and INT00 PASS)
+
+```powershell
+# Existing backend contracts used by the slice
+.\.venv\Scripts\python.exe -m pytest `
+  tests\backend\test_auth_api.py `
+  tests\backend\test_documents_http_api.py `
+  tests\backend\test_documents_authorization_http.py `
+  tests\backend\test_documents_concurrency_http.py `
+  tests\backend\test_documents_artifacts_http.py `
+  tests\backend\test_signature_http_api.py `
+  tests\backend\test_openapi_contract.py -q
+
+# WEB01 components and production build
+cd webclient
+npm ci
+npm test
+npm run build
+
+# Controlled real-browser path; exact WEB01 E2E targets are owned by WEB01
+npm run test:e2e
+cd ..
+```
+
+WEB01 evidence must cover two actor sessions, server-provided actions, ETag conflict, comments,
+PDF preview versus controlled download, signature reauthentication, audit/history and restart.
+Legacy `tests/interfaces`/PyQt suites may remain regression signals but are not WEB01 onboarding,
+product acceptance or browser evidence.
 
 ### Track B SRP prep/splits / module-platform
 - `.\.venv\Scripts\python.exe -m pytest tests/modules -q`

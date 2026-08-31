@@ -4,6 +4,8 @@ Status: Canonical (P0)
 Valid from: 2026-08-21
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
 Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
+Canonical product UX: `docs/WEBCLIENT_UX_SPECIFICATION.md`
+Contract gaps: `docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md` (P1)
 
 This document defines how GUI functionality integrates into the modular runtime without
 violating contracts or service ownership.
@@ -22,7 +24,7 @@ For non-pure-UI behavior, the order for **new** product work is:
 CLI remains an operator/test adapter. It is **not** a prerequisite for shipping web UI
 once WEB00 exists, but CLI/operator paths stay valuable for ops and verification.
 
-## Target Web Architecture (DECIDED; WEB00 not implemented yet)
+## Target Web Architecture (DECIDED; WEB00 foundation implemented)
 
 - Central Vue 3 + TypeScript SPA under `webclient/`
 - Vite toolchain; Vuetify only behind a QM-owned component layer
@@ -34,7 +36,8 @@ once WEB00 exists, but CLI/operator paths stay valuable for ops and verification
 - Custom views only for genuine specialty flows (e.g. PDF viewer, signature placement)
 - No per-module frontend bundles
 
-Until WEB00 completes, do not claim a productive web end-user client exists.
+WEB00 provides the central foundation. Do not claim the WEB01 Documents/Signature product UI or
+full productive end-user workflow exists until its contracts, implementation and gates pass.
 
 ## Runtime Alignment
 
@@ -43,7 +46,7 @@ Active adapters and hosts:
 - `modules/*` for business behavior
 - `src/backend/*` as HTTP transport host (no domain logic)
 - `interfaces/cli/*` as operator/test adapter
-- `webclient/*` as the only **new** end-user UI source (planned; not implemented as of GOV00)
+- `webclient/*` as the only **new** end-user UI source; WEB00 foundation exists, WEB01 product UI does not yet
 
 Frozen legacy/reference adapters:
 - `interfaces/pyqt/*` — frozen legacy/reference desktop UI (no new product work)
@@ -58,6 +61,10 @@ No parallel runtime and no parallel product UI workflow.
 - navigation and module view hosting via generic or approved custom views
 - shared error/output presentation
 - permission feedback from server-provided `allowed_actions`
+
+Concrete layout, interaction, list/detail/form, conflict, Documents and Signature UX is owned by
+`docs/WEBCLIENT_UX_SPECIFICATION.md`. Changing transport support status belongs in the P1 gap
+matrix, not in this architecture owner.
 
 ## Module UI Responsibilities (target)
 

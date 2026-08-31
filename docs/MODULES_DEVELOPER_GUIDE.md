@@ -12,8 +12,9 @@ For **new** product work the binding target contracts are:
 
 - productive persistence: PostgreSQL-only (no SQLite product fallback)
 - public Python boundary: `modules/<module>/api.py`
-- browser HTTP boundary: `/api/v1` (after WEB00)
-- end-user UI: central `webclient/` SPA only (WEB00 not implemented yet)
+- browser HTTP boundary: `/api/v1` (WEB00 foundation implemented)
+- end-user UI: central `webclient/` SPA only; WEB01 product UI follows
+  `docs/WEBCLIENT_UX_SPECIFICATION.md`
 - PyQt/Tk: frozen legacy/reference — no new product UI
 
 Sections below that describe SQLite paths, PyQt contributions, or desktop session files are
