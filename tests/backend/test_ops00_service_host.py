@@ -1,0 +1,296 @@
+"""OPS00-A uninstalled backend service host lifecycle and production negatives."""
+from __future__ import annotations
+
+import importlib
+import socket
+import sys
+from pathlib import Path
+
+import pytest
+
+from qm_platform.events.event_bus import EventBus
+from qm_platform.logging.audit_logger import AuditLogger
+from qm_platform.logging.logger_service import LoggerService
+from qm_platform.runtime.container import RuntimeContainer
+from qm_platform.settings.testing import build_settings_service_for_tests
+from src.backend.api import create_app
+from src.backend.bootstrap import BackendBootstrapError, build_backend_container
+from src.backend.service_host import (
+    ServiceHost,
+    ServiceHostState,
+    probe_health,
+    validate_service_host_config,
+)
+
+
+def _minimal_container(tmp_path: Path) -> RuntimeContainer:
+    container = RuntimeContainer()
+    container.register_port("logger", LoggerService(tmp_path / "platform.log"))
+    container.register_port("audit_logger", AuditLogger(tmp_path / "audit.log"))
+    container.register_port("event_bus", EventBus())
+    container.register_port(
+        "settings_service",
+        build_settings_service_for_tests(tmp_path),
+    )
+    container.register_port("app_home", tmp_path)
+    container.register_port("resource_root", tmp_path)
+    return container
+
+
+def test_service_host_module_has_no_windows_service_imports() -> None:
+    module_names = (
+        "win32service",
+        "win32serviceutil",
+        "servicemanager",
+        "pywintypes",
+        "nssm",
+    )
+    for name in module_names:
+        assert name not in sys.modules, f"unexpected import of {name!r} before service_host load"
+    importlib.import_module("src.backend.service_host")
+    for name in module_names:
+        assert name not in sys.modules, f"service_host must not import {name!r}"
+
+
+def test_service_host_start_status_graceful_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+
+    container = _minimal_container(tmp_path)
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: container,
+    )
+
+    host = ServiceHost()
+    assert host.status().state == ServiceHostState.STOPPED
+
+    host.start(timeout=15.0)
+    try:
+        status = host.status()
+        assert status.state == ServiceHostState.RUNNING
+        assert status.bind_host == "127.0.0.1"
+        assert status.bind_port > 0
+        assert host.is_serving()
+
+        payload = probe_health(status.bind_host, status.bind_port)
+        assert payload == {"status": "ok", "service": "qmtool-backend"}
+    finally:
+        host.stop(timeout=15.0)
+
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host.is_serving()
+
+
+def test_production_missing_dsn_fail_closed_via_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+    monkeypatch.setenv("QMTOOL_LICENSE_MODE", "strict")
+    monkeypatch.delenv("QMTOOL_PG_DSN", raising=False)
+    monkeypatch.delenv("QMTOOL_PG_HOST", raising=False)
+    monkeypatch.delenv("QMTOOL_PG_DATABASE", raising=False)
+    monkeypatch.delenv("QMTOOL_PG_USER", raising=False)
+    monkeypatch.delenv("QMTOOL_PG_PASSWORD", raising=False)
+    monkeypatch.setattr("src.backend.bootstrap._load_dotenv", lambda path=None: None)
+
+    validate_service_host_config()
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="no SQLite fallback"):
+        host.start(timeout=5.0)
+    assert host.status().state == ServiceHostState.STOPPED
+
+
+def test_production_missing_tls_paths_rejected_before_serve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.delenv("QMTOOL_TLS_CERT_FILE", raising=False)
+    monkeypatch.delenv("QMTOOL_TLS_KEY_FILE", raising=False)
+
+    with pytest.raises(BackendBootstrapError, match="TLS"):
+        validate_service_host_config()
+
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="TLS"):
+        host.start(timeout=5.0)
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host.is_serving()
+
+
+def test_production_missing_tls_files_rejected_before_serve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(tmp_path / "missing-cert.pem"))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(tmp_path / "missing-key.pem"))
+
+    with pytest.raises(BackendBootstrapError, match="readable TLS"):
+        validate_service_host_config()
+
+
+def test_production_unwritable_home_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    blocked = tmp_path / "blocked-home"
+    blocked.write_text("not-a-directory", encoding="utf-8")
+
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    monkeypatch.setenv("QMTOOL_HOME", str(blocked))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+
+    with pytest.raises(BackendBootstrapError, match="not writable"):
+        validate_service_host_config()
+
+
+def test_create_app_without_service_host_unchanged(tmp_path: Path) -> None:
+    container = _minimal_container(tmp_path)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(create_app(container))
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_build_backend_container_not_called_when_config_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.delenv("QMTOOL_TLS_CERT_FILE", raising=False)
+
+    called = {"value": False}
+
+    def _fail_if_called() -> RuntimeContainer:
+        called["value"] = True
+        return build_backend_container()
+
+    monkeypatch.setattr("src.backend.service_host.build_backend_container", _fail_if_called)
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError):
+        host.start(timeout=5.0)
+    assert called["value"] is False
+
+
+def test_production_refuses_http_only_after_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+
+    container = _minimal_container(tmp_path)
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: container,
+    )
+
+    validate_service_host_config()
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="refuses HTTP-only bind"):
+        host.start(timeout=5.0)
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host.is_serving()
+
+
+@pytest.mark.parametrize("license_mode", ["dev", "auto"])
+def test_production_dev_or_auto_license_mode_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, license_mode: str
+) -> None:
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+    monkeypatch.setenv("QMTOOL_LICENSE_MODE", license_mode)
+    monkeypatch.setenv("QMTOOL_PG_DSN", "postgresql://u:p@127.0.0.1:5432/db")
+    monkeypatch.setattr("src.backend.bootstrap._load_dotenv", lambda path=None: None)
+
+    validate_service_host_config()
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="dev\\|auto is not allowed"):
+        host.start(timeout=5.0)
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host.is_serving()
+
+
+class _NonTerminatingThread:
+    """Stub serve thread that never exits (stop-timeout regression)."""
+
+    def is_alive(self) -> bool:
+        return True
+
+    def join(self, timeout: float | None = None) -> None:
+        return
+
+
+def test_stop_timeout_does_not_report_stopped_while_thread_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+
+    container = _minimal_container(tmp_path)
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: container,
+    )
+
+    host = ServiceHost()
+    host.start(timeout=15.0)
+    assert host.status().state == ServiceHostState.RUNNING
+
+    real_thread = host._thread
+    server = host._server
+    host._thread = _NonTerminatingThread()
+    try:
+        with pytest.raises(RuntimeError, match="stop timed out"):
+            host.stop(timeout=0.1)
+
+        assert host.status().state == ServiceHostState.STOPPING
+        assert host.status().state != ServiceHostState.STOPPED
+    finally:
+        host._thread = real_thread
+        if server is not None:
+            server.should_exit = True
+        if real_thread is not None:
+            real_thread.join(timeout=15.0)

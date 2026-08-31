@@ -26,6 +26,64 @@ Until OPS00 delivers these capabilities, the commands below describe the **curre
 operator surface (largely SQLite-/desktop-oriented). Do not treat planned Windows-service
 or web deployment commands as already available.
 
+## Backend service host (OPS00-A; partial Ist)
+
+OPS00-A delivers an **uninstalled** local-process backend host (`python -m src.backend`)
+with configuration fail-closed behavior, `QMTOOL_HOME` layout expectations, graceful
+stop/drain hooks, and the documented Windows service **installation contract** below.
+OPS00-A is **not** deployment qualification: it does not register a Windows service,
+open firewall ports, configure LAN ACLs, interact with the certificate store, or prove
+HTTPS termination (OPS00-B). SCM/LAN/ACL/AV/cert-store evidence remains **PILOT00**.
+
+### `QMTOOL_HOME` layout (target; partial wiring in OPS00-A)
+
+| Path (under `QMTOOL_HOME`) | Purpose |
+| --- | --- |
+| `storage/platform/logs/` | Technical platform and audit logs |
+| `storage/platform/blobs/` | Productive blob root (wired in later OPS00 checkpoints) |
+| `license/` | License file (`license.json`) |
+| `certs/` | Operator-managed PEM TLS material (paths referenced by env) |
+| `backups/` | Sealed PG+Blob backup sets (OPS00-C+) |
+| `maintenance/` | Maintenance/update flags (OPS00-D+) |
+
+Production profile (`QMTOOL_RUNTIME_PROFILE=production`) rejects missing DSN, invalid
+license mode, unwritable home paths, missing TLS cert/key **paths**, and insecure HTTP-only
+bind configuration **before** serving. Even when TLS paths and bootstrap succeed, production
+still refuses to start plain HTTP until OPS00-B delivers HTTPS termination; OPS00-A does not
+serve TLS itself. Non-production/local development may continue to use loopback HTTP with
+defaults `127.0.0.1:8000`.
+
+Environment variables (see also `.env.example`): `QMTOOL_HOME`, `QMTOOL_BIND_HOST`,
+`QMTOOL_BIND_PORT`, `QMTOOL_TLS_CERT_FILE`, `QMTOOL_TLS_KEY_FILE`, PostgreSQL DSN keys,
+`QMTOOL_LICENSE_MODE`, `QMTOOL_RUNTIME_PROFILE`. Never commit secrets.
+
+Backup, restore orchestration, HTTPS serving, static SPA mount, `/ready`, and operator
+export commands are **not** implemented in OPS00-A.
+
+### Windows service installation contract (provider-neutral; documentation only)
+
+This section describes how an operator **would** register the same backend executable with
+Windows Service Control Manager (SCM). OPS00-A does **not** execute `sc create`, NSSM,
+registry writes, firewall rules, or certificate-store imports.
+
+| Item | Contract |
+| --- | --- |
+| Executable | `python -m src.backend` from the installation venv, or an equivalent packaged entrypoint invoking the same module |
+| Arguments | none required when configuration is supplied via environment / `.env` beside `QMTOOL_HOME` |
+| Working directory | Repository or on-prem install root containing `src/` and dependencies |
+| `QMTOOL_HOME` | Absolute writable data root (logs, license, certs, blobstore, backups); service account must have modify rights |
+| Secrets | PostgreSQL DSN/password, bootstrap admin password, license material, TLS private key — file permissions or OS secret store; never in HTTP responses or docs examples |
+| Service account | Dedicated low-privilege account or `NT AUTHORITY\LOCAL SERVICE` with ACL on `QMTOOL_HOME`, cert files, and log paths only; no interactive desktop requirement |
+| Start type | Automatic (delayed) recommended; manual for lab |
+| Start timeout | Allow at least 120s for first PostgreSQL schema readiness on cold start |
+| Stop timeout | Allow at least 60s for graceful drain before SCM kill |
+| Data paths | `{QMTOOL_HOME}/storage/platform/logs/`, `{QMTOOL_HOME}/storage/platform/blobs/`, `{QMTOOL_HOME}/backups/` |
+| Certificate paths | `{QMTOOL_HOME}/certs/` or explicit `QMTOOL_TLS_*` paths readable by the service account |
+| HTTPS endpoint | Same-origin `https://<host>:<port>/api/v1` once OPS00-B terminates TLS on the host (not available in OPS00-A) |
+
+Ist operator commands for SQLite desktop tooling remain below until OPS00 operator
+adapters replace them for productive PostgreSQL deployments.
+
 ## Mandatory Reading Order
 
 1. `docs/DOCS_CANONICAL_INDEX.md` (priority and conflict resolution)

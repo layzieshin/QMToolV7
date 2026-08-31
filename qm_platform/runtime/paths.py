@@ -41,3 +41,16 @@ def path_writable(path: Path) -> bool:
         return True
     except Exception:
         return False
+
+
+def runtime_home_writable(app_home: Path | None = None) -> bool:
+    """Return whether the configured runtime home directory exists and is writable."""
+    home = app_home if app_home is not None else runtime_home()
+    try:
+        home.mkdir(parents=True, exist_ok=True)
+        probe = home / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False

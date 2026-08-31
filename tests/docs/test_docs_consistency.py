@@ -924,6 +924,47 @@ def test_pg01_post_merge_steering_is_current() -> None:
     assert "bei PASS Current=`OPS00`" not in pg01_section
 
 
+def test_ux00_post_merge_steering_is_current() -> None:
+    plan = _read(AP029_PLAN)
+    roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
+    current, rows = _parse_ap029_ledger(plan)
+    rows_by_id = {row["id"]: row for row in rows}
+
+    stale_claims = (
+        "UX00 ist PASS auf",
+        "UX00 ist PASS** auf",
+        "feature/ap-029-ux00`; kanonische",
+        "prepared, not started",
+        "prepared/not started",
+        "OPS00 ist nicht gestartet",
+        "nicht gestartet — erfordert explizite Freigabe",
+    )
+    for claim in stale_claims:
+        assert claim not in roadmap, f"stale UX00/OPS00 steering claim in roadmap: {claim!r}"
+
+    for text in (plan, roadmap):
+        assert "PR #40" in text
+        assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in text
+
+    assert current == "OPS00"
+    assert rows_by_id["UX00"]["status"] == "PASS"
+    assert "PR #40" in rows_by_id["UX00"]["notes"]
+    assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in rows_by_id["UX00"]["notes"]
+    assert rows_by_id["OPS00"]["status"] == "IN_PROGRESS"
+
+    next_action = re.search(
+        r"## Naechste freigegebene Aktion\s*(.*?)(?=\n## |\Z)",
+        roadmap,
+        re.DOTALL,
+    )
+    assert next_action, "roadmap next-action section missing"
+    next_body = next_action.group(1)
+    assert "ausschliesslich OPS00" in next_body or "ausschließlich OPS00" in next_body
+    assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in next_body
+    assert "PR #40" in next_body
+    assert "feature/ap-029-ux00" not in next_body.split("PR #40", 1)[0]
+
+
 def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     plan = _read(AP029_PLAN)
     roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
@@ -935,7 +976,7 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     assert "Current ist UX00" not in plan
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "build/ap-029-ux00/" in rows_by_id["UX00"]["result_evidence"]
-    assert rows_by_id["OPS00"]["status"] == "TODO"
+    assert rows_by_id["OPS00"]["status"] == "IN_PROGRESS"
     assert rows_by_id["WCON00"]["status"] == "TODO"
     assert rows_by_id["INT00"]["status"] == "TODO"
     assert rows_by_id["WEB01"]["status"] == "TODO"
