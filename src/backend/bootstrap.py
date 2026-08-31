@@ -35,6 +35,7 @@ from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_home
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
+from qm_platform.blob import FilesystemBlobStore
 
 _ROOT = Path(__file__).resolve().parents[2]
 _ENV_PATH = _ROOT / ".env"
@@ -247,6 +248,9 @@ def build_platform_ports(*, fail_closed_license: bool = False) -> RuntimeContain
     container.register_port("license_guard", license_guard)
     container.register_port("app_home", app_home)
     container.register_port("resource_root", resources)
+    blob_root = resolve_home_path(app_home, "storage/platform/blobs")
+    blob_root.mkdir(parents=True, exist_ok=True)
+    container.register_port("filesystem_blob_store", FilesystemBlobStore(blob_root))
     return container
 
 

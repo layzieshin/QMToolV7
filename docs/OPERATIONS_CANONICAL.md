@@ -43,7 +43,7 @@ deployment. SCM/LAN/ACL/AV/cert-store evidence remains **PILOT00**.
 | Path (under `QMTOOL_HOME`) | Purpose |
 | --- | --- |
 | `storage/platform/logs/` | Technical platform and audit logs |
-| `storage/platform/blobs/` | Productive blob root (wired in later OPS00 checkpoints) |
+| `storage/platform/blobs/` | Productive blob root (wired in OPS00-C backend bootstrap) |
 | `license/` | License file (`license.json`) |
 | `certs/` | Operator-managed PEM TLS material (paths referenced by env) |
 | `backups/` | Sealed PG+Blob backup sets (OPS00-C+) |
@@ -66,8 +66,44 @@ points at an existing directory containing `index.html`, the backend host mounts
 without colliding with `/health` or `/api/v1`. This is transport-only static serving for
 contract evidence; it is not Vue product work and does not implement WCON00 GAP-16.
 
-Backup, restore orchestration, `/ready`, and operator export commands remain **not**
-implemented in OPS00-A/B.
+Backup, `/ready`, and operator export commands remain **not** implemented in OPS00-A/B.
+OPS00-C adds productive PostgreSQL + blob backup orchestration and a guarded Slot-2
+restore drill (evidence class: isolated live restore — not PILOT00 deployment).
+
+### PostgreSQL + blob backup (OPS00-C)
+
+Write-quiescent backup contract:
+
+1. Stop the backend host so in-flight state-changing work drains and the host-running marker is removed.
+2. Acquire the installation-scoped exclusive operation lock (`{QMTOOL_HOME}/storage/platform/operation.lock`).
+3. Seal one backup set under `{QMTOOL_HOME}/backups/<backup_id>/` containing a whole-database
+   custom-format `pg_dump`, a complete blob-tree copy, `manifest.json`, and checksums.
+
+Backend startup fails closed while the operation lock is held. Backup is refused while the
+host-running marker is present or the lock is unavailable.
+
+Release identity file (required): `{QMTOOL_HOME}/release/identity` — its SHA-256 is recorded as
+`app_release_fingerprint` in the manifest together with `schema_migration_fingerprint`.
+
+Operator commands (adapter only; no secrets on stdout):
+
+```powershell
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops backup
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops restore-drill --backup-dir backups/<backup_id>
+```
+
+The restore drill runs only through the guarded script invoked by `ops restore-drill`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_ops00_restore_drill.py --backup-dir backups/<backup_id>
+```
+
+Slot-2 restore targets must use the prefix `qmtool_ops00_restore_`. The drill never restores
+into the lab database (`192.168.0.4` / `qmtool_test`) or overwrites the Slot-2 source database
+name in place. Live restore evidence is Slot-2 only — not a PILOT00 deployment qualification.
+
+SQLite `database backups|restore` below remains **Ist/legacy** tooling and is not the productive
+PostgreSQL path.
 
 ### Windows service installation contract (provider-neutral; documentation only)
 

@@ -19,11 +19,29 @@ Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
   locking, and readiness/preflight checks (implement in PG00; do not invent unavailable
   operator commands here).
 
-### Target operator posture (planned; not all commands exist yet)
+### Target operator posture (PostgreSQL productive — OPS00-C partial)
 
-PG00 defines the concrete runner, roles, readiness, and operator commands. Until those
-commands are implemented and documented with evidence, do **not** treat them as already
-available. Current SQLite-oriented CLI commands below are **Ist/legacy** tooling.
+Productive PostgreSQL + blob backup/restore operator commands (OPS00-C):
+
+```powershell
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops backup
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops restore-drill --backup-dir backups/<backup_id>
+```
+
+Restore drill evidence runs only via the guarded Slot-2 runner script (never bare
+`pytest -m postgres`):
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_ops00_restore_drill.py --backup-dir backups/<backup_id>
+```
+
+Rollback after irreversible migration remains restore of the **complete** PostgreSQL + Blobstore
+backup set — no down-migration API.
+
+PG00 defines schema applicators, roles, and readiness. Additional OPS00 checkpoints add
+maintenance, update rehearsal, readiness HTTP, and exports.
+
+Current SQLite-oriented CLI commands in the Ist section below remain **Ist/legacy** tooling.
 
 ## Ist / legacy SQLite section (import, tests, historical AP-027)
 

@@ -19,6 +19,11 @@ from typing import Any
 import uvicorn
 
 from qm_platform.runtime.paths import runtime_home, runtime_home_writable
+from qm_platform.runtime.operation_lock import OperationLock, OperationLockError
+from qm_platform.blob.backup_orchestrator import (
+    remove_host_running_marker,
+    write_host_running_marker,
+)
 from src.backend.api import create_app
 from src.backend.bootstrap import BackendBootstrapError, build_backend_container
 from src.backend.tls_config import load_tls_material, resolve_tls_paths
@@ -135,71 +140,89 @@ class ServiceHost:
         )
 
     def start(self, *, timeout: float = 30.0) -> None:
-        with self._lock:
-            if self._state in {ServiceHostState.STARTING, ServiceHostState.RUNNING}:
-                raise RuntimeError("service host is already running or starting")
-            self._bind_host = resolve_bind_host()
-            self._bind_port = resolve_bind_port()
-            self._state = ServiceHostState.STARTING
-            self._https_enabled = False
-
-        ssl_certfile: str | None = None
-        ssl_keyfile: str | None = None
-
+        operation_lock = OperationLock()
         try:
-            validate_service_host_config()
-            if is_production_profile():
-                tls_material = load_tls_material()
-                ssl_certfile = tls_material.cert_file
-                ssl_keyfile = tls_material.key_file
-            container = build_backend_container()
-            app = create_app(container)
-        except Exception:
+            operation_lock.acquire()
+        except OperationLockError as exc:
+            raise BackendBootstrapError(
+                "backend host cannot start while exclusive operation lock is held"
+            ) from exc
+
+        marker_written = False
+        try:
             with self._lock:
-                self._state = ServiceHostState.STOPPED
+                if self._state in {ServiceHostState.STARTING, ServiceHostState.RUNNING}:
+                    raise RuntimeError("service host is already running or starting")
+                self._bind_host = resolve_bind_host()
+                self._bind_port = resolve_bind_port()
+                self._state = ServiceHostState.STARTING
                 self._https_enabled = False
-            raise
 
-        config = uvicorn.Config(
-            app,
-            host=self._bind_host,
-            port=self._bind_port,
-            log_level=os.environ.get("QMTOOL_UVICORN_LOG_LEVEL", "warning"),
-            lifespan="auto",
-            ssl_certfile=ssl_certfile,
-            ssl_keyfile=ssl_keyfile,
-        )
-        server = uvicorn.Server(config)
+            ssl_certfile: str | None = None
+            ssl_keyfile: str | None = None
 
-        def _serve() -> None:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            self._loop = loop
             try:
-                loop.run_until_complete(server.serve())
-            finally:
-                loop.close()
-                self._loop = None
-
-        thread = threading.Thread(target=_serve, name="qmtool-backend-host", daemon=True)
-        with self._lock:
-            self._server = server
-            self._thread = thread
-            self._https_enabled = ssl_certfile is not None and ssl_keyfile is not None
-        thread.start()
-
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if server.started:
+                validate_service_host_config()
+                if is_production_profile():
+                    tls_material = load_tls_material()
+                    ssl_certfile = tls_material.cert_file
+                    ssl_keyfile = tls_material.key_file
+                container = build_backend_container()
+                app = create_app(container)
+            except Exception:
                 with self._lock:
-                    self._state = ServiceHostState.RUNNING
-                return
-            if not thread.is_alive():
-                break
-            time.sleep(0.05)
+                    self._state = ServiceHostState.STOPPED
+                    self._https_enabled = False
+                raise
 
-        self.stop(timeout=1.0)
-        raise RuntimeError("service host failed to start within timeout")
+            config = uvicorn.Config(
+                app,
+                host=self._bind_host,
+                port=self._bind_port,
+                log_level=os.environ.get("QMTOOL_UVICORN_LOG_LEVEL", "warning"),
+                lifespan="auto",
+                ssl_certfile=ssl_certfile,
+                ssl_keyfile=ssl_keyfile,
+            )
+            server = uvicorn.Server(config)
+
+            def _serve() -> None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                self._loop = loop
+                try:
+                    loop.run_until_complete(server.serve())
+                finally:
+                    loop.close()
+                    self._loop = None
+
+            thread = threading.Thread(target=_serve, name="qmtool-backend-host", daemon=True)
+            with self._lock:
+                self._server = server
+                self._thread = thread
+                self._https_enabled = ssl_certfile is not None and ssl_keyfile is not None
+            thread.start()
+
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if server.started:
+                    write_host_running_marker()
+                    marker_written = True
+                    with self._lock:
+                        self._state = ServiceHostState.RUNNING
+                    return
+                if not thread.is_alive():
+                    break
+                time.sleep(0.05)
+
+            self.stop(timeout=1.0)
+            raise RuntimeError("service host failed to start within timeout")
+        except Exception:
+            if not marker_written:
+                remove_host_running_marker()
+            raise
+        finally:
+            operation_lock.release()
 
     def stop(self, *, timeout: float = 30.0) -> None:
         with self._lock:
@@ -224,6 +247,7 @@ class ServiceHost:
             self._thread = None
             self._state = ServiceHostState.STOPPED
             self._https_enabled = False
+        remove_host_running_marker()
 
     def run_forever(self) -> None:
         """Operator entry: validate, start, and block until graceful shutdown."""
