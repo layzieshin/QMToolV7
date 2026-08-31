@@ -1445,6 +1445,12 @@ Muster:
 - sensible Felder nicht in Tabellen zeigen;
 - Passwortaktionen separat und bewusst.
 
+WEB01 bindet diese Admin-Liste/Detail/Bearbeitungsansicht an den WCON00-Vertrag für
+administrative Benutzerverwaltung (GAP-22), nicht an den Assignment-Directory-Picker
+(`list_users_for_assignment` / `/api/v1/users/directory`). Der Picker bleibt GAP-11;
+deaktivierte Konten müssen in der Admin-Ansicht auffindbar bleiben und administrativer
+Zustand serverseitig bereitstehen — ohne hier eine neue Route oder Auth-Semantik zu erfinden.
+
 Keine vollständige IAM-Suite erforderlich, wenn Pilotvertrag dies nicht verlangt.
 
 ---

@@ -100,7 +100,8 @@ Controlled HTTPS browser-smoke evidence is recorded under `build/ap-029-web00/` 
 WCON00 must name exact tests for each approved contract change. Its minimum gate includes the
 affected public module tests, backend HTTP/OpenAPI contract tests, negative authorization/error
 paths, reproducible OpenAPI/client generation and architecture/docs gates. WCON00 also closes
-the versioned browser connection/readiness contract (GAP-16) and must not absorb deferred
+the versioned browser connection/readiness contract (GAP-16) and the administrative
+user list/detail contract distinct from the assignment-directory picker (GAP-22), and must not absorb deferred
 notifications, jobs, global search, locks or print. WCON00 may not add WEB01 screens.
 
 Current contract suites that normally form part of the focused selection include:

@@ -740,6 +740,7 @@ def test_ux00_contract_gap_matrix_is_complete() -> None:
         "Documents List Query / Pagination / Filter / Sort",
         "Structured Field Errors",
         "PDF Inline Preview",
+        "Administrative User List",
     )
     for area in required_areas:
         assert f"| {area} |" in matrix
@@ -767,6 +768,7 @@ def test_ux00_contract_gap_matrix_is_complete() -> None:
     assert gap_status["GAP-14"] == "Deferred"
     assert gap_status["GAP-09"] == "OPS00/INT00 Relevant"
     assert gap_status["GAP-13"] == "OPS00/INT00 Relevant"
+    assert gap_status["GAP-11"] == "UX-only / WEB01"
 
     wcon00_gaps = (
         "GAP-01",
@@ -778,11 +780,30 @@ def test_ux00_contract_gap_matrix_is_complete() -> None:
         "GAP-19",
         "GAP-20",
         "GAP-21",
+        "GAP-22",
     )
     for gap_id in wcon00_gaps:
         row = next(line for line in gap_rows if line.startswith(f"| {gap_id} |"))
         assert "Backend Contract Required Before WEB01" in row
         assert "WCON00" in row
+
+    gap22_row = next(line for line in gap_rows if line.startswith("| GAP-22 |"))
+    gap22_lower = gap22_row.lower()
+    assert "inactive" in gap22_lower or "deactiv" in gap22_lower
+    assert "assignment" in gap22_lower
+    assert "not the assignment" in gap22_lower or "nicht der assignment" in gap22_lower
+
+    wcon00_boundary = matrix.split("## WCON00 boundary", 1)[1].split("\n## ", 1)[0]
+    assert "GAP-22" in wcon00_boundary
+    assert "ten" in wcon00_boundary.lower() or "zehn" in wcon00_boundary.lower()
+    assert "neun" not in wcon00_boundary.lower()
+    assert "nine" not in wcon00_boundary.lower()
+
+    plan = _read(AP029_PLAN)
+    wcon00_section = plan.split("### WCON00", 1)[1].split("\n### ", 1)[0]
+    assert "GAP-22" in wcon00_section
+    assert "zehn GAP-Owner" in wcon00_section
+    assert "neun GAP-Owner" not in wcon00_section
 
     gap16_row = next(line for line in gap_rows if line.startswith("| GAP-16 |"))
     assert "/api/v1" in gap16_row

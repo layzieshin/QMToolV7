@@ -551,7 +551,9 @@ separat freizugeben.
   Documents Pagination/Filter/Sort, strukturierte Feldfehler, Audit-/History-Read-Modell,
   PDF-Inline-Preview versus Controlled Download, versionierter Same-Origin-Browser-
   Connection-/Readiness-Vertrag unter `/api/v1` (GAP-16; kein konkreter Pfad als bereits
-  implementiert deklariert) sowie die von P0 verlangten Signature-Preset-Felder.
+  implementiert deklariert), administrativer Benutzerlisten-/Detail-/Bearbeitungsvertrag
+  (GAP-22; kein Route als bereits implementiert deklariert; nicht der Assignment-Directory-Picker)
+  sowie die von P0 verlangten Signature-Preset-Felder.
 - **Ausschlüsse:** WEB01-Komponenten/Screens; Notifications; Global Search; generische Jobs;
   Edit Locks; IPP/Controlled Print; generische Cross-Module-Attachments; neue Fachlogik.
 - **Vorbedingungen:** UX00 und OPS00 PASS; bestehende öffentliche Modul-APIs bleiben Owner.
@@ -561,7 +563,7 @@ separat freizugeben.
   Reproduzierbarkeit generierter Clients und fokussierte Architektur-/Docs-Gates.
 - **Fail-fast:** Fachregel im Transport, interner Modulimport, Scope-Aufnahme eines deferred Gaps
   oder nicht reproduzierbarer Contract stoppt.
-- **DoD:** alle neun GAP-Owner aus der P1-Matrix nachweislich geschlossen; kein WEB01-UI-Code.
+- **DoD:** alle zehn GAP-Owner aus der P1-Matrix nachweislich geschlossen; kein WEB01-UI-Code.
 - **Evidence:** `build/ap-029-wcon00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`INT00`.
 

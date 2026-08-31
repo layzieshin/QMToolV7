@@ -49,15 +49,16 @@ authorize code, OpenAPI, persistence, business rules, deployment technology, or 
 | GAP-19 | Documents List Query / Pagination / Filter / Sort | Pool reads exist but no canonical paged query contract for the specified list UX | Backend Contract Required Before WEB01 | WCON00 defines server-side list semantics |
 | GAP-20 | Structured Field Errors | No stable fachlich named `field_errors` envelope for generic forms | Backend Contract Required Before WEB01 | WCON00 defines a transport-only error representation; services remain authoritative |
 | GAP-21 | PDF Inline Preview | Current artifact content uses download/attachment semantics | Backend Contract Required Before WEB01 | WCON00 separates inline preview from controlled download |
+| GAP-22 | Administrative User List | Assignment directory (`/api/v1/users/directory` / `list_users_for_assignment`) filters inactive users and omits administrative state such as `must_change_password`; after deactivation via the existing PATCH contract an account disappears from that list | Backend Contract Required Before WEB01 | WCON00 defines minimum outcomes only: inactive accounts remain discoverable after deactivation; administrative state suitable for P0 list/detail/edit and deliberate password-action flow is available to authorized administration. This is not the assignment-directory picker; no route is prescribed here |
 
 ## WCON00 boundary
 
 WCON00 is a narrow technical contract-completion checkpoint after OPS00 and before INT00. It owns
-only GAP-01, GAP-05, GAP-12, GAP-15, GAP-16, GAP-18, GAP-19, GAP-20 and GAP-21. Its implementation must use
+only GAP-01, GAP-05, GAP-12, GAP-15, GAP-16, GAP-18, GAP-19, GAP-20, GAP-21 and GAP-22 (ten). Its implementation must use
 the existing module public APIs and thin `/api/v1` transport; it must not move business logic into
 the backend host or browser.
 
-Notifications, generic jobs, global search, edit locks, IPP and generic cross-module attachments
+Notifications, generic jobs, global search, edit locks, IPP, generic cross-module attachments and generic object picker
 are not silently included. Promoting one requires a later explicit steering decision.
 
 ## Historical decision disposition
