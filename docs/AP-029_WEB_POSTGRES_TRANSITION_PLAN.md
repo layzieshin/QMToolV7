@@ -549,7 +549,9 @@ separat freizugeben.
   `Backend Contract Required Before WEB01` klassifizierten Lücken schließen.
 - **Erlaubter Scope:** UI-Bootstrap/Module-Capability-Manifest, Action Descriptors/Namensgrenze,
   Documents Pagination/Filter/Sort, strukturierte Feldfehler, Audit-/History-Read-Modell,
-  PDF-Inline-Preview versus Controlled Download sowie die von P0 verlangten Signature-Preset-Felder.
+  PDF-Inline-Preview versus Controlled Download, versionierter Same-Origin-Browser-
+  Connection-/Readiness-Vertrag unter `/api/v1` (GAP-16; kein konkreter Pfad als bereits
+  implementiert deklariert) sowie die von P0 verlangten Signature-Preset-Felder.
 - **Ausschlüsse:** WEB01-Komponenten/Screens; Notifications; Global Search; generische Jobs;
   Edit Locks; IPP/Controlled Print; generische Cross-Module-Attachments; neue Fachlogik.
 - **Vorbedingungen:** UX00 und OPS00 PASS; bestehende öffentliche Modul-APIs bleiben Owner.
@@ -559,7 +561,7 @@ separat freizugeben.
   Reproduzierbarkeit generierter Clients und fokussierte Architektur-/Docs-Gates.
 - **Fail-fast:** Fachregel im Transport, interner Modulimport, Scope-Aufnahme eines deferred Gaps
   oder nicht reproduzierbarer Contract stoppt.
-- **DoD:** alle acht GAP-Owner aus der P1-Matrix nachweislich geschlossen; kein WEB01-UI-Code.
+- **DoD:** alle neun GAP-Owner aus der P1-Matrix nachweislich geschlossen; kein WEB01-UI-Code.
 - **Evidence:** `build/ap-029-wcon00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`INT00`.
 

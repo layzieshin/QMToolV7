@@ -766,10 +766,25 @@ def test_ux00_contract_gap_matrix_is_complete() -> None:
     assert gap_status["GAP-09"] == "OPS00/INT00 Relevant"
     assert gap_status["GAP-13"] == "OPS00/INT00 Relevant"
 
-    for gap_id in ("GAP-01", "GAP-05", "GAP-12", "GAP-15", "GAP-18", "GAP-19", "GAP-20", "GAP-21"):
+    wcon00_gaps = (
+        "GAP-01",
+        "GAP-05",
+        "GAP-12",
+        "GAP-15",
+        "GAP-16",
+        "GAP-18",
+        "GAP-19",
+        "GAP-20",
+        "GAP-21",
+    )
+    for gap_id in wcon00_gaps:
         row = next(line for line in gap_rows if line.startswith(f"| {gap_id} |"))
         assert "Backend Contract Required Before WEB01" in row
         assert "WCON00" in row
+
+    gap16_row = next(line for line in gap_rows if line.startswith("| GAP-16 |"))
+    assert "/api/v1" in gap16_row
+    assert "Already Supported" not in gap16_row
 
 
 def test_product_runtime_target_is_postgres_only() -> None:

@@ -43,7 +43,7 @@ authorize code, OpenAPI, persistence, business rules, deployment technology, or 
 | GAP-13 | Controlled Print / IPP | No canonical print adapter or HTTP contract | OPS00/INT00 Relevant | Deferred unless separately promoted; no silent OPS00 expansion |
 | GAP-14 | Global Search | No cross-module search contract | Deferred | WEB01 must not fan out over all module endpoints; Documents list query is GAP-19 |
 | GAP-15 | Audit / History | Append-only audit write path exists; no WEB01-suitable read contract | Backend Contract Required Before WEB01 | WCON00 defines the bounded read model without exposing technical logs |
-| GAP-16 | Connection State | WEB00 shell and `/health` exist | Already Supported | WEB01 adds banner/retry/write blocking; maintenance/readiness remains OPS00/INT00 relevant |
+| GAP-16 | Connection State | WEB00 shell probes unversioned `/health`; AP-029 D05 requires browser traffic on `/api/v1` | Backend Contract Required Before WEB01 | WCON00 owns a versioned Same-Origin `/api/v1` browser connection/readiness contract. Existing root `/health` remains an OPS/readiness probe, not a valid WEB01 browser contract. WEB01 banner/retry/write-blocking still requires that WCON00 contract; maintenance/readiness stays OPS00/INT00 relevant |
 | GAP-17 | Reauthentication | Password verification and signature reauthentication exist | Already Supported | WEB01 owns the focused UI flow; credentials are never persisted |
 | GAP-18 | UI Bootstrap / Module Manifest | No central module/capability bootstrap contract | Backend Contract Required Before WEB01 | WCON00 defines the minimum manifest; no per-module frontend bundle |
 | GAP-19 | Documents List Query / Pagination / Filter / Sort | Pool reads exist but no canonical paged query contract for the specified list UX | Backend Contract Required Before WEB01 | WCON00 defines server-side list semantics |
@@ -53,7 +53,7 @@ authorize code, OpenAPI, persistence, business rules, deployment technology, or 
 ## WCON00 boundary
 
 WCON00 is a narrow technical contract-completion checkpoint after OPS00 and before INT00. It owns
-only GAP-01, GAP-05, GAP-12, GAP-15, GAP-18, GAP-19, GAP-20 and GAP-21. Its implementation must use
+only GAP-01, GAP-05, GAP-12, GAP-15, GAP-16, GAP-18, GAP-19, GAP-20 and GAP-21. Its implementation must use
 the existing module public APIs and thin `/api/v1` transport; it must not move business logic into
 the backend host or browser.
 
