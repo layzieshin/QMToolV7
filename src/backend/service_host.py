@@ -1,14 +1,15 @@
-"""Uninstalled backend service host (OPS00-A).
+"""Uninstalled backend service host (OPS00-A/B).
 
 Local-process lifecycle (start/status/graceful stop) without Windows SCM registration.
-Production profile validates TLS path configuration and writable ``QMTOOL_HOME`` before
-serving; HTTPS termination is implemented in OPS00-B.
+Production profile validates TLS file PEMs and writable ``QMTOOL_HOME`` before serving
+HTTPS via uvicorn. Non-production may continue to use loopback HTTP.
 """
 from __future__ import annotations
 
 import asyncio
 import os
 import socket
+import ssl
 import threading
 import time
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ import uvicorn
 from qm_platform.runtime.paths import runtime_home, runtime_home_writable
 from src.backend.api import create_app
 from src.backend.bootstrap import BackendBootstrapError, build_backend_container
+from src.backend.tls_config import load_tls_material, resolve_tls_paths
 
 _PRODUCTION_PROFILES = frozenset({"prod", "production"})
 _DEFAULT_BIND_HOST = "127.0.0.1"
@@ -39,6 +41,7 @@ class ServiceHostStatus:
     bind_host: str
     bind_port: int
     production_profile: bool
+    https_enabled: bool
 
 
 def is_production_profile() -> bool:
@@ -63,12 +66,6 @@ def resolve_bind_port() -> int:
     return port
 
 
-def _resolve_tls_paths() -> tuple[str, str]:
-    cert = os.environ.get("QMTOOL_TLS_CERT_FILE", "").strip()
-    key = os.environ.get("QMTOOL_TLS_KEY_FILE", "").strip()
-    return cert, key
-
-
 def validate_service_host_config() -> None:
     """Fail-closed host configuration checks before serving requests."""
     if not runtime_home_writable():
@@ -79,7 +76,7 @@ def validate_service_host_config() -> None:
     if not is_production_profile():
         return
 
-    cert_path, key_path = _resolve_tls_paths()
+    cert_path, key_path = resolve_tls_paths()
     missing = [
         name
         for name, value in (
@@ -121,17 +118,20 @@ class ServiceHost:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._bind_host = resolve_bind_host()
         self._bind_port = resolve_bind_port()
+        self._https_enabled = False
 
     def status(self) -> ServiceHostStatus:
         with self._lock:
             state = self._state
             bind_host = self._bind_host
             bind_port = self._bind_port
+            https_enabled = self._https_enabled
         return ServiceHostStatus(
             state=state,
             bind_host=bind_host,
             bind_port=bind_port,
             production_profile=is_production_profile(),
+            https_enabled=https_enabled,
         )
 
     def start(self, *, timeout: float = 30.0) -> None:
@@ -141,27 +141,33 @@ class ServiceHost:
             self._bind_host = resolve_bind_host()
             self._bind_port = resolve_bind_port()
             self._state = ServiceHostState.STARTING
+            self._https_enabled = False
+
+        ssl_certfile: str | None = None
+        ssl_keyfile: str | None = None
 
         try:
             validate_service_host_config()
-            container = build_backend_container()
             if is_production_profile():
-                raise BackendBootstrapError(
-                    "production profile refuses HTTP-only bind before serving; "
-                    "HTTPS termination is implemented in OPS00-B"
-                )
+                tls_material = load_tls_material()
+                ssl_certfile = tls_material.cert_file
+                ssl_keyfile = tls_material.key_file
+            container = build_backend_container()
             app = create_app(container)
         except Exception:
             with self._lock:
                 self._state = ServiceHostState.STOPPED
+                self._https_enabled = False
             raise
 
         config = uvicorn.Config(
             app,
             host=self._bind_host,
             port=self._bind_port,
-            log_level=os.environ.get("QMTOOL_UVICORN_LOG_LEVEL", "info"),
+            log_level=os.environ.get("QMTOOL_UVICORN_LOG_LEVEL", "warning"),
             lifespan="auto",
+            ssl_certfile=ssl_certfile,
+            ssl_keyfile=ssl_keyfile,
         )
         server = uvicorn.Server(config)
 
@@ -179,6 +185,7 @@ class ServiceHost:
         with self._lock:
             self._server = server
             self._thread = thread
+            self._https_enabled = ssl_certfile is not None and ssl_keyfile is not None
         thread.start()
 
         deadline = time.monotonic() + timeout
@@ -216,6 +223,7 @@ class ServiceHost:
             self._server = None
             self._thread = None
             self._state = ServiceHostState.STOPPED
+            self._https_enabled = False
 
     def run_forever(self) -> None:
         """Operator entry: validate, start, and block until graceful shutdown."""
@@ -248,18 +256,49 @@ class ServiceHost:
             return False
 
 
-def probe_health(bind_host: str, bind_port: int, *, timeout: float = 2.0) -> dict[str, Any]:
-    """HTTP GET /health against a running host (test helper)."""
+def probe_health(
+    bind_host: str,
+    bind_port: int,
+    *,
+    timeout: float = 2.0,
+    use_https: bool = False,
+    ssl_context: ssl.SSLContext | None = None,
+) -> dict[str, Any]:
+    """GET /health against a running host (test helper)."""
+    import json
     import urllib.error
     import urllib.request
 
-    url = f"http://{bind_host}:{bind_port}/health"
+    scheme = "https" if use_https else "http"
+    url = f"{scheme}://{bind_host}:{bind_port}/health"
     request = urllib.request.Request(url, method="GET")
+    context = ssl_context
+    if use_https and context is None:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
             body = response.read().decode("utf-8")
     except urllib.error.URLError as exc:
         raise RuntimeError(f"health probe failed for {url}: {exc}") from exc
-    import json
 
     return json.loads(body)
+
+
+def probe_url(
+    url: str,
+    *,
+    timeout: float = 2.0,
+    ssl_context: ssl.SSLContext | None = None,
+) -> tuple[int, bytes]:
+    """GET an arbitrary URL (test helper for same-origin static fixtures)."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context) as response:
+            return response.status, response.read()
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"GET probe failed for {url}: {exc}") from exc

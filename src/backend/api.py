@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from fastapi.routing import APIRoute
@@ -40,6 +43,29 @@ _ERROR_STATUS_CODES = (400, 401, 403, 404, 409, 413, 422, 501, 503)
 _PRODUCTION_PROFILES = {"prod", "production"}
 
 _API_V1 = "/api/v1"
+_WEBCLIENT_DIST_ENV = "QMTOOL_WEBCLIENT_DIST"
+
+
+def resolve_webclient_dist_dir() -> Path | None:
+    """Return an existing webclient dist directory for same-origin static serving."""
+    configured = os.environ.get(_WEBCLIENT_DIST_ENV, "").strip()
+    candidates: list[Path] = []
+    if configured:
+        candidates.append(Path(configured))
+    home = os.environ.get("QMTOOL_HOME", "").strip()
+    if home:
+        candidates.append(Path(home) / "webclient" / "dist")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        index_html = resolved / "index.html"
+        if resolved.is_dir() and index_html.is_file():
+            return resolved
+    return None
 
 # Documents mutations that always require If-Match at runtime (_required_if_match).
 _DOCUMENTS_IF_MATCH_REQUIRED: frozenset[tuple[str, str]] = frozenset(
@@ -361,8 +387,6 @@ def create_app(container=None) -> FastAPI:
     Routers are always registered so a container-free app can export the complete
     OpenAPI document. Fachliche calls fail closed with HTTP 503 until wired.
     """
-    import os
-
     production = os.environ.get("QMTOOL_RUNTIME_PROFILE", "").strip().lower() in _PRODUCTION_PROFILES
     app = FastAPI(
         title="QMTool Backend API",
@@ -405,5 +429,13 @@ def create_app(container=None) -> FastAPI:
         return app.openapi_schema
 
     app.openapi = openapi  # type: ignore[method-assign]
+
+    webclient_dist = resolve_webclient_dist_dir()
+    if webclient_dist is not None:
+        app.mount(
+            "/",
+            StaticFiles(directory=str(webclient_dist), html=True),
+            name="webclient-static",
+        )
 
     return app

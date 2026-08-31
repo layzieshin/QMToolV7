@@ -26,14 +26,17 @@ Until OPS00 delivers these capabilities, the commands below describe the **curre
 operator surface (largely SQLite-/desktop-oriented). Do not treat planned Windows-service
 or web deployment commands as already available.
 
-## Backend service host (OPS00-A; partial Ist)
+## Backend service host (OPS00-A/B; partial Ist)
 
 OPS00-A delivers an **uninstalled** local-process backend host (`python -m src.backend`)
 with configuration fail-closed behavior, `QMTOOL_HOME` layout expectations, graceful
 stop/drain hooks, and the documented Windows service **installation contract** below.
-OPS00-A is **not** deployment qualification: it does not register a Windows service,
-open firewall ports, configure LAN ACLs, interact with the certificate store, or prove
-HTTPS termination (OPS00-B). SCM/LAN/ACL/AV/cert-store evidence remains **PILOT00**.
+OPS00-B adds **loopback file-PEM HTTPS** on that same host: production refuses plain HTTP,
+uvicorn terminates TLS from operator-managed PEM files, and an optional static webclient
+dist directory can be mounted on the same origin as `/health` and `/api/v1`. OPS00-B is
+**not** deployment qualification: it does not register a Windows service, open firewall
+ports, configure LAN ACLs, interact with the certificate store, or prove PILOT00 LAN
+deployment. SCM/LAN/ACL/AV/cert-store evidence remains **PILOT00**.
 
 ### `QMTOOL_HOME` layout (target; partial wiring in OPS00-A)
 
@@ -47,18 +50,24 @@ HTTPS termination (OPS00-B). SCM/LAN/ACL/AV/cert-store evidence remains **PILOT0
 | `maintenance/` | Maintenance/update flags (OPS00-D+) |
 
 Production profile (`QMTOOL_RUNTIME_PROFILE=production`) rejects missing DSN, invalid
-license mode, unwritable home paths, missing TLS cert/key **paths**, and insecure HTTP-only
-bind configuration **before** serving. Even when TLS paths and bootstrap succeed, production
-still refuses to start plain HTTP until OPS00-B delivers HTTPS termination; OPS00-A does not
-serve TLS itself. Non-production/local development may continue to use loopback HTTP with
-defaults `127.0.0.1:8000`.
+license mode, unwritable home paths, missing TLS cert/key paths, unreadable or invalid PEM
+material, cert/key mismatch, and insecure HTTP-only bind configuration **before**
+serving. With valid PEM files the host serves **HTTPS only** (uvicorn `ssl_certfile` /
+`ssl_keyfile`); plain HTTP is not started in production. Non-production/local development
+may continue to use loopback HTTP with defaults `127.0.0.1:8000`.
 
 Environment variables (see also `.env.example`): `QMTOOL_HOME`, `QMTOOL_BIND_HOST`,
-`QMTOOL_BIND_PORT`, `QMTOOL_TLS_CERT_FILE`, `QMTOOL_TLS_KEY_FILE`, PostgreSQL DSN keys,
-`QMTOOL_LICENSE_MODE`, `QMTOOL_RUNTIME_PROFILE`. Never commit secrets.
+`QMTOOL_BIND_PORT`, `QMTOOL_TLS_CERT_FILE`, `QMTOOL_TLS_KEY_FILE`, `QMTOOL_WEBCLIENT_DIST`
+(or `{QMTOOL_HOME}/webclient/dist` when that directory contains `index.html`), PostgreSQL
+DSN keys, `QMTOOL_LICENSE_MODE`, `QMTOOL_RUNTIME_PROFILE`. Never commit secrets.
 
-Backup, restore orchestration, HTTPS serving, static SPA mount, `/ready`, and operator
-export commands are **not** implemented in OPS00-A.
+Same-origin static fixture: when `QMTOOL_WEBCLIENT_DIST` (or the home-relative dist path)
+points at an existing directory containing `index.html`, the backend host mounts it at `/`
+without colliding with `/health` or `/api/v1`. This is transport-only static serving for
+contract evidence; it is not Vue product work and does not implement WCON00 GAP-16.
+
+Backup, restore orchestration, `/ready`, and operator export commands remain **not**
+implemented in OPS00-A/B.
 
 ### Windows service installation contract (provider-neutral; documentation only)
 
@@ -79,7 +88,7 @@ registry writes, firewall rules, or certificate-store imports.
 | Stop timeout | Allow at least 60s for graceful drain before SCM kill |
 | Data paths | `{QMTOOL_HOME}/storage/platform/logs/`, `{QMTOOL_HOME}/storage/platform/blobs/`, `{QMTOOL_HOME}/backups/` |
 | Certificate paths | `{QMTOOL_HOME}/certs/` or explicit `QMTOOL_TLS_*` paths readable by the service account |
-| HTTPS endpoint | Same-origin `https://<host>:<port>/api/v1` once OPS00-B terminates TLS on the host (not available in OPS00-A) |
+| HTTPS endpoint | Same-origin `https://<host>:<port>/api/v1` with OPS00-B file-PEM TLS on the host (loopback contract evidence; not PILOT00 LAN/cert-store deployment) |
 
 Ist operator commands for SQLite desktop tooling remain below until OPS00 operator
 adapters replace them for productive PostgreSQL deployments.

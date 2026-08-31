@@ -1,4 +1,4 @@
-"""OPS00-A uninstalled backend service host lifecycle and production negatives."""
+"""OPS00-A/B uninstalled backend service host lifecycle and production negatives."""
 from __future__ import annotations
 
 import importlib
@@ -20,6 +20,10 @@ from src.backend.service_host import (
     ServiceHostState,
     probe_health,
     validate_service_host_config,
+)
+from tests.backend.test_ops00_https_contract import (
+    ssl_context_trusting,
+    write_ephemeral_self_signed_pem,
 )
 
 
@@ -78,6 +82,7 @@ def test_service_host_start_status_graceful_stop(
         assert status.state == ServiceHostState.RUNNING
         assert status.bind_host == "127.0.0.1"
         assert status.bind_port > 0
+        assert status.https_enabled is False
         assert host.is_serving()
 
         payload = probe_health(status.bind_host, status.bind_port)
@@ -92,15 +97,12 @@ def test_service_host_start_status_graceful_stop(
 def test_production_missing_dsn_fail_closed_via_bootstrap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cert = tmp_path / "cert.pem"
-    key = tmp_path / "key.pem"
-    cert.write_text("cert", encoding="utf-8")
-    key.write_text("key", encoding="utf-8")
+    cert_path, key_path = write_ephemeral_self_signed_pem(tmp_path)
 
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
-    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
-    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert_path))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key_path))
     monkeypatch.setenv("QMTOOL_LICENSE_MODE", "strict")
     monkeypatch.delenv("QMTOOL_PG_DSN", raising=False)
     monkeypatch.delenv("QMTOOL_PG_HOST", raising=False)
@@ -146,21 +148,39 @@ def test_production_missing_tls_files_rejected_before_serve(
         validate_service_host_config()
 
 
+def test_production_invalid_pem_rejected_before_serve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+
+    validate_service_host_config()
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="not valid PEM"):
+        host.start(timeout=5.0)
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host.is_serving()
+
+
 def test_production_unwritable_home_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     blocked = tmp_path / "blocked-home"
     blocked.write_text("not-a-directory", encoding="utf-8")
 
-    cert = tmp_path / "cert.pem"
-    key = tmp_path / "key.pem"
-    cert.write_text("cert", encoding="utf-8")
-    key.write_text("key", encoding="utf-8")
+    cert_path, key_path = write_ephemeral_self_signed_pem(tmp_path)
 
     monkeypatch.setenv("QMTOOL_HOME", str(blocked))
     monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
-    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
-    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert_path))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key_path))
 
     with pytest.raises(BackendBootstrapError, match="not writable"):
         validate_service_host_config()
@@ -196,18 +216,21 @@ def test_build_backend_container_not_called_when_config_invalid(
     assert called["value"] is False
 
 
-def test_production_refuses_http_only_after_bootstrap(
+def test_production_valid_pem_serves_https_after_bootstrap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cert = tmp_path / "cert.pem"
-    key = tmp_path / "key.pem"
-    cert.write_text("cert", encoding="utf-8")
-    key.write_text("key", encoding="utf-8")
+    cert_path, key_path = write_ephemeral_self_signed_pem(tmp_path)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
 
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
-    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
-    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert_path))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
 
     container = _minimal_container(tmp_path)
     monkeypatch.setattr(
@@ -217,25 +240,32 @@ def test_production_refuses_http_only_after_bootstrap(
 
     validate_service_host_config()
     host = ServiceHost()
-    with pytest.raises(BackendBootstrapError, match="refuses HTTP-only bind"):
-        host.start(timeout=5.0)
-    assert host.status().state == ServiceHostState.STOPPED
-    assert not host.is_serving()
+    host.start(timeout=20.0)
+    try:
+        status = host.status()
+        assert status.https_enabled is True
+        ctx = ssl_context_trusting(cert_path)
+        payload = probe_health(
+            status.bind_host,
+            status.bind_port,
+            use_https=True,
+            ssl_context=ctx,
+        )
+        assert payload == {"status": "ok", "service": "qmtool-backend"}
+    finally:
+        host.stop(timeout=15.0)
 
 
 @pytest.mark.parametrize("license_mode", ["dev", "auto"])
 def test_production_dev_or_auto_license_mode_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, license_mode: str
 ) -> None:
-    cert = tmp_path / "cert.pem"
-    key = tmp_path / "key.pem"
-    cert.write_text("cert", encoding="utf-8")
-    key.write_text("key", encoding="utf-8")
+    cert_path, key_path = write_ephemeral_self_signed_pem(tmp_path)
 
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
-    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert))
-    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key))
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert_path))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key_path))
     monkeypatch.setenv("QMTOOL_LICENSE_MODE", license_mode)
     monkeypatch.setenv("QMTOOL_PG_DSN", "postgresql://u:p@127.0.0.1:5432/db")
     monkeypatch.setattr("src.backend.bootstrap._load_dotenv", lambda path=None: None)
