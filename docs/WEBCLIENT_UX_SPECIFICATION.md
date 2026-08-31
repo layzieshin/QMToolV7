@@ -1780,7 +1780,9 @@ zu umgehen.
 
 WEB01 soll mindestens eine synthetische Browserstrecke ermöglichen:
 
-1. Login;
+1. Login, einschließlich des bestehenden Pflicht-Passwortwechsels, wenn der
+   Server `password_change_required` liefert (bestehender Vertrag
+   `/api/v1/auth/change-password`; keine neue Auth-Semantik im Browser);
 2. Dokumentenpool öffnen;
 3. Dokument anlegen/importieren;
 4. Dokumentdetail sehen;

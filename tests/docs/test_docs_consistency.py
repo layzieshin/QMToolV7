@@ -665,6 +665,8 @@ def test_webclient_ux_spec_is_canonical_and_linked() -> None:
     assert "`docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md`" in spec
     assert "WCON00" in spec
     assert "Recipient-, Envelope-, Send-, Public-Link- und Multi-Party-Signing-Flows" in spec
+    assert "password_change_required" in spec
+    assert "/api/v1/auth/change-password" in spec
     assert "zentrale UI-Zuordnung besitzen" not in spec
     assert "initial über PrintAdapter/IPP" not in spec
     assert "IPP" not in spec
