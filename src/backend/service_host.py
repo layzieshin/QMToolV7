@@ -25,6 +25,7 @@ from qm_platform.blob.backup_orchestrator import (
     BackupOrchestratorError,
     compute_app_release_fingerprint,
     create_host_running_marker_exclusive,
+    host_running_marker_path,
     is_host_running_marker_present,
     remove_host_running_marker,
 )
@@ -185,6 +186,7 @@ class ServiceHost:
         self._bind_port = resolve_bind_port()
         self._https_enabled = False
         self._owns_host_running_marker = False
+        self._host_running_marker_token: bytes | None = None
 
     def status(self) -> ServiceHostStatus:
         with self._lock:
@@ -276,12 +278,13 @@ class ServiceHost:
             while time.monotonic() < deadline:
                 if server.started:
                     try:
-                        create_host_running_marker_exclusive()
+                        marker_path = create_host_running_marker_exclusive()
                     except BackupOrchestratorError as exc:
                         self.stop(timeout=1.0)
                         raise BackendBootstrapError(
                             "backend host cannot start while host running marker is present"
                         ) from exc
+                    self._host_running_marker_token = marker_path.read_bytes()
                     self._owns_host_running_marker = True
                     with self._lock:
                         self._state = ServiceHostState.RUNNING
@@ -320,8 +323,16 @@ class ServiceHost:
             self._state = ServiceHostState.STOPPED
             self._https_enabled = False
         if self._owns_host_running_marker:
-            remove_host_running_marker()
+            path = host_running_marker_path()
+            token = self._host_running_marker_token
+            try:
+                current = path.read_bytes()
+            except OSError:
+                current = None
+            if token is not None and current == token:
+                remove_host_running_marker()
             self._owns_host_running_marker = False
+            self._host_running_marker_token = None
         _clear_active_host(self)
 
     def run_forever(self) -> None:

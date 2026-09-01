@@ -191,6 +191,8 @@ def test_ops_diagnostic_bundle_parser_is_registered() -> None:
         json.dumps({"note": "Bearer leak-token-abc"}, ensure_ascii=True),
         "plain Authorization: Bearer leak-token-abc",
         "BEARER leak-token-abc leftover",
+        json.dumps({"message": "Authorization: Basic dXNlcjpwYXNz"}, ensure_ascii=True),
+        "plain Authorization: Basic dXNlcjpwYXNz",
     ],
 )
 def test_diagnostic_redacts_bearer_tokens_via_canonical_owner(
@@ -202,3 +204,5 @@ def test_diagnostic_redacts_bearer_tokens_via_canonical_owner(
         body = b"".join(archive.read(name) for name in archive.namelist()).decode("utf-8")
         assert "leak-token-abc" not in body
         assert "Bearer leak-token-abc" not in body
+        assert "dXNlcjpwYXNz" not in body
+        assert "Basic dXNlcjpwYXNz" not in body

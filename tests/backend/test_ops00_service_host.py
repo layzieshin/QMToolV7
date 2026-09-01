@@ -420,3 +420,33 @@ def test_stop_does_not_remove_foreign_running_marker(
     host = ServiceHost()
     host.stop(timeout=1.0)
     assert marker.read_bytes() == original
+
+
+def test_stop_does_not_delete_replaced_foreign_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: _minimal_container(tmp_path),
+    )
+    host = ServiceHost()
+    host.start(timeout=15.0)
+    marker = host_running_marker_path(tmp_path)
+    assert marker.is_file()
+    foreign = b"foreign-replacement-marker"
+    marker.write_bytes(foreign)
+    try:
+        host.stop(timeout=15.0)
+        assert marker.read_bytes() == foreign
+    finally:
+        if host.status().state.name != "STOPPED":
+            host._owns_host_running_marker = False
+            host._host_running_marker_token = None
+            host.stop(timeout=15.0)

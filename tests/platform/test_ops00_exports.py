@@ -236,6 +236,12 @@ def test_evidence_export_rejects_bearer_in_allowlisted_fields(tmp_path: Path) ->
         create_evidence_export(audit_records=[record], output_dir=tmp_path)
     assert list(tmp_path.glob("evidence-*.zip")) == []
 
+    record = dict(_evidence_record())
+    record["reason"] = "pwd=live-secret"
+    with pytest.raises(ExportError, match="secret material"):
+        create_evidence_export(audit_records=[record], output_dir=tmp_path)
+    assert list(tmp_path.glob("evidence-*.zip")) == []
+
 
 def test_duplicate_artifact_zip_member_names_are_rejected(tmp_path: Path) -> None:
     first = tmp_path / "a.bin"

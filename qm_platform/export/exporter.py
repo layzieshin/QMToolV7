@@ -71,6 +71,7 @@ _SECRET_VALUE_MARKERS = (
     "$argon2",
     "eyj",
     "session=",
+    "pwd=",
 )
 
 
