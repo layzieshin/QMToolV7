@@ -187,14 +187,15 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich OPS00
-(Windows service, HTTPS, backup/restore, export; IN_PROGRESS, autorisiert via
-`/execute-work-package OPS00`; Evidence `build/ap-029-ops00/`; Start-SHA
-`756160c6e388b43afe3ef985cbe3d34767e6b0ef`).
+Die naechste freizugebende Aktion ist ausschliesslich WCON00
+(Webclient contract completion for WEB01; TODO / not started; requires a separate
+explicit `/execute-work-package WCON00`). **OPS00 ist PASS** auf
+`feature/ap-029-ops00` @ `92497d2c48646eb679429c782e17aad14f17813c`
+(Evidence `build/ap-029-ops00/`; Start-SHA `756160c6e388b43afe3ef985cbe3d34767e6b0ef`).
 **PG01** ist `PASS`; PR #39 wurde per Squash nach `main` @
 `58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. **UX00 ist PASS** und auf
 `main` integriert via PR #40 @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef`;
-kanonische P0-UX und P1-Gap-Matrix liegen vor. WCON00, INT00 und spaetere
+kanonische P0-UX und P1-Gap-Matrix liegen vor. INT00 und spaetere
 Checkpoints sind nicht freigegeben.
 **WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`).
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist

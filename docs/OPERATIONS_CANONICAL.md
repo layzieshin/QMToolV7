@@ -7,9 +7,10 @@ Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 
 This is the single operational starting point for daily work, release checks, and incident handling.
 
-## Target operations posture (DECIDED; partial Ist tooling)
+## Target operations posture (DECIDED; OPS00 operator contracts in-repo)
 
-First productive deployment target (OPS00 / PILOT00 — **not fully implemented yet**):
+First productive deployment target (OPS00 implemented as uninstalled host + operator
+contracts; PILOT00 LAN/SCM/cert-store deployment **not** implemented):
 
 - Windows Server first; central on-prem server
 - Browser clients on the LAN over Same-Origin HTTPS

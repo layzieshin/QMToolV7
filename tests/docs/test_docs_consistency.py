@@ -946,11 +946,11 @@ def test_ux00_post_merge_steering_is_current() -> None:
         assert "PR #40" in text
         assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in text
 
-    assert current == "OPS00"
+    assert current == "WCON00"
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "PR #40" in rows_by_id["UX00"]["notes"]
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in rows_by_id["UX00"]["notes"]
-    assert rows_by_id["OPS00"]["status"] == "IN_PROGRESS"
+    assert rows_by_id["OPS00"]["status"] == "PASS"
 
     next_action = re.search(
         r"## Naechste freigegebene Aktion\s*(.*?)(?=\n## |\Z)",
@@ -959,7 +959,8 @@ def test_ux00_post_merge_steering_is_current() -> None:
     )
     assert next_action, "roadmap next-action section missing"
     next_body = next_action.group(1)
-    assert "ausschliesslich OPS00" in next_body or "ausschließlich OPS00" in next_body
+    assert "ausschliesslich WCON00" in next_body or "ausschließlich WCON00" in next_body
+    assert "not started" in next_body
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in next_body
     assert "PR #40" in next_body
     assert "feature/ap-029-ux00" not in next_body.split("PR #40", 1)[0]
@@ -972,11 +973,11 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     current, rows = _parse_ap029_ledger(plan)
     rows_by_id = {row["id"]: row for row in rows}
 
-    assert current == "OPS00"
+    assert current == "WCON00"
     assert "Current ist UX00" not in plan
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "build/ap-029-ux00/" in rows_by_id["UX00"]["result_evidence"]
-    assert rows_by_id["OPS00"]["status"] == "IN_PROGRESS"
+    assert rows_by_id["OPS00"]["status"] == "PASS"
     assert rows_by_id["WCON00"]["status"] == "TODO"
     assert rows_by_id["INT00"]["status"] == "TODO"
     assert rows_by_id["WEB01"]["status"] == "TODO"
@@ -986,7 +987,7 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
         "UX00 → OPS00 → WCON00 → INT00 → WEB01 → PILOT00"
     )
     assert sequence in roadmap
-    assert "ausschliesslich OPS00" in roadmap or "ausschließlich OPS00" in roadmap
+    assert "ausschliesslich WCON00" in roadmap or "ausschließlich WCON00" in roadmap
 
     ux00_section = plan.split("### UX00", 1)[1].split("\n### ", 1)[0]
     wcon00_section = plan.split("### WCON00", 1)[1].split("\n### ", 1)[0]

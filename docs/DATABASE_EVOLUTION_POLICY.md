@@ -19,7 +19,7 @@ Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
   locking, and readiness/preflight checks (implement in PG00; do not invent unavailable
   operator commands here).
 
-### Target operator posture (PostgreSQL productive — OPS00-C partial)
+### Target operator posture (PostgreSQL productive — OPS00-C)
 
 Productive PostgreSQL + blob backup/restore operator commands (OPS00-C):
 

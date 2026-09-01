@@ -283,7 +283,7 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: OPS00
+Current checkpoint: WCON00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -296,8 +296,8 @@ Current checkpoint: OPS00
 | WEB00 | webclient foundation and /api/v1 cookie/CSRF shell | PASS | dc65b36104436389481926fdd396af5ba6d869a5 | A–D N/A (single checkpoint); full regression passed; Vitest/browser smoke passed; commit `da9db323…`; contract SHA256 `974b16b5…`; Gate E PASS CONTROL_PLANE_PINNED agent `32cdb2b4…`; evidence `build/ap-029-web00/`; 10 postgres live skips N/A | Current advances to PG01 |
 | PG01 | Documents/Registry/Signature PostgreSQL migration | PASS | 47ba80cc16ce89db546617d36c4474df37e8b600 | A–D prior PASS preserved; E PASS (HUMAN_GOVERNANCE_EXCEPTION) @ `667c8b9f3f48cd280e8d2147b1d2b623d0df3719`; historical Gate E FAIL UNVERIFIED `a9fbff7a-9536-4c02-9d32-b3954a75b857` and escalation FAIL UNVERIFIED `c27f0727-0f74-40ad-8cb8-4554e64b9881` not overwritten (`formal-review-r1/`); Live R6 15 tests passed (`build/ap-029-pg01/e/slot2-live-r6/`, NOT RERUN); full regression R4 passed (`build/ap-029-pg01/final/r6-regression-r4/`, first_red null); R13 contract SHA256 `A2F63B2C47A269A3B3BAF597F0CDD6D3A1D8D09767735202C9C71F620AF26F52`; Grok closeout READY_FOR_HUMAN_GOVERNANCE_COMMIT agent `91b29a1a-64bb-414a-8903-24ca60dcb143`; PR #39 published @ `f3e107ac`; premerge R1 FIRST RED harness (`premerge-recovery-r1/`); R2 provenance HUMAN_GATE (`premerge-recovery-r2/`); R3A explicit PostgreSQL seed (atomic `pg_advisory_xact_lock` + one three-table stock snapshot + one outer write txn); contract SHA256 `D89EB24B9DDEE80DEE2095345AB169C7556D24446900297CEE01629182E057AD`; product commit `9e5bd0c695751a7589bace8bcac971861a4fc5b2`; full collect-only 1309 primarily evidenced (`gates/full-collect-only-result.json`); combined Slot-2 Live R2 18/18 PASS (`slot2-live-r2/`); historical Grok FAIL `8caf36f1-945f-4c6a-ba0a-f3d90e75ba82` preserved (`GROK_POST_REVIEW.md`); evidence `build/ap-029-pg01/final/premerge-recovery-r3a/` and `build/ap-029-pg01/`; PR #39 squash-merged to `main` @ `58caddac224ab46ed63392fba92fc11b94e9ddf2` | Parent PASS; Current advances to UX00 |
 | UX00 | Canonical webclient product UX and contract review | PASS | 58caddac224ab46ed63392fba92fc11b94e9ddf2 | baseline `build/ap-029-ux00/preflight-20260830/junit.xml`: 16 passed; focused A 4 passed and B 5 passed; independent reviews PASS; evidence `build/ap-029-ux00/`; PR #40 squash-merged to `main` @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef` | P0 UX plus P1 gap/disposition matrix; PR #40 merge SHA `756160c6e388b43afe3ef985cbe3d34767e6b0ef`; merged on `main`; Current advances to OPS00 |
-| OPS00 | Windows service, HTTPS, backup/restore, export | IN_PROGRESS | 756160c6e388b43afe3ef985cbe3d34767e6b0ef | evidence `build/ap-029-ops00/`; OPS00-A uninstalled service host PASS; OPS00-B loopback file-PEM HTTPS in progress | authorized via `/execute-work-package OPS00`; Current checkpoint |
-| WCON00 | Webclient contract completion for WEB01 | TODO | — | — | after OPS00; closes only UX00-classified WEB01 blockers |
+| OPS00 | Windows service, HTTPS, backup/restore, export | PASS | 756160c6e388b43afe3ef985cbe3d34767e6b0ef | A–F PASS on `feature/ap-029-ops00` @ `92497d2c48646eb679429c782e17aad14f17813c`; static regression 163 passed; Slot-2 live 6 passed (4 C + 2 D); evidence `build/ap-029-ops00/` | uninstalled host, file-PEM HTTPS, sealed PG+Blob restore, maintenance abort, deny-by-default exports, `/ready` + diagnostic bundle; PILOT00 SCM/LAN/cert-store still excluded; Current advances to WCON00 |
+| WCON00 | Webclient contract completion for WEB01 | TODO | — | — | not started; requires separate `/execute-work-package WCON00`; closes only UX00-classified WEB01 blockers |
 | INT00 | Joint integration gate PG00/WEB00/PG01/OPS00/WCON00 | TODO | — | — | blocks WEB01 |
 | WEB01 | Full Documents/Signature web workflow | TODO | — | — | after INT00; bound to canonical UX |
 | PILOT00 | Pilot readiness security/restore/ops/human-smoke | TODO | — | — | blocks live data |
@@ -485,7 +485,7 @@ separat freizugeben.
 - **DoD:** Foundation läuft gegen `/api/v1` Same-Origin; keine Fachmodule-UI-Vollständigkeit nötig.
 - **Evidence:** `build/ap-029-web00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`PG01`.
-- **Hinweis:** WEB00 ist **PASS** (commit `da9db323…`; Evidence `build/ap-029-web00/`; nach PASS wurde Current historisch auf PG01 gesetzt; PG01 ist PASS @ `58cadda…`; Current ist OPS00).
+- **Hinweis:** WEB00 ist **PASS** (commit `da9db323…`; Evidence `build/ap-029-web00/`; nach PASS wurde Current historisch auf PG01 gesetzt; PG01 ist PASS @ `58cadda…`; Current ist WCON00).
 
 ### PG01 — Documents/Registry/Signature → PostgreSQL
 
@@ -990,4 +990,4 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - CI substitute (Actions quota exhausted): quality-gates regression suite green locally (226 passed, 5 skipped);
   `platform_postgres_migration_gate` and `postgres_migration_gate` 12/12 each vs `90cefa4`;
   evidence under `build/ap-029-pg00/final/ci-local-substitute/`.
-- Status: **PG00 PASS** (merged); Current → **WEB00** (historisch; WEB00 PASS; PG01 PASS @ `58cadda…`; Current ist OPS00).
+- Status: **PG00 PASS** (merged); Current → **WEB00** (historisch; WEB00 PASS; PG01 PASS @ `58cadda…`; Current ist WCON00).
