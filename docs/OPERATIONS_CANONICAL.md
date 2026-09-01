@@ -66,9 +66,8 @@ points at an existing directory containing `index.html`, the backend host mounts
 without colliding with `/health` or `/api/v1`. This is transport-only static serving for
 contract evidence; it is not Vue product work and does not implement WCON00 GAP-16.
 
-Backup, `/ready`, and operator export commands remain **not** implemented in OPS00-A/B.
-OPS00-C adds productive PostgreSQL + blob backup orchestration and a guarded Slot-2
-restore drill (evidence class: isolated live restore — not PILOT00 deployment).
+Backup, `/ready`, and operator export commands remain **not** implemented in OPS00-A/B/C.
+OPS00-D adds installation maintenance mode and controlled update rehearsal abort.
 
 ### PostgreSQL + blob backup (OPS00-C)
 
@@ -104,6 +103,41 @@ name in place. Live restore evidence is Slot-2 only — not a PILOT00 deployment
 
 SQLite `database backups|restore` below remains **Ist/legacy** tooling and is not the productive
 PostgreSQL path.
+
+### Maintenance mode and update rehearsal abort (OPS00-D)
+
+Installation maintenance mode blocks state-changing HTTP requests with **503** while
+`GET /health` continues to return liveness **ok**. Maintenance state is stored under
+`{QMTOOL_HOME}/maintenance/enabled`. Rollback after a rehearsed update **aborts** by restoring
+the prior `{QMTOOL_HOME}/release/` tree (including `identity`) and the **complete** sealed
+PostgreSQL + Blob backup set from OPS00-C into an isolated Slot-2 database named
+`qmtool_ops00_restore_*` (never lab, never in-place overwrite of `qmtool_j04_destructive_test`).
+Backend startup remains migration-free and fails closed while the operation lock is held, while a
+candidate release is staged without abort, or when the current release fingerprint does not match
+the abort-restored expectation. There is no in-app auto-update and no down-migration.
+Before `ops update-rehearsal` start the operator must stop and drain the backend host (the CLI
+stops an in-process host automatically); backup remains refused while the host-running marker is present.
+Update rehearsal start and abort each hold **one** installation `OperationLock` continuously from
+preflight through C `create_backup` / `restore_backup_set` and state persistence. Standalone
+`ops backup` still self-locks. There is no second lock path.
+
+Operator commands (adapter only; no secrets on stdout):
+
+```powershell
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops maintenance enter
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops maintenance exit
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops update-rehearsal --candidate-release-dir <path-to-tree-b>
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops update-rehearsal --abort --backup-dir backups/<backup_id>
+```
+
+The abort restore runs only through the guarded script invoked by `ops update-rehearsal --abort`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_ops00_update_rehearsal.py --backup-dir backups/<backup_id>
+```
+
+Live abort+restore evidence is Slot-2 only — not a PILOT00 deployment qualification.
+`/ready` remains planned for a later OPS00 checkpoint.
 
 ### Windows service installation contract (provider-neutral; documentation only)
 

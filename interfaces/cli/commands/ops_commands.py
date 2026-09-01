@@ -6,7 +6,14 @@ import sys
 from pathlib import Path
 
 from qm_platform.blob.backup_orchestrator import BackupOrchestratorError, create_backup
+from qm_platform.runtime.maintenance import (
+    MaintenanceError,
+    enter_maintenance,
+    exit_maintenance,
+    start_update_rehearsal,
+)
 from src.backend.bootstrap import BackendBootstrapError, resolve_usermanagement_postgres_dsn
+from src.backend.service_host import drain_and_stop_active_host
 
 
 def cmd_ops_backup(args) -> int:
@@ -44,10 +51,74 @@ def cmd_ops_restore_drill(args) -> int:
     return int(completed.returncode)
 
 
+def cmd_ops_maintenance(args) -> int:
+    action = getattr(args, "maintenance_action", None)
+    try:
+        if action == "enter":
+            enter_maintenance()
+        elif action == "exit":
+            exit_maintenance()
+        else:
+            print("unknown maintenance action", file=sys.stderr)
+            return 1
+    except MaintenanceError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps({"maintenance": action}, ensure_ascii=True, indent=2))
+    return 0
+
+
+def cmd_ops_update_rehearsal(args) -> int:
+    if getattr(args, "abort", False):
+        backup_dir = getattr(args, "backup_dir", None)
+        if not backup_dir:
+            print("--backup-dir is required with --abort", file=sys.stderr)
+            return 1
+        root = Path(__file__).resolve().parents[2]
+        script = root / "scripts" / "run_ops00_update_rehearsal.py"
+        command = [sys.executable, str(script), "--backup-dir", str(args.backup_dir)]
+        target_database = getattr(args, "target_database", None)
+        if target_database:
+            command.extend(["--target-database", str(target_database)])
+        completed = subprocess.run(command, check=False)
+        return int(completed.returncode)
+
+    candidate_dir = getattr(args, "candidate_release_dir", None)
+    if not candidate_dir:
+        print("candidate release directory is required without --abort", file=sys.stderr)
+        return 1
+    try:
+        drain_and_stop_active_host()
+        source_dsn = resolve_usermanagement_postgres_dsn()
+        result = start_update_rehearsal(
+            candidate_release_dir=Path(candidate_dir),
+            source_dsn=source_dsn,
+            metadata_dsn=source_dsn,
+        )
+    except (MaintenanceError, BackupOrchestratorError, BackendBootstrapError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    payload = {
+        "backup_id": result.backup_id,
+        "backup_path": result.backup_path,
+        "prior_release_fingerprint": result.prior_release_fingerprint,
+        "candidate_release_fingerprint": result.candidate_release_fingerprint,
+        "app_release_fingerprint": result.app_release_fingerprint,
+        "schema_migration_fingerprint": result.schema_migration_fingerprint,
+        "blob_count": result.blob_count,
+    }
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
+    return 0
+
+
 def cmd_ops(args) -> int:
     if args.ops_command == "backup":
         return cmd_ops_backup(args)
     if args.ops_command == "restore-drill":
         return cmd_ops_restore_drill(args)
+    if args.ops_command == "maintenance":
+        return cmd_ops_maintenance(args)
+    if args.ops_command == "update-rehearsal":
+        return cmd_ops_update_rehearsal(args)
     print("unknown ops command", file=sys.stderr)
     return 1

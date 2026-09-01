@@ -39,7 +39,14 @@ Rollback after irreversible migration remains restore of the **complete** Postgr
 backup set — no down-migration API.
 
 PG00 defines schema applicators, roles, and readiness. Additional OPS00 checkpoints add
-maintenance, update rehearsal, readiness HTTP, and exports.
+maintenance, update rehearsal abort, readiness HTTP, and exports.
+
+OPS00-D update rehearsal **abort** restores the **complete** PostgreSQL + Blobstore backup set
+created by OPS00-C together with the prior release tree. Rollback remains restore-only — no
+down-migration API. Before update rehearsal start the operator must stop and drain the backend
+host (or let the CLI stop an in-process host); backup remains refused while the host-running
+marker is present. Start and abort each hold one C `OperationLock` continuously through backup
+or restore; standalone C backup still self-locks.
 
 Current SQLite-oriented CLI commands in the Ist section below remain **Ist/legacy** tooling.
 

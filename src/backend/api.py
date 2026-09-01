@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from fastapi.routing import APIRoute
 
+from qm_platform.runtime.maintenance import is_maintenance_active
 from src.backend.auth_routes import router as auth_router
 from src.backend.cookie_csrf import SAFE_METHODS
 from src.backend.csrf_middleware import enforce_cookie_csrf
@@ -401,6 +403,24 @@ def create_app(container=None) -> FastAPI:
     @app.middleware("http")
     async def cookie_csrf_guard(request: Request, call_next: Callable) -> Response:
         return await enforce_cookie_csrf(request, call_next)
+
+    @app.middleware("http")
+    async def maintenance_gate(request: Request, call_next: Callable) -> Response:
+        if (
+            is_maintenance_active()
+            and request.method.upper() not in SAFE_METHODS
+            and request.url.path != "/health"
+        ):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": {
+                        "error": "maintenance_mode",
+                        "message": "installation is in maintenance mode; state-changing requests are unavailable",
+                    }
+                },
+            )
+        return await call_next(request)
 
     @app.middleware("http")
     async def attach_request_id(request: Request, call_next: Callable) -> Response:

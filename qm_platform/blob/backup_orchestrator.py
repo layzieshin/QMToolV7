@@ -217,6 +217,26 @@ def _acquire_operation_lock(app_home: Path) -> OperationLock:
     return lock
 
 
+def _bind_operation_lock(
+    app_home: Path,
+    held_operation_lock: OperationLock | None,
+) -> tuple[OperationLock, bool]:
+    """Return ``(lock, owns_lock)``. C releases only when ``owns_lock`` is True."""
+    if held_operation_lock is None:
+        return _acquire_operation_lock(app_home), True
+    if type(held_operation_lock) is not OperationLock:
+        raise BackupOrchestratorError(
+            "held operation lock is invalid for this backup or restore"
+        )
+    try:
+        held_operation_lock.validate_held_for(app_home)
+    except OperationLockError as exc:
+        raise BackupOrchestratorError(
+            "held operation lock is invalid for this backup or restore"
+        ) from exc
+    return held_operation_lock, False
+
+
 def _load_manifest(backup_dir: Path) -> dict[str, Any]:
     manifest_path = backup_dir / MANIFEST_FILENAME
     if not manifest_path.is_file():
@@ -305,12 +325,13 @@ def create_backup(
     blob_store: FilesystemBlobStore | None = None,
     backup_id: str | None = None,
     label: str | None = None,
+    held_operation_lock: OperationLock | None = None,
 ) -> BackupResult:
     """Seal a whole-database dump and blob-tree backup set."""
     home = app_home if app_home is not None else runtime_home()
     resolved_backup_id = backup_id or str(uuid.uuid4())
     backup_dir = backups_root(home) / resolved_backup_id
-    lock = _acquire_operation_lock(home)
+    lock, owns_lock = _bind_operation_lock(home, held_operation_lock)
     try:
         if is_host_running_marker_present(home):
             raise BackupOrchestratorError(
@@ -410,7 +431,8 @@ def create_backup(
             shutil.rmtree(backup_dir, ignore_errors=True)
         raise
     finally:
-        lock.release()
+        if owns_lock:
+            lock.release()
 
 
 def restore_backup_set(
@@ -420,10 +442,11 @@ def restore_backup_set(
     target_database: str,
     destination_blob_root: Path,
     app_home: Path | None = None,
+    held_operation_lock: OperationLock | None = None,
 ) -> RestoreResult:
     """Restore a sealed backup set into an isolated target database and blob root."""
     home = app_home if app_home is not None else runtime_home()
-    lock = _acquire_operation_lock(home)
+    lock, owns_lock = _bind_operation_lock(home, held_operation_lock)
     try:
         _validate_restore_target_database(target_database, admin_dsn=target_admin_dsn)
 
@@ -516,4 +539,5 @@ def restore_backup_set(
             verified_artifact_count=len(pg_rows),
         )
     finally:
-        lock.release()
+        if owns_lock:
+            lock.release()

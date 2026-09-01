@@ -478,3 +478,150 @@ def test_restore_drill_script_sets_reset_only_after_preflight() -> None:
     assert pop_before < preflight_at < set_at < require_at
     assert set_at < pop_after
     assert "RESET_OPT_IN_VALUE" in source
+
+
+def test_standalone_create_backup_acquires_and_releases_own_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+    seen = {"held_during": False}
+
+    def _probe(_home=None):
+        seen["held_during"] = is_operation_lock_held(tmp_path)
+        raise BackupOrchestratorError("fingerprint probe")
+
+    monkeypatch.setattr(
+        "qm_platform.blob.backup_orchestrator.compute_app_release_fingerprint",
+        _probe,
+    )
+    with pytest.raises(BackupOrchestratorError, match="fingerprint probe"):
+        create_backup(
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+        )
+    assert seen["held_during"] is True
+    assert is_operation_lock_held(tmp_path) is False
+
+
+def test_held_operation_lock_accepted_and_still_held_after_c_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+    lock = OperationLock(app_home=tmp_path)
+    lock.acquire()
+    try:
+
+        def _probe(_home=None):
+            lock.validate_held_for(tmp_path)
+            raise BackupOrchestratorError("fingerprint probe")
+
+        monkeypatch.setattr(
+            "qm_platform.blob.backup_orchestrator.compute_app_release_fingerprint",
+            _probe,
+        )
+        with pytest.raises(BackupOrchestratorError, match="fingerprint probe"):
+            create_backup(
+                source_dsn="postgresql://u@127.0.0.1:5432/db",
+                metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+                app_home=tmp_path,
+                held_operation_lock=lock,
+            )
+        lock.validate_held_for(tmp_path)
+        assert is_operation_lock_held(tmp_path) is True
+    finally:
+        lock.release()
+    assert is_operation_lock_held(tmp_path) is False
+
+
+def test_unheld_operation_lock_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+    lock = OperationLock(app_home=tmp_path)
+    with pytest.raises(BackupOrchestratorError, match="held operation lock"):
+        create_backup(
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+            held_operation_lock=lock,
+        )
+    assert is_operation_lock_held(tmp_path) is False
+
+
+def test_wrong_home_held_lock_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = tmp_path / "other-home"
+    other.mkdir()
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+    lock = OperationLock(app_home=other)
+    lock.acquire()
+    try:
+        with pytest.raises(BackupOrchestratorError, match="held operation lock"):
+            create_backup(
+                source_dsn="postgresql://u@127.0.0.1:5432/db",
+                metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+                app_home=tmp_path,
+                held_operation_lock=lock,
+            )
+        lock.validate_held_for(other)
+    finally:
+        lock.release()
+
+
+def test_boolean_or_path_signal_cannot_substitute_held_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+
+    class _FakeLock:
+        held = True
+        path = tmp_path / "storage" / "platform" / "operation.lock"
+
+    with pytest.raises(BackupOrchestratorError, match="held operation lock"):
+        create_backup(
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+            held_operation_lock=_FakeLock(),  # type: ignore[arg-type]
+        )
+
+
+def test_c_error_does_not_release_borrowed_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+    write_host_running_marker(tmp_path)
+    lock = OperationLock(app_home=tmp_path)
+    lock.acquire()
+    try:
+        with pytest.raises(BackupOrchestratorError, match="host running marker"):
+            create_backup(
+                source_dsn="postgresql://u@127.0.0.1:5432/db",
+                metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+                app_home=tmp_path,
+                held_operation_lock=lock,
+            )
+        lock.validate_held_for(tmp_path)
+    finally:
+        lock.release()
+
+
+def test_standalone_restore_releases_own_lock_after_error(tmp_path: Path) -> None:
+    backup_dir = tmp_path / "missing-set"
+    with pytest.raises(BackupOrchestratorError, match="backup set directory is missing"):
+        restore_backup_set(
+            backup_dir=backup_dir,
+            target_admin_dsn="postgresql://admin@127.0.0.1:5432/postgres",
+            target_database="qmtool_ops00_restore_static",
+            destination_blob_root=tmp_path / "blobs",
+            app_home=tmp_path,
+        )
+    assert is_operation_lock_held(tmp_path) is False

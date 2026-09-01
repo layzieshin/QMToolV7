@@ -29,6 +29,28 @@ class OperationLock:
         self._path = operation_lock_path(app_home)
         self._fd: int | None = None
 
+    def validate_held_for(self, app_home: Path | None = None) -> None:
+        """Fail closed unless this instance is acquired for ``app_home``.
+
+        A boolean flag, PID text, or path-only observation cannot satisfy this
+        check: the live file descriptor, resolved lock path, and lock file
+        must all agree.
+        """
+        if type(self) is not OperationLock:
+            raise OperationLockError("held operation lock must be an OperationLock instance")
+        if self._fd is None:
+            raise OperationLockError("operation lock instance is not acquired")
+        try:
+            os.fstat(self._fd)
+        except OSError as exc:
+            raise OperationLockError("operation lock file descriptor is invalid") from exc
+        expected = operation_lock_path(app_home).resolve()
+        actual = self._path.resolve()
+        if actual != expected:
+            raise OperationLockError("operation lock does not belong to this app home")
+        if not self._path.is_file():
+            raise OperationLockError("operation lock file is missing")
+
     def acquire(self) -> None:
         if self._fd is not None:
             raise OperationLockError("operation lock already acquired in this context")

@@ -14,6 +14,7 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 import uvicorn
@@ -21,8 +22,15 @@ import uvicorn
 from qm_platform.runtime.paths import runtime_home, runtime_home_writable
 from qm_platform.runtime.operation_lock import OperationLock, OperationLockError
 from qm_platform.blob.backup_orchestrator import (
+    BackupOrchestratorError,
+    compute_app_release_fingerprint,
+    is_host_running_marker_present,
     remove_host_running_marker,
     write_host_running_marker,
+)
+from qm_platform.runtime.maintenance import (
+    get_expected_release_fingerprint,
+    is_rehearsal_in_progress,
 )
 from src.backend.api import create_app
 from src.backend.bootstrap import BackendBootstrapError, build_backend_container
@@ -31,6 +39,38 @@ from src.backend.tls_config import load_tls_material, resolve_tls_paths
 _PRODUCTION_PROFILES = frozenset({"prod", "production"})
 _DEFAULT_BIND_HOST = "127.0.0.1"
 _DEFAULT_BIND_PORT = 8000
+
+_active_host_lock = threading.Lock()
+_active_host: ServiceHost | None = None
+
+
+def _register_active_host(host: ServiceHost) -> None:
+    global _active_host
+    with _active_host_lock:
+        _active_host = host
+
+
+def _clear_active_host(host: ServiceHost) -> None:
+    global _active_host
+    with _active_host_lock:
+        if _active_host is host:
+            _active_host = None
+
+
+def drain_and_stop_active_host(*, timeout: float = 30.0) -> None:
+    """Stop the in-process ServiceHost or fail closed when another process owns the marker."""
+    with _active_host_lock:
+        host = _active_host
+
+    if host is not None:
+        host.stop(timeout=timeout)
+        return
+
+    if is_host_running_marker_present():
+        raise BackendBootstrapError(
+            "backend host must be stopped so in-flight writes drain before update rehearsal; "
+            "stop the running host process first"
+        )
 
 
 class ServiceHostState(str, Enum):
@@ -71,6 +111,28 @@ def resolve_bind_port() -> int:
     return port
 
 
+def validate_rehearsal_release_fingerprint(app_home: Path | None = None) -> None:
+    """Fail closed when release identity mismatches abort-restored expectation."""
+    home = app_home if app_home is not None else runtime_home()
+    if is_rehearsal_in_progress(home):
+        raise BackendBootstrapError(
+            "backend host cannot start while update rehearsal candidate is staged without abort"
+        )
+    expected = get_expected_release_fingerprint(home)
+    if expected is None:
+        return
+    try:
+        current = compute_app_release_fingerprint(home)
+    except BackupOrchestratorError as exc:
+        raise BackendBootstrapError(
+            "backend host cannot start without a valid release identity file"
+        ) from exc
+    if current != expected:
+        raise BackendBootstrapError(
+            "backend host cannot start: release fingerprint does not match abort-restored expectation"
+        )
+
+
 def validate_service_host_config() -> None:
     """Fail-closed host configuration checks before serving requests."""
     if not runtime_home_writable():
@@ -95,8 +157,6 @@ def validate_service_host_config() -> None:
             "production profile requires TLS certificate configuration; "
             f"set {', '.join(missing)} (insecure HTTP-only bind is rejected before serving)"
         )
-
-    from pathlib import Path
 
     cert_file = Path(cert_path)
     key_file = Path(key_path)
@@ -163,6 +223,7 @@ class ServiceHost:
 
             try:
                 validate_service_host_config()
+                validate_rehearsal_release_fingerprint()
                 if is_production_profile():
                     tls_material = load_tls_material()
                     ssl_certfile = tls_material.cert_file
@@ -210,6 +271,7 @@ class ServiceHost:
                     marker_written = True
                     with self._lock:
                         self._state = ServiceHostState.RUNNING
+                    _register_active_host(self)
                     return
                 if not thread.is_alive():
                     break
@@ -248,6 +310,7 @@ class ServiceHost:
             self._state = ServiceHostState.STOPPED
             self._https_enabled = False
         remove_host_running_marker()
+        _clear_active_host(self)
 
     def run_forever(self) -> None:
         """Operator entry: validate, start, and block until graceful shutdown."""
