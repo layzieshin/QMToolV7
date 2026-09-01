@@ -24,9 +24,9 @@ from qm_platform.runtime.operation_lock import OperationLock, OperationLockError
 from qm_platform.blob.backup_orchestrator import (
     BackupOrchestratorError,
     compute_app_release_fingerprint,
+    create_host_running_marker_exclusive,
     is_host_running_marker_present,
     remove_host_running_marker,
-    write_host_running_marker,
 )
 from qm_platform.runtime.maintenance import (
     get_expected_release_fingerprint,
@@ -184,6 +184,7 @@ class ServiceHost:
         self._bind_host = resolve_bind_host()
         self._bind_port = resolve_bind_port()
         self._https_enabled = False
+        self._owns_host_running_marker = False
 
     def status(self) -> ServiceHostStatus:
         with self._lock:
@@ -208,7 +209,6 @@ class ServiceHost:
                 "backend host cannot start while exclusive operation lock is held"
             ) from exc
 
-        marker_written = False
         try:
             with self._lock:
                 if self._state in {ServiceHostState.STARTING, ServiceHostState.RUNNING}:
@@ -217,6 +217,14 @@ class ServiceHost:
                 self._bind_port = resolve_bind_port()
                 self._state = ServiceHostState.STARTING
                 self._https_enabled = False
+
+            if is_host_running_marker_present():
+                with self._lock:
+                    self._state = ServiceHostState.STOPPED
+                    self._https_enabled = False
+                raise BackendBootstrapError(
+                    "backend host cannot start while host running marker is present"
+                )
 
             ssl_certfile: str | None = None
             ssl_keyfile: str | None = None
@@ -267,8 +275,14 @@ class ServiceHost:
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 if server.started:
-                    write_host_running_marker()
-                    marker_written = True
+                    try:
+                        create_host_running_marker_exclusive()
+                    except BackupOrchestratorError as exc:
+                        self.stop(timeout=1.0)
+                        raise BackendBootstrapError(
+                            "backend host cannot start while host running marker is present"
+                        ) from exc
+                    self._owns_host_running_marker = True
                     with self._lock:
                         self._state = ServiceHostState.RUNNING
                     _register_active_host(self)
@@ -279,10 +293,6 @@ class ServiceHost:
 
             self.stop(timeout=1.0)
             raise RuntimeError("service host failed to start within timeout")
-        except Exception:
-            if not marker_written:
-                remove_host_running_marker()
-            raise
         finally:
             operation_lock.release()
 
@@ -309,7 +319,9 @@ class ServiceHost:
             self._thread = None
             self._state = ServiceHostState.STOPPED
             self._https_enabled = False
-        remove_host_running_marker()
+        if self._owns_host_running_marker:
+            remove_host_running_marker()
+            self._owns_host_running_marker = False
         _clear_active_host(self)
 
     def run_forever(self) -> None:

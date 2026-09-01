@@ -2,15 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import psycopg
 
-from qm_platform.persistence.postgres_schema import (
-    MIGRATIONS_TABLE,
-    SCHEMA_NAME,
-    discover_migrations,
-)
+from qm_platform.persistence.postgres_schema import assert_runtime_schema_ready
 from qm_platform.runtime.maintenance import (
     MaintenanceError,
     is_maintenance_active,
@@ -112,26 +107,10 @@ def _probe_postgres_and_migrations(postgres_dsn: str | None) -> tuple[str, str]:
     try:
         with psycopg.connect(dsn, connect_timeout=3) as conn:
             conn.execute("SELECT 1")
-            migrations = _migrations_status(conn)
-        return _CHECK_OK, migrations
     except Exception:
         return "unreachable", "not_checked"
-
-
-def _migrations_status(conn: Any) -> str:
     try:
-        steps = discover_migrations()
-        if not steps:
-            return "unavailable"
-        target = steps[-1].version
-        row = conn.execute(
-            f"SELECT COALESCE(MAX(version), 0) FROM {SCHEMA_NAME}.{MIGRATIONS_TABLE}"
-        ).fetchone()
-        applied = int(row[0]) if row is not None else 0
+        assert_runtime_schema_ready(dsn)
     except Exception:
-        return "unavailable"
-    if applied == target:
-        return _CHECK_OK
-    if applied < target:
-        return "pending"
-    return "unexpected"
+        return _CHECK_OK, "failed"
+    return _CHECK_OK, _CHECK_OK

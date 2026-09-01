@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
 
+from qm_platform.audit.redaction import redact_audit_details
 from qm_platform.export.schemas import (
     BACKUP_FILENAMES,
     EVIDENCE_RECORD_KEYS,
@@ -79,6 +80,8 @@ def _reject_secret_scalar(value: Any, *, field: str) -> None:
     lowered = value.casefold()
     if any(marker in lowered for marker in _SECRET_VALUE_MARKERS):
         raise ExportError(f"{field} contains secret material and is not exportable")
+    if redact_audit_details(value) != value:
+        raise ExportError(f"{field} contains secret material and is not exportable")
 
 
 def _project_record(payload: Mapping[str, Any], allowed: frozenset[str], *, schema_id: str) -> dict[str, Any]:
@@ -117,6 +120,14 @@ def _sha256_file(path: Path) -> str:
 
 def _dumps(payload: Any) -> bytes:
     return json.dumps(payload, sort_keys=True, ensure_ascii=True, indent=2).encode("utf-8")
+
+
+def _add_zip_member(members: dict[str, bytes], name: str, payload: bytes) -> None:
+    folded = name.casefold()
+    for existing in members:
+        if existing.casefold() == folded:
+            raise ExportError("duplicate artifact file_name is not exportable")
+    members[name] = payload
 
 
 def _write_zip(archive_path: Path, members: dict[str, bytes]) -> str:
@@ -170,7 +181,7 @@ def create_portability_export(
             raise ExportError(f"released artifact checksum mismatch for {file_name}")
         projected["checksum_sha256"] = actual_checksum
         projected["size_bytes"] = len(payload)
-        members[f"artifacts/{file_name}"] = payload
+        _add_zip_member(members, f"artifacts/{file_name}", payload)
         artifact_entries.append(projected)
 
     export_id = str(uuid4())

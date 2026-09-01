@@ -221,3 +221,93 @@ def test_cli_portability_and_evidence_adapters(tmp_path: Path) -> None:
     )
     assert ops_commands.cmd_ops_export(evidence_args) == 0
     assert list(out.glob("evidence-*.zip"))
+
+
+def test_evidence_export_rejects_bearer_in_allowlisted_fields(tmp_path: Path) -> None:
+    record = dict(_evidence_record())
+    record["reason"] = "Authorization: Bearer leak-token-abc"
+    with pytest.raises(ExportError, match="secret material"):
+        create_evidence_export(audit_records=[record], output_dir=tmp_path)
+    assert list(tmp_path.glob("evidence-*.zip")) == []
+
+    record = dict(_evidence_record())
+    record["reason"] = "Bearer leak-token-abc"
+    with pytest.raises(ExportError, match="secret material"):
+        create_evidence_export(audit_records=[record], output_dir=tmp_path)
+    assert list(tmp_path.glob("evidence-*.zip")) == []
+
+
+def test_duplicate_artifact_zip_member_names_are_rejected(tmp_path: Path) -> None:
+    first = tmp_path / "a.bin"
+    second = tmp_path / "b.bin"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    meta = {
+        "artifact_id": "art-dup-1",
+        "file_name": "same.bin",
+        "media_type": "application/octet-stream",
+        "size_bytes": 3,
+        "checksum_sha256": hashlib.sha256(b"one").hexdigest(),
+        "released": True,
+    }
+    meta_two = dict(meta)
+    meta_two["artifact_id"] = "art-dup-2"
+    meta_two["checksum_sha256"] = hashlib.sha256(b"two").hexdigest()
+    with pytest.raises(ExportError, match="duplicate artifact file_name"):
+        create_portability_export(
+            records=[_portability_record()],
+            released_artifacts=[(meta, first), (meta_two, second)],
+            output_dir=tmp_path / "out-dup",
+        )
+    assert list((tmp_path / "out-dup").glob("*.zip")) == []
+
+    meta_case = dict(meta)
+    meta_case["file_name"] = "Same.BIN"
+    meta_case["artifact_id"] = "art-dup-3"
+    same_case = tmp_path / "c.bin"
+    same_case.write_bytes(b"one")
+    with pytest.raises(ExportError, match="duplicate artifact file_name"):
+        create_portability_export(
+            records=[_portability_record()],
+            released_artifacts=[(meta, first), (meta_case, same_case)],
+            output_dir=tmp_path / "out-case",
+        )
+    assert list((tmp_path / "out-case").glob("*.zip")) == []
+
+
+def test_unique_released_artifacts_still_export(tmp_path: Path) -> None:
+    first = tmp_path / "a.bin"
+    second = tmp_path / "b.bin"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    result = create_portability_export(
+        records=[_portability_record()],
+        released_artifacts=[
+            (
+                {
+                    "artifact_id": "art-1",
+                    "file_name": "one.bin",
+                    "media_type": "application/octet-stream",
+                    "size_bytes": 3,
+                    "checksum_sha256": hashlib.sha256(b"one").hexdigest(),
+                    "released": True,
+                },
+                first,
+            ),
+            (
+                {
+                    "artifact_id": "art-2",
+                    "file_name": "two.bin",
+                    "media_type": "application/octet-stream",
+                    "size_bytes": 3,
+                    "checksum_sha256": hashlib.sha256(b"two").hexdigest(),
+                    "released": True,
+                },
+                second,
+            ),
+        ],
+        output_dir=tmp_path / "out-unique",
+    )
+    with zipfile.ZipFile(result.archive_path) as archive:
+        assert archive.read("artifacts/one.bin") == b"one"
+        assert archive.read("artifacts/two.bin") == b"two"

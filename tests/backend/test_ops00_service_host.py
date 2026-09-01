@@ -13,6 +13,10 @@ from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.settings.testing import build_settings_service_for_tests
+from qm_platform.blob.backup_orchestrator import (
+    host_running_marker_path,
+    write_host_running_marker,
+)
 from src.backend.api import create_app
 from src.backend.bootstrap import BackendBootstrapError, build_backend_container
 from src.backend.service_host import (
@@ -80,6 +84,7 @@ def test_service_host_start_status_graceful_stop(
     try:
         status = host.status()
         assert status.state == ServiceHostState.RUNNING
+        assert host_running_marker_path(tmp_path).is_file()
         assert status.bind_host == "127.0.0.1"
         assert status.bind_port > 0
         assert status.https_enabled is False
@@ -92,6 +97,7 @@ def test_service_host_start_status_graceful_stop(
 
     assert host.status().state == ServiceHostState.STOPPED
     assert not host.is_serving()
+    assert not host_running_marker_path(tmp_path).exists()
 
 
 def test_production_missing_dsn_fail_closed_via_bootstrap(
@@ -324,3 +330,93 @@ def test_stop_timeout_does_not_report_stopped_while_thread_alive(
             server.should_exit = True
         if real_thread is not None:
             real_thread.join(timeout=15.0)
+
+
+def _occupy_port() -> tuple[socket.socket, int]:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", 0))
+    sock.listen(1)
+    return sock, int(sock.getsockname()[1])
+
+
+def test_failed_second_start_does_not_remove_foreign_running_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    write_host_running_marker(tmp_path)
+    marker = host_running_marker_path(tmp_path)
+    original = marker.read_bytes()
+    called = {"bootstrap": False}
+
+    def _must_not_bootstrap():
+        called["bootstrap"] = True
+        raise AssertionError("bootstrap must not run while a foreign marker is present")
+
+    monkeypatch.setattr("src.backend.service_host.build_backend_container", _must_not_bootstrap)
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="host running marker"):
+        host.start(timeout=5.0)
+    assert called["bootstrap"] is False
+    assert marker.read_bytes() == original
+    assert host.status().state == ServiceHostState.STOPPED
+
+
+def test_bootstrap_error_does_not_remove_foreign_running_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    write_host_running_marker(tmp_path)
+    marker = host_running_marker_path(tmp_path)
+    original = marker.read_bytes()
+    monkeypatch.setattr(
+        "src.backend.service_host.is_host_running_marker_present",
+        lambda app_home=None: False,
+    )
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: (_ for _ in ()).throw(BackendBootstrapError("bootstrap exploded")),
+    )
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="bootstrap exploded"):
+        host.start(timeout=5.0)
+    assert marker.read_bytes() == original
+
+
+def test_bind_failure_does_not_remove_foreign_running_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    occupied, bind_port = _occupy_port()
+    try:
+        monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+        monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+        monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+        write_host_running_marker(tmp_path)
+        marker = host_running_marker_path(tmp_path)
+        original = marker.read_bytes()
+        monkeypatch.setattr(
+            "src.backend.service_host.is_host_running_marker_present",
+            lambda app_home=None: False,
+        )
+        monkeypatch.setattr(
+            "src.backend.service_host.build_backend_container",
+            lambda: _minimal_container(tmp_path),
+        )
+        host = ServiceHost()
+        with pytest.raises((RuntimeError, BackendBootstrapError)):
+            host.start(timeout=3.0)
+        assert marker.read_bytes() == original
+    finally:
+        occupied.close()
+
+
+def test_stop_does_not_remove_foreign_running_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    write_host_running_marker(tmp_path)
+    marker = host_running_marker_path(tmp_path)
+    original = marker.read_bytes()
+    host = ServiceHost()
+    host.stop(timeout=1.0)
+    assert marker.read_bytes() == original

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from qm_platform.audit.redaction import redact_audit_details
 from qm_platform.runtime.health import build_readiness_report
 from qm_platform.runtime.paths import resolve_home_path, runtime_home
 
@@ -26,20 +28,6 @@ _FORBIDDEN_MEMBER_NAMES = frozenset(
         "dev_ed25519_private.pem",
         "prod_ed25519_private.pem",
     }
-)
-_SECRET_VALUE_MARKERS = (
-    "password=",
-    "passwd=",
-    "-----begin ",
-    "private key",
-    "postgresql://",
-    "postgres://",
-    "$2a$",
-    "$2b$",
-    "$2y$",
-    "$argon2",
-    "eyj",
-    "session=",
 )
 _CONFIG_KEYS = (
     "QMTOOL_HOME",
@@ -57,19 +45,6 @@ _CONFIG_KEYS = (
     "QMTOOL_PG_USER",
     "QMTOOL_PG_PASSWORD",
 )
-_FORBIDDEN_KEY_FRAGMENTS = (
-    "password",
-    "secret",
-    "token",
-    "private_key",
-    "session",
-    "dsn",
-    "api_key",
-    "passwd",
-    "credential",
-)
-_REDACTED_PLACEHOLDER = "[REDACTED]"
-_REDACTED_LINE = json.dumps({"redacted": True, "reason": "secret_material"}, ensure_ascii=True)
 
 
 class DiagnosticBundleError(RuntimeError):
@@ -174,44 +149,14 @@ def _redact_log_line(line: str) -> str:
     try:
         parsed = json.loads(line)
     except json.JSONDecodeError:
-        if _contains_secret_marker(line):
-            return _REDACTED_LINE
-        return line
-    dumped = json.dumps(_redact_payload(parsed), ensure_ascii=True)
-    if _contains_secret_marker(dumped):
-        return _REDACTED_LINE
-    return dumped
-
-
-def _redact_payload(payload: Any) -> Any:
-    if isinstance(payload, dict):
-        redacted: dict[str, Any] = {}
-        for key, value in payload.items():
-            if _is_forbidden_key(key):
-                redacted[key] = _REDACTED_PLACEHOLDER
-            else:
-                redacted[key] = _redact_payload(value)
-        return redacted
-    if isinstance(payload, list):
-        return [_redact_payload(item) for item in payload]
-    if isinstance(payload, str) and _contains_secret_marker(payload):
-        return _REDACTED_PLACEHOLDER
-    return payload
-
-
-def _is_forbidden_key(key: object) -> bool:
-    folded = str(key).casefold().replace("_", "").replace("-", "")
-    return any(fragment.replace("_", "").replace("-", "") in folded for fragment in _FORBIDDEN_KEY_FRAGMENTS)
-
-
-def _contains_secret_marker(text: str) -> bool:
-    lowered = text.casefold()
-    return any(marker in lowered for marker in _SECRET_VALUE_MARKERS)
+        return str(redact_audit_details(line))
+    redacted = redact_audit_details(parsed)
+    return json.dumps(redacted, ensure_ascii=True)
 
 
 def _reject_secret_bytes(payload: bytes, *, field: str) -> None:
     text = payload.decode("utf-8", errors="replace")
-    if _contains_secret_marker(text):
+    if re.search(r"Bearer\s+(?!<redacted>)\S+", text, re.IGNORECASE):
         raise DiagnosticBundleError(f"secret material remains in {field}")
 
 

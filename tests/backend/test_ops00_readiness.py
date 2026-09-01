@@ -135,6 +135,86 @@ def test_ready_body_does_not_leak_dsn(tmp_path: Path, monkeypatch: pytest.Monkey
     assert ready.json()["checks"]["postgres"] == "unreachable"
 
 
+class _FakePgConn:
+    def __enter__(self) -> "_FakePgConn":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+
+def test_ready_uses_assert_runtime_schema_ready_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _writable_blob_root(tmp_path)
+    called: dict[str, object] = {}
+
+    def _connect(*_args: object, **_kwargs: object) -> _FakePgConn:
+        called["connect"] = True
+        return _FakePgConn()
+
+    def _ready(dsn: str, **_kwargs: object) -> int:
+        called["dsn"] = dsn
+        return 6
+
+    monkeypatch.setattr("qm_platform.runtime.health.psycopg.connect", _connect)
+    monkeypatch.setattr(
+        "qm_platform.runtime.health.assert_runtime_schema_ready",
+        _ready,
+    )
+    report = build_readiness_report(
+        app_home=tmp_path,
+        postgres_dsn="postgresql://u@127.0.0.1:5432/db",
+    )
+    assert called.get("connect") is True
+    assert called.get("dsn") == "postgresql://u@127.0.0.1:5432/db"
+    assert report.checks["postgres"] == "ok"
+    assert report.checks["migrations"] == "ok"
+    assert report.ready is True
+
+
+def test_ready_false_when_schema_owner_fails_without_leaking_details(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _writable_blob_root(tmp_path)
+    secret = "postgresql://secretuser:super-secret-pass@127.0.0.1:5432/qmtool"
+
+    def _connect(*_args: object, **_kwargs: object) -> _FakePgConn:
+        return _FakePgConn()
+
+    def _fail(dsn: str, **_kwargs: object) -> int:
+        raise RuntimeError(f"missing intermediate migration {dsn}")
+
+    monkeypatch.setattr("qm_platform.runtime.health.psycopg.connect", _connect)
+    monkeypatch.setattr(
+        "qm_platform.runtime.health.assert_runtime_schema_ready",
+        _fail,
+    )
+    monkeypatch.setattr(
+        "src.backend.api.resolve_usermanagement_postgres_dsn",
+        lambda: secret,
+    )
+    report = build_readiness_report(app_home=tmp_path, postgres_dsn=secret)
+    assert report.ready is False
+    assert report.checks["postgres"] == "ok"
+    assert report.checks["migrations"] == "failed"
+    client = TestClient(create_app(_minimal_container(tmp_path)))
+    ready = client.get("/ready")
+    text = ready.text.casefold()
+    assert "super-secret-pass" not in text
+    assert "secretuser" not in text
+    assert "postgresql://" not in text
+    assert "missing intermediate" not in text
+    assert ready.status_code == 503
+    assert ready.json()["ready"] is False
+    assert ready.json()["checks"]["migrations"] == "failed"
+    assert "detail" not in ready.json() or "postgresql://" not in str(ready.json()).casefold()
+
+
 def test_health_and_logs_backup_parsers_remain_registered_once() -> None:
     parser = _build_parser()
     health = parser.parse_args(["health"])

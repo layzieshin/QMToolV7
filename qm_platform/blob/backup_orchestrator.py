@@ -10,7 +10,7 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import psycopg
@@ -35,6 +35,7 @@ RESTORE_DB_PREFIX = "qmtool_ops00_restore_"
 FORBIDDEN_RESTORE_DATABASES = frozenset({"qmtool_j04_destructive_test", "qmtool_test"})
 FORBIDDEN_LAB_HOST = "192.168.0.4"
 _SECRET_PATTERN = re.compile(r"(password|pwd)=([^\s\"']+)", re.IGNORECASE)
+_BACKUP_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class BackupOrchestratorError(RuntimeError):
@@ -94,6 +95,22 @@ def write_host_running_marker(app_home: Path | None = None) -> None:
     path.write_text(str(os.getpid()), encoding="ascii")
 
 
+def create_host_running_marker_exclusive(app_home: Path | None = None) -> Path:
+    """Create the host-running marker only when this caller can own a new file."""
+    path = host_running_marker_path(app_home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    try:
+        fd = os.open(path, flags)
+    except FileExistsError as exc:
+        raise BackupOrchestratorError("host running marker already present") from exc
+    try:
+        os.write(fd, str(os.getpid()).encode("ascii"))
+    finally:
+        os.close(fd)
+    return path
+
+
 def remove_host_running_marker(app_home: Path | None = None) -> None:
     host_running_marker_path(app_home).unlink(missing_ok=True)
 
@@ -101,6 +118,85 @@ def remove_host_running_marker(app_home: Path | None = None) -> None:
 def backups_root(app_home: Path | None = None) -> Path:
     home = app_home if app_home is not None else runtime_home()
     return resolve_home_path(home, "backups")
+
+
+def _validate_backup_id(backup_id: str) -> str:
+    """Accept exactly one safe path component; reject traversal and absolute paths."""
+    value = str(backup_id)
+    if not value or value != value.strip():
+        raise BackupOrchestratorError("backup_id is not a single safe path component")
+    if value in {".", ".."}:
+        raise BackupOrchestratorError("backup_id is not a single safe path component")
+    if "/" in value or "\\" in value:
+        raise BackupOrchestratorError("backup_id is not a single safe path component")
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    if posix.is_absolute() or windows.is_absolute() or windows.drive or windows.anchor:
+        raise BackupOrchestratorError("backup_id is not a single safe path component")
+    if len(posix.parts) != 1 or len(windows.parts) != 1:
+        raise BackupOrchestratorError("backup_id is not a single safe path component")
+    if posix.parts[0] != value or windows.parts[0] != value:
+        raise BackupOrchestratorError("backup_id is not a single safe path component")
+    if not _BACKUP_ID_RE.fullmatch(value):
+        raise BackupOrchestratorError("backup_id is not a single safe path component")
+    return value
+
+
+def _resolve_backup_dir(app_home: Path, backup_id: str) -> Path:
+    safe_id = _validate_backup_id(backup_id)
+    root = backups_root(app_home).resolve()
+    candidate = (root / safe_id).resolve()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise BackupOrchestratorError("backup destination escapes backups root") from exc
+    if relative.parts != (safe_id,):
+        raise BackupOrchestratorError("backup destination escapes backups root")
+    return candidate
+
+
+def _copy_sealed_blobs_to_staging(
+    blobs_source: Path,
+    staging: Path,
+    blobs: list[Any],
+) -> None:
+    for item in blobs:
+        if not isinstance(item, dict):
+            raise BackupOrchestratorError("backup manifest blob entry is invalid")
+        storage_key = str(item.get("storage_key") or "")
+        source = _safe_member_path(blobs_source, storage_key, kind="blob")
+        if not source.is_file():
+            raise BackupOrchestratorError(f"backup blob file is missing for key {storage_key!r}")
+        target = _safe_member_path(staging, storage_key, kind="blob")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _replace_directory_with_staging(destination: Path, staging: Path) -> None:
+    dest = Path(destination)
+    parent = dest.parent.resolve()
+    staging_resolved = staging.resolve()
+    try:
+        staging_resolved.relative_to(parent)
+    except ValueError as exc:
+        raise BackupOrchestratorError("restore staging path escapes destination parent") from exc
+    if dest.exists():
+        dest_resolved = dest.resolve()
+        try:
+            dest_resolved.relative_to(parent)
+        except ValueError as exc:
+            raise BackupOrchestratorError("restore destination escapes its parent") from exc
+        retired = parent / f".ops00-restore-retired-{uuid.uuid4().hex}"
+        dest_resolved.rename(retired)
+        try:
+            staging_resolved.rename(dest_resolved)
+        except Exception:
+            if not dest_resolved.exists() and retired.exists():
+                retired.rename(dest_resolved)
+            raise
+        shutil.rmtree(retired)
+        return
+    staging_resolved.rename(dest)
 
 
 def release_identity_path(app_home: Path | None = None) -> Path:
@@ -350,9 +446,10 @@ def create_backup(
 ) -> BackupResult:
     """Seal a whole-database dump and blob-tree backup set."""
     home = app_home if app_home is not None else runtime_home()
-    resolved_backup_id = backup_id or str(uuid.uuid4())
-    backup_dir = backups_root(home) / resolved_backup_id
+    resolved_backup_id = _validate_backup_id(backup_id or str(uuid.uuid4()))
+    backup_dir = _resolve_backup_dir(home, resolved_backup_id)
     lock, owns_lock = _bind_operation_lock(home, held_operation_lock)
+    created_backup_dir = False
     try:
         if is_host_running_marker_present(home):
             raise BackupOrchestratorError(
@@ -370,6 +467,7 @@ def create_backup(
             schema_fp = schema_fingerprint(conn)
 
         backup_dir.mkdir(parents=True, exist_ok=False)
+        created_backup_dir = True
         blobs_target = backup_dir / BLOBS_DIRNAME
         dump_path = backup_dir / DUMP_FILENAME
 
@@ -448,8 +546,8 @@ def create_backup(
             dump_checksum_sha256=dump_checksum,
         )
     except Exception:
-        if backup_dir.exists():
-            shutil.rmtree(backup_dir, ignore_errors=True)
+        if created_backup_dir:
+            shutil.rmtree(backup_dir)
         raise
     finally:
         if owns_lock:
@@ -488,79 +586,79 @@ def restore_backup_set(
             backup_path, str(dump_info.get("filename") or DUMP_FILENAME), kind="dump"
         )
         blobs_source = backup_path / BLOBS_DIRNAME
-        admin_info = psycopg.conninfo.conninfo_to_dict(target_admin_dsn)
-        admin_info["dbname"] = "postgres"
-        bootstrap_dsn = psycopg.conninfo.make_conninfo(**admin_info)
+        destination = Path(destination_blob_root)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        staging = destination.parent / f".ops00-restore-staging-{uuid.uuid4().hex}"
+        created_staging = False
+        try:
+            staging.mkdir(exist_ok=False)
+            created_staging = True
+            _copy_sealed_blobs_to_staging(blobs_source, staging, blobs)
 
-        with psycopg.connect(bootstrap_dsn, autocommit=True) as admin:
-            admin.execute(
-                psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
-                    psycopg.sql.Identifier(target_database)
+            admin_info = psycopg.conninfo.conninfo_to_dict(target_admin_dsn)
+            admin_info["dbname"] = "postgres"
+            bootstrap_dsn = psycopg.conninfo.make_conninfo(**admin_info)
+
+            with psycopg.connect(bootstrap_dsn, autocommit=True) as admin:
+                admin.execute(
+                    psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
+                        psycopg.sql.Identifier(target_database)
+                    )
                 )
+                admin.execute(
+                    psycopg.sql.SQL("CREATE DATABASE {}").format(
+                        psycopg.sql.Identifier(target_database)
+                    )
+                )
+
+            target_info = dict(admin_info)
+            target_info["dbname"] = target_database
+            restore_dsn = psycopg.conninfo.make_conninfo(**target_info)
+
+            pg_restore = _pg_restore_args(restore_dsn, dump_path=dump_path)
+            restore_result = subprocess.run(
+                pg_restore,
+                env=_subprocess_env_from_dsn(restore_dsn),
+                capture_output=True,
+                text=True,
+                check=False,
             )
-            admin.execute(
-                psycopg.sql.SQL("CREATE DATABASE {}").format(
-                    psycopg.sql.Identifier(target_database)
-                )
-            )
+            if restore_result.returncode != 0:
+                raise BackupOrchestratorError("pg_restore failed")
 
-        target_info = dict(admin_info)
-        target_info["dbname"] = target_database
-        restore_dsn = psycopg.conninfo.make_conninfo(**target_info)
+            store = FilesystemBlobStore(staging)
+            fs_inventory = {entry.storage_key: entry for entry in store.inventory()}
 
-        pg_restore = _pg_restore_args(restore_dsn, dump_path=dump_path)
-        restore_result = subprocess.run(
-            pg_restore,
-            env=_subprocess_env_from_dsn(restore_dsn),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if restore_result.returncode != 0:
-            raise BackupOrchestratorError("pg_restore failed")
+            with psycopg.connect(restore_dsn) as conn:
+                pg_rows = PlatformBlobRepository.list_artifacts_on_connection(conn)
 
-        destination_blob_root.mkdir(parents=True, exist_ok=True)
-        if blobs_source.is_dir():
-            blobs_source_resolved = blobs_source.resolve()
-            for item in blobs_source.rglob("*"):
-                if not item.is_file():
-                    continue
-                item_resolved = item.resolve()
-                try:
-                    item_resolved.relative_to(blobs_source_resolved)
-                except ValueError as exc:
-                    raise BackupOrchestratorError("backup blob source path escapes blob tree") from exc
-                rel = item.relative_to(blobs_source).as_posix()
-                target = _safe_member_path(destination_blob_root, rel, kind="blob")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(item_resolved, target)
-
-        store = FilesystemBlobStore(destination_blob_root)
-        fs_inventory = {entry.storage_key: entry for entry in store.inventory()}
-
-        with psycopg.connect(restore_dsn) as conn:
-            pg_rows = PlatformBlobRepository.list_artifacts_on_connection(conn)
-
-        if len(pg_rows) != len(fs_inventory):
-            raise BackupOrchestratorError(
-                "restored blob artifact count does not match filesystem inventory"
-            )
-
-        for row in pg_rows:
-            key = str(row["storage_key"])
-            fs_entry = fs_inventory.get(key)
-            if fs_entry is None:
+            if len(pg_rows) != len(fs_inventory):
                 raise BackupOrchestratorError(
-                    f"restored filesystem inventory missing key {key!r}"
+                    "restored blob artifact count does not match filesystem inventory"
                 )
-            if str(row["checksum_sha256"]).lower() != fs_entry.checksum_sha256:
-                raise BackupOrchestratorError(
-                    f"restored checksum mismatch for key {key!r}"
-                )
-            if int(row["size_bytes"]) != fs_entry.size_bytes:
-                raise BackupOrchestratorError(
-                    f"restored size mismatch for key {key!r}"
-                )
+
+            for row in pg_rows:
+                key = str(row["storage_key"])
+                fs_entry = fs_inventory.get(key)
+                if fs_entry is None:
+                    raise BackupOrchestratorError(
+                        f"restored filesystem inventory missing key {key!r}"
+                    )
+                if str(row["checksum_sha256"]).lower() != fs_entry.checksum_sha256:
+                    raise BackupOrchestratorError(
+                        f"restored checksum mismatch for key {key!r}"
+                    )
+                if int(row["size_bytes"]) != fs_entry.size_bytes:
+                    raise BackupOrchestratorError(
+                        f"restored size mismatch for key {key!r}"
+                    )
+
+            _replace_directory_with_staging(destination, staging)
+            created_staging = False
+        except Exception:
+            if created_staging and staging.exists():
+                shutil.rmtree(staging)
+            raise
 
         return RestoreResult(
             backup_id=backup_id,

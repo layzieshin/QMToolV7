@@ -71,8 +71,8 @@ def test_diagnostic_redacts_secret_log_lines_without_truncating_source(tmp_path:
     assert after == original
     with zipfile.ZipFile(result.archive_path) as archive:
         body = archive.read("logs/platform.log.jsonl").decode("utf-8")
-        assert "postgresql://" not in body.casefold()
-        assert "[REDACTED]" in body
+        assert "postgresql://u:p@" not in body.casefold()
+        assert "<redacted>" in body
         assert '"message": "ok"' in body
 
 
@@ -82,7 +82,7 @@ def test_diagnostic_redacts_secret_log_lines_without_truncating_source(tmp_path:
         ("password", "hunter2-should-not-leak"),
         ("api_key", "key-should-not-leak"),
         ("session_token", "sess-should-not-leak"),
-        ("dsn", "host-should-not-leak"),
+        ("dsn", "postgresql://host-should-not-leak@127.0.0.1/db"),
         ("private_key", "pem-should-not-leak"),
         ("apiKey", "camel-api-key-must-not-leak"),
         ("sessionToken", "camel-session-must-not-leak"),
@@ -108,7 +108,7 @@ def test_json_secret_fields_are_redacted_from_diagnostic_zip(
     with zipfile.ZipFile(result.archive_path) as archive:
         body = archive.read("logs/platform.log.jsonl").decode("utf-8")
         assert value not in body
-        assert "[REDACTED]" in body
+        assert "<redacted>" in body
 
 
 def test_nested_json_secret_field_is_redacted(tmp_path: Path) -> None:
@@ -124,7 +124,7 @@ def test_nested_json_secret_field_is_redacted(tmp_path: Path) -> None:
     with zipfile.ZipFile(result.archive_path) as archive:
         body = archive.read("logs/platform.log.jsonl").decode("utf-8")
         assert "nested-secret-must-not-leak" not in body
-        assert "[REDACTED]" in body
+        assert "<redacted>" in body
 
 
 def test_config_keys_are_presence_booleans_not_values(
@@ -179,3 +179,26 @@ def test_ops_diagnostic_bundle_parser_is_registered() -> None:
     args = parser.parse_args(["ops", "diagnostic-bundle", "--output-dir", "out"])
     assert args.ops_command == "diagnostic-bundle"
     assert args.output_dir == "out"
+
+
+@pytest.mark.parametrize(
+    "secret_line",
+    [
+        json.dumps({"Authorization": "Bearer leak-token-abc"}, ensure_ascii=True),
+        json.dumps({"authorization": "Bearer leak-token-abc"}, ensure_ascii=True),
+        json.dumps({"nested": {"Authorization": "Bearer leak-token-abc"}}, ensure_ascii=True),
+        json.dumps({"message": "Authorization: Bearer leak-token-abc"}, ensure_ascii=True),
+        json.dumps({"note": "Bearer leak-token-abc"}, ensure_ascii=True),
+        "plain Authorization: Bearer leak-token-abc",
+        "BEARER leak-token-abc leftover",
+    ],
+)
+def test_diagnostic_redacts_bearer_tokens_via_canonical_owner(
+    tmp_path: Path, secret_line: str
+) -> None:
+    home = _home_with_logs(tmp_path, secret_line=secret_line)
+    result = create_diagnostic_bundle(output_dir=tmp_path / "out", app_home=home, postgres_dsn=None)
+    with zipfile.ZipFile(result.archive_path) as archive:
+        body = b"".join(archive.read(name) for name in archive.namelist()).decode("utf-8")
+        assert "leak-token-abc" not in body
+        assert "Bearer leak-token-abc" not in body

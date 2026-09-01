@@ -399,3 +399,83 @@ def test_live_restore_drill_script_without_inherited_reset(
         assert restored.read_bytes() == payload
     finally:
         _drop_ops00_restore_database(restore_db, admin_dsn=admin_dsn)
+
+
+def test_live_restore_replaces_destination_blob_tree_exactly(
+    platform_env: LivePostgresEnv,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin_dsn = require_approved_admin_dsn()
+    app_home = tmp_path / "qmtool-home"
+    app_home.mkdir()
+    monkeypatch.setenv("QMTOOL_HOME", str(app_home))
+    _write_release_identity(app_home)
+
+    blob_root = app_home / "storage" / "platform" / "blobs"
+    blob_root.mkdir(parents=True)
+    store = FilesystemBlobStore(blob_root)
+    payload_a = b"ops00-blob-a"
+    payload_b = b"ops00-blob-b"
+    _seed_blob_artifacts(platform_env, store, storage_key="artifacts/a.bin", payload=payload_a)
+    backup_a = create_backup(
+        source_dsn=admin_dsn,
+        metadata_dsn=platform_env.runtime_dsn,
+        app_home=app_home,
+        blob_store=store,
+    )
+    _seed_blob_artifacts(platform_env, store, storage_key="artifacts/b.bin", payload=payload_b)
+    backup_ab = create_backup(
+        source_dsn=admin_dsn,
+        metadata_dsn=platform_env.runtime_dsn,
+        app_home=app_home,
+        blob_store=store,
+    )
+
+    restore_db = _restore_db_name()
+    restore_blob_root = app_home / "storage" / "platform" / "blobs-restored"
+    try:
+        first = restore_backup_set(
+            backup_dir=Path(backup_ab.backup_path),
+            target_admin_dsn=admin_dsn,
+            target_database=restore_db,
+            destination_blob_root=restore_blob_root,
+            app_home=app_home,
+        )
+        assert first.verified_artifact_count == 2
+        restored_store = FilesystemBlobStore(restore_blob_root)
+        keys_after_first = {entry.storage_key for entry in restored_store.inventory()}
+        assert keys_after_first == {"artifacts/a.bin", "artifacts/b.bin"}
+
+        stale = restore_blob_root / "artifacts" / "stale.bin"
+        stale.write_bytes(b"stale-must-not-survive")
+
+        second = restore_backup_set(
+            backup_dir=Path(backup_a.backup_path),
+            target_admin_dsn=admin_dsn,
+            target_database=restore_db,
+            destination_blob_root=restore_blob_root,
+            app_home=app_home,
+        )
+        assert second.verified_artifact_count == 1
+        restored_store = FilesystemBlobStore(restore_blob_root)
+        inventory = restored_store.inventory()
+        assert {entry.storage_key for entry in inventory} == {"artifacts/a.bin"}
+        assert restored_store.read_bytes("artifacts/a.bin") == payload_a
+        assert not stale.exists()
+        leftover_b = restore_blob_root / "artifacts" / "b.bin"
+        assert not leftover_b.exists()
+
+        with psycopg.connect(
+            psycopg.conninfo.make_conninfo(
+                **{
+                    **psycopg.conninfo.conninfo_to_dict(admin_dsn),
+                    "dbname": restore_db,
+                }
+            )
+        ) as conn:
+            pg_rows = PlatformBlobRepository.list_artifacts_on_connection(conn)
+        assert len(pg_rows) == 1
+        assert str(pg_rows[0]["storage_key"]) == "artifacts/a.bin"
+    finally:
+        _drop_ops00_restore_database(restore_db, admin_dsn=admin_dsn)

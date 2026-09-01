@@ -14,6 +14,7 @@ from qm_platform.blob.backup_orchestrator import (
     DUMP_FILENAME,
     MANIFEST_FILENAME,
     BackupOrchestratorError,
+    backups_root,
     create_backup,
     host_running_marker_path,
     release_identity_path,
@@ -707,3 +708,104 @@ def test_standalone_restore_releases_own_lock_after_error(tmp_path: Path) -> Non
             app_home=tmp_path,
         )
     assert is_operation_lock_held(tmp_path) is False
+
+
+@pytest.mark.parametrize(
+    "backup_id",
+    [
+        r"C:\Windows\Temp\evil",
+        r"I:\outside\backup",
+        "/tmp/evil",
+        "//server/share/evil",
+        "..",
+        "../outside",
+        r"..\outside",
+        "nested/id",
+        r"nested\id",
+        "foo/../../etc",
+        ".",
+    ],
+)
+def test_explicit_backup_id_rejects_traversal_and_absolute_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backup_id: str
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+    sentinel = tmp_path / "outside-sentinel.txt"
+    sentinel.write_text("keep-me", encoding="utf-8")
+    root = backups_root(tmp_path)
+    with pytest.raises(BackupOrchestratorError, match="single safe path component"):
+        create_backup(
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+            backup_id=backup_id,
+        )
+    assert sentinel.read_text(encoding="utf-8") == "keep-me"
+    assert not root.exists()
+    assert list(tmp_path.glob("**/evil")) == []
+
+
+def test_explicit_safe_backup_id_is_accepted_before_connect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+
+    def _blocked_connect(*_args, **_kwargs):
+        raise RuntimeError("connect must not be required to accept a safe backup_id")
+
+    monkeypatch.setattr(
+        "qm_platform.blob.backup_orchestrator.psycopg.connect",
+        _blocked_connect,
+    )
+    with pytest.raises(RuntimeError, match="connect must not be required"):
+        create_backup(
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+            backup_id="ops00-explicit-1",
+        )
+    dest = backups_root(tmp_path) / "ops00-explicit-1"
+    assert not dest.exists()
+    assert is_operation_lock_held(tmp_path) is False
+
+
+def test_duplicate_backup_id_does_not_delete_existing_sealed_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_identity(tmp_path)
+    backup_id = "sealed-keep-me"
+    dest = backups_root(tmp_path) / backup_id
+    dest.mkdir(parents=True)
+    blob = dest / "blobs" / "artifacts" / "kept.bin"
+    blob.parent.mkdir(parents=True)
+    (dest / MANIFEST_FILENAME).write_text('{"backup_id": "sealed-keep-me"}', encoding="utf-8")
+    (dest / DUMP_FILENAME).write_bytes(b"original-dump-bytes")
+    (dest / CHECKSUMS_FILENAME).write_text('{"database.dump": "abc"}', encoding="utf-8")
+    blob.write_bytes(b"original-blob-bytes")
+    before = {
+        path.relative_to(dest).as_posix(): (
+            path.read_bytes(),
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in dest.rglob("*")
+        if path.is_file()
+    }
+    with pytest.raises(BackupOrchestratorError, match="already exists"):
+        create_backup(
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+            backup_id=backup_id,
+        )
+    after = {
+        path.relative_to(dest).as_posix(): (
+            path.read_bytes(),
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in dest.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
