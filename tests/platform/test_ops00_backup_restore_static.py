@@ -121,6 +121,88 @@ def test_incomplete_backup_set_rejected_on_restore(tmp_path: Path) -> None:
         )
 
 
+def _write_complete_set_with_blob_key(tmp_path: Path, blob_key: str) -> tuple[Path, Path]:
+    victim = tmp_path / "sentinel.txt"
+    victim.write_text("do-not-overwrite", encoding="utf-8")
+    dump_bytes = b"dump-bytes"
+    blob_bytes = b"data"
+    dump_checksum = hashlib.sha256(dump_bytes).hexdigest()
+    blob_checksum = hashlib.sha256(blob_bytes).hexdigest()
+    backup_dir = tmp_path / "backup-set"
+    blobs_dir = backup_dir / "blobs" / "artifacts"
+    blobs_dir.mkdir(parents=True)
+    (blobs_dir / "sample.bin").write_bytes(blob_bytes)
+    (backup_dir / DUMP_FILENAME).write_bytes(dump_bytes)
+    manifest = _minimal_manifest(
+        dump_checksum=dump_checksum,
+        blob_key=blob_key,
+        blob_checksum=blob_checksum,
+    )
+    (backup_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    (backup_dir / CHECKSUMS_FILENAME).write_text(
+        json.dumps({DUMP_FILENAME: dump_checksum, blob_key: blob_checksum}),
+        encoding="utf-8",
+    )
+    dest = tmp_path / "restore-blobs"
+    return victim, dest
+
+
+@pytest.mark.parametrize(
+    "blob_key",
+    [
+        "../sentinel.txt",
+        "../../sentinel.txt",
+        "/tmp/sentinel.txt",
+        "..\\sentinel.txt",
+    ],
+)
+def test_restore_rejects_traversing_storage_key_before_any_mutation(
+    tmp_path: Path, blob_key: str
+) -> None:
+    victim, dest = _write_complete_set_with_blob_key(tmp_path, blob_key)
+    with pytest.raises(BackupOrchestratorError):
+        restore_backup_set(
+            backup_dir=tmp_path / "backup-set",
+            target_admin_dsn="postgresql://admin@127.0.0.1:5432/postgres",
+            target_database="qmtool_ops00_restore_static",
+            destination_blob_root=dest,
+        )
+    assert victim.read_text(encoding="utf-8") == "do-not-overwrite"
+    assert not dest.exists()
+
+
+def test_restore_rejects_traversing_dump_filename(tmp_path: Path) -> None:
+    dump_bytes = b"dump-bytes"
+    blob_bytes = b"data"
+    dump_checksum = hashlib.sha256(dump_bytes).hexdigest()
+    blob_checksum = hashlib.sha256(blob_bytes).hexdigest()
+    backup_dir = tmp_path / "backup-set"
+    blobs_dir = backup_dir / "blobs" / "artifacts"
+    blobs_dir.mkdir(parents=True)
+    (blobs_dir / "sample.bin").write_bytes(blob_bytes)
+    (backup_dir / DUMP_FILENAME).write_bytes(dump_bytes)
+    manifest = _minimal_manifest(
+        dump_checksum=dump_checksum,
+        blob_key="artifacts/sample.bin",
+        blob_checksum=blob_checksum,
+    )
+    manifest["dump"]["filename"] = "../database.dump"
+    (backup_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    (backup_dir / CHECKSUMS_FILENAME).write_text(
+        json.dumps({DUMP_FILENAME: dump_checksum, "artifacts/sample.bin": blob_checksum}),
+        encoding="utf-8",
+    )
+    dest = tmp_path / "restore-blobs"
+    with pytest.raises(BackupOrchestratorError, match="dump filename is not allowed"):
+        restore_backup_set(
+            backup_dir=backup_dir,
+            target_admin_dsn="postgresql://admin@127.0.0.1:5432/postgres",
+            target_database="qmtool_ops00_restore_static",
+            destination_blob_root=dest,
+        )
+    assert not dest.exists()
+
+
 def _complete_backup_set(
     tmp_path: Path,
     *,

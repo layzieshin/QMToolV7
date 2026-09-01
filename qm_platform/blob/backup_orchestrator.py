@@ -10,7 +10,7 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import psycopg
@@ -19,6 +19,7 @@ from qm_platform.blob.contract import (
     BACKUP_SET_SEALED,
     BackupSetWrite,
     PlatformBlobWriteError,
+    validate_storage_key,
 )
 from qm_platform.blob.filesystem_store import BlobInventoryEntry, FilesystemBlobStore
 from qm_platform.blob.postgres_repository import PlatformBlobRepository
@@ -38,6 +39,26 @@ _SECRET_PATTERN = re.compile(r"(password|pwd)=([^\s\"']+)", re.IGNORECASE)
 
 class BackupOrchestratorError(RuntimeError):
     """Raised when backup or restore cannot proceed safely."""
+
+
+def _safe_member_path(root: Path, relative: str, *, kind: str) -> Path:
+    """Resolve ``relative`` under ``root`` after rejecting traversal and absolute keys."""
+    if kind == "dump":
+        key = str(relative).strip()
+        if key != DUMP_FILENAME:
+            raise BackupOrchestratorError("backup dump filename is not allowed")
+    else:
+        try:
+            key = validate_storage_key(relative)
+        except PlatformBlobWriteError as exc:
+            raise BackupOrchestratorError(str(exc)) from exc
+    root_resolved = root.resolve()
+    candidate = (root / Path(*PurePosixPath(key).parts)).resolve()
+    try:
+        candidate.relative_to(root_resolved)
+    except ValueError as exc:
+        raise BackupOrchestratorError(f"{kind} path escapes its root") from exc
+    return candidate
 
 
 @dataclass(frozen=True)
@@ -255,7 +276,7 @@ def _verify_manifest_files(backup_dir: Path, manifest: dict[str, Any]) -> dict[s
     if not isinstance(dump_info, dict):
         raise BackupOrchestratorError("backup manifest dump section is missing")
     dump_name = str(dump_info.get("filename") or DUMP_FILENAME)
-    dump_path = backup_dir / dump_name
+    dump_path = _safe_member_path(backup_dir, dump_name, kind="dump")
     if not dump_path.is_file():
         raise BackupOrchestratorError("backup dump file is missing")
     expected_dump_checksum = str(dump_info.get("checksum_sha256") or "")
@@ -295,7 +316,7 @@ def _verify_manifest_files(backup_dir: Path, manifest: dict[str, Any]) -> dict[s
         size_bytes = int(item.get("size_bytes") or 0)
         if not storage_key or len(expected_checksum) != 64 or size_bytes <= 0:
             raise BackupOrchestratorError("backup manifest blob entry is incomplete")
-        blob_path = blobs_root / Path(storage_key.replace("/", os.sep))
+        blob_path = _safe_member_path(blobs_root, storage_key, kind="blob")
         if not blob_path.is_file():
             raise BackupOrchestratorError(f"backup blob file is missing for key {storage_key!r}")
         actual_size = blob_path.stat().st_size
@@ -369,7 +390,7 @@ def create_backup(
         checksums_doc: dict[str, str] = {}
         for entry in inventory:
             source_path = store.resolve_path(entry.storage_key)
-            target_path = blobs_target / Path(entry.storage_key.replace("/", os.sep))
+            target_path = _safe_member_path(blobs_target, entry.storage_key, kind="blob")
             target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source_path, target_path)
             blob_entries.append(
@@ -463,7 +484,9 @@ def restore_backup_set(
             raise BackupOrchestratorError("backup manifest blobs section is missing")
 
         dump_info = manifest["dump"]
-        dump_path = backup_path / str(dump_info.get("filename") or DUMP_FILENAME)
+        dump_path = _safe_member_path(
+            backup_path, str(dump_info.get("filename") or DUMP_FILENAME), kind="dump"
+        )
         blobs_source = backup_path / BLOBS_DIRNAME
         admin_info = psycopg.conninfo.conninfo_to_dict(target_admin_dsn)
         admin_info["dbname"] = "postgres"
@@ -498,12 +521,19 @@ def restore_backup_set(
 
         destination_blob_root.mkdir(parents=True, exist_ok=True)
         if blobs_source.is_dir():
+            blobs_source_resolved = blobs_source.resolve()
             for item in blobs_source.rglob("*"):
-                if item.is_file():
-                    rel = item.relative_to(blobs_source).as_posix()
-                    target = destination_blob_root / Path(rel.replace("/", os.sep))
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(item, target)
+                if not item.is_file():
+                    continue
+                item_resolved = item.resolve()
+                try:
+                    item_resolved.relative_to(blobs_source_resolved)
+                except ValueError as exc:
+                    raise BackupOrchestratorError("backup blob source path escapes blob tree") from exc
+                rel = item.relative_to(blobs_source).as_posix()
+                target = _safe_member_path(destination_blob_root, rel, kind="blob")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item_resolved, target)
 
         store = FilesystemBlobStore(destination_blob_root)
         fs_inventory = {entry.storage_key: entry for entry in store.inventory()}
