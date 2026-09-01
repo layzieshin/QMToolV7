@@ -221,13 +221,22 @@ health, maintenance-mode update rehearsal, restore drill, portability/audit expo
 The full contract is defined in `docs/DATABASE_EVOLUTION_POLICY.md`
 (productive target = PostgreSQL-only; SQLite section is Ist/legacy).
 
-## Data export distinctions (DECIDED)
+## Data export distinctions (DECIDED; OPS00-E)
 
-- **Technical backup:** full PostgreSQL + Blobstore set for restore (OPS00).
-- **Portability export:** Admin ZIP with manifest, checksums, machine-readable data, and
-  released artifacts — not a substitute for backup.
-- **Audit/evidence export:** separate readable export for Nachweis.
-- Never export secrets, password hashes, private keys, or session tokens.
+- **Technical backup:** full PostgreSQL + Blobstore set for restore (OPS00-C). Not an export ZIP.
+- **Portability export:** Admin ZIP with `ops00-portability-v1` manifest, checksums,
+  machine-readable allowlisted records, and released artifacts only. Unknown keys and nested
+  secret fields fail closed. Never a substitute for backup; `database.dump` is refused.
+- **Audit/evidence export:** separate `ops00-evidence-v1` readable Nachweis ZIP of allowlisted
+  audit fields. Technical logs remain a separate diagnostic concern (OPS00-F).
+- Never export secrets, password hashes, private keys, session tokens, or DSNs.
+
+Operator commands (adapter only; no secrets on stdout):
+
+```powershell
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops export portability --records-file records.json --output-dir exports
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops export evidence --audit-file audit-records.jsonl --output-dir exports
+```
 
 ## Registry Projection Recovery Entry
 

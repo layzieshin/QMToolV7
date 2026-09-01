@@ -56,3 +56,25 @@ def register_ops_parsers(sub: argparse._SubParsersAction) -> None:
         "--candidate-release-dir",
         help="Candidate release tree directory containing identity (required without --abort)",
     )
+
+    export_parser = ops_sub.add_parser(
+        "export",
+        help="Portability or Nachweis export (not a technical backup)",
+    )
+    export_sub = export_parser.add_subparsers(dest="export_kind", required=True)
+    portability = export_sub.add_parser(
+        "portability",
+        help="Create a schema-allowlisted portability ZIP",
+    )
+    portability.add_argument("--records-file", required=True, help="JSON array of portability records")
+    portability.add_argument("--output-dir", required=True, help="Directory for the export ZIP")
+    evidence = export_sub.add_parser(
+        "evidence",
+        help="Create a readable allowlisted Nachweis ZIP",
+    )
+    evidence.add_argument(
+        "--audit-file",
+        required=True,
+        help="JSONL allowlisted audit records for Nachweis (not technical logs)",
+    )
+    evidence.add_argument("--output-dir", required=True, help="Directory for the export ZIP")

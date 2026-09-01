@@ -6,6 +6,13 @@ import sys
 from pathlib import Path
 
 from qm_platform.blob.backup_orchestrator import BackupOrchestratorError, create_backup
+from qm_platform.export import (
+    ExportError,
+    create_evidence_export,
+    create_portability_export,
+    load_json_records,
+    load_jsonl_records,
+)
 from qm_platform.runtime.maintenance import (
     MaintenanceError,
     enter_maintenance,
@@ -111,6 +118,40 @@ def cmd_ops_update_rehearsal(args) -> int:
     return 0
 
 
+def cmd_ops_export(args) -> int:
+    kind = getattr(args, "export_kind", None)
+    output_dir = Path(args.output_dir)
+    try:
+        if kind == "portability":
+            records = load_json_records(Path(args.records_file))
+            result = create_portability_export(records=records, output_dir=output_dir)
+        elif kind == "evidence":
+            audit_file = getattr(args, "audit_file", None)
+            if not audit_file:
+                print("--audit-file is required for evidence export", file=sys.stderr)
+                return 1
+            audit_path = Path(audit_file)
+            if not audit_path.is_file():
+                raise ExportError("audit records file is missing")
+            audit_records = load_jsonl_records(audit_path)
+            result = create_evidence_export(audit_records=audit_records, output_dir=output_dir)
+        else:
+            print("unknown export kind", file=sys.stderr)
+            return 1
+    except ExportError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    payload = {
+        "export_id": result.export_id,
+        "export_kind": result.export_kind,
+        "schema_id": result.schema_id,
+        "archive_path": result.archive_path,
+        "member_count": result.member_count,
+    }
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
+    return 0
+
+
 def cmd_ops(args) -> int:
     if args.ops_command == "backup":
         return cmd_ops_backup(args)
@@ -120,5 +161,7 @@ def cmd_ops(args) -> int:
         return cmd_ops_maintenance(args)
     if args.ops_command == "update-rehearsal":
         return cmd_ops_update_rehearsal(args)
+    if args.ops_command == "export":
+        return cmd_ops_export(args)
     print("unknown ops command", file=sys.stderr)
     return 1
