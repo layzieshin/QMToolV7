@@ -13,6 +13,10 @@ from qm_platform.export import (
     load_json_records,
     load_jsonl_records,
 )
+from qm_platform.logging.diagnostic_bundle import (
+    DiagnosticBundleError,
+    create_diagnostic_bundle,
+)
 from qm_platform.runtime.maintenance import (
     MaintenanceError,
     enter_maintenance,
@@ -152,6 +156,27 @@ def cmd_ops_export(args) -> int:
     return 0
 
 
+def cmd_ops_diagnostic_bundle(args) -> int:
+    output_dir = Path(args.output_dir)
+    try:
+        postgres_dsn = resolve_usermanagement_postgres_dsn()
+    except BackendBootstrapError:
+        postgres_dsn = None
+    try:
+        result = create_diagnostic_bundle(output_dir=output_dir, postgres_dsn=postgres_dsn)
+    except DiagnosticBundleError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    payload = {
+        "bundle_id": result.bundle_id,
+        "schema_id": result.schema_id,
+        "archive_path": result.archive_path,
+        "member_count": result.member_count,
+    }
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
+    return 0
+
+
 def cmd_ops(args) -> int:
     if args.ops_command == "backup":
         return cmd_ops_backup(args)
@@ -163,5 +188,7 @@ def cmd_ops(args) -> int:
         return cmd_ops_update_rehearsal(args)
     if args.ops_command == "export":
         return cmd_ops_export(args)
+    if args.ops_command == "diagnostic-bundle":
+        return cmd_ops_diagnostic_bundle(args)
     print("unknown ops command", file=sys.stderr)
     return 1

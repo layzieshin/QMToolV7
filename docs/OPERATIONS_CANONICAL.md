@@ -67,6 +67,7 @@ without colliding with `/health` or `/api/v1`. This is transport-only static ser
 contract evidence; it is not Vue product work and does not implement WCON00 GAP-16.
 
 Backup, `/ready`, and operator export commands remain **not** implemented in OPS00-A/B/C.
+OPS00-E adds portability/Nachweis export. OPS00-F adds `/ready` and the diagnostic bundle.
 OPS00-D adds installation maintenance mode and controlled update rehearsal abort.
 
 ### PostgreSQL + blob backup (OPS00-C)
@@ -137,7 +138,7 @@ The abort restore runs only through the guarded script invoked by `ops update-re
 ```
 
 Live abort+restore evidence is Slot-2 only — not a PILOT00 deployment qualification.
-`/ready` remains planned for a later OPS00 checkpoint.
+`GET /ready` is implemented in OPS00-F as installation ops readiness (not WCON00 GAP-16).
 
 ### Windows service installation contract (provider-neutral; documentation only)
 
@@ -236,6 +237,29 @@ Operator commands (adapter only; no secrets on stdout):
 ```powershell
 .\.venv\Scripts\python.exe -m interfaces.cli.main ops export portability --records-file records.json --output-dir exports
 .\.venv\Scripts\python.exe -m interfaces.cli.main ops export evidence --audit-file audit-records.jsonl --output-dir exports
+```
+
+## Health, readiness, and diagnostic bundle (OPS00-F)
+
+`GET /health` is process **liveness** and remains `ok` while the host can answer. `GET /ready`
+is installation **ops readiness** (PostgreSQL reachable, blob root writable, not in
+maintenance, no staged update rehearsal, operation lock free, platform migrations current).
+It is **not** the WCON00 GAP-16 versioned browser connection contract and is not deployment
+qualification. HTTP 200 only when every check is `ok`; otherwise HTTP 503 with the check
+payload. Check bodies contain no DSN, password, or key material. TestClient green is not a
+restore or PILOT00 deployment proof.
+
+The diagnostic ZIP (`ops00-diagnostic-v1`) is a secret-redacted technical bundle: manifest,
+checksums, readiness snapshot, config-key presence booleans, and redacted technical logs.
+It does not truncate live logs (`logs-backup` still does). It is not a backup set, not a
+portability export, and not a fachliche Nachweisquelle.
+
+Operator commands (adapter only; no secrets on stdout):
+
+```powershell
+.\.venv\Scripts\python.exe -m interfaces.cli.main health
+.\.venv\Scripts\python.exe -m interfaces.cli.main logs-backup
+.\.venv\Scripts\python.exe -m interfaces.cli.main ops diagnostic-bundle --output-dir diagnostics
 ```
 
 ## Registry Projection Recovery Entry

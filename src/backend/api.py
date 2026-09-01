@@ -14,8 +14,10 @@ from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from fastapi.routing import APIRoute
 
+from qm_platform.runtime.health import build_readiness_report
 from qm_platform.runtime.maintenance import is_maintenance_active
 from src.backend.auth_routes import router as auth_router
+from src.backend.bootstrap import BackendBootstrapError, resolve_usermanagement_postgres_dsn
 from src.backend.cookie_csrf import SAFE_METHODS
 from src.backend.csrf_middleware import enforce_cookie_csrf
 from src.backend.documents_routes import router as documents_router
@@ -28,6 +30,12 @@ _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 class HealthResponse(BaseModel):
     status: str
     service: str
+
+
+class ReadinessResponse(BaseModel):
+    ready: bool
+    service: str
+    checks: dict[str, str]
 
 
 class ErrorDetail(BaseModel):
@@ -233,6 +241,7 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
 _OPENAPI_NO_SECURITY_PATHS = frozenset(
     {
         "/health",
+        "/ready",
         f"{_API_V1}/auth/csrf",
         f"{_API_V1}/auth/token",
     }
@@ -437,6 +446,20 @@ def create_app(container=None) -> FastAPI:
     @app.get("/health", response_model=HealthResponse, tags=["health"])
     def _health() -> HealthResponse:
         return HealthResponse(status="ok", service="qmtool-backend")
+
+    @app.get("/ready", tags=["health"])
+    def _ready() -> JSONResponse:
+        try:
+            postgres_dsn = resolve_usermanagement_postgres_dsn()
+        except BackendBootstrapError:
+            postgres_dsn = None
+        report = build_readiness_report(postgres_dsn=postgres_dsn)
+        payload = {
+            "ready": report.ready,
+            "service": "qmtool-backend",
+            "checks": dict(report.checks),
+        }
+        return JSONResponse(status_code=200 if report.ready else 503, content=payload)
 
     app.include_router(auth_router, prefix=_API_V1)
     app.include_router(user_admin_router, prefix=_API_V1)

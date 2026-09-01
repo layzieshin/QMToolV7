@@ -78,3 +78,9 @@ def register_ops_parsers(sub: argparse._SubParsersAction) -> None:
         help="JSONL allowlisted audit records for Nachweis (not technical logs)",
     )
     evidence.add_argument("--output-dir", required=True, help="Directory for the export ZIP")
+
+    diagnostic = ops_sub.add_parser(
+        "diagnostic-bundle",
+        help="Create a secret-redacted technical diagnostic ZIP (not a backup or Nachweis)",
+    )
+    diagnostic.add_argument("--output-dir", required=True, help="Directory for the diagnostic ZIP")
