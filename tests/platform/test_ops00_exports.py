@@ -224,6 +224,9 @@ def test_cli_portability_and_evidence_adapters(tmp_path: Path) -> None:
 
 
 def test_evidence_export_rejects_bearer_in_allowlisted_fields(tmp_path: Path) -> None:
+    from qm_platform.export.exporter import _SECRET_VALUE_MARKERS
+
+    assert "pwd=" not in _SECRET_VALUE_MARKERS
     record = dict(_evidence_record())
     record["reason"] = "Authorization: Bearer leak-token-abc"
     with pytest.raises(ExportError, match="secret material"):
@@ -238,6 +241,24 @@ def test_evidence_export_rejects_bearer_in_allowlisted_fields(tmp_path: Path) ->
 
     record = dict(_evidence_record())
     record["reason"] = "pwd=live-secret"
+    with pytest.raises(ExportError, match="secret material"):
+        create_evidence_export(audit_records=[record], output_dir=tmp_path)
+    assert list(tmp_path.glob("evidence-*.zip")) == []
+
+    record = dict(_evidence_record())
+    record["reason"] = "pwd: live-secret"
+    with pytest.raises(ExportError, match="secret material"):
+        create_evidence_export(audit_records=[record], output_dir=tmp_path)
+    assert list(tmp_path.glob("evidence-*.zip")) == []
+
+    record = dict(_evidence_record())
+    record["reason"] = "Authorization: Basic dXNlcjpwYXNz"
+    with pytest.raises(ExportError, match="secret material"):
+        create_evidence_export(audit_records=[record], output_dir=tmp_path)
+    assert list(tmp_path.glob("evidence-*.zip")) == []
+
+    record = dict(_evidence_record())
+    record["reason"] = "Basic dXNlcjpwYXNz"
     with pytest.raises(ExportError, match="secret material"):
         create_evidence_export(audit_records=[record], output_dir=tmp_path)
     assert list(tmp_path.glob("evidence-*.zip")) == []

@@ -95,20 +95,26 @@ def write_host_running_marker(app_home: Path | None = None) -> None:
     path.write_text(str(os.getpid()), encoding="ascii")
 
 
-def create_host_running_marker_exclusive(app_home: Path | None = None) -> Path:
-    """Create the host-running marker only when this caller can own a new file."""
+def create_host_running_marker_exclusive(app_home: Path | None = None) -> str:
+    """Create the host-running marker only when this caller can own a new file.
+
+    Returns the exact instance token written at create time. Callers must store
+    that return value; they must not re-read the marker file as the token.
+    """
     path = host_running_marker_path(app_home)
     path.parent.mkdir(parents=True, exist_ok=True)
+    token = f"{os.getpid()}:{uuid.uuid4().hex}"
+    payload = token.encode("ascii")
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     try:
         fd = os.open(path, flags)
     except FileExistsError as exc:
         raise BackupOrchestratorError("host running marker already present") from exc
     try:
-        os.write(fd, str(os.getpid()).encode("ascii"))
+        os.write(fd, payload)
     finally:
         os.close(fd)
-    return path
+    return token
 
 
 def remove_host_running_marker(app_home: Path | None = None) -> None:

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from qm_platform.audit.redaction import redact_audit_details
+from qm_platform.logging import diagnostic_bundle as diagnostic_bundle_mod
 from qm_platform.logging.diagnostic_bundle import (
     DIAGNOSTIC_SCHEMA_ID,
     DiagnosticBundleError,
@@ -192,17 +194,63 @@ def test_ops_diagnostic_bundle_parser_is_registered() -> None:
         "plain Authorization: Bearer leak-token-abc",
         "BEARER leak-token-abc leftover",
         json.dumps({"message": "Authorization: Basic dXNlcjpwYXNz"}, ensure_ascii=True),
+        json.dumps({"Authorization": "Basic dXNlcjpwYXNz"}, ensure_ascii=True),
+        json.dumps({"note": "Basic dXNlcjpwYXNz"}, ensure_ascii=True),
         "plain Authorization: Basic dXNlcjpwYXNz",
+        "plain Basic dXNlcjpwYXNz leftover",
+        "BASIC dXNlcjpwYXNz leftover",
+        json.dumps({"pwd": "pwd-json-secret"}, ensure_ascii=True),
+        json.dumps({"note": "pwd=live-secret"}, ensure_ascii=True),
+        "plain pwd: live-secret leftover",
     ],
 )
 def test_diagnostic_redacts_bearer_tokens_via_canonical_owner(
     tmp_path: Path, secret_line: str
 ) -> None:
     home = _home_with_logs(tmp_path, secret_line=secret_line)
+    original = resolve_home_path(home, "storage/platform/logs/platform.log").read_text(
+        encoding="utf-8"
+    )
     result = create_diagnostic_bundle(output_dir=tmp_path / "out", app_home=home, postgres_dsn=None)
+    after = resolve_home_path(home, "storage/platform/logs/platform.log").read_text(encoding="utf-8")
+    assert after == original
     with zipfile.ZipFile(result.archive_path) as archive:
         body = b"".join(archive.read(name) for name in archive.namelist()).decode("utf-8")
         assert "leak-token-abc" not in body
         assert "Bearer leak-token-abc" not in body
         assert "dXNlcjpwYXNz" not in body
         assert "Basic dXNlcjpwYXNz" not in body
+        assert "pwd-json-secret" not in body
+        assert "live-secret" not in body
+
+
+def test_diagnostic_http_redaction_uses_canonical_owner_not_local_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert not hasattr(diagnostic_bundle_mod, "_consume_remaining_http_credentials")
+    calls: list[object] = []
+
+    def _spy(value: object) -> object:
+        calls.append(value)
+        return redact_audit_details(value)
+
+    monkeypatch.setattr(diagnostic_bundle_mod, "redact_audit_details", _spy)
+    json_line = json.dumps({"message": "Authorization: Basic dXNlcjpwYXNz"}, ensure_ascii=True)
+    home = _home_with_logs(tmp_path, secret_line=json_line)
+    audit_path = resolve_home_path(home, "storage/platform/logs/audit.log")
+    audit_path.write_text("plain Bearer leak-token-abc leftover\n", encoding="utf-8")
+    original_platform = resolve_home_path(home, "storage/platform/logs/platform.log").read_text(
+        encoding="utf-8"
+    )
+    original_audit = audit_path.read_text(encoding="utf-8")
+    result = create_diagnostic_bundle(output_dir=tmp_path / "out", app_home=home, postgres_dsn=None)
+    assert resolve_home_path(home, "storage/platform/logs/platform.log").read_text(
+        encoding="utf-8"
+    ) == original_platform
+    assert audit_path.read_text(encoding="utf-8") == original_audit
+    assert calls, "canonical redact_audit_details must be used"
+    with zipfile.ZipFile(result.archive_path) as archive:
+        body = b"".join(archive.read(name) for name in archive.namelist()).decode("utf-8")
+        assert "dXNlcjpwYXNz" not in body
+        assert "leak-token-abc" not in body
+        assert "<redacted>" in body

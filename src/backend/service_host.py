@@ -186,7 +186,7 @@ class ServiceHost:
         self._bind_port = resolve_bind_port()
         self._https_enabled = False
         self._owns_host_running_marker = False
-        self._host_running_marker_token: bytes | None = None
+        self._host_running_marker_token: str | None = None
 
     def status(self) -> ServiceHostStatus:
         with self._lock:
@@ -278,13 +278,13 @@ class ServiceHost:
             while time.monotonic() < deadline:
                 if server.started:
                     try:
-                        marker_path = create_host_running_marker_exclusive()
+                        marker_token = create_host_running_marker_exclusive()
                     except BackupOrchestratorError as exc:
                         self.stop(timeout=1.0)
                         raise BackendBootstrapError(
                             "backend host cannot start while host running marker is present"
                         ) from exc
-                    self._host_running_marker_token = marker_path.read_bytes()
+                    self._host_running_marker_token = marker_token
                     self._owns_host_running_marker = True
                     with self._lock:
                         self._state = ServiceHostState.RUNNING
@@ -326,8 +326,8 @@ class ServiceHost:
             path = host_running_marker_path()
             token = self._host_running_marker_token
             try:
-                current = path.read_bytes()
-            except OSError:
+                current = path.read_text(encoding="ascii")
+            except (OSError, UnicodeDecodeError):
                 current = None
             if token is not None and current == token:
                 remove_host_running_marker()

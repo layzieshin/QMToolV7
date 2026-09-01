@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import importlib
+import os
 import socket
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,7 @@ from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.settings.testing import build_settings_service_for_tests
 from qm_platform.blob.backup_orchestrator import (
+    create_host_running_marker_exclusive,
     host_running_marker_path,
     write_host_running_marker,
 )
@@ -84,7 +87,13 @@ def test_service_host_start_status_graceful_stop(
     try:
         status = host.status()
         assert status.state == ServiceHostState.RUNNING
-        assert host_running_marker_path(tmp_path).is_file()
+        marker = host_running_marker_path(tmp_path)
+        assert marker.is_file()
+        stored = host._host_running_marker_token
+        assert stored is not None
+        assert stored == marker.read_text(encoding="ascii")
+        assert stored.split(":", 1)[0] == str(os.getpid())
+        assert len(stored.split(":", 1)[1]) >= 32
         assert status.bind_host == "127.0.0.1"
         assert status.bind_port > 0
         assert status.https_enabled is False
@@ -445,6 +454,90 @@ def test_stop_does_not_delete_replaced_foreign_marker(
     try:
         host.stop(timeout=15.0)
         assert marker.read_bytes() == foreign
+    finally:
+        if host.status().state.name != "STOPPED":
+            host._owns_host_running_marker = False
+            host._host_running_marker_token = None
+            host.stop(timeout=15.0)
+
+
+def test_exclusive_marker_creates_distinct_instance_tokens(tmp_path: Path) -> None:
+    token_a = create_host_running_marker_exclusive(tmp_path / "a")
+    token_b = create_host_running_marker_exclusive(tmp_path / "b")
+    assert token_a != token_b
+    assert token_a.split(":", 1)[0] == str(os.getpid())
+    assert token_b.split(":", 1)[0] == str(os.getpid())
+    assert host_running_marker_path(tmp_path / "a").read_text(encoding="ascii") == token_a
+    assert host_running_marker_path(tmp_path / "b").read_text(encoding="ascii") == token_b
+
+
+def test_stop_does_not_delete_replaced_same_pid_different_instance_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: _minimal_container(tmp_path),
+    )
+    host = ServiceHost()
+    host.start(timeout=15.0)
+    marker = host_running_marker_path(tmp_path)
+    owned = host._host_running_marker_token
+    assert owned is not None
+    replacement = f"{os.getpid()}:{uuid.uuid4().hex}"
+    assert replacement != owned
+    marker.write_text(replacement, encoding="ascii")
+    try:
+        host.stop(timeout=15.0)
+        assert marker.read_text(encoding="ascii") == replacement
+    finally:
+        if host.status().state.name != "STOPPED":
+            host._owns_host_running_marker = False
+            host._host_running_marker_token = None
+            host.stop(timeout=15.0)
+
+
+def test_stop_uses_returned_create_token_not_reread_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: _minimal_container(tmp_path),
+    )
+    recorded: dict[str, str] = {}
+
+    def _create_and_mutate(app_home=None) -> str:
+        token = create_host_running_marker_exclusive(app_home)
+        recorded["returned"] = token
+        path = host_running_marker_path(tmp_path)
+        path.write_text("mutated-after-create", encoding="ascii")
+        recorded["file"] = path.read_text(encoding="ascii")
+        return token
+
+    monkeypatch.setattr(
+        "src.backend.service_host.create_host_running_marker_exclusive",
+        _create_and_mutate,
+    )
+    host = ServiceHost()
+    host.start(timeout=15.0)
+    try:
+        assert host._host_running_marker_token == recorded["returned"]
+        assert host._host_running_marker_token != recorded["file"]
+        host.stop(timeout=15.0)
+        assert host_running_marker_path(tmp_path).read_text(encoding="ascii") == "mutated-after-create"
     finally:
         if host.status().state.name != "STOPPED":
             host._owns_host_running_marker = False

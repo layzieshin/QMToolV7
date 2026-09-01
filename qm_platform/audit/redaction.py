@@ -24,10 +24,12 @@ _FORBIDDEN_KEY_PARTS = frozenset(
         "passfile",
         "authorization",
         "credential",
+        "pwd",
     }
 )
 
 _BEARER_RE = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
+_BASIC_RE = re.compile(r"Basic\s+\S+", re.IGNORECASE)
 _PG_DSN_RE = re.compile(r"postgresql://[^\s'\"]+", re.IGNORECASE)
 _PASSWORD_KV_RE = re.compile(
     r"(password\s*[:=]\s*)([^\s,;\"']+)",
@@ -49,6 +51,7 @@ _INLINE_SECRET_ALIASES = (
     "secret",
     "token",
     "passwd",
+    "pwd",
     "bearer",
 )
 _INLINE_SECRET_KV_RE = re.compile(
@@ -73,6 +76,7 @@ def _key_is_forbidden(key: str) -> bool:
 def _redact_string(value: str) -> str:
     text = str(value)
     text = _BEARER_RE.sub(f"Bearer {_REDACTED}", text)
+    text = _BASIC_RE.sub(f"Basic {_REDACTED}", text)
     text = _PG_DSN_RE.sub(f"postgresql://{_REDACTED}", text)
     text = _PASSWORD_KV_RE.sub(rf"\1{_REDACTED}", text)
     text = _INLINE_SECRET_KV_RE.sub(rf"\1{_REDACTED}", text)

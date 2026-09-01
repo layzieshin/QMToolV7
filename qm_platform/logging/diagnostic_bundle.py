@@ -149,26 +149,8 @@ def _redact_log_line(line: str) -> str:
     try:
         parsed = json.loads(line)
     except json.JSONDecodeError:
-        text = str(redact_audit_details(line))
-    else:
-        text = json.dumps(redact_audit_details(parsed), ensure_ascii=True)
-    return _consume_remaining_http_credentials(text)
-
-
-def _consume_remaining_http_credentials(text: str) -> str:
-    """Fail-closed leftover after canonical redaction (Basic credentials, auth tails)."""
-    text = re.sub(
-        r"(?i)(Authorization\s*[:=]\s*)(?:Basic\s+)?(?!<redacted>)\S+",
-        r"\1<redacted>",
-        text,
-    )
-    text = re.sub(
-        r"(?i)(Authorization\s*[:=]\s*<redacted>)\s+\S+",
-        r"\1",
-        text,
-    )
-    text = re.sub(r"(?i)Basic\s+(?!<redacted>)\S+", "Basic <redacted>", text)
-    return text
+        return str(redact_audit_details(line))
+    return json.dumps(redact_audit_details(parsed), ensure_ascii=True)
 
 
 def _reject_secret_bytes(payload: bytes, *, field: str) -> None:
