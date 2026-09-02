@@ -187,18 +187,19 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich der **OPS00-Publikationsabschluss**
-fuer PR #41: den lokalen Closeout ab `a0e4c7253c4528f09447ae773bdafebf8455ecbd`
-nach ausdruecklicher Freigabe pushen, CI auf exakt diesem neuen PR-HEAD abwarten,
-Review-Konversationen menschlich pruefen/aufloesen und den Squash-Merge separat freigeben.
-CI auf dem lokalen Closeout ist bis zum Push **NOT RUN**; die fruehere gruene CI auf
-`977667fbdb2838c47d7564992157f984141d6a9e` ersetzt das nicht. Kein `--admin`, keine
-dritte Codex-Runde und kein Branch-/Worktree-Cleanup. **OPS00 ist technisch PASS**
-(262 package-integration passed, 2 erwartete Live-Skips; Slot-2 9/9 PASS; Evidence
-`build/ap-029-ops00/final-closeout-20260902/`). External Review bleibt
-`BOUNDED_COMPLETE` (2/2; kein Codex-PASS).
-**WCON00** ist TODO / NOT RUN und vor OPS00-Merge plus separatem
-`/execute-work-package WCON00` weder gestartet noch freigegeben.
+Die naechste freizugebende Aktion ist ausschliesslich WCON00. Der Checkpoint ist
+TODO / NOT RUN und darf erst durch einen separaten `/execute-work-package WCON00`
+auf einem eigenen Branch/Worktree ab dem aktuellen `origin/main` gestartet werden.
+**OPS00 ist PASS** und wurde via PR #41 per Squash nach `main` @
+`98feef61dcfe0e40741c254da16feb9383a0d1b0` gemergt. Vor dem Merge waren beide
+CI-Jobs SUCCESS und 11/11 Review-Konversationen resolved. Die technische Evidence
+bleibt `build/ap-029-ops00/final-closeout-20260902/` (262 package-integration
+passed, 2 erwartete Live-Skips; Slot-2 9/9 PASS). External Review bleibt ehrlich
+`BOUNDED_COMPLETE` (2/2; kein Codex-PASS, keine dritte Codex-Runde).
+WCON00 schliesst ausschliesslich die in UX00 als WEB01-blockierend klassifizierten
+technischen Contracts; es implementiert noch keine WEB01-Screens. INT00, WEB01 und
+spaetere Checkpoints sind nicht freigegeben. Branch-/Worktree-Cleanup abgeschlossener
+Pakete bleibt eine getrennte Housekeeping-Aktion und veraendert den Ledger nicht.
 **PG01** ist `PASS`; PR #39 wurde per Squash nach `main` @
 `58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. **UX00 ist PASS** und auf
 `main` integriert via PR #40 @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef`;
