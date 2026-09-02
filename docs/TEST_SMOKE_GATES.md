@@ -66,6 +66,32 @@ evidence levels. Do not promote TestClient green to real-process or human accept
 - Ist SQLite migration gate bleibt für Legacy-Stores relevant bis Cutover:
   `.\.venv\Scripts\python.exe scripts/database_migration_gate.py --output build/database-migration-gate-output.json`
 
+### Operations foundation (OPS00)
+
+- Focused/static owners: `tests/backend/test_ops00_*.py`,
+  `tests/platform/test_ops00_backup_restore_static.py`,
+  `tests/platform/test_ops00_update_rollback.py`, `tests/platform/test_ops00_exports.py`,
+  `tests/platform/test_ops00_diagnostic_bundle.py`, and
+  `tests/platform/test_platform_audit_contract_static.py`.
+- Include `tests/docs/test_docs_consistency.py` and
+  `tests/interfaces/test_architecture_gates.py` in package integration.
+- Run PostgreSQL restore/update evidence **only** through the canonical runner, never bare
+  `pytest -m postgres`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_postgres_live_tests.py `
+  tests\platform\test_ops00_backup_restore_live.py `
+  tests\platform\test_ops00_update_rollback.py `
+  tests\platform\test_postgres_schema_live.py::test_assert_runtime_schema_ready
+```
+
+Mandatory negatives cover `.env` load order before home/lock/bind/TLS, host-marker and
+operation-lock ownership races, preservation of a pre-existing restore target, canonical UUID
+backup IDs, malformed/unknown/incomplete rehearsal state, and canonical secret redaction in
+audit, diagnostic, and export paths. A local green run is not CI: CI must pass on the exact
+pushed PR HEAD. Slot-2 evidence is not SCM/LAN/certificate-store, PILOT00, human-review,
+publication, or merge evidence.
+
 ### Web foundation (WEB00 — `webclient/` + `/api/v1` Cookie/CSRF)
 
 Prerequisites: Node.js **20.11.x** (see `webclient/.nvmrc`); backend test container or live backend for integration smoke.

@@ -23,11 +23,12 @@ contracts; PILOT00 LAN/SCM/cert-store deployment **not** implemented):
 - Portability export ≠ technical backup; separate readable audit/evidence export
 - Protect secrets and license material; never export password hashes, private keys, or session secrets
 
-Until OPS00 delivers these capabilities, the commands below describe the **current Ist**
-operator surface (largely SQLite-/desktop-oriented). Do not treat planned Windows-service
-or web deployment commands as already available.
+OPS00-A–F implement the uninstalled host and operator contracts described below. This local
+technical contract is not a Windows-SCM, LAN, firewall, certificate-store, packaging, pilot,
+human-acceptance, or merge proof; those deployment effects remain PILOT00 or later gates.
+Legacy SQLite/desktop commands are retained only in their explicitly marked sections.
 
-## Backend service host (OPS00-A/B; partial Ist)
+## Backend service host (OPS00-A/B; implemented uninstalled contract)
 
 OPS00-A delivers an **uninstalled** local-process backend host (`python -m src.backend`)
 with configuration fail-closed behavior, `QMTOOL_HOME` layout expectations, graceful
@@ -39,7 +40,7 @@ dist directory can be mounted on the same origin as `/health` and `/api/v1`. OPS
 ports, configure LAN ACLs, interact with the certificate store, or prove PILOT00 LAN
 deployment. SCM/LAN/ACL/AV/cert-store evidence remains **PILOT00**.
 
-### `QMTOOL_HOME` layout (target; partial wiring in OPS00-A)
+### `QMTOOL_HOME` layout (implemented OPS00 runtime contract)
 
 | Path (under `QMTOOL_HOME`) | Purpose |
 | --- | --- |
@@ -61,15 +62,17 @@ Environment variables (see also `.env.example`): `QMTOOL_HOME`, `QMTOOL_BIND_HOS
 `QMTOOL_BIND_PORT`, `QMTOOL_TLS_CERT_FILE`, `QMTOOL_TLS_KEY_FILE`, `QMTOOL_WEBCLIENT_DIST`
 (or `{QMTOOL_HOME}/webclient/dist` when that directory contains `index.html`), PostgreSQL
 DSN keys, `QMTOOL_LICENSE_MODE`, `QMTOOL_RUNTIME_PROFILE`. Never commit secrets.
+The repository/install-root `.env` is loaded before `QMTOOL_HOME`, operation-lock, bind,
+runtime-profile, and TLS decisions. Explicit process-environment values take precedence;
+`.env` is not loaded from inside `QMTOOL_HOME`.
 
 Same-origin static fixture: when `QMTOOL_WEBCLIENT_DIST` (or the home-relative dist path)
 points at an existing directory containing `index.html`, the backend host mounts it at `/`
 without colliding with `/health` or `/api/v1`. This is transport-only static serving for
 contract evidence; it is not Vue product work and does not implement WCON00 GAP-16.
 
-Backup, `/ready`, and operator export commands remain **not** implemented in OPS00-A/B/C.
-OPS00-E adds portability/Nachweis export. OPS00-F adds `/ready` and the diagnostic bundle.
-OPS00-D adds installation maintenance mode and controlled update rehearsal abort.
+OPS00-C implements backup/restore drill, OPS00-D maintenance/update rehearsal abort,
+OPS00-E portability/Nachweis export, and OPS00-F `/ready` plus the diagnostic bundle.
 
 ### PostgreSQL + blob backup (OPS00-C)
 
@@ -82,6 +85,10 @@ Write-quiescent backup contract:
 
 Backend startup fails closed while the operation lock is held. Backup is refused while the
 host-running marker is present or the lock is unavailable.
+`operation.lock` and `host-running.pid` are exclusive ownership directories. Each acquiring
+instance owns a unique child/token and removes only that owned entry; a replacement or foreign
+owner remains fail-closed. Explicit `backup_id` values must parse as UUIDs and are normalized
+to canonical UUID form.
 
 Release identity file (required): `{QMTOOL_HOME}/release/identity` — its SHA-256 is recorded as
 `app_release_fingerprint` in the manifest together with `schema_migration_fingerprint`.
@@ -102,6 +109,9 @@ The restore drill runs only through the guarded script invoked by `ops restore-d
 Slot-2 restore targets must use the prefix `qmtool_ops00_restore_`. The drill never restores
 into the lab database (`192.168.0.4` / `qmtool_test`) or overwrites the Slot-2 source database
 name in place. Live restore evidence is Slot-2 only — not a PILOT00 deployment qualification.
+The restore target must not already exist. Only a database created by the current locked restore
+may be removed after failure or drill completion, and that cleanup completes before the shared
+operation lock is released. A pre-existing prefixed target is preserved.
 
 SQLite `database backups|restore` below remains **Ist/legacy** tooling and is not the productive
 PostgreSQL path.
@@ -117,6 +127,8 @@ PostgreSQL + Blob backup set from OPS00-C into an isolated Slot-2 database named
 Backend startup remains migration-free and fails closed while the operation lock is held, while a
 candidate release is staged without abort, or when the current release fingerprint does not match
 the abort-restored expectation. There is no in-app auto-update and no down-migration.
+Unknown, malformed, incomplete, unreadable, or non-regular rehearsal-state artifacts block both
+backend startup and `/ready`; they are never treated as an absent state.
 Before `ops update-rehearsal` start the operator must stop and drain the backend host (the CLI
 stops an in-process host automatically); backup remains refused while the host-running marker is present.
 Update rehearsal start and abort each hold **one** installation `OperationLock` continuously from
@@ -150,7 +162,7 @@ registry writes, firewall rules, or certificate-store imports.
 | Item | Contract |
 | --- | --- |
 | Executable | `python -m src.backend` from the installation venv, or an equivalent packaged entrypoint invoking the same module |
-| Arguments | none required when configuration is supplied via environment / `.env` beside `QMTOOL_HOME` |
+| Arguments | none required when configuration is supplied via process environment or `.env` in the repository/install root (process environment wins) |
 | Working directory | Repository or on-prem install root containing `src/` and dependencies |
 | `QMTOOL_HOME` | Absolute writable data root (logs, license, certs, blobstore, backups); service account must have modify rights |
 | Secrets | PostgreSQL DSN/password, bootstrap admin password, license material, TLS private key — file permissions or OS secret store; never in HTTP responses or docs examples |
@@ -162,8 +174,8 @@ registry writes, firewall rules, or certificate-store imports.
 | Certificate paths | `{QMTOOL_HOME}/certs/` or explicit `QMTOOL_TLS_*` paths readable by the service account |
 | HTTPS endpoint | Same-origin `https://<host>:<port>/api/v1` with OPS00-B file-PEM TLS on the host (loopback contract evidence; not PILOT00 LAN/cert-store deployment) |
 
-Ist operator commands for SQLite desktop tooling remain below until OPS00 operator
-adapters replace them for productive PostgreSQL deployments.
+The SQLite desktop commands below remain legacy tooling and are not a productive PostgreSQL
+backup, restore, update, export, or service-host path.
 
 ## Mandatory Reading Order
 
@@ -202,8 +214,10 @@ adapters replace them for productive PostgreSQL deployments.
   - `.\.venv\Scripts\python.exe scripts/golive_gate.py --output "<evidence-dir>/golive-gate.json"`
   - optional DB-backed checks: add `--documents-db-path "<documents.db>" --registry-db-path "<registry.db>" --baseline-other-count <n>`.
 
-Target additions (OPS00/PILOT00 — planned): shared PG+blob backup evidence, HTTPS service
-health, maintenance-mode update rehearsal, restore drill, portability/audit export checks.
+OPS00 additions now required by the package gate: shared PG+blob backup evidence, HTTPS
+host checks, maintenance/update rehearsal, guarded restore drill, portability/evidence export,
+`/ready`, and diagnostic redaction. PILOT00 still owns SCM/LAN/certificate-store deployment,
+packaging and human operational acceptance.
 
 ## Database Migration Window (current Ist SQLite tooling)
 
@@ -232,6 +246,10 @@ The full contract is defined in `docs/DATABASE_EVOLUTION_POLICY.md`
 - **Audit/evidence export:** separate `ops00-evidence-v1` readable Nachweis ZIP of allowlisted
   audit fields. Technical logs remain a separate diagnostic concern (OPS00-F).
 - Never export secrets, password hashes, private keys, session tokens, or DSNs.
+- Canonical redaction consumes Basic/Bearer credentials, PostgreSQL DSNs, `pass`/`pwd` and
+  other secret aliases, including camel-case, composite, namespaced, nested assignments and
+  URL-query tokens. Diagnostic output rejects any remaining secret marker; evidence export
+  fails closed before creating a ZIP when canonical redaction would change an allowlisted scalar.
 
 Operator commands (adapter only; no secrets on stdout):
 

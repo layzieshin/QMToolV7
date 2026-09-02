@@ -454,6 +454,7 @@ def test_j04_m0_formal_acceptance_status_sources_agree() -> None:
 # ---------------------------------------------------------------------------
 
 AP029_PLAN = DOCS / "AP-029_WEB_POSTGRES_TRANSITION_PLAN.md"
+OPERATIONS_CANONICAL = DOCS / "OPERATIONS_CANONICAL.md"
 DATABASE_EVOLUTION_POLICY = DOCS / "DATABASE_EVOLUTION_POLICY.md"
 GUI_SOURCE_OF_TRUTH = DOCS / "GUI_SOURCE_OF_TRUTH.md"
 DOCS_CANONICAL_INDEX = DOCS / "DOCS_CANONICAL_INDEX.md"
@@ -611,7 +612,16 @@ def test_ap029_transition_decisions_are_consistent() -> None:
     assert next_action, "roadmap next-action section missing"
     next_body = next_action.group(1)
     assert current in next_body
-    assert f"ausschliesslich {current}" in next_body or f"ausschließlich {current}" in next_body
+    direct_checkpoint = (
+        f"ausschliesslich {current}" in next_body
+        or f"ausschließlich {current}" in next_body
+    )
+    pending_ops00_publication = (
+        current == "WCON00"
+        and "OPS00-Publikationsabschluss" in next_body
+        and "WCON00** ist TODO / NOT RUN" in next_body
+    )
+    assert direct_checkpoint or pending_ops00_publication
 
     assert "webclient/*" in gui_sot
     assert "PostgreSQL only" in db_policy or "PostgreSQL-only" in db_policy
@@ -924,7 +934,7 @@ def test_pg01_post_merge_steering_is_current() -> None:
     assert "bei PASS Current=`OPS00`" not in pg01_section
 
 
-def test_ux00_post_merge_steering_is_current() -> None:
+def test_ops00_publication_steering_is_current() -> None:
     plan = _read(AP029_PLAN)
     roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
     current, rows = _parse_ap029_ledger(plan)
@@ -959,8 +969,13 @@ def test_ux00_post_merge_steering_is_current() -> None:
     )
     assert next_action, "roadmap next-action section missing"
     next_body = next_action.group(1)
-    assert "ausschliesslich WCON00" in next_body or "ausschließlich WCON00" in next_body
-    assert "not started" in next_body
+    assert "OPS00-Publikationsabschluss" in next_body
+    assert "PR #41" in next_body
+    assert "a0e4c7253c4528f09447ae773bdafebf8455ecbd" in next_body
+    assert "977667fbdb2838c47d7564992157f984141d6a9e" in next_body
+    assert "CI" in next_body and "NOT RUN" in next_body
+    assert "WCON00" in next_body and "TODO / NOT RUN" in next_body
+    assert "dritte Codex-Runde" in next_body
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in next_body
     assert "PR #40" in next_body
     assert "feature/ap-029-ux00" not in next_body.split("PR #40", 1)[0]
@@ -987,7 +1002,8 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
         "UX00 → OPS00 → WCON00 → INT00 → WEB01 → PILOT00"
     )
     assert sequence in roadmap
-    assert "ausschliesslich WCON00" in roadmap or "ausschließlich WCON00" in roadmap
+    assert "OPS00-Publikationsabschluss" in roadmap
+    assert "WCON00** ist TODO / NOT RUN" in roadmap
 
     ux00_section = plan.split("### UX00", 1)[1].split("\n### ", 1)[0]
     wcon00_section = plan.split("### WCON00", 1)[1].split("\n### ", 1)[0]
@@ -1003,6 +1019,54 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     assert "Webclient contract completion (WCON00" in smoke_gates
     assert "DMS web slice (WEB01 — after WCON00 and INT00 PASS)" in smoke_gates
     assert "not WEB01 onboarding" in smoke_gates
+
+
+def test_ops00_closeout_contract_and_evidence_are_current() -> None:
+    plan = _read(AP029_PLAN)
+    roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
+    operations = _read(OPERATIONS_CANONICAL)
+    smoke_gates = _read(DOCS / "TEST_SMOKE_GATES.md")
+    current, rows = _parse_ap029_ledger(plan)
+    rows_by_id = {row["id"]: row for row in rows}
+
+    assert current == "WCON00"
+    ops00 = rows_by_id["OPS00"]
+    assert ops00["status"] == "PASS"
+    assert "a0e4c7253c4528f09447ae773bdafebf8455ecbd" in ops00["result_evidence"]
+    assert "262 passed, 2 expected live skips" in ops00["result_evidence"]
+    assert "Slot-2 live 9 passed" in ops00["result_evidence"]
+    assert "final-closeout-20260902" in ops00["result_evidence"]
+    assert "BOUNDED_COMPLETE" in ops00["notes"]
+    assert "no Codex PASS" in ops00["notes"]
+    assert "WCON00 NOT RUN" in ops00["notes"]
+
+    for stale in (
+        "92497d2c48646eb679429c782e17aad14f17813c",
+        "static regression 163 passed",
+        "Slot-2 live 6 passed",
+    ):
+        assert stale not in ops00["result_evidence"]
+        assert stale not in roadmap
+
+    for required in (
+        "repository/install-root `.env` is loaded before",
+        "`operation.lock` and `host-running.pid` are exclusive ownership directories",
+        "Explicit `backup_id` values must parse as UUIDs",
+        "The restore target must not already exist",
+        "current locked restore",
+        "Unknown, malformed, incomplete, unreadable, or non-regular rehearsal-state",
+        "Canonical redaction consumes Basic/Bearer credentials",
+    ):
+        assert required in operations
+
+    assert "scripts\\run_postgres_live_tests.py" in smoke_gates
+    assert (
+        r"tests\platform\test_postgres_schema_live.py::test_assert_runtime_schema_ready"
+        in smoke_gates
+    )
+    assert "never bare" in smoke_gates
+    assert "A local green run is not CI" in smoke_gates
+    assert "Slot-2 evidence is not SCM/LAN/certificate-store" in smoke_gates
 
 
 def test_ap029_macro_governance_is_explicit_and_serial() -> None:
