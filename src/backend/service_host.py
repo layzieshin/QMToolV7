@@ -25,16 +25,20 @@ from qm_platform.blob.backup_orchestrator import (
     BackupOrchestratorError,
     compute_app_release_fingerprint,
     create_host_running_marker_exclusive,
-    host_running_marker_path,
     is_host_running_marker_present,
-    remove_host_running_marker,
+    remove_host_running_marker_if_owned,
 )
 from qm_platform.runtime.maintenance import (
+    MaintenanceError,
     get_expected_release_fingerprint,
     is_rehearsal_in_progress,
 )
 from src.backend.api import create_app
-from src.backend.bootstrap import BackendBootstrapError, build_backend_container
+from src.backend.bootstrap import (
+    BackendBootstrapError,
+    build_backend_container,
+    load_backend_environment,
+)
 from src.backend.tls_config import load_tls_material, resolve_tls_paths
 
 _PRODUCTION_PROFILES = frozenset({"prod", "production"})
@@ -115,11 +119,16 @@ def resolve_bind_port() -> int:
 def validate_rehearsal_release_fingerprint(app_home: Path | None = None) -> None:
     """Fail closed when release identity mismatches abort-restored expectation."""
     home = app_home if app_home is not None else runtime_home()
-    if is_rehearsal_in_progress(home):
+    try:
+        if is_rehearsal_in_progress(home):
+            raise BackendBootstrapError(
+                "backend host cannot start while update rehearsal candidate is staged without abort"
+            )
+        expected = get_expected_release_fingerprint(home)
+    except MaintenanceError as exc:
         raise BackendBootstrapError(
-            "backend host cannot start while update rehearsal candidate is staged without abort"
-        )
-    expected = get_expected_release_fingerprint(home)
+            "backend host cannot start while rehearsal state is invalid"
+        ) from exc
     if expected is None:
         return
     try:
@@ -177,6 +186,7 @@ class ServiceHost:
     """Thread-friendly uninstalled service host wrapping uvicorn."""
 
     def __init__(self) -> None:
+        self._lifecycle_lock = threading.RLock()
         self._lock = threading.Lock()
         self._state = ServiceHostState.STOPPED
         self._server: uvicorn.Server | None = None
@@ -203,6 +213,11 @@ class ServiceHost:
         )
 
     def start(self, *, timeout: float = 30.0) -> None:
+        with self._lifecycle_lock:
+            load_backend_environment()
+            self._start_locked(timeout=timeout)
+
+    def _start_locked(self, *, timeout: float) -> None:
         operation_lock = OperationLock()
         try:
             operation_lock.acquire()
@@ -284,9 +299,9 @@ class ServiceHost:
                         raise BackendBootstrapError(
                             "backend host cannot start while host running marker is present"
                         ) from exc
-                    self._host_running_marker_token = marker_token
-                    self._owns_host_running_marker = True
                     with self._lock:
+                        self._host_running_marker_token = marker_token
+                        self._owns_host_running_marker = True
                         self._state = ServiceHostState.RUNNING
                     _register_active_host(self)
                     return
@@ -300,6 +315,10 @@ class ServiceHost:
             operation_lock.release()
 
     def stop(self, *, timeout: float = 30.0) -> None:
+        with self._lifecycle_lock:
+            self._stop_locked(timeout=timeout)
+
+    def _stop_locked(self, *, timeout: float) -> None:
         with self._lock:
             if self._state == ServiceHostState.STOPPED:
                 return
@@ -318,19 +337,15 @@ class ServiceHost:
                 )
 
         with self._lock:
+            owns_marker = self._owns_host_running_marker
+            marker_token = self._host_running_marker_token
+        if owns_marker and marker_token is not None:
+            remove_host_running_marker_if_owned(marker_token)
+        with self._lock:
             self._server = None
             self._thread = None
             self._state = ServiceHostState.STOPPED
             self._https_enabled = False
-        if self._owns_host_running_marker:
-            path = host_running_marker_path()
-            token = self._host_running_marker_token
-            try:
-                current = path.read_text(encoding="ascii")
-            except (OSError, UnicodeDecodeError):
-                current = None
-            if token is not None and current == token:
-                remove_host_running_marker()
             self._owns_host_running_marker = False
             self._host_running_marker_token = None
         _clear_active_host(self)

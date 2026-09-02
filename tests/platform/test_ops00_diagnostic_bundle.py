@@ -254,3 +254,72 @@ def test_diagnostic_http_redaction_uses_canonical_owner_not_local_policy(
         assert "dXNlcjpwYXNz" not in body
         assert "leak-token-abc" not in body
         assert "<redacted>" in body
+
+
+@pytest.mark.parametrize(
+    ("secret_line", "secret"),
+    [
+        (
+            json.dumps({"note": 'pass="diagnostic pass with spaces"'}, ensure_ascii=True),
+            "diagnostic pass with spaces",
+        ),
+        (
+            json.dumps({"client_api_key": "compound client secret"}, ensure_ascii=True),
+            "compound client secret",
+        ),
+        (
+            json.dumps({"db.password": "namespaced db secret"}, ensure_ascii=True),
+            "namespaced db secret",
+        ),
+        (
+            json.dumps({"auth/api_key": "namespaced api secret"}, ensure_ascii=True),
+            "namespaced api secret",
+        ),
+        (
+            json.dumps({"note": "message=token=nested diagnostic secret"}, ensure_ascii=True),
+            "nested diagnostic secret",
+        ),
+        (
+            json.dumps(
+                {"url": "https://host/path?token=query-diagnostic-secret"},
+                ensure_ascii=True,
+            ),
+            "query-diagnostic-secret",
+        ),
+        ("plain tls_private_key='tls private material'", "tls private material"),
+    ],
+)
+def test_diagnostic_consumes_pass_quoted_values_and_compound_aliases(
+    tmp_path: Path, secret_line: str, secret: str
+) -> None:
+    home = _home_with_logs(tmp_path, secret_line=secret_line)
+    result = create_diagnostic_bundle(output_dir=tmp_path / "out", app_home=home, postgres_dsn=None)
+    with zipfile.ZipFile(result.archive_path) as archive:
+        body = b"".join(archive.read(name) for name in archive.namelist()).decode("utf-8")
+        assert secret not in body
+        assert "<redacted>" in body
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'pass="raw pass with spaces"',
+        b'{"client_api_key": "raw compound secret"}',
+        b'{"operator.pass": "raw namespaced secret"}',
+        b'{"note": "message=token=raw nested secret"}',
+        b'{"url": "https://host/path?token=raw-query-secret"}',
+        b"-----BEGIN PRIVATE KEY-----",
+        b"$argon2id$raw-hash-material",
+        b"eyJhbGciOiJIUzI1NiJ9.raw-signature.payload",
+    ],
+)
+def test_diagnostic_rejects_remaining_secret_markers(payload: bytes) -> None:
+    with pytest.raises(DiagnosticBundleError, match="secret material remains"):
+        diagnostic_bundle_mod._reject_secret_bytes(payload, field="logs/platform.log.jsonl")
+
+
+def test_diagnostic_secret_guard_accepts_canonically_redacted_values() -> None:
+    diagnostic_bundle_mod._reject_secret_bytes(
+        b'{"password": "<redacted>", "client_api_key": "<redacted>"}',
+        field="logs/platform.log.jsonl",
+    )

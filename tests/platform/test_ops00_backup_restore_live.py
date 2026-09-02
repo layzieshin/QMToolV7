@@ -401,6 +401,52 @@ def test_live_restore_drill_script_without_inherited_reset(
         _drop_ops00_restore_database(restore_db, admin_dsn=admin_dsn)
 
 
+def test_restore_drill_script_never_drops_preexisting_prefixed_database(
+    tmp_path: Path,
+) -> None:
+    admin_dsn = require_approved_admin_dsn()
+    restore_db = _restore_db_name()
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute(
+            psycopg.sql.SQL("CREATE DATABASE {}").format(psycopg.sql.Identifier(restore_db))
+        )
+    target_info = psycopg.conninfo.conninfo_to_dict(admin_dsn)
+    target_info["dbname"] = restore_db
+    target_dsn = psycopg.conninfo.make_conninfo(**target_info)
+    with psycopg.connect(target_dsn) as conn:
+        conn.execute("CREATE TABLE cleanup_ownership_sentinel (value integer NOT NULL)")
+        conn.execute("INSERT INTO cleanup_ownership_sentinel (value) VALUES (7)")
+        conn.commit()
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "run_ops00_restore_drill.py"
+    env = os.environ.copy()
+    env.pop("QMTOOL_PG_TEST_RESET", None)
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--backup-dir",
+                str(tmp_path / "missing-backup-set"),
+                "--target-database",
+                restore_db,
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+        assert completed.returncode == 1
+        with psycopg.connect(target_dsn) as conn:
+            value = conn.execute(
+                "SELECT value FROM cleanup_ownership_sentinel"
+            ).fetchone()
+        assert value == (7,)
+    finally:
+        _drop_ops00_restore_database(restore_db, admin_dsn=admin_dsn)
+
+
 def test_live_restore_replaces_destination_blob_tree_exactly(
     platform_env: LivePostgresEnv,
     tmp_path: Path,
@@ -432,13 +478,14 @@ def test_live_restore_replaces_destination_blob_tree_exactly(
         blob_store=store,
     )
 
-    restore_db = _restore_db_name()
+    restore_db_first = _restore_db_name()
+    restore_db_second = _restore_db_name()
     restore_blob_root = app_home / "storage" / "platform" / "blobs-restored"
     try:
         first = restore_backup_set(
             backup_dir=Path(backup_ab.backup_path),
             target_admin_dsn=admin_dsn,
-            target_database=restore_db,
+            target_database=restore_db_first,
             destination_blob_root=restore_blob_root,
             app_home=app_home,
         )
@@ -453,7 +500,7 @@ def test_live_restore_replaces_destination_blob_tree_exactly(
         second = restore_backup_set(
             backup_dir=Path(backup_a.backup_path),
             target_admin_dsn=admin_dsn,
-            target_database=restore_db,
+            target_database=restore_db_second,
             destination_blob_root=restore_blob_root,
             app_home=app_home,
         )
@@ -470,7 +517,7 @@ def test_live_restore_replaces_destination_blob_tree_exactly(
             psycopg.conninfo.make_conninfo(
                 **{
                     **psycopg.conninfo.conninfo_to_dict(admin_dsn),
-                    "dbname": restore_db,
+                    "dbname": restore_db_second,
                 }
             )
         ) as conn:
@@ -478,4 +525,5 @@ def test_live_restore_replaces_destination_blob_tree_exactly(
         assert len(pg_rows) == 1
         assert str(pg_rows[0]["storage_key"]) == "artifacts/a.bin"
     finally:
-        _drop_ops00_restore_database(restore_db, admin_dsn=admin_dsn)
+        _drop_ops00_restore_database(restore_db_first, admin_dsn=admin_dsn)
+        _drop_ops00_restore_database(restore_db_second, admin_dsn=admin_dsn)

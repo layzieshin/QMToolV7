@@ -1,6 +1,7 @@
 """OPS00-F HTTP liveness vs ops readiness."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -98,6 +99,40 @@ def test_ready_false_when_candidate_staged(tmp_path: Path) -> None:
     )
     report = build_readiness_report(app_home=tmp_path, postgres_dsn=None)
     assert report.checks["update_rehearsal"] == "candidate_staged"
+    assert report.ready is False
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"phase": "future_phase"},
+        {"phase": "candidate_staged"},
+        {"phase": "aborted"},
+    ],
+)
+def test_ready_false_when_rehearsal_state_is_unknown_or_incomplete(
+    tmp_path: Path, state: dict[str, str]
+) -> None:
+    _writable_blob_root(tmp_path)
+    state_dir = resolve_home_path(tmp_path, "maintenance")
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "rehearsal_state.json").write_text(
+        json.dumps(state),
+        encoding="utf-8",
+    )
+    report = build_readiness_report(app_home=tmp_path, postgres_dsn=None)
+    assert report.checks["update_rehearsal"] == "invalid_state"
+    assert report.ready is False
+
+
+def test_ready_false_when_rehearsal_state_path_is_not_a_regular_file(
+    tmp_path: Path,
+) -> None:
+    _writable_blob_root(tmp_path)
+    state_path = resolve_home_path(tmp_path, "maintenance/rehearsal_state.json")
+    state_path.mkdir(parents=True)
+    report = build_readiness_report(app_home=tmp_path, postgres_dsn=None)
+    assert report.checks["update_rehearsal"] == "invalid_state"
     assert report.ready is False
 
 

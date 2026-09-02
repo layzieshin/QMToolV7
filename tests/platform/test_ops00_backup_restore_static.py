@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 import socket
+import sys
 import threading
 from pathlib import Path
 
@@ -18,10 +21,16 @@ from qm_platform.blob.backup_orchestrator import (
     create_backup,
     host_running_marker_path,
     release_identity_path,
+    remove_host_running_marker_if_owned,
     restore_backup_set,
     write_host_running_marker,
 )
-from qm_platform.runtime.operation_lock import OperationLock, is_operation_lock_held
+from qm_platform.runtime.operation_lock import (
+    OperationLock,
+    OperationLockError,
+    is_operation_lock_held,
+    operation_lock_path,
+)
 from src.backend.bootstrap import BackendBootstrapError
 from src.backend.service_host import ServiceHost
 
@@ -59,6 +68,13 @@ def test_orchestrator_does_not_import_cutover_drill_or_sqlite_evolution() -> Non
     assert "DatabaseEvolutionService" not in source
     assert "modules.usermanagement" not in source
     assert "tests." not in source
+
+
+def test_restore_never_overwrites_preexisting_target_database() -> None:
+    source = ORCHESTRATOR_SOURCE.read_text(encoding="utf-8")
+    assert "DROP DATABASE IF EXISTS" not in source
+    assert "CREATE DATABASE {}" in source
+    assert "cleanup_target_database" in source
 
 
 def test_backup_refused_when_host_running_marker_present(
@@ -346,7 +362,7 @@ def test_stop_timeout_leaves_host_marker_and_blocks_backup(
 
     host = ServiceHost()
     host.start(timeout=15.0)
-    assert host_running_marker_path(tmp_path).is_file()
+    assert host_running_marker_path(tmp_path).is_dir()
 
     real_thread = host._thread
     server = host._server
@@ -355,7 +371,7 @@ def test_stop_timeout_leaves_host_marker_and_blocks_backup(
         with pytest.raises(RuntimeError, match="stop timed out"):
             host.stop(timeout=0.1)
         assert host.status().state == ServiceHostState.STOPPING
-        assert host_running_marker_path(tmp_path).is_file()
+        assert host_running_marker_path(tmp_path).is_dir()
         with pytest.raises(BackupOrchestratorError, match="host running marker"):
             create_backup(
                 source_dsn="postgresql://u@127.0.0.1:5432/db",
@@ -368,7 +384,9 @@ def test_stop_timeout_leaves_host_marker_and_blocks_backup(
             server.should_exit = True
         if real_thread is not None:
             real_thread.join(timeout=15.0)
-        host_running_marker_path(tmp_path).unlink(missing_ok=True)
+        token = host._host_running_marker_token
+        if token is not None:
+            remove_host_running_marker_if_owned(token, tmp_path)
 
 
 def test_backup_preflight_runs_under_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -619,6 +637,91 @@ def test_held_operation_lock_accepted_and_still_held_after_c_returns(
     assert is_operation_lock_held(tmp_path) is False
 
 
+def test_operation_lock_rejects_descriptor_owner_identity_mismatch_without_deleting_owner(
+    tmp_path: Path,
+) -> None:
+    lock = OperationLock(app_home=tmp_path)
+    lock.acquire()
+    original_fd = lock._fd
+    owner_path = lock._owner_path
+    assert original_fd is not None
+    assert owner_path is not None
+    foreign = tmp_path / "foreign-operation-owner.lock"
+    foreign_fd = os.open(str(foreign), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+    lock._fd = foreign_fd
+    try:
+        with pytest.raises(OperationLockError, match="no longer matches"):
+            lock.validate_held_for(tmp_path)
+        with pytest.raises(OperationLockError, match="no longer matches"):
+            lock.release()
+        assert owner_path.is_file()
+        assert operation_lock_path(tmp_path).is_dir()
+    finally:
+        os.close(original_fd)
+        owner_path.unlink(missing_ok=True)
+        operation_lock_path(tmp_path).rmdir()
+        foreign.unlink(missing_ok=True)
+
+
+def test_operation_lock_release_preserves_replacement_after_identity_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock = OperationLock(app_home=tmp_path)
+    lock.acquire()
+    owned_fd = lock._fd
+    lock_path = operation_lock_path(tmp_path)
+    assert owned_fd is not None
+    assert lock._owner_path is not None
+
+    real_close = os.close
+    replacement_owner = lock_path / "foreign-owner.lock"
+    replaced = False
+
+    def _close_then_replace(fd: int) -> None:
+        nonlocal replaced
+        real_close(fd)
+        if fd == owned_fd and not replaced:
+            replaced = True
+            shutil.rmtree(lock_path)
+            lock_path.mkdir()
+            replacement_owner.write_text("foreign", encoding="ascii")
+
+    monkeypatch.setattr(os, "close", _close_then_replace)
+    try:
+        with pytest.raises(OperationLockError, match="failed to release"):
+            lock.release()
+        assert replacement_owner.read_text(encoding="ascii") == "foreign"
+        assert is_operation_lock_held(tmp_path) is True
+    finally:
+        monkeypatch.setattr(os, "close", real_close)
+        replacement_owner.unlink(missing_ok=True)
+        lock_path.rmdir()
+
+
+def test_operation_lock_write_failure_closes_descriptor_and_removes_own_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock = OperationLock(app_home=tmp_path)
+    real_write = os.write
+
+    def _write_failure(fd: int, payload: bytes) -> int:
+        raise OSError("simulated lock owner write failure")
+
+    monkeypatch.setattr(os, "write", _write_failure)
+    with pytest.raises(OSError, match="simulated lock owner write failure"):
+        lock.acquire()
+    assert lock._fd is None
+    assert lock._owner_path is None
+    assert not operation_lock_path(tmp_path).exists()
+
+    monkeypatch.setattr(os, "write", real_write)
+    with OperationLock(app_home=tmp_path):
+        assert is_operation_lock_held(tmp_path) is True
+    assert is_operation_lock_held(tmp_path) is False
+
+
 def test_unheld_operation_lock_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -724,6 +827,7 @@ def test_standalone_restore_releases_own_lock_after_error(tmp_path: Path) -> Non
         r"nested\id",
         "foo/../../etc",
         ".",
+        "ops00-explicit-1",
     ],
 )
 def test_explicit_backup_id_rejects_traversal_and_absolute_paths(
@@ -764,9 +868,9 @@ def test_explicit_safe_backup_id_is_accepted_before_connect(
             source_dsn="postgresql://u@127.0.0.1:5432/db",
             metadata_dsn="postgresql://u@127.0.0.1:5432/db",
             app_home=tmp_path,
-            backup_id="ops00-explicit-1",
+            backup_id="00000000-0000-4000-8000-0000000000d1",
         )
-    dest = backups_root(tmp_path) / "ops00-explicit-1"
+    dest = backups_root(tmp_path) / "00000000-0000-4000-8000-0000000000d1"
     assert not dest.exists()
     assert is_operation_lock_held(tmp_path) is False
 
@@ -776,12 +880,15 @@ def test_duplicate_backup_id_does_not_delete_existing_sealed_set(
 ) -> None:
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     _write_release_identity(tmp_path)
-    backup_id = "sealed-keep-me"
+    backup_id = "00000000-0000-4000-8000-0000000000d2"
     dest = backups_root(tmp_path) / backup_id
     dest.mkdir(parents=True)
     blob = dest / "blobs" / "artifacts" / "kept.bin"
     blob.parent.mkdir(parents=True)
-    (dest / MANIFEST_FILENAME).write_text('{"backup_id": "sealed-keep-me"}', encoding="utf-8")
+    (dest / MANIFEST_FILENAME).write_text(
+        json.dumps({"backup_id": backup_id}),
+        encoding="utf-8",
+    )
     (dest / DUMP_FILENAME).write_bytes(b"original-dump-bytes")
     (dest / CHECKSUMS_FILENAME).write_text('{"database.dump": "abc"}', encoding="utf-8")
     blob.write_bytes(b"original-blob-bytes")
@@ -809,3 +916,51 @@ def test_duplicate_backup_id_does_not_delete_existing_sealed_set(
         if path.is_file()
     }
     assert after == before
+
+
+@pytest.mark.parametrize(
+    ("argv", "script_name"),
+    [
+        (
+            ["ops", "restore-drill", "--backup-dir", "sealed-set"],
+            "run_ops00_restore_drill.py",
+        ),
+        (
+            ["ops", "update-rehearsal", "--abort", "--backup-dir", "sealed-set"],
+            "run_ops00_update_rehearsal.py",
+        ),
+    ],
+)
+def test_ops_cli_dispatches_existing_repo_root_drill_scripts(
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    script_name: str,
+) -> None:
+    from interfaces.cli import main as cli_main
+    from interfaces.cli.commands import ops_commands
+
+    seen: dict[str, object] = {}
+
+    class _Completed:
+        returncode = 0
+
+    def _run(command, **kwargs):
+        seen["command"] = command
+        seen["kwargs"] = kwargs
+        return _Completed()
+
+    monkeypatch.setattr(ops_commands.subprocess, "run", _run)
+    monkeypatch.setattr(sys, "argv", ["qmtool", *argv])
+    assert cli_main.main() == 0
+    command = seen["command"]
+    assert isinstance(command, list)
+    script = Path(command[1])
+    assert script == ROOT / "scripts" / script_name
+    assert script.is_file()
+
+
+def test_restore_drill_script_delegates_cleanup_to_locked_restore_owner() -> None:
+    source = (ROOT / "scripts" / "run_ops00_restore_drill.py").read_text(encoding="utf-8")
+    assert "cleanup_target_database=True" in source
+    assert "DROP DATABASE" not in source
+    assert "_drop_restore_database" not in source

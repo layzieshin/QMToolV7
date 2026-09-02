@@ -13,8 +13,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import psycopg
-
 from qm_platform.blob.backup_orchestrator import (
     RESTORE_DB_PREFIX,
     BackupOrchestratorError,
@@ -54,25 +52,6 @@ def _suffix() -> str:
     return "".join(secrets.choice(alphabet) for _ in range(8))
 
 
-def _drop_restore_database(database_name: str, *, admin_dsn: str) -> None:
-    if not database_name.startswith(RESTORE_DB_PREFIX):
-        raise DestructivePostgresGuardError("restore database name missing required prefix")
-    with psycopg.connect(admin_dsn, autocommit=True) as admin:
-        admin.execute(
-            """
-            SELECT pg_terminate_backend(pid)
-            FROM pg_stat_activity
-            WHERE datname = %s AND pid <> pg_backend_pid()
-            """,
-            (database_name,),
-        )
-        admin.execute(
-            psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
-                psycopg.sql.Identifier(database_name)
-            )
-        )
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="OPS00 guarded Slot-2 restore drill")
     parser.add_argument("--backup-dir", required=True, help="Sealed backup set directory")
@@ -97,7 +76,6 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     os.environ[TEST_RESET_ENV] = RESET_OPT_IN_VALUE
-    admin_dsn = None
     target_database = args.target_database or f"{RESTORE_DB_PREFIX}{_suffix()}"
     backup_dir = Path(args.backup_dir)
     if not backup_dir.is_absolute():
@@ -116,18 +94,12 @@ def main(argv: list[str] | None = None) -> int:
             target_database=target_database,
             destination_blob_root=destination_blob_root,
             app_home=home,
+            cleanup_target_database=True,
         )
     except (BackupOrchestratorError, DestructivePostgresGuardError) as exc:
         print(str(exc), file=sys.stderr)
         exit_code = 1
     finally:
-        try:
-            if admin_dsn is not None:
-                _drop_restore_database(target_database, admin_dsn=admin_dsn)
-        except DestructivePostgresGuardError as exc:
-            print(f"cleanup: {exc}", file=sys.stderr)
-            if exit_code == 0:
-                exit_code = 3
         os.environ.pop(TEST_RESET_ENV, None)
 
     if exit_code != 0 or result is None:

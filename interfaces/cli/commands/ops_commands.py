@@ -52,8 +52,11 @@ def cmd_ops_backup(args) -> int:
 
 
 def cmd_ops_restore_drill(args) -> int:
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     script = root / "scripts" / "run_ops00_restore_drill.py"
+    if not script.is_file():
+        print("OPS00 restore-drill runner is missing", file=sys.stderr)
+        return 1
     command = [sys.executable, str(script), "--backup-dir", str(args.backup_dir)]
     target_database = getattr(args, "target_database", None)
     if target_database:
@@ -85,8 +88,11 @@ def cmd_ops_update_rehearsal(args) -> int:
         if not backup_dir:
             print("--backup-dir is required with --abort", file=sys.stderr)
             return 1
-        root = Path(__file__).resolve().parents[2]
+        root = Path(__file__).resolve().parents[3]
         script = root / "scripts" / "run_ops00_update_rehearsal.py"
+        if not script.is_file():
+            print("OPS00 update-rehearsal runner is missing", file=sys.stderr)
+            return 1
         command = [sys.executable, str(script), "--backup-dir", str(args.backup_dir)]
         target_database = getattr(args, "target_database", None)
         if target_database:

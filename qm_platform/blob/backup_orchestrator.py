@@ -35,7 +35,6 @@ RESTORE_DB_PREFIX = "qmtool_ops00_restore_"
 FORBIDDEN_RESTORE_DATABASES = frozenset({"qmtool_j04_destructive_test", "qmtool_test"})
 FORBIDDEN_LAB_HOST = "192.168.0.4"
 _SECRET_PATTERN = re.compile(r"(password|pwd)=([^\s\"']+)", re.IGNORECASE)
-_BACKUP_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class BackupOrchestratorError(RuntimeError):
@@ -86,39 +85,74 @@ def host_running_marker_path(app_home: Path | None = None) -> Path:
 
 
 def is_host_running_marker_present(app_home: Path | None = None) -> bool:
-    return host_running_marker_path(app_home).is_file()
+    # Treat a legacy marker file and the current ownership directory alike.
+    return os.path.lexists(host_running_marker_path(app_home))
 
 
 def write_host_running_marker(app_home: Path | None = None) -> None:
-    path = host_running_marker_path(app_home)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(str(os.getpid()), encoding="ascii")
+    create_host_running_marker_exclusive(app_home)
+
+
+def _host_marker_owner_path(path: Path, token: str) -> Path:
+    owner_id = hashlib.sha256(token.encode("ascii")).hexdigest()
+    return path / f"owner-{owner_id}.marker"
 
 
 def create_host_running_marker_exclusive(app_home: Path | None = None) -> str:
     """Create the host-running marker only when this caller can own a new file.
 
-    Returns the exact instance token written at create time. Callers must store
-    that return value; they must not re-read the marker file as the token.
+    Returns the exact instance token written at create time. The marker is an
+    exclusive ownership directory containing a token-specific child. That
+    layout lets an old host remove only its own child and never a replacement
+    marker created by a different instance.
     """
     path = host_running_marker_path(app_home)
     path.parent.mkdir(parents=True, exist_ok=True)
     token = f"{os.getpid()}:{uuid.uuid4().hex}"
+    try:
+        path.mkdir()
+    except FileExistsError as exc:
+        raise BackupOrchestratorError("host running marker already present") from exc
+    owner_path = _host_marker_owner_path(path, token)
     payload = token.encode("ascii")
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     try:
-        fd = os.open(path, flags)
-    except FileExistsError as exc:
-        raise BackupOrchestratorError("host running marker already present") from exc
-    try:
-        os.write(fd, payload)
-    finally:
-        os.close(fd)
+        fd = os.open(owner_path, flags)
+        try:
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
+    except Exception:
+        try:
+            owner_path.unlink(missing_ok=True)
+            path.rmdir()
+        except OSError:
+            pass
+        raise
     return token
 
 
-def remove_host_running_marker(app_home: Path | None = None) -> None:
-    host_running_marker_path(app_home).unlink(missing_ok=True)
+def remove_host_running_marker_if_owned(
+    token: str,
+    app_home: Path | None = None,
+) -> bool:
+    """Remove only the token-specific marker owned by this host instance."""
+    if not token:
+        return False
+    path = host_running_marker_path(app_home)
+    owner_path = _host_marker_owner_path(path, token)
+    try:
+        if owner_path.read_text(encoding="ascii") != token:
+            return False
+        owner_path.unlink()
+    except (FileNotFoundError, NotADirectoryError, OSError, UnicodeDecodeError):
+        return False
+    try:
+        path.rmdir()
+    except OSError:
+        # A replacement/foreign owner child keeps the marker present.
+        return False
+    return True
 
 
 def backups_root(app_home: Path | None = None) -> Path:
@@ -143,9 +177,16 @@ def _validate_backup_id(backup_id: str) -> str:
         raise BackupOrchestratorError("backup_id is not a single safe path component")
     if posix.parts[0] != value or windows.parts[0] != value:
         raise BackupOrchestratorError("backup_id is not a single safe path component")
-    if not _BACKUP_ID_RE.fullmatch(value):
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError) as exc:
+        raise BackupOrchestratorError(
+            "backup_id is not a single safe path component or valid UUID"
+        ) from exc
+    canonical = str(parsed)
+    if not canonical:
         raise BackupOrchestratorError("backup_id is not a single safe path component")
-    return value
+    return canonical
 
 
 def _resolve_backup_dir(app_home: Path, backup_id: str) -> Path:
@@ -308,6 +349,24 @@ def _validate_restore_target_database(database_name: str, *, admin_dsn: str) -> 
         raise BackupOrchestratorError("lab PostgreSQL endpoint is forbidden for restore drill")
     if name == source_db:
         raise BackupOrchestratorError("restore target must not overwrite the source database")
+
+
+def _drop_restore_database(database_name: str, *, bootstrap_dsn: str) -> None:
+    """Drop only a restore database created by the current locked operation."""
+    with psycopg.connect(bootstrap_dsn, autocommit=True) as admin:
+        admin.execute(
+            """
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = %s AND pid <> pg_backend_pid()
+            """,
+            (database_name,),
+        )
+        admin.execute(
+            psycopg.sql.SQL("DROP DATABASE {}").format(
+                psycopg.sql.Identifier(database_name)
+            )
+        )
 
 
 def _sha256_file(path: Path) -> str:
@@ -568,10 +627,13 @@ def restore_backup_set(
     destination_blob_root: Path,
     app_home: Path | None = None,
     held_operation_lock: OperationLock | None = None,
+    cleanup_target_database: bool = False,
 ) -> RestoreResult:
     """Restore a sealed backup set into an isolated target database and blob root."""
     home = app_home if app_home is not None else runtime_home()
     lock, owns_lock = _bind_operation_lock(home, held_operation_lock)
+    created_target_database = False
+    bootstrap_dsn: str | None = None
     try:
         _validate_restore_target_database(target_database, admin_dsn=target_admin_dsn)
 
@@ -606,16 +668,17 @@ def restore_backup_set(
             bootstrap_dsn = psycopg.conninfo.make_conninfo(**admin_info)
 
             with psycopg.connect(bootstrap_dsn, autocommit=True) as admin:
-                admin.execute(
-                    psycopg.sql.SQL("DROP DATABASE IF EXISTS {}").format(
-                        psycopg.sql.Identifier(target_database)
+                try:
+                    admin.execute(
+                        psycopg.sql.SQL("CREATE DATABASE {}").format(
+                            psycopg.sql.Identifier(target_database)
+                        )
                     )
-                )
-                admin.execute(
-                    psycopg.sql.SQL("CREATE DATABASE {}").format(
-                        psycopg.sql.Identifier(target_database)
-                    )
-                )
+                except Exception as exc:
+                    raise BackupOrchestratorError(
+                        "restore target database already exists or cannot be created"
+                    ) from exc
+            created_target_database = True
 
             target_info = dict(admin_info)
             target_info["dbname"] = target_database
@@ -661,9 +724,20 @@ def restore_backup_set(
 
             _replace_directory_with_staging(destination, staging)
             created_staging = False
-        except Exception:
+            if cleanup_target_database:
+                _drop_restore_database(target_database, bootstrap_dsn=bootstrap_dsn)
+                created_target_database = False
+        except Exception as exc:
             if created_staging and staging.exists():
                 shutil.rmtree(staging)
+            if created_target_database and bootstrap_dsn is not None:
+                try:
+                    _drop_restore_database(target_database, bootstrap_dsn=bootstrap_dsn)
+                    created_target_database = False
+                except Exception as cleanup_exc:
+                    raise BackupOrchestratorError(
+                        "restore failed and owned target database cleanup failed"
+                    ) from cleanup_exc
             raise
 
         return RestoreResult(

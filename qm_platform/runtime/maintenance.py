@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -85,12 +87,16 @@ def exit_maintenance(app_home: Path | None = None) -> None:
 
 def _load_rehearsal_state(app_home: Path | None = None) -> dict[str, Any] | None:
     path = rehearsal_state_path(app_home)
-    if not path.is_file():
+    if not os.path.lexists(path):
         return None
     try:
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise MaintenanceError("rehearsal state path is not a regular file")
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise MaintenanceError("rehearsal state file is invalid JSON") from exc
+    except (OSError, UnicodeError) as exc:
+        raise MaintenanceError("rehearsal state file cannot be read safely") from exc
     if not isinstance(payload, dict):
         raise MaintenanceError("rehearsal state file must be a JSON object")
     return payload
@@ -109,23 +115,41 @@ def _clear_rehearsal_state(app_home: Path | None = None) -> None:
     rehearsal_state_path(app_home).unlink(missing_ok=True)
 
 
-def get_expected_release_fingerprint(app_home: Path | None = None) -> str | None:
+def _validated_rehearsal_state(app_home: Path | None = None) -> dict[str, Any] | None:
+    """Load the persisted state and reject unknown or incomplete phases."""
     state = _load_rehearsal_state(app_home)
     if state is None:
         return None
-    if str(state.get("phase") or "") != _PHASE_ABORTED:
+    phase = state.get("phase")
+    if not isinstance(phase, str) or not phase.strip():
+        raise MaintenanceError("rehearsal state phase is missing or malformed")
+    if phase == _PHASE_CANDIDATE_STAGED:
+        backup_path = state.get("backup_path")
+        if not isinstance(backup_path, str) or not backup_path.strip():
+            raise MaintenanceError("candidate_staged rehearsal state is incomplete")
+        return state
+    if phase == _PHASE_ABORTED:
+        expected = state.get("expected_app_release_fingerprint")
+        if not isinstance(expected, str) or len(expected.strip()) != 64:
+            raise MaintenanceError("aborted rehearsal state is incomplete")
+        return state
+    raise MaintenanceError("rehearsal state phase is unknown")
+
+
+def get_expected_release_fingerprint(app_home: Path | None = None) -> str | None:
+    state = _validated_rehearsal_state(app_home)
+    if state is None:
         return None
-    expected = str(state.get("expected_app_release_fingerprint") or "").strip()
-    if len(expected) != 64:
+    if state["phase"] != _PHASE_ABORTED:
         return None
-    return expected
+    return str(state["expected_app_release_fingerprint"]).strip()
 
 
 def is_rehearsal_in_progress(app_home: Path | None = None) -> bool:
-    state = _load_rehearsal_state(app_home)
+    state = _validated_rehearsal_state(app_home)
     if state is None:
         return False
-    return str(state.get("phase") or "") == _PHASE_CANDIDATE_STAGED
+    return state["phase"] == _PHASE_CANDIDATE_STAGED
 
 
 def _release_tree_root(app_home: Path) -> Path:
@@ -200,21 +224,13 @@ def _acquire_operation_lock(app_home: Path) -> OperationLock:
 
 def _guard_start_rehearsal_state(app_home: Path) -> None:
     """Reject a second start while staged; allow only a missing or aborted terminal."""
-    state = _load_rehearsal_state(app_home)
+    state = _validated_rehearsal_state(app_home)
     if state is None:
         return
-    phase = state.get("phase")
-    if not isinstance(phase, str) or phase == "":
-        raise MaintenanceError(
-            "update rehearsal start refused: rehearsal state phase is missing or malformed"
-        )
+    phase = state["phase"]
     if phase == _PHASE_CANDIDATE_STAGED:
         raise MaintenanceError(
             "update rehearsal start refused while a candidate is already staged"
-        )
-    if phase != _PHASE_ABORTED:
-        raise MaintenanceError(
-            "update rehearsal start refused: rehearsal state phase is unknown"
         )
 
 
@@ -330,6 +346,7 @@ def abort_update_rehearsal(
     target_database: str,
     destination_blob_root: Path,
     app_home: Path | None = None,
+    cleanup_target_database: bool = False,
 ) -> UpdateRehearsalAbortResult:
     """Abort rehearsal: restore release tree A and the sealed C PG+Blob backup set."""
     home = app_home if app_home is not None else runtime_home()
@@ -348,6 +365,7 @@ def abort_update_rehearsal(
                 destination_blob_root=destination_blob_root,
                 app_home=home,
                 held_operation_lock=lock,
+                cleanup_target_database=cleanup_target_database,
             )
         except BackupOrchestratorError as exc:
             raise MaintenanceError(str(exc)) from exc

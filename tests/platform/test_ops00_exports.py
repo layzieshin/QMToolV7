@@ -88,7 +88,21 @@ def test_unknown_keys_fail_closed(tmp_path: Path) -> None:
         create_portability_export(records=[record], output_dir=tmp_path)
 
 
-@pytest.mark.parametrize("secret_key", ["password", "session_token", "private_key", "dsn"])
+@pytest.mark.parametrize(
+    "secret_key",
+    [
+        "password",
+        "session_token",
+        "private_key",
+        "dsn",
+        "client_api_key",
+        "tls_private_key",
+        "operator_pass",
+        "db.password",
+        "auth/api_key",
+        "operator.pass",
+    ],
+)
 def test_nested_secret_fixtures_fail_closed(tmp_path: Path, secret_key: str) -> None:
     record = dict(_portability_record())
     record["title"] = "ok"
@@ -259,6 +273,30 @@ def test_evidence_export_rejects_bearer_in_allowlisted_fields(tmp_path: Path) ->
 
     record = dict(_evidence_record())
     record["reason"] = "Basic dXNlcjpwYXNz"
+    with pytest.raises(ExportError, match="secret material"):
+        create_evidence_export(audit_records=[record], output_dir=tmp_path)
+    assert list(tmp_path.glob("evidence-*.zip")) == []
+
+
+@pytest.mark.parametrize(
+    "secret_value",
+    [
+        "pass=raw-pass-secret",
+        'pass="raw pass with spaces"',
+        'client_api_key="raw client key with spaces"',
+        "tls_private_key='raw private key phrase'",
+        'db.password="raw namespaced db password"',
+        "auth/api_key='raw namespaced api key'",
+        "message=token=raw-nested-token",
+        "note: password=raw-nested-password",
+        "https://host/path?token=raw-query-token",
+    ],
+)
+def test_evidence_export_denies_new_canonical_redaction_markers(
+    tmp_path: Path, secret_value: str
+) -> None:
+    record = dict(_evidence_record())
+    record["reason"] = secret_value
     with pytest.raises(ExportError, match="secret material"):
         create_evidence_export(audit_records=[record], output_dir=tmp_path)
     assert list(tmp_path.glob("evidence-*.zip")) == []

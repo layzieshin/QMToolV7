@@ -45,6 +45,11 @@ _CONFIG_KEYS = (
     "QMTOOL_PG_USER",
     "QMTOOL_PG_PASSWORD",
 )
+_REMAINING_SECRET_MARKER_PATTERNS = (
+    re.compile(r"-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----", re.IGNORECASE),
+    re.compile(r"\$(?:2[ABY]\$|ARGON2(?:I|D|ID)\$)", re.IGNORECASE),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+){1,2}\b"),
+)
 
 
 class DiagnosticBundleError(RuntimeError):
@@ -158,6 +163,46 @@ def _reject_secret_bytes(payload: bytes, *, field: str) -> None:
     if re.search(r"Bearer\s+(?!<redacted>)\S+", text, re.IGNORECASE):
         raise DiagnosticBundleError(f"secret material remains in {field}")
     if re.search(r"Basic\s+(?!<redacted>)\S+", text, re.IGNORECASE):
+        raise DiagnosticBundleError(f"secret material remains in {field}")
+    if any(pattern.search(text) for pattern in _REMAINING_SECRET_MARKER_PATTERNS):
+        raise DiagnosticBundleError(f"secret material remains in {field}")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            try:
+                parsed_line = json.loads(line)
+            except json.JSONDecodeError:
+                _reject_secret_value(line, field=field)
+            else:
+                _reject_secret_value(parsed_line, field=field)
+    else:
+        _reject_secret_value(parsed, field=field)
+
+
+def _reject_secret_value(value: Any, *, field: str) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            name = str(key)
+            probe = redact_audit_details({name: "diagnostic-key-probe"})
+            owner_rejects_key = probe.get(name) != "diagnostic-key-probe"
+            if owner_rejects_key:
+                if item is None or isinstance(item, bool) or item == "<redacted>":
+                    continue
+                raise DiagnosticBundleError(f"secret material remains in {field}")
+            _reject_secret_value(item, field=field)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _reject_secret_value(item, field=field)
+        return
+    if not isinstance(value, str) or value == "<redacted>":
+        return
+    if redact_audit_details(value) != value:
+        raise DiagnosticBundleError(f"secret material remains in {field}")
+    if any(pattern.search(value) for pattern in _REMAINING_SECRET_MARKER_PATTERNS):
         raise DiagnosticBundleError(f"secret material remains in {field}")
 
 

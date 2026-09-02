@@ -511,6 +511,7 @@ def test_host_start_fails_on_fingerprint_mismatch_after_candidate_b(
         {
             "phase": "candidate_staged",
             "backup_id": "00000000-0000-4000-8000-000000000001",
+            "backup_path": str(tmp_path / "backups" / "00000000-0000-4000-8000-000000000001"),
             "prior_release_fingerprint": compute_app_release_fingerprint(tmp_path),
             "candidate_release_fingerprint": compute_app_release_fingerprint(tmp_path),
         },
@@ -524,6 +525,17 @@ def test_host_start_fails_on_fingerprint_mismatch_after_candidate_b(
     )
     host = ServiceHost()
     with pytest.raises(BackendBootstrapError, match="candidate is staged"):
+        host.start(timeout=2.0)
+
+
+@pytest.mark.parametrize("payload", [{"phase": "future_phase"}, {"phase": "candidate_staged"}])
+def test_host_start_rejects_unknown_or_incomplete_rehearsal_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: dict
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _save_state(tmp_path, payload)
+    host = ServiceHost()
+    with pytest.raises(BackendBootstrapError, match="rehearsal state is invalid"):
         host.start(timeout=2.0)
 
 
@@ -867,6 +879,9 @@ def test_update_rehearsal_script_sets_reset_only_after_preflight() -> None:
     pop_after = source.index("os.environ.pop(TEST_RESET_ENV, None)", set_at)
     assert pop_before < preflight_at < set_at < require_at
     assert set_at < pop_after
+    assert "cleanup_target_database=True" in source
+    assert "DROP DATABASE" not in source
+    assert "_drop_restore_database" not in source
 
 
 def _save_state(app_home: Path, payload: dict) -> None:
@@ -991,6 +1006,54 @@ def test_start_unknown_phase_is_rejected_without_mutation(
     assert is_operation_lock_held(tmp_path) is False
     assert rehearsal_state_path(tmp_path).read_bytes() == state_before
     assert release_identity_path(tmp_path).read_bytes() == b"unknown-phase-a"
+
+
+def test_start_incomplete_aborted_state_is_rejected_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_tree(tmp_path, b"incomplete-aborted-release-a")
+    candidate = _write_candidate_tree(tmp_path, b"incomplete-aborted-release-b")
+    _save_state(tmp_path, {"phase": "aborted"})
+    state_before = rehearsal_state_path(tmp_path).read_bytes()
+    monkeypatch.setattr(
+        "qm_platform.runtime.maintenance.snapshot_release_tree",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not snapshot")),
+    )
+    with pytest.raises(MaintenanceError, match="aborted rehearsal state is incomplete"):
+        start_update_rehearsal(
+            candidate_release_dir=candidate,
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+        )
+    assert is_operation_lock_held(tmp_path) is False
+    assert rehearsal_state_path(tmp_path).read_bytes() == state_before
+    assert release_identity_path(tmp_path).read_bytes() == b"incomplete-aborted-release-a"
+
+
+def test_start_non_file_rehearsal_state_is_rejected_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    _write_release_tree(tmp_path, b"non-file-state-release-a")
+    candidate = _write_candidate_tree(tmp_path, b"non-file-state-release-b")
+    state_path = rehearsal_state_path(tmp_path)
+    state_path.mkdir(parents=True)
+    monkeypatch.setattr(
+        "qm_platform.runtime.maintenance.snapshot_release_tree",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not snapshot")),
+    )
+    with pytest.raises(MaintenanceError, match="not a regular file"):
+        start_update_rehearsal(
+            candidate_release_dir=candidate,
+            source_dsn="postgresql://u@127.0.0.1:5432/db",
+            metadata_dsn="postgresql://u@127.0.0.1:5432/db",
+            app_home=tmp_path,
+        )
+    assert is_operation_lock_held(tmp_path) is False
+    assert state_path.is_dir()
+    assert release_identity_path(tmp_path).read_bytes() == b"non-file-state-release-a"
 
 
 def test_abort_without_state_does_not_restore(

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
 import socket
 import sys
-import uuid
+import threading
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from qm_platform.settings.testing import build_settings_service_for_tests
 from qm_platform.blob.backup_orchestrator import (
     create_host_running_marker_exclusive,
     host_running_marker_path,
+    remove_host_running_marker_if_owned,
     write_host_running_marker,
 )
 from src.backend.api import create_app
@@ -46,6 +48,20 @@ def _minimal_container(tmp_path: Path) -> RuntimeContainer:
     container.register_port("app_home", tmp_path)
     container.register_port("resource_root", tmp_path)
     return container
+
+
+def _marker_snapshot(path: Path) -> dict[str, bytes]:
+    return {
+        child.name: child.read_bytes()
+        for child in path.iterdir()
+        if child.is_file()
+    }
+
+
+def _replace_marker_with_foreign(path: Path, payload: bytes) -> None:
+    shutil.rmtree(path)
+    path.mkdir()
+    (path / "foreign.marker").write_bytes(payload)
 
 
 def test_service_host_module_has_no_windows_service_imports() -> None:
@@ -88,10 +104,10 @@ def test_service_host_start_status_graceful_stop(
         status = host.status()
         assert status.state == ServiceHostState.RUNNING
         marker = host_running_marker_path(tmp_path)
-        assert marker.is_file()
+        assert marker.is_dir()
         stored = host._host_running_marker_token
         assert stored is not None
-        assert stored == marker.read_text(encoding="ascii")
+        assert list(_marker_snapshot(marker).values()) == [stored.encode("ascii")]
         assert stored.split(":", 1)[0] == str(os.getpid())
         assert len(stored.split(":", 1)[1]) >= 32
         assert status.bind_host == "127.0.0.1"
@@ -271,6 +287,61 @@ def test_production_valid_pem_serves_https_after_bootstrap(
         host.stop(timeout=15.0)
 
 
+def test_service_host_loads_dotenv_before_home_lock_bind_and_tls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cert_path, key_path = write_ephemeral_self_signed_pem(tmp_path)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+
+    dotenv_keys = (
+        "QMTOOL_HOME",
+        "QMTOOL_RUNTIME_PROFILE",
+        "QMTOOL_TLS_CERT_FILE",
+        "QMTOOL_TLS_KEY_FILE",
+        "QMTOOL_BIND_HOST",
+        "QMTOOL_BIND_PORT",
+    )
+    for key in dotenv_keys:
+        monkeypatch.delenv(key, raising=False)
+    env_path = tmp_path / "service-host.env"
+    env_path.write_text(
+        "\n".join(
+            (
+                f"QMTOOL_HOME={tmp_path}",
+                "QMTOOL_RUNTIME_PROFILE=production",
+                f"QMTOOL_TLS_CERT_FILE={cert_path}",
+                f"QMTOOL_TLS_KEY_FILE={key_path}",
+                "QMTOOL_BIND_HOST=127.0.0.1",
+                f"QMTOOL_BIND_PORT={bind_port}",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.backend.bootstrap._ENV_PATH", env_path)
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: _minimal_container(tmp_path),
+    )
+
+    host = ServiceHost()
+    host.start(timeout=20.0)
+    try:
+        status = host.status()
+        assert status.production_profile is True
+        assert status.https_enabled is True
+        assert status.bind_port == bind_port
+        assert host_running_marker_path(tmp_path).is_dir()
+    finally:
+        host.stop(timeout=15.0)
+        # Values loaded by application code are not registered as
+        # MonkeyPatch writes and therefore need explicit test isolation.
+        for key in dotenv_keys:
+            os.environ.pop(key, None)
+
+
 @pytest.mark.parametrize("license_mode", ["dev", "auto"])
 def test_production_dev_or_auto_license_mode_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, license_mode: str
@@ -355,7 +426,7 @@ def test_failed_second_start_does_not_remove_foreign_running_marker(
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     write_host_running_marker(tmp_path)
     marker = host_running_marker_path(tmp_path)
-    original = marker.read_bytes()
+    original = _marker_snapshot(marker)
     called = {"bootstrap": False}
 
     def _must_not_bootstrap():
@@ -367,7 +438,7 @@ def test_failed_second_start_does_not_remove_foreign_running_marker(
     with pytest.raises(BackendBootstrapError, match="host running marker"):
         host.start(timeout=5.0)
     assert called["bootstrap"] is False
-    assert marker.read_bytes() == original
+    assert _marker_snapshot(marker) == original
     assert host.status().state == ServiceHostState.STOPPED
 
 
@@ -377,7 +448,7 @@ def test_bootstrap_error_does_not_remove_foreign_running_marker(
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     write_host_running_marker(tmp_path)
     marker = host_running_marker_path(tmp_path)
-    original = marker.read_bytes()
+    original = _marker_snapshot(marker)
     monkeypatch.setattr(
         "src.backend.service_host.is_host_running_marker_present",
         lambda app_home=None: False,
@@ -389,7 +460,7 @@ def test_bootstrap_error_does_not_remove_foreign_running_marker(
     host = ServiceHost()
     with pytest.raises(BackendBootstrapError, match="bootstrap exploded"):
         host.start(timeout=5.0)
-    assert marker.read_bytes() == original
+    assert _marker_snapshot(marker) == original
 
 
 def test_bind_failure_does_not_remove_foreign_running_marker(
@@ -402,7 +473,7 @@ def test_bind_failure_does_not_remove_foreign_running_marker(
         monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
         write_host_running_marker(tmp_path)
         marker = host_running_marker_path(tmp_path)
-        original = marker.read_bytes()
+        original = _marker_snapshot(marker)
         monkeypatch.setattr(
             "src.backend.service_host.is_host_running_marker_present",
             lambda app_home=None: False,
@@ -414,7 +485,7 @@ def test_bind_failure_does_not_remove_foreign_running_marker(
         host = ServiceHost()
         with pytest.raises((RuntimeError, BackendBootstrapError)):
             host.start(timeout=3.0)
-        assert marker.read_bytes() == original
+        assert _marker_snapshot(marker) == original
     finally:
         occupied.close()
 
@@ -425,10 +496,10 @@ def test_stop_does_not_remove_foreign_running_marker(
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     write_host_running_marker(tmp_path)
     marker = host_running_marker_path(tmp_path)
-    original = marker.read_bytes()
+    original = _marker_snapshot(marker)
     host = ServiceHost()
     host.stop(timeout=1.0)
-    assert marker.read_bytes() == original
+    assert _marker_snapshot(marker) == original
 
 
 def test_stop_does_not_delete_replaced_foreign_marker(
@@ -448,12 +519,12 @@ def test_stop_does_not_delete_replaced_foreign_marker(
     host = ServiceHost()
     host.start(timeout=15.0)
     marker = host_running_marker_path(tmp_path)
-    assert marker.is_file()
+    assert marker.is_dir()
     foreign = b"foreign-replacement-marker"
-    marker.write_bytes(foreign)
+    _replace_marker_with_foreign(marker, foreign)
     try:
         host.stop(timeout=15.0)
-        assert marker.read_bytes() == foreign
+        assert _marker_snapshot(marker) == {"foreign.marker": foreign}
     finally:
         if host.status().state.name != "STOPPED":
             host._owns_host_running_marker = False
@@ -467,8 +538,12 @@ def test_exclusive_marker_creates_distinct_instance_tokens(tmp_path: Path) -> No
     assert token_a != token_b
     assert token_a.split(":", 1)[0] == str(os.getpid())
     assert token_b.split(":", 1)[0] == str(os.getpid())
-    assert host_running_marker_path(tmp_path / "a").read_text(encoding="ascii") == token_a
-    assert host_running_marker_path(tmp_path / "b").read_text(encoding="ascii") == token_b
+    assert list(_marker_snapshot(host_running_marker_path(tmp_path / "a")).values()) == [
+        token_a.encode("ascii")
+    ]
+    assert list(_marker_snapshot(host_running_marker_path(tmp_path / "b")).values()) == [
+        token_b.encode("ascii")
+    ]
 
 
 def test_stop_does_not_delete_replaced_same_pid_different_instance_token(
@@ -490,17 +565,108 @@ def test_stop_does_not_delete_replaced_same_pid_different_instance_token(
     marker = host_running_marker_path(tmp_path)
     owned = host._host_running_marker_token
     assert owned is not None
-    replacement = f"{os.getpid()}:{uuid.uuid4().hex}"
+    shutil.rmtree(marker)
+    replacement = create_host_running_marker_exclusive(tmp_path)
     assert replacement != owned
-    marker.write_text(replacement, encoding="ascii")
     try:
         host.stop(timeout=15.0)
-        assert marker.read_text(encoding="ascii") == replacement
+        assert list(_marker_snapshot(marker).values()) == [replacement.encode("ascii")]
     finally:
+        remove_host_running_marker_if_owned(replacement, tmp_path)
         if host.status().state.name != "STOPPED":
             host._owns_host_running_marker = False
             host._host_running_marker_token = None
             host.stop(timeout=15.0)
+
+
+def test_stop_preserves_marker_replaced_between_owner_read_and_unlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: _minimal_container(tmp_path),
+    )
+    host = ServiceHost()
+    host.start(timeout=15.0)
+    marker = host_running_marker_path(tmp_path)
+    owned_file = next(marker.iterdir())
+    real_read_text = Path.read_text
+    replacement: dict[str, str] = {}
+
+    def _read_then_replace(path: Path, *args, **kwargs) -> str:
+        value = real_read_text(path, *args, **kwargs)
+        if path == owned_file and "token" not in replacement:
+            shutil.rmtree(marker)
+            replacement["token"] = create_host_running_marker_exclusive(tmp_path)
+        return value
+
+    monkeypatch.setattr(Path, "read_text", _read_then_replace)
+    try:
+        host.stop(timeout=15.0)
+        assert marker.is_dir()
+        assert list(_marker_snapshot(marker).values()) == [
+            replacement["token"].encode("ascii")
+        ]
+    finally:
+        monkeypatch.setattr(Path, "read_text", real_read_text)
+        token = replacement.get("token")
+        if token:
+            remove_host_running_marker_if_owned(token, tmp_path)
+
+
+def test_start_and_concurrent_stop_leave_no_stale_running_state_or_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = sock.getsockname()[1]
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+    entered = threading.Event()
+    release = threading.Event()
+
+    def _bootstrap() -> RuntimeContainer:
+        entered.set()
+        assert release.wait(timeout=10.0)
+        return _minimal_container(tmp_path)
+
+    monkeypatch.setattr("src.backend.service_host.build_backend_container", _bootstrap)
+    host = ServiceHost()
+    errors: list[BaseException] = []
+
+    def _start() -> None:
+        try:
+            host.start(timeout=15.0)
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    def _stop() -> None:
+        try:
+            host.stop(timeout=15.0)
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    start_thread = threading.Thread(target=_start)
+    stop_thread = threading.Thread(target=_stop)
+    start_thread.start()
+    assert entered.wait(timeout=5.0)
+    stop_thread.start()
+    assert stop_thread.is_alive()
+    release.set()
+    start_thread.join(timeout=20.0)
+    stop_thread.join(timeout=20.0)
+    assert not start_thread.is_alive()
+    assert not stop_thread.is_alive()
+    assert errors == []
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host_running_marker_path(tmp_path).exists()
 
 
 def test_stop_uses_returned_create_token_not_reread_file(
@@ -523,8 +689,9 @@ def test_stop_uses_returned_create_token_not_reread_file(
         token = create_host_running_marker_exclusive(app_home)
         recorded["returned"] = token
         path = host_running_marker_path(tmp_path)
-        path.write_text("mutated-after-create", encoding="ascii")
-        recorded["file"] = path.read_text(encoding="ascii")
+        owner = next(path.iterdir())
+        owner.write_text("mutated-after-create", encoding="ascii")
+        recorded["file"] = owner.read_text(encoding="ascii")
         return token
 
     monkeypatch.setattr(
@@ -537,7 +704,9 @@ def test_stop_uses_returned_create_token_not_reread_file(
         assert host._host_running_marker_token == recorded["returned"]
         assert host._host_running_marker_token != recorded["file"]
         host.stop(timeout=15.0)
-        assert host_running_marker_path(tmp_path).read_text(encoding="ascii") == "mutated-after-create"
+        assert list(_marker_snapshot(host_running_marker_path(tmp_path)).values()) == [
+            b"mutated-after-create"
+        ]
     finally:
         if host.status().state.name != "STOPPED":
             host._owns_host_running_marker = False

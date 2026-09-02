@@ -46,7 +46,11 @@ def _reject_secret_keys(payload: Any, *, path: str) -> None:
         for key, value in payload.items():
             name = str(key)
             lowered = name.casefold()
-            if any(fragment in lowered for fragment in FORBIDDEN_KEY_FRAGMENTS):
+            owner_probe = redact_audit_details({name: "export-key-probe"})
+            owner_rejects_key = owner_probe.get(name) != "export-key-probe"
+            if owner_rejects_key or any(
+                fragment in lowered for fragment in FORBIDDEN_KEY_FRAGMENTS
+            ):
                 raise ExportError(f"secret key {path + name!r} is not exportable")
             child_path = f"{path}{name}."
             _reject_secret_keys(value, path=child_path)

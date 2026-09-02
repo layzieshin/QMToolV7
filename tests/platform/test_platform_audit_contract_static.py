@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+import inspect
 from pathlib import Path
 
 import pytest
+import qm_platform.audit.redaction as redaction_module
 
 from qm_platform.audit import (
     ACTOR_ANONYMOUS,
@@ -233,3 +235,134 @@ def test_redact_audit_details_keeps_existing_bearer_password_and_token_behavior(
     assert redacted["note"] == "Bearer <redacted>"
     assert redacted["detail"] == "token=<redacted>"
     assert redact_audit_details("Bearer eyJ.token") == "Bearer <redacted>"
+
+
+@pytest.mark.parametrize(
+    ("raw", "secret", "expected"),
+    [
+        ("pass=inline-secret", "inline-secret", "pass=<redacted>"),
+        (
+            "pass: 'secret value with spaces'",
+            "secret value with spaces",
+            "pass: '<redacted>'",
+        ),
+        (
+            'password="quoted password with spaces"',
+            "quoted password with spaces",
+            'password="<redacted>"',
+        ),
+        (
+            'client_api_key = "client key with spaces"',
+            "client key with spaces",
+            'client_api_key = "<redacted>"',
+        ),
+        (
+            "tls_private_key='private key phrase'",
+            "private key phrase",
+            "tls_private_key='<redacted>'",
+        ),
+        (
+            'db.password="namespaced password"',
+            "namespaced password",
+            'db.password="<redacted>"',
+        ),
+        (
+            "auth/api_key='namespaced api key'",
+            "namespaced api key",
+            "auth/api_key='<redacted>'",
+        ),
+        (
+            "message=token=secret-value",
+            "secret-value",
+            "message=token=<redacted>",
+        ),
+        (
+            "note: password=hunter2",
+            "hunter2",
+            "note: password=<redacted>",
+        ),
+        (
+            "https://host/path?token=abc",
+            "abc",
+            "https://host/path?token=<redacted>",
+        ),
+        (
+            'message="token=quoted-inner-secret"',
+            "quoted-inner-secret",
+            'message="token=<redacted>"',
+        ),
+    ],
+)
+def test_redact_audit_details_consumes_pass_and_complete_quoted_values(
+    raw: str, secret: str, expected: str
+) -> None:
+    redacted = redact_audit_details(raw)
+    assert secret not in redacted
+    assert redacted == expected
+
+
+def test_redact_audit_details_rejects_compound_secret_alias_keys() -> None:
+    payload = {
+        "client_api_key": "client-key-secret",
+        "tls_private_key": "private-key-secret",
+        "operatorPass": "operator-pass-secret",
+        "db.password": "database-password-secret",
+        "auth/api_key": "auth-api-secret",
+        "operator.pass": "operator-password-secret",
+        "compassion": "visible",
+    }
+    redacted = redact_audit_details(payload)
+    assert redacted["client_api_key"] == "<redacted>"
+    assert redacted["tls_private_key"] == "<redacted>"
+    assert redacted["operatorPass"] == "<redacted>"
+    assert redacted["db.password"] == "<redacted>"
+    assert redacted["auth/api_key"] == "<redacted>"
+    assert redacted["operator.pass"] == "<redacted>"
+    assert redacted["compassion"] == "visible"
+
+
+def test_inline_redaction_scans_only_secret_values_in_long_neutral_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_scan = redaction_module._inline_value_replacement
+    scanned_values = 0
+
+    def _tracked_scan(text: str, start: int) -> tuple[int, str]:
+        nonlocal scanned_values
+        scanned_values += 1
+        return real_scan(text, start)
+
+    monkeypatch.setattr(redaction_module, "_inline_value_replacement", _tracked_scan)
+    neutral_prefix = "a=" * 12_000
+    redacted = redact_audit_details(f"{neutral_prefix}token=tail-secret")
+    assert redacted == f"{neutral_prefix}token=<redacted>"
+    assert scanned_values == 1
+
+
+def test_inline_redaction_scans_long_namespace_text_once_without_value_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probes = 0
+
+    def _unexpected_value_probe(text: str, start: int) -> tuple[int, str]:
+        nonlocal probes
+        probes += 1
+        return start, "<redacted>"
+
+    monkeypatch.setattr(
+        redaction_module,
+        "_inline_value_replacement",
+        _unexpected_value_probe,
+    )
+    raw = ("a/" * 12_000) + "a"
+    assert redact_audit_details(raw) == raw
+    assert probes == 0
+
+
+def test_inline_redaction_applies_many_secret_replacements_in_one_forward_join() -> None:
+    raw = "token=x " * 12_000
+    redacted = redact_audit_details(raw)
+    assert redacted == "token=<redacted> " * 12_000
+    source = inspect.getsource(redaction_module._redact_inline_key_values)
+    assert 'return "".join(parts)' in source
+    assert "reversed(replacements)" not in source
