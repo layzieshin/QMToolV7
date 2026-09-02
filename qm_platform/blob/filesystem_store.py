@@ -3,9 +3,17 @@ from __future__ import annotations
 
 import hashlib
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from .contract import PlatformBlobWriteError, validate_storage_key
+
+
+@dataclass(frozen=True)
+class BlobInventoryEntry:
+    storage_key: str
+    checksum_sha256: str
+    size_bytes: int
 
 
 class FilesystemBlobStore:
@@ -40,3 +48,22 @@ class FilesystemBlobStore:
         if not target.is_file():
             raise PlatformBlobWriteError("blob payload is missing")
         return target.read_bytes()
+
+    def inventory(self) -> tuple[BlobInventoryEntry, ...]:
+        if not self._root.is_dir():
+            return ()
+        entries: list[BlobInventoryEntry] = []
+        for path in sorted(self._root.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(self._root).as_posix()
+            key = validate_storage_key(rel)
+            payload = path.read_bytes()
+            entries.append(
+                BlobInventoryEntry(
+                    storage_key=key,
+                    checksum_sha256=hashlib.sha256(payload).hexdigest(),
+                    size_bytes=len(payload),
+                )
+            )
+        return tuple(entries)

@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from fastapi.routing import APIRoute
 
+from qm_platform.runtime.health import build_readiness_report
+from qm_platform.runtime.maintenance import is_maintenance_active
 from src.backend.auth_routes import router as auth_router
+from src.backend.bootstrap import BackendBootstrapError, resolve_usermanagement_postgres_dsn
 from src.backend.cookie_csrf import SAFE_METHODS
 from src.backend.csrf_middleware import enforce_cookie_csrf
 from src.backend.documents_routes import router as documents_router
@@ -23,6 +30,12 @@ _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 class HealthResponse(BaseModel):
     status: str
     service: str
+
+
+class ReadinessResponse(BaseModel):
+    ready: bool
+    service: str
+    checks: dict[str, str]
 
 
 class ErrorDetail(BaseModel):
@@ -40,6 +53,29 @@ _ERROR_STATUS_CODES = (400, 401, 403, 404, 409, 413, 422, 501, 503)
 _PRODUCTION_PROFILES = {"prod", "production"}
 
 _API_V1 = "/api/v1"
+_WEBCLIENT_DIST_ENV = "QMTOOL_WEBCLIENT_DIST"
+
+
+def resolve_webclient_dist_dir() -> Path | None:
+    """Return an existing webclient dist directory for same-origin static serving."""
+    configured = os.environ.get(_WEBCLIENT_DIST_ENV, "").strip()
+    candidates: list[Path] = []
+    if configured:
+        candidates.append(Path(configured))
+    home = os.environ.get("QMTOOL_HOME", "").strip()
+    if home:
+        candidates.append(Path(home) / "webclient" / "dist")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        index_html = resolved / "index.html"
+        if resolved.is_dir() and index_html.is_file():
+            return resolved
+    return None
 
 # Documents mutations that always require If-Match at runtime (_required_if_match).
 _DOCUMENTS_IF_MATCH_REQUIRED: frozenset[tuple[str, str]] = frozenset(
@@ -205,6 +241,7 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
 _OPENAPI_NO_SECURITY_PATHS = frozenset(
     {
         "/health",
+        "/ready",
         f"{_API_V1}/auth/csrf",
         f"{_API_V1}/auth/token",
     }
@@ -361,8 +398,6 @@ def create_app(container=None) -> FastAPI:
     Routers are always registered so a container-free app can export the complete
     OpenAPI document. Fachliche calls fail closed with HTTP 503 until wired.
     """
-    import os
-
     production = os.environ.get("QMTOOL_RUNTIME_PROFILE", "").strip().lower() in _PRODUCTION_PROFILES
     app = FastAPI(
         title="QMTool Backend API",
@@ -377,6 +412,24 @@ def create_app(container=None) -> FastAPI:
     @app.middleware("http")
     async def cookie_csrf_guard(request: Request, call_next: Callable) -> Response:
         return await enforce_cookie_csrf(request, call_next)
+
+    @app.middleware("http")
+    async def maintenance_gate(request: Request, call_next: Callable) -> Response:
+        if (
+            is_maintenance_active()
+            and request.method.upper() not in SAFE_METHODS
+            and request.url.path != "/health"
+        ):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": {
+                        "error": "maintenance_mode",
+                        "message": "installation is in maintenance mode; state-changing requests are unavailable",
+                    }
+                },
+            )
+        return await call_next(request)
 
     @app.middleware("http")
     async def attach_request_id(request: Request, call_next: Callable) -> Response:
@@ -394,6 +447,20 @@ def create_app(container=None) -> FastAPI:
     def _health() -> HealthResponse:
         return HealthResponse(status="ok", service="qmtool-backend")
 
+    @app.get("/ready", tags=["health"])
+    def _ready() -> JSONResponse:
+        try:
+            postgres_dsn = resolve_usermanagement_postgres_dsn()
+        except BackendBootstrapError:
+            postgres_dsn = None
+        report = build_readiness_report(postgres_dsn=postgres_dsn)
+        payload = {
+            "ready": report.ready,
+            "service": "qmtool-backend",
+            "checks": dict(report.checks),
+        }
+        return JSONResponse(status_code=200 if report.ready else 503, content=payload)
+
     app.include_router(auth_router, prefix=_API_V1)
     app.include_router(user_admin_router, prefix=_API_V1)
     app.include_router(documents_router, prefix=_API_V1)
@@ -405,5 +472,13 @@ def create_app(container=None) -> FastAPI:
         return app.openapi_schema
 
     app.openapi = openapi  # type: ignore[method-assign]
+
+    webclient_dist = resolve_webclient_dist_dir()
+    if webclient_dist is not None:
+        app.mount(
+            "/",
+            StaticFiles(directory=str(webclient_dist), html=True),
+            name="webclient-static",
+        )
 
     return app

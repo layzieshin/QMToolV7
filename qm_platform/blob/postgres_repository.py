@@ -130,3 +130,48 @@ class PlatformBlobRepository:
         if int(cursor.rowcount or 0) <= 0:
             raise PlatformBlobWriteError("platform blob metadata unavailable")
         return artifact.artifact_id
+
+    @staticmethod
+    def list_artifacts_on_connection(conn: psycopg.Connection) -> list[dict[str, object]]:
+        rows = conn.execute(
+            """
+            SELECT artifact_id::text AS artifact_id,
+                   organization_id,
+                   backup_set_id::text AS backup_set_id,
+                   checksum_sha256,
+                   size_bytes,
+                   media_type,
+                   version_no,
+                   storage_key
+            FROM platform.blob_artifacts
+            ORDER BY storage_key
+            """
+        ).fetchall()
+        result: list[dict[str, object]] = []
+        for row in rows:
+            if isinstance(row, dict):
+                result.append(dict(row))
+            else:
+                (
+                    artifact_id,
+                    organization_id,
+                    backup_set_id,
+                    checksum_sha256,
+                    size_bytes,
+                    media_type,
+                    version_no,
+                    storage_key,
+                ) = row
+                result.append(
+                    {
+                        "artifact_id": artifact_id,
+                        "organization_id": organization_id,
+                        "backup_set_id": backup_set_id,
+                        "checksum_sha256": checksum_sha256,
+                        "size_bytes": size_bytes,
+                        "media_type": media_type,
+                        "version_no": version_no,
+                        "storage_key": storage_key,
+                    }
+                )
+        return result

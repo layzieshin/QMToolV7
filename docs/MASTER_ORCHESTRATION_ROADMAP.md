@@ -187,13 +187,23 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich OPS00
-(Windows service, HTTPS, backup/restore, export; TODO, vorbereitet,
-nicht gestartet — erfordert explizite Freigabe).
+Die naechste freizugebende Aktion ist ausschliesslich der **OPS00-Publikationsabschluss**
+fuer PR #41: den lokalen Closeout ab `a0e4c7253c4528f09447ae773bdafebf8455ecbd`
+nach ausdruecklicher Freigabe pushen, CI auf exakt diesem neuen PR-HEAD abwarten,
+Review-Konversationen menschlich pruefen/aufloesen und den Squash-Merge separat freigeben.
+CI auf dem lokalen Closeout ist bis zum Push **NOT RUN**; die fruehere gruene CI auf
+`977667fbdb2838c47d7564992157f984141d6a9e` ersetzt das nicht. Kein `--admin`, keine
+dritte Codex-Runde und kein Branch-/Worktree-Cleanup. **OPS00 ist technisch PASS**
+(262 package-integration passed, 2 erwartete Live-Skips; Slot-2 9/9 PASS; Evidence
+`build/ap-029-ops00/final-closeout-20260902/`). External Review bleibt
+`BOUNDED_COMPLETE` (2/2; kein Codex-PASS).
+**WCON00** ist TODO / NOT RUN und vor OPS00-Merge plus separatem
+`/execute-work-package WCON00` weder gestartet noch freigegeben.
 **PG01** ist `PASS`; PR #39 wurde per Squash nach `main` @
-`58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. **UX00 ist PASS** auf
-`feature/ap-029-ux00`; kanonische P0-UX und P1-Gap-Matrix liegen vor. OPS00 ist nicht gestartet.
-WCON00, INT00 und spaetere Checkpoints sind nicht freigegeben.
+`58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. **UX00 ist PASS** und auf
+`main` integriert via PR #40 @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef`;
+kanonische P0-UX und P1-Gap-Matrix liegen vor. INT00 und spaetere
+Checkpoints sind nicht freigegeben.
 **WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`).
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;

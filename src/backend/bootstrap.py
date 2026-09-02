@@ -35,6 +35,7 @@ from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_home
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
+from qm_platform.blob import FilesystemBlobStore
 
 _ROOT = Path(__file__).resolve().parents[2]
 _ENV_PATH = _ROOT / ".env"
@@ -44,7 +45,8 @@ class BackendBootstrapError(RuntimeError):
     """Raised when the backend cannot start with a valid PostgreSQL configuration."""
 
 
-def _load_dotenv(path: Path = _ENV_PATH) -> None:
+def _load_dotenv(path: Path | None = None) -> None:
+    path = _ENV_PATH if path is None else Path(path)
     if not path.is_file():
         return
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -61,9 +63,19 @@ def _load_dotenv(path: Path = _ENV_PATH) -> None:
         os.environ[key] = value
 
 
+def load_backend_environment(path: Path | None = None) -> None:
+    """Load repository-local backend configuration before any runtime decision.
+
+    Service-host bind, TLS, home/lock and profile checks are security-sensitive;
+    they must observe the same ``.env`` values as PostgreSQL bootstrap.
+    Existing process environment values keep precedence.
+    """
+    _load_dotenv(path)
+
+
 def resolve_usermanagement_postgres_dsn() -> str:
     """Resolve the runtime PostgreSQL DSN fail-closed (no SQLite fallback)."""
-    _load_dotenv()
+    load_backend_environment()
     dsn = os.environ.get("QMTOOL_PG_DSN", "").strip()
     if dsn:
         return dsn
@@ -247,6 +259,9 @@ def build_platform_ports(*, fail_closed_license: bool = False) -> RuntimeContain
     container.register_port("license_guard", license_guard)
     container.register_port("app_home", app_home)
     container.register_port("resource_root", resources)
+    blob_root = resolve_home_path(app_home, "storage/platform/blobs")
+    blob_root.mkdir(parents=True, exist_ok=True)
+    container.register_port("filesystem_blob_store", FilesystemBlobStore(blob_root))
     return container
 
 
