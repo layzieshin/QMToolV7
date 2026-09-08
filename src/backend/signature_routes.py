@@ -80,16 +80,26 @@ def _signature_api(request: Request):
 
 
 def _map_signature_error(exc: Exception) -> HTTPException:
+    def _detail(*, error: str, message: str) -> dict[str, object]:
+        detail: dict[str, object] = {"error": error, "message": message}
+        field_errors = getattr(exc, "field_errors", None)
+        if field_errors:
+            detail["field_errors"] = field_errors
+        return detail
+
     if isinstance(exc, SignatureTemplateError):
         message = str(exc)
         status = 403 if any(token in message for token in ("only technical admins", "ownership mismatch")) else 400
-        return HTTPException(status_code=status, detail={"error": "forbidden" if status == 403 else "signature", "message": message})
+        return HTTPException(
+            status_code=status,
+            detail=_detail(error="forbidden" if status == 403 else "signature", message=message),
+        )
     if isinstance(exc, PasswordRequiredError):
-        return HTTPException(status_code=400, detail={"error": "password_required", "message": str(exc)})
+        return HTTPException(status_code=400, detail=_detail(error="password_required", message=str(exc)))
     if isinstance(exc, PasswordInvalidError):
-        return HTTPException(status_code=403, detail={"error": "password_invalid", "message": str(exc)})
+        return HTTPException(status_code=403, detail=_detail(error="password_invalid", message=str(exc)))
     if isinstance(exc, SignatureError):
-        return HTTPException(status_code=400, detail={"error": "signature", "message": str(exc)})
+        return HTTPException(status_code=400, detail=_detail(error="signature", message=str(exc)))
     return HTTPException(status_code=500, detail={"error": "internal", "message": "signature request failed"})
 
 

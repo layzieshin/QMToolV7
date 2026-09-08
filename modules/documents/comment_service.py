@@ -87,7 +87,16 @@ class WorkflowCommentService:
         ref_no = f"{state.document_id}-v{state.version}-{context.value}-{next_no:04d}"
         text = comment_text.strip()
         if not text:
-            raise ValidationError("comment_text is required")
+            raise ValidationError(
+                "comment_text is required",
+                field_errors=[
+                    {
+                        "field": "comment_text",
+                        "code": "required",
+                        "message": "comment_text is required",
+                    }
+                ],
+            )
         record = WorkflowCommentRecord(
             comment_id=uuid4().hex,
             ref_no=ref_no,

@@ -972,7 +972,7 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in next_body
     assert "CI-Jobs SUCCESS" in next_body
     assert "11/11 Review-Konversationen resolved" in next_body
-    assert "WCON00" in next_body and "TODO / NOT RUN" in next_body
+    assert "WCON00" in next_body and "IN_PROGRESS" in next_body
     assert "dritte Codex-Runde" in next_body
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in next_body
     assert "PR #40" in next_body
@@ -994,7 +994,7 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "build/ap-029-ux00/" in rows_by_id["UX00"]["result_evidence"]
     assert rows_by_id["OPS00"]["status"] == "PASS"
-    assert rows_by_id["WCON00"]["status"] == "TODO"
+    assert rows_by_id["WCON00"]["status"] == "IN_PROGRESS"
     assert rows_by_id["INT00"]["status"] == "TODO"
     assert rows_by_id["WEB01"]["status"] == "TODO"
 
@@ -1004,7 +1004,7 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     )
     assert sequence in roadmap
     assert "ausschliesslich WCON00" in roadmap
-    assert "WCON00" in roadmap and "TODO / NOT RUN" in roadmap
+    assert "WCON00" in roadmap and "IN_PROGRESS" in roadmap
     assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in roadmap
 
     ux00_section = plan.split("### UX00", 1)[1].split("\n### ", 1)[0]

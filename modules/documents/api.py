@@ -131,6 +131,8 @@ def import_sqlite_to_postgres(*, sqlite_path, postgres_dsn, report_dir, artifact
 
 from .capabilities import (
     ACTION_IDS,
+    ActionDescriptor,
+    action_descriptors_for_actor,
     available_actions_for_actor,
     compute_available_actions,
     compute_global_capabilities,
@@ -186,6 +188,8 @@ __all__ = [
     "document_version_state_to_json",
     "document_version_state_to_payload",
     "ACTION_IDS",
+    "ActionDescriptor",
+    "action_descriptors_for_actor",
     "available_actions_for_actor",
     "compute_available_actions",
     "compute_global_capabilities",

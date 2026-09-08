@@ -232,6 +232,7 @@ def test_change_password_keeps_current_session(tmp_path: Path) -> None:
     )
     assert weak.status_code == 400
     assert weak.json()["detail"]["error"] == "weak_password"
+    assert weak.json()["detail"]["field_errors"][0]["field"] == "password"
 
     empty = client.post(
         "/api/v1/auth/change-password",
@@ -240,6 +241,7 @@ def test_change_password_keeps_current_session(tmp_path: Path) -> None:
     )
     assert empty.status_code == 400
     assert empty.json()["detail"]["error"] == "weak_password"
+    assert empty.json()["detail"]["field_errors"][0]["field"] == "password"
 
     spaces = client.post(
         "/api/v1/auth/change-password",
@@ -248,6 +250,7 @@ def test_change_password_keeps_current_session(tmp_path: Path) -> None:
     )
     assert spaces.status_code == 400
     assert spaces.json()["detail"]["error"] == "weak_password"
+    assert spaces.json()["detail"]["field_errors"][0]["field"] == "password"
 
     spoof = client.post(
         "/api/v1/auth/change-password",

@@ -45,6 +45,16 @@ class RevokedSessionError(SessionError):
 class WeakPasswordError(UsermanagementError):
     """Password does not meet the configured password policy."""
 
+    @property
+    def field_errors(self) -> list[dict[str, str]]:
+        return [
+            {
+                "field": "password",
+                "code": "weak_password",
+                "message": "password does not meet policy",
+            }
+        ]
+
 
 class AuthorizationError(UsermanagementError):
     """Caller lacks permission for the requested usermanagement action."""

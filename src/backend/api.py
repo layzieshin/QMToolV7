@@ -38,11 +38,18 @@ class ReadinessResponse(BaseModel):
     checks: dict[str, str]
 
 
+class FieldErrorItem(BaseModel):
+    field: str
+    code: str
+    message: str
+
+
 class ErrorDetail(BaseModel):
     error: str
     message: str
     current_etag: str | None = None
     current_state: dict[str, Any] | None = None
+    field_errors: list[FieldErrorItem] | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -223,6 +230,28 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
     schemas = schema.get("components", {}).get("schemas", {})
     if not isinstance(schemas, dict):
         return
+    action_descriptor = {
+        "type": "object",
+        "required": [
+            "code",
+            "label_key",
+            "enabled",
+            "requires_reason",
+            "requires_confirmation",
+            "destructive",
+            "severity",
+        ],
+        "properties": {
+            "code": {"type": "string"},
+            "label_key": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "disabled_reason": {"type": "string", "nullable": True},
+            "requires_reason": {"type": "boolean"},
+            "requires_confirmation": {"type": "boolean"},
+            "destructive": {"type": "boolean"},
+            "severity": {"type": "string", "enum": ["info", "warning", "danger"]},
+        },
+    }
     for name in _DOCUMENTS_STATE_RESPONSE_SCHEMAS:
         model = schemas.get(name)
         if not isinstance(model, dict):
@@ -230,11 +259,18 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
         required = model.setdefault("required", [])
         if "available_actions" not in required:
             required.append("available_actions")
+        if "allowed_actions" not in required:
+            required.append("allowed_actions")
         properties = model.setdefault("properties", {})
         properties["available_actions"] = {
             "type": "array",
             "items": {"type": "string"},
             "description": "Server-computed available_actions for the confirmed actor.",
+        }
+        properties["allowed_actions"] = {
+            "type": "array",
+            "items": action_descriptor,
+            "description": "Server-computed action descriptors for the confirmed actor.",
         }
 
 
@@ -309,6 +345,18 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
             "message": {"type": "string", "example": "document state is newer"},
             "current_etag": {"type": "string", "nullable": True, "example": "evt-42"},
             "current_state": {"type": "object", "nullable": True, "additionalProperties": True},
+            "field_errors": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["field", "code", "message"],
+                    "properties": {
+                        "field": {"type": "string"},
+                        "code": {"type": "string"},
+                        "message": {"type": "string"},
+                    },
+                },
+            },
         },
     }
     # Ensure public conflict field name is current_state only.

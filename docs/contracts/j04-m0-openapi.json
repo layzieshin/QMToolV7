@@ -1,6 +1,60 @@
 {
   "components": {
     "schemas": {
+      "ActionDescriptorModel": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "destructive": {
+            "title": "Destructive",
+            "type": "boolean"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "label_key": {
+            "title": "Label Key",
+            "type": "string"
+          },
+          "requires_confirmation": {
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "requires_reason": {
+            "title": "Requires Reason",
+            "type": "boolean"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label_key",
+          "enabled",
+          "requires_reason",
+          "requires_confirmation",
+          "destructive",
+          "severity"
+        ],
+        "title": "ActionDescriptorModel",
+        "type": "object"
+      },
       "AssignRolesBody": {
         "properties": {
           "approvers": {
@@ -283,6 +337,54 @@
       },
       "EnsureSourcePdfResponse": {
         "properties": {
+          "allowed_actions": {
+            "description": "Server-computed action descriptors for the confirmed actor.",
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "destructive": {
+                  "type": "boolean"
+                },
+                "disabled_reason": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "label_key": {
+                  "type": "string"
+                },
+                "requires_confirmation": {
+                  "type": "boolean"
+                },
+                "requires_reason": {
+                  "type": "boolean"
+                },
+                "severity": {
+                  "enum": [
+                    "info",
+                    "warning",
+                    "danger"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "label_key",
+                "enabled",
+                "requires_reason",
+                "requires_confirmation",
+                "destructive",
+                "severity"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "artifact_id": {
             "anyOf": [
               {
@@ -314,6 +416,7 @@
         "required": [
           "state",
           "available_actions",
+          "allowed_actions",
           "etag"
         ],
         "title": "EnsureSourcePdfResponse",
@@ -334,6 +437,28 @@
           "error": {
             "example": "document_conflict",
             "type": "string"
+          },
+          "field_errors": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "message": {
             "example": "document state is newer",
@@ -415,6 +540,54 @@
       },
       "ExtendAnnualResponse": {
         "properties": {
+          "allowed_actions": {
+            "description": "Server-computed action descriptors for the confirmed actor.",
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "destructive": {
+                  "type": "boolean"
+                },
+                "disabled_reason": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "label_key": {
+                  "type": "string"
+                },
+                "requires_confirmation": {
+                  "type": "boolean"
+                },
+                "requires_reason": {
+                  "type": "boolean"
+                },
+                "severity": {
+                  "enum": [
+                    "info",
+                    "warning",
+                    "danger"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "label_key",
+                "enabled",
+                "requires_reason",
+                "requires_confirmation",
+                "destructive",
+                "severity"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "available_actions": {
             "description": "Server-computed available_actions for the confirmed actor.",
             "items": {
@@ -439,6 +612,7 @@
         "required": [
           "state",
           "available_actions",
+          "allowed_actions",
           "etag",
           "is_maxed"
         ],
@@ -1289,6 +1463,54 @@
       },
       "VersionStateResponse": {
         "properties": {
+          "allowed_actions": {
+            "description": "Server-computed action descriptors for the confirmed actor.",
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "destructive": {
+                  "type": "boolean"
+                },
+                "disabled_reason": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "label_key": {
+                  "type": "string"
+                },
+                "requires_confirmation": {
+                  "type": "boolean"
+                },
+                "requires_reason": {
+                  "type": "boolean"
+                },
+                "severity": {
+                  "enum": [
+                    "info",
+                    "warning",
+                    "danger"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "label_key",
+                "enabled",
+                "requires_reason",
+                "requires_confirmation",
+                "destructive",
+                "severity"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "available_actions": {
             "description": "Server-computed available_actions for the confirmed actor.",
             "items": {
@@ -1309,6 +1531,7 @@
         "required": [
           "state",
           "available_actions",
+          "allowed_actions",
           "etag"
         ],
         "title": "VersionStateResponse",
@@ -14220,6 +14443,127 @@
           }
         },
         "summary": " Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "QMTool J04-M0 HTTP operation.",
+        "operationId": "get_ready",
+        "parameters": [
+          {
+            "description": "Optional correlation identifier echoed by the backend.",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          }
+        },
+        "summary": " Ready",
         "tags": [
           "health"
         ]

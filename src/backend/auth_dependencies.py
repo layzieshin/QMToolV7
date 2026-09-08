@@ -92,6 +92,14 @@ def _unauthorized(message: str = "unauthorized") -> HTTPException:
 
 def map_auth_error(exc: Exception) -> HTTPException:
     """Map usermanagement auth/session/admin errors to stable HTTP errors."""
+
+    def _detail(*, error: str, message: str) -> dict[str, object]:
+        detail: dict[str, object] = {"error": error, "message": message}
+        field_errors = getattr(exc, "field_errors", None)
+        if field_errors:
+            detail["field_errors"] = field_errors
+        return detail
+
     if isinstance(exc, AuditUnavailableError):
         return HTTPException(
             status_code=503,
@@ -105,12 +113,12 @@ def map_auth_error(exc: Exception) -> HTTPException:
     if isinstance(exc, um_api.WeakPasswordError):
         return HTTPException(
             status_code=400,
-            detail={"error": "weak_password", "message": "password does not meet policy"},
+            detail=_detail(error="weak_password", message="password does not meet policy"),
         )
     if isinstance(exc, um_api.InvalidUserUpdateError):
         return HTTPException(
             status_code=400,
-            detail={"error": "invalid_user_update", "message": "invalid user update"},
+            detail=_detail(error="invalid_user_update", message="invalid user update"),
         )
     if isinstance(exc, um_api.AuthorizationError):
         return HTTPException(

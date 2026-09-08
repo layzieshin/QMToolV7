@@ -33,6 +33,7 @@ from modules.documents.api import (
     WorkflowCommentRecord,
     WorkflowCommentStatus,
     actor_user_and_role,
+    action_descriptors_for_actor,
     available_actions_for_actor,
     artifact_to_public_payload,
     compute_global_capabilities,
@@ -46,9 +47,21 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
+class ActionDescriptorModel(BaseModel):
+    code: str
+    label_key: str
+    enabled: bool
+    disabled_reason: str | None = None
+    requires_reason: bool
+    requires_confirmation: bool
+    destructive: bool
+    severity: str
+
+
 class VersionStateResponse(BaseModel):
     state: dict[str, Any]
     available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
     etag: str
 
 
@@ -176,6 +189,7 @@ class NewVersionAfterArchiveBody(BaseModel):
 class ExtendAnnualResponse(BaseModel):
     state: dict[str, Any]
     available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
     etag: str
     is_maxed: bool
 
@@ -183,6 +197,7 @@ class ExtendAnnualResponse(BaseModel):
 class EnsureSourcePdfResponse(BaseModel):
     state: dict[str, Any]
     available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
     etag: str
     artifact_id: str | None = None
 
@@ -253,7 +268,11 @@ def _map_documents_error(exc: Exception) -> HTTPException:
                 status_code=404,
                 detail={"error": "not_found", "message": str(exc)},
             )
-        return HTTPException(status_code=400, detail={"error": "documents_workflow", "message": str(exc)})
+        detail: dict[str, object] = {"error": "documents_workflow", "message": str(exc)}
+        field_errors = getattr(exc, "field_errors", None)
+        if field_errors:
+            detail["field_errors"] = field_errors
+        return HTTPException(status_code=400, detail=detail)
     return HTTPException(status_code=500, detail={"error": "internal", "message": "documents request failed"})
 
 
@@ -458,19 +477,43 @@ def _etag_for_state(state) -> str:
     return str(getattr(state, "last_event_id", None) or "none")
 
 
-def _state_payload(state, actor: UserContext) -> tuple[dict[str, Any], list[str]]:
+def _serialize_action_descriptors(descriptors) -> list[dict[str, object]]:
+    return [
+        {
+            "code": descriptor.code,
+            "label_key": descriptor.label_key,
+            "enabled": descriptor.enabled,
+            "disabled_reason": descriptor.disabled_reason,
+            "requires_reason": descriptor.requires_reason,
+            "requires_confirmation": descriptor.requires_confirmation,
+            "destructive": descriptor.destructive,
+            "severity": descriptor.severity,
+        }
+        for descriptor in sorted(descriptors, key=lambda item: item.code)
+    ]
+
+
+def _state_payload(state, actor: UserContext) -> tuple[dict[str, Any], list[str], list[dict[str, object]]]:
+    descriptors = action_descriptors_for_actor(state, actor)
     actions = sorted(available_actions_for_actor(state, actor))
+    allowed_actions = _serialize_action_descriptors(descriptors)
     payload = document_version_state_to_payload(state)
     payload["available_actions"] = actions
-    return payload, actions
+    payload["allowed_actions"] = allowed_actions
+    return payload, actions, allowed_actions
 
 
 def _state_response(state, actor: UserContext, response: Response | None = None) -> VersionStateResponse:
-    payload, actions = _state_payload(state, actor)
+    payload, actions, allowed_actions = _state_payload(state, actor)
     etag = _etag_for_state(state)
     if response is not None:
         response.headers["ETag"] = etag
-    return VersionStateResponse(state=payload, available_actions=actions, etag=etag)
+    return VersionStateResponse(
+        state=payload,
+        available_actions=actions,
+        allowed_actions=allowed_actions,
+        etag=etag,
+    )
 
 
 def _required_if_match(raw: str | None) -> str | None:
@@ -1087,12 +1130,13 @@ def ensure_source_pdf_for_signing_route(
         if artifact.artifact_type == ArtifactType.SOURCE_PDF and artifact.is_current:
             artifact_id = artifact.artifact_id
             break
-    state_dict, actions = _state_payload(updated, actor)
+    state_dict, actions, allowed_actions = _state_payload(updated, actor)
     etag = _etag_for_state(updated)
     response.headers["ETag"] = etag
     return EnsureSourcePdfResponse(
         state=state_dict,
         available_actions=actions,
+        allowed_actions=allowed_actions,
         etag=etag,
         artifact_id=artifact_id,
     )
@@ -1406,10 +1450,16 @@ def extend_annual_validity_route(
         )
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    payload, actions = _state_payload(updated, actor)
+    payload, actions, allowed_actions = _state_payload(updated, actor)
     etag = _etag_for_state(updated)
     response.headers["ETag"] = etag
-    return ExtendAnnualResponse(state=payload, available_actions=actions, etag=etag, is_maxed=is_maxed)
+    return ExtendAnnualResponse(
+        state=payload,
+        available_actions=actions,
+        allowed_actions=allowed_actions,
+        etag=etag,
+        is_maxed=is_maxed,
+    )
 
 
 @router.post("/versions/{document_id}/{version}/lifecycle/new-version-after-archive", response_model=VersionStateResponse)

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from modules.documents.api import ACTION_IDS
 from modules.documents.wiring import register_documents_ports
 from modules.registry.projection_api import RegistryProjectionApi
 from modules.registry.service import RegistryService
@@ -695,6 +696,29 @@ def test_version_read_after_restart(tmp_path: Path) -> None:
     after = restarted.get("/api/v1/documents/versions/DOC-RESTART-1/1", headers=_auth(reviewer))
     assert after.status_code == 200, after.text
     assert after.json()["state"]["status"] == "IN_PROGRESS"
+    body = after.json()
+    assert "allowed_actions" in body
+    assert isinstance(body["allowed_actions"], list)
+    assert len(body["allowed_actions"]) == len(set(ACTION_IDS))
+    enabled_codes = sorted(item["code"] for item in body["allowed_actions"] if item["enabled"])
+    assert body["available_actions"] == enabled_codes
+    assert body["state"]["available_actions"] == enabled_codes
+
+
+def test_create_pdf_comment_empty_text_returns_field_errors(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-COMMENT-EMPTY")
+    response = client.post(
+        "/api/v1/documents/versions/DOC-COMMENT-EMPTY/1/comments",
+        headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
+        json={"context": "DOCX_EDIT", "page_number": 1, "comment_text": "   "},
+    )
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "documents_workflow"
+    assert detail["field_errors"][0]["field"] == "comment_text"
+    assert detail["field_errors"][0]["code"] == "required"
 
 
 def test_header_read(tmp_path: Path) -> None:

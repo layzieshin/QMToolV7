@@ -153,11 +153,28 @@ def test_openapi_error_detail_and_available_actions_contract(monkeypatch) -> Non
     detail = document["components"]["schemas"]["ErrorDetail"]
     assert "current_state" in detail["properties"]
     assert "state" not in detail["properties"]
+    field_errors = detail["properties"]["field_errors"]
+    assert field_errors["type"] == "array"
+    item = field_errors["items"]
+    assert set(item["required"]) == {"field", "code", "message"}
     schemas = document["components"]["schemas"]
     for name in _DOCUMENTS_STATE_RESPONSE_SCHEMAS:
         model = schemas[name]
         assert "available_actions" in model["required"]
         assert model["properties"]["available_actions"]["type"] == "array"
+        assert "allowed_actions" in model["required"]
+        allowed = model["properties"]["allowed_actions"]
+        assert allowed["type"] == "array"
+        descriptor = allowed["items"]
+        assert "code" in descriptor["properties"]
+        assert "label_key" in descriptor["properties"]
+        assert "enabled" in descriptor["properties"]
+        assert "requires_reason" in descriptor["properties"]
+        assert "requires_confirmation" in descriptor["properties"]
+        assert "destructive" in descriptor["properties"]
+        assert "severity" in descriptor["properties"]
+    assert "/ready" in document["paths"]
+    assert "/health" in document["paths"]
 
 
 def test_openapi_snapshot_is_reproducible(monkeypatch) -> None:

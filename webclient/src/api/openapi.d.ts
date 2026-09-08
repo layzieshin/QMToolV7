@@ -1416,10 +1416,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ready
+         * @description QMTool J04-M0 HTTP operation.
+         */
+        get: operations["get_ready"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionDescriptorModel */
+        ActionDescriptorModel: {
+            /** Code */
+            code: string;
+            /** Destructive */
+            destructive: boolean;
+            /** Disabled Reason */
+            disabled_reason?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Label Key */
+            label_key: string;
+            /** Requires Confirmation */
+            requires_confirmation: boolean;
+            /** Requires Reason */
+            requires_reason: boolean;
+            /** Severity */
+            severity: string;
+        };
         /** AssignRolesBody */
         AssignRolesBody: {
             /** Approvers */
@@ -1532,6 +1571,18 @@ export interface components {
         };
         /** EnsureSourcePdfResponse */
         EnsureSourcePdfResponse: {
+            /** @description Server-computed action descriptors for the confirmed actor. */
+            allowed_actions: {
+                code: string;
+                destructive: boolean;
+                disabled_reason?: string | null;
+                enabled: boolean;
+                label_key: string;
+                requires_confirmation: boolean;
+                requires_reason: boolean;
+                /** @enum {string} */
+                severity: "info" | "warning" | "danger";
+            }[];
             /** Artifact Id */
             artifact_id?: string | null;
             /** @description Server-computed available_actions for the confirmed actor. */
@@ -1551,6 +1602,11 @@ export interface components {
             } | null;
             /** @example document_conflict */
             error: string;
+            field_errors?: {
+                code: string;
+                field: string;
+                message: string;
+            }[];
             /** @example document state is newer */
             message: string;
         };
@@ -1591,6 +1647,18 @@ export interface components {
         };
         /** ExtendAnnualResponse */
         ExtendAnnualResponse: {
+            /** @description Server-computed action descriptors for the confirmed actor. */
+            allowed_actions: {
+                code: string;
+                destructive: boolean;
+                disabled_reason?: string | null;
+                enabled: boolean;
+                label_key: string;
+                requires_confirmation: boolean;
+                requires_reason: boolean;
+                /** @enum {string} */
+                severity: "info" | "warning" | "danger";
+            }[];
             /** @description Server-computed available_actions for the confirmed actor. */
             available_actions: string[];
             /** Etag */
@@ -1902,6 +1970,18 @@ export interface components {
         };
         /** VersionStateResponse */
         VersionStateResponse: {
+            /** @description Server-computed action descriptors for the confirmed actor. */
+            allowed_actions: {
+                code: string;
+                destructive: boolean;
+                disabled_reason?: string | null;
+                enabled: boolean;
+                label_key: string;
+                requires_confirmation: boolean;
+                requires_reason: boolean;
+                /** @enum {string} */
+                severity: "info" | "warning" | "danger";
+            }[];
             /** @description Server-computed available_actions for the confirmed actor. */
             available_actions: string[];
             /** Etag */
@@ -10488,6 +10568,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ready: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional correlation identifier echoed by the backend. */
+                "X-Request-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Structured QMTool error response. */

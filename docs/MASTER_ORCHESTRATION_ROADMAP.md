@@ -188,8 +188,8 @@ Historische oder zu klaerende Artefakte:
 
 ## Naechste freigegebene Aktion
 Die naechste freizugebende Aktion ist ausschliesslich WCON00. Der Checkpoint ist
-TODO / NOT RUN und darf erst durch einen separaten `/execute-work-package WCON00`
-auf einem eigenen Branch/Worktree ab dem aktuellen `origin/main` gestartet werden.
+IN_PROGRESS auf `feature/ap-029-wcon00` (Start SHA `eb39875423b3d2bb34f87ebc1a0716c724aa4ecc`);
+WCON00-A implementiert gerade die shared transport contracts.
 **OPS00 ist PASS** und wurde via PR #41 per Squash nach `main` @
 `98feef61dcfe0e40741c254da16feb9383a0d1b0` gemergt. Vor dem Merge waren beide
 CI-Jobs SUCCESS und 11/11 Review-Konversationen resolved. Die technische Evidence
