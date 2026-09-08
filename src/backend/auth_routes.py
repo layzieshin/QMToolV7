@@ -1,13 +1,17 @@
 """Auth HTTP routes (AP-028 M5 / WEB00). Transport only — no domain logic."""
 from __future__ import annotations
 
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel, Field
 
+from modules.documents.api import compute_global_capabilities
 from modules.usermanagement import api as um_api
 from modules.usermanagement.api import UserContext
+from qm_platform.runtime.bootstrap import core_module_contracts
+from qm_platform.runtime.maintenance import is_maintenance_active
 
 from src.backend.auth_dependencies import (
     effective_request_id,
@@ -29,6 +33,12 @@ from src.backend.cookie_csrf import (
 router = APIRouter(
     prefix="/auth",
     tags=["auth"],
+    dependencies=[Depends(enforce_server_organization_context)],
+)
+
+session_router = APIRouter(
+    prefix="/session",
+    tags=["session"],
     dependencies=[Depends(enforce_server_organization_context)],
 )
 
@@ -56,6 +66,75 @@ class MeResponse(BaseModel):
     global_roles: list[str]
     is_qmb: bool
     authenticated_at: str
+
+
+class ConnectionResponse(BaseModel):
+    contract_version: Literal["1"] = "1"
+    status: Literal["ok", "degraded"]
+    maintenance: bool
+    writes_allowed: bool
+    service: Literal["qmtool-backend"] = "qmtool-backend"
+
+
+class ModuleBootstrapItem(BaseModel):
+    id: str
+    licensed: bool
+    authorized: bool
+    capabilities: list[str]
+
+
+class BootstrapResponse(BaseModel):
+    contract_version: Literal["1"] = "1"
+    modules: list[ModuleBootstrapItem]
+
+
+def _app_home_from_request(request: Request) -> Path | None:
+    container = getattr(request.app.state, "container", None)
+    if container is not None and container.has_port("app_home"):
+        return Path(container.get_port("app_home"))
+    return None
+
+
+def _is_module_licensed(request: Request, module_id: str) -> bool:
+    if module_id == "usermanagement":
+        return True
+    container = getattr(request.app.state, "container", None)
+    if container is None or not container.has_port("license_service"):
+        return False
+    try:
+        license_service = container.get_port("license_service")
+        return bool(license_service.is_module_allowed(module_id))
+    except Exception:
+        return False
+
+
+def _module_capabilities(
+    request: Request,
+    *,
+    module_id: str,
+    licensed: bool,
+    contract_capabilities: list[str],
+    actor: UserContext | None = None,
+) -> list[str]:
+    capabilities = list(contract_capabilities)
+    if module_id != "documents" or not licensed or actor is None:
+        return capabilities
+    container = getattr(request.app.state, "container", None)
+    if container is None or not container.has_port("settings_service"):
+        return capabilities
+    delegated = False
+    settings = container.get_port("settings_service").get_module_settings("documents")
+    mapping = settings.get("can_create_new_documents", {})
+    if isinstance(mapping, dict):
+        delegated = bool(mapping.get(str(actor.user_id), False))
+    global_caps = compute_global_capabilities(
+        actor,
+        delegated_create_allowed=delegated,
+    )
+    for key, enabled in sorted(global_caps.items()):
+        if enabled:
+            capabilities.append(f"documents.{key}")
+    return capabilities
 
 
 def _me_payload(context: UserContext) -> MeResponse:
@@ -200,3 +279,46 @@ def change_password(
             raise map_auth_error(exc) from exc
         raise
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@session_router.get("/connection", response_model=ConnectionResponse)
+def session_connection(request: Request) -> ConnectionResponse:
+    """Same-origin browser probe: contract version, maintenance, write availability."""
+    maintenance = is_maintenance_active(_app_home_from_request(request))
+    if maintenance:
+        return ConnectionResponse(
+            status="degraded",
+            maintenance=True,
+            writes_allowed=False,
+        )
+    return ConnectionResponse(
+        status="ok",
+        maintenance=False,
+        writes_allowed=True,
+    )
+
+
+@session_router.get("/bootstrap", response_model=BootstrapResponse)
+def session_bootstrap(
+    request: Request,
+    context: Annotated[UserContext, Depends(require_user_context_normal)],
+) -> BootstrapResponse:
+    """Server-computed module licence and capability manifest for the confirmed session."""
+    modules: list[ModuleBootstrapItem] = []
+    for contract in sorted(core_module_contracts(), key=lambda item: item.module_id):
+        licensed = _is_module_licensed(request, contract.module_id)
+        modules.append(
+            ModuleBootstrapItem(
+                id=contract.module_id,
+                licensed=licensed,
+                authorized=licensed,
+                capabilities=_module_capabilities(
+                    request,
+                    module_id=contract.module_id,
+                    licensed=licensed,
+                    contract_capabilities=list(contract.provided_capabilities),
+                    actor=context,
+                ),
+            )
+        )
+    return BootstrapResponse(modules=modules)

@@ -17,6 +17,7 @@ from fastapi.routing import APIRoute
 from qm_platform.runtime.health import build_readiness_report
 from qm_platform.runtime.maintenance import is_maintenance_active
 from src.backend.auth_routes import router as auth_router
+from src.backend.auth_routes import session_router
 from src.backend.bootstrap import BackendBootstrapError, resolve_usermanagement_postgres_dsn
 from src.backend.cookie_csrf import SAFE_METHODS
 from src.backend.csrf_middleware import enforce_cookie_csrf
@@ -280,6 +281,7 @@ _OPENAPI_NO_SECURITY_PATHS = frozenset(
         "/ready",
         f"{_API_V1}/auth/csrf",
         f"{_API_V1}/auth/token",
+        f"{_API_V1}/session/connection",
     }
 )
 _BROWSER_LOGIN = ("post", f"{_API_V1}/auth/login")
@@ -312,6 +314,7 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
         routes=app.routes,
         tags=[
             {"name": "auth", "description": "Login, Session und Passwortwechsel."},
+            {"name": "session", "description": "Browser-Verbindungs- und Bootstrap-Vertrag."},
             {"name": "users", "description": "Directory- und administrative Benutzervertraege."},
             {"name": "documents", "description": "Dokumentenpool, Artefakte und Workflow."},
             {"name": "signature", "description": "Signatur- und Signaturvorlagenvertrag."},
@@ -510,6 +513,7 @@ def create_app(container=None) -> FastAPI:
         return JSONResponse(status_code=200 if report.ready else 503, content=payload)
 
     app.include_router(auth_router, prefix=_API_V1)
+    app.include_router(session_router, prefix=_API_V1)
     app.include_router(user_admin_router, prefix=_API_V1)
     app.include_router(documents_router, prefix=_API_V1)
     app.include_router(signature_router, prefix=_API_V1)

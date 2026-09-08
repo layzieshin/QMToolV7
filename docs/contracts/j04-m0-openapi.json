@@ -105,6 +105,28 @@
         "title": "BindDocTypeBody",
         "type": "object"
       },
+      "BootstrapResponse": {
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/ModuleBootstrapItem"
+            },
+            "title": "Modules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "modules"
+        ],
+        "title": "BootstrapResponse",
+        "type": "object"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "new_password": {
@@ -182,6 +204,45 @@
           "new_status"
         ],
         "title": "CommentStatusBody",
+        "type": "object"
+      },
+      "ConnectionResponse": {
+        "properties": {
+          "contract_version": {
+            "const": "1",
+            "default": "1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "maintenance": {
+            "title": "Maintenance",
+            "type": "boolean"
+          },
+          "service": {
+            "const": "qmtool-backend",
+            "default": "qmtool-backend",
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "writes_allowed": {
+            "title": "Writes Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "maintenance",
+          "writes_allowed"
+        ],
+        "title": "ConnectionResponse",
         "type": "object"
       },
       "CopyGlobalBody": {
@@ -883,6 +944,37 @@
           }
         },
         "title": "MetadataBody",
+        "type": "object"
+      },
+      "ModuleBootstrapItem": {
+        "properties": {
+          "authorized": {
+            "title": "Authorized",
+            "type": "boolean"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "licensed": {
+            "title": "Licensed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "licensed",
+          "authorized",
+          "capabilities"
+        ],
+        "title": "ModuleBootstrapItem",
         "type": "object"
       },
       "NewVersionAfterArchiveBody": {
@@ -11410,6 +11502,300 @@
         ]
       }
     },
+    "/api/v1/session/bootstrap": {
+      "get": {
+        "description": "Server-computed module licence and capability manifest for the confirmed session.",
+        "operationId": "get_api_v1_session_bootstrap",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier echoed by the backend.",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Request-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "CookieSessionAuth": []
+          }
+        ],
+        "summary": "Session Bootstrap",
+        "tags": [
+          "session"
+        ]
+      }
+    },
+    "/api/v1/session/connection": {
+      "get": {
+        "description": "Same-origin browser probe: contract version, maintenance, write availability.",
+        "operationId": "get_api_v1_session_connection",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Organization-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "description": "Optional correlation identifier echoed by the backend.",
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Structured QMTool error response."
+          }
+        },
+        "summary": "Session Connection",
+        "tags": [
+          "session"
+        ]
+      }
+    },
     "/api/v1/signature/assets/active": {
       "delete": {
         "description": "QMTool J04-M0 HTTP operation.",
@@ -14574,6 +14960,10 @@
     {
       "description": "Login, Session und Passwortwechsel.",
       "name": "auth"
+    },
+    {
+      "description": "Browser-Verbindungs- und Bootstrap-Vertrag.",
+      "name": "session"
     },
     {
       "description": "Directory- und administrative Benutzervertraege.",

@@ -58,13 +58,15 @@ def test_openapi_has_complete_j04_routes_and_unique_operation_ids(monkeypatch) -
     operations = list(_operations(document))
     ids = [str(operation["operationId"]) for _path, _method, operation in operations]
     assert len(ids) == len(set(ids))
-    assert {"auth", "users", "documents", "signature"}.issubset(
+    assert {"auth", "users", "documents", "signature", "session"}.issubset(
         {tag for _path, _method, operation in operations for tag in operation.get("tags", [])}
     )
     assert "/api/v1/auth/csrf" in document["paths"]
     assert "/api/v1/auth/token" in document["paths"]
     assert "/api/v1/auth/login" in document["paths"]
     assert "/api/v1/auth/me" in document["paths"]
+    assert "/api/v1/session/connection" in document["paths"]
+    assert "/api/v1/session/bootstrap" in document["paths"]
     assert "/api/v1/documents/pool/by-status/{status}" in document["paths"]
     assert "/api/v1/documents/versions/{document_id}/{version}" in document["paths"]
     assert "/api/v1/signature/templates/user" in document["paths"]
@@ -80,6 +82,7 @@ def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
     assert document["paths"]["/api/v1/auth/login"]["post"]["security"] == [{"CsrfHeader": []}]
     assert "security" not in document["paths"]["/api/v1/auth/token"]["post"]
     assert "security" not in document["paths"]["/api/v1/auth/csrf"]["get"]
+    assert "security" not in document["paths"]["/api/v1/session/connection"]["get"]
     me_security = document["paths"]["/api/v1/auth/me"]["get"]["security"]
     assert {"BearerAuth": []} in me_security
     assert {"CookieSessionAuth": []} in me_security
