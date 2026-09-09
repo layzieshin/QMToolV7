@@ -396,6 +396,73 @@
         "title": "CreateVersionBody",
         "type": "object"
       },
+      "DocumentQueryItem": {
+        "additionalProperties": true,
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionDescriptorModel"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_id",
+          "version",
+          "available_actions",
+          "allowed_actions"
+        ],
+        "title": "DocumentQueryItem",
+        "type": "object"
+      },
+      "DocumentQueryPageResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentQueryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "limit"
+        ],
+        "title": "DocumentQueryPageResponse",
+        "type": "object"
+      },
       "EnsureSourcePdfResponse": {
         "properties": {
           "allowed_actions": {
@@ -1608,6 +1675,40 @@
           "password"
         ],
         "title": "VerifyPasswordBody",
+        "type": "object"
+      },
+      "VersionHistoryEvent": {
+        "properties": {
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "event_type",
+          "summary"
+        ],
+        "title": "VersionHistoryEvent",
         "type": "object"
       },
       "VersionStateResponse": {
@@ -3150,8 +3251,35 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": "Successful Response"
@@ -3296,8 +3424,35 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": "Successful Response"
@@ -4972,9 +5127,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Api V1 Documents Query",
-                  "type": "object"
+                  "$ref": "#/components/schemas/DocumentQueryPageResponse"
                 }
               }
             },
@@ -7981,8 +8134,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/VersionHistoryEvent"
                   },
                   "title": "Response Get Api V1 Documents Versions By Document Id By Version History",
                   "type": "array"

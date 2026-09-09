@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from io import BytesIO
 from urllib.parse import quote
 
@@ -63,6 +63,28 @@ class VersionStateResponse(BaseModel):
     available_actions: list[str]
     allowed_actions: list[ActionDescriptorModel]
     etag: str
+
+
+class DocumentQueryItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    document_id: str
+    version: int
+    available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
+
+
+class DocumentQueryPageResponse(BaseModel):
+    items: list[DocumentQueryItem]
+    next_cursor: str | None = None
+    limit: int
+
+
+class VersionHistoryEvent(BaseModel):
+    occurred_at: str
+    event_type: str
+    actor_user_id: str | None = None
+    summary: str
 
 
 class AssignRolesBody(BaseModel):
@@ -226,6 +248,8 @@ def _optional_sign_request(request: Request, state, transition: str, body: Workf
 
 
 def _map_documents_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
     if isinstance(exc, HeaderConflictError):
         current = exc.current_header
         etag = current.updated_at.isoformat()
@@ -305,13 +329,29 @@ def _comments_api(request: Request):
     return get_container(request).get_port("documents_comments_api")
 
 
-def _parse_optional_iso8601(raw: str | None) -> datetime | None:
+def _parse_optional_iso8601(raw: str | None, *, field: str) -> datetime | None:
     if raw is None:
         return None
     value = raw.strip()
     if not value:
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_field",
+                "message": f"{field} is not a valid ISO-8601 timestamp",
+                "field_errors": [
+                    {
+                        "field": field,
+                        "code": "invalid",
+                        "message": f"{field} is not a valid ISO-8601 timestamp",
+                    }
+                ],
+            },
+        ) from None
 
 
 def _header_payload(header) -> dict[str, Any]:
@@ -593,7 +633,7 @@ def query_documents(
     order: str = Query(default="desc"),
     limit: str | None = Query(default=None),
     cursor: str | None = Query(default=None),
-) -> dict[str, object]:
+) -> DocumentQueryPageResponse:
     try:
         parsed_status = _parse_query_status(status)
         parsed_limit = _parse_query_limit(limit)
@@ -608,11 +648,11 @@ def query_documents(
         )
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    return {
-        "items": [_state_payload(row, actor)[0] for row in page.items],
-        "next_cursor": page.next_cursor,
-        "limit": page.limit,
-    }
+    return DocumentQueryPageResponse(
+        items=[DocumentQueryItem.model_validate(_state_payload(row, actor)[0]) for row in page.items],
+        next_cursor=page.next_cursor,
+        limit=page.limit,
+    )
 
 
 @router.get("/versions/{document_id}/{version}/history")
@@ -621,7 +661,7 @@ def list_version_history(
     version: int,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> list[dict[str, object]]:
+) -> list[VersionHistoryEvent]:
     try:
         rows = _pool_api(request).list_version_history_for_actor(document_id, version, actor)
     except Exception as exc:
@@ -629,12 +669,12 @@ def list_version_history(
     if rows is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "document version not found"})
     return [
-        {
-            "occurred_at": row.occurred_at.isoformat(),
-            "event_type": row.event_type,
-            "actor_user_id": row.actor_user_id,
-            "summary": row.summary,
-        }
+        VersionHistoryEvent(
+            occurred_at=row.occurred_at.isoformat(),
+            event_type=row.event_type,
+            actor_user_id=row.actor_user_id,
+            summary=row.summary,
+        )
         for row in rows
     ]
 
@@ -1347,6 +1387,8 @@ def patch_version_metadata(
     state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
+    valid_until = _parse_optional_iso8601(body.valid_until, field="valid_until")
+    next_review_at = _parse_optional_iso8601(body.next_review_at, field="next_review_at")
     api = _workflow_api(request)
     try:
         updated = _mutate_version_state(
@@ -1357,8 +1399,8 @@ def patch_version_metadata(
                 current,
                 title=body.title,
                 description=body.description,
-                valid_until=_parse_optional_iso8601(body.valid_until),
-                next_review_at=_parse_optional_iso8601(body.next_review_at),
+                valid_until=valid_until,
+                next_review_at=next_review_at,
                 custom_fields=body.custom_fields,
                 actor_user_id=user_id,
                 actor_role=role,

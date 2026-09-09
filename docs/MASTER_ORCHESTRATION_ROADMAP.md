@@ -187,24 +187,24 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich WCON00. Der Checkpoint ist
-IN_PROGRESS auf `feature/ap-029-wcon00` (Start SHA `eb39875423b3d2bb34f87ebc1a0716c724aa4ecc`);
-WCON00-A implementiert gerade die shared transport contracts.
+Die naechste freizugebende Aktion ist ausschliesslich INT00. Der Checkpoint bleibt
+TODO und NOT RUN; er startet nicht automatisch. **WCON00 ist PASS** auf
+`feature/ap-029-wcon00` (Start SHA `eb39875423b3d2bb34f87ebc1a0716c724aa4ecc`;
+FINAL_PASS agent `d052735b-fbdd-40ee-b30c-4a5e375fe333`). INT00 und WEB01 sind
+nicht gestartet. Merge, Branch-/Worktree-Cleanup und eine dritte Codex-Runde
+bleiben unautorisiert.
 **OPS00 ist PASS** und wurde via PR #41 per Squash nach `main` @
 `98feef61dcfe0e40741c254da16feb9383a0d1b0` gemergt. Vor dem Merge waren beide
 CI-Jobs SUCCESS und 11/11 Review-Konversationen resolved. Die technische Evidence
 bleibt `build/ap-029-ops00/final-closeout-20260902/` (262 package-integration
 passed, 2 erwartete Live-Skips; Slot-2 9/9 PASS). External Review bleibt ehrlich
 `BOUNDED_COMPLETE` (2/2; kein Codex-PASS, keine dritte Codex-Runde).
-WCON00 schliesst ausschliesslich die in UX00 als WEB01-blockierend klassifizierten
-technischen Contracts; es implementiert noch keine WEB01-Screens. INT00, WEB01 und
-spaetere Checkpoints sind nicht freigegeben. Branch-/Worktree-Cleanup abgeschlossener
-Pakete bleibt eine getrennte Housekeeping-Aktion und veraendert den Ledger nicht.
+WCON00 hat ausschliesslich die in UX00 als WEB01-blockierend klassifizierten
+technischen Contracts geschlossen; es implementiert keine WEB01-Screens.
 **PG01** ist `PASS`; PR #39 wurde per Squash nach `main` @
 `58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. **UX00 ist PASS** und auf
 `main` integriert via PR #40 @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef`;
-kanonische P0-UX und P1-Gap-Matrix liegen vor. INT00 und spaetere
-Checkpoints sind nicht freigegeben.
+kanonische P0-UX und P1-Gap-Matrix liegen vor.
 **WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`).
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;

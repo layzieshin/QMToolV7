@@ -413,7 +413,7 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
                 required=False,
             )
             _apply_if_match_contract(path, method, operation)
-            if path.endswith("/content"):
+            if path.endswith("/content") or path.endswith("/preview") or path.endswith("/download"):
                 response_200 = operation.setdefault("responses", {}).setdefault("200", {"description": "Binary artifact."})
                 response_200["content"] = {
                     media_type: {"schema": {"type": "string", "format": "binary"}}

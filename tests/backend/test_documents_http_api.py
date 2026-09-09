@@ -699,7 +699,8 @@ def test_version_read_after_restart(tmp_path: Path) -> None:
     body = after.json()
     assert "allowed_actions" in body
     assert isinstance(body["allowed_actions"], list)
-    assert len(body["allowed_actions"]) == len(set(ACTION_IDS))
+    codes = {item["code"] for item in body["allowed_actions"]}
+    assert codes >= set(ACTION_IDS) | {"preview", "download"}
     enabled_codes = sorted(item["code"] for item in body["allowed_actions"] if item["enabled"])
     assert body["available_actions"] == enabled_codes
     assert body["state"]["available_actions"] == enabled_codes

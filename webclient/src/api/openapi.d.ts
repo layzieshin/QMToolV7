@@ -1788,6 +1788,28 @@ export interface components {
             /** Workflow Profile Id */
             workflow_profile_id?: string | null;
         };
+        /** DocumentQueryItem */
+        DocumentQueryItem: {
+            /** Allowed Actions */
+            allowed_actions: components["schemas"]["ActionDescriptorModel"][];
+            /** Available Actions */
+            available_actions: string[];
+            /** Document Id */
+            document_id: string;
+            /** Version */
+            version: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** DocumentQueryPageResponse */
+        DocumentQueryPageResponse: {
+            /** Items */
+            items: components["schemas"]["DocumentQueryItem"][];
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** EnsureSourcePdfResponse */
         EnsureSourcePdfResponse: {
             /** @description Server-computed action descriptors for the confirmed actor. */
@@ -2191,6 +2213,17 @@ export interface components {
         VerifyPasswordBody: {
             /** Password */
             password: string;
+        };
+        /** VersionHistoryEvent */
+        VersionHistoryEvent: {
+            /** Actor User Id */
+            actor_user_id?: string | null;
+            /** Event Type */
+            event_type: string;
+            /** Occurred At */
+            occurred_at: string;
+            /** Summary */
+            summary: string;
         };
         /** VersionStateResponse */
         VersionStateResponse: {
@@ -3203,7 +3236,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/octet-stream": string;
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "image/gif": string;
+                    "image/png": string;
                 };
             };
             /** @description Structured QMTool error response. */
@@ -3309,7 +3346,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/octet-stream": string;
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "image/gif": string;
+                    "image/png": string;
                 };
             };
             /** @description Structured QMTool error response. */
@@ -4415,9 +4456,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DocumentQueryPageResponse"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -6439,9 +6478,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["VersionHistoryEvent"][];
                 };
             };
             /** @description Structured QMTool error response. */

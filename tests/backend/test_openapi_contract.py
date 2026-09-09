@@ -107,6 +107,19 @@ def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
 
     binary = document["paths"]["/api/v1/documents/artifacts/{artifact_id}/content"]["get"]["responses"]["200"]
     assert {"application/pdf", "image/png", "application/octet-stream"}.issubset(binary["content"])
+    for suffix in ("preview", "download"):
+        artifact_binary = document["paths"][f"/api/v1/documents/artifacts/{{artifact_id}}/{suffix}"]["get"]["responses"]["200"]
+        assert artifact_binary["content"] == binary["content"]
+        assert "application/json" not in artifact_binary["content"]
+    query_schema = document["paths"]["/api/v1/documents/query"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert query_schema.get("$ref") == "#/components/schemas/DocumentQueryPageResponse"
+    query_model = document["components"]["schemas"]["DocumentQueryPageResponse"]
+    assert set(query_model["required"]) >= {"items", "limit"}
+    history_schema = document["paths"]["/api/v1/documents/versions/{document_id}/{version}/history"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert history_schema["type"] == "array"
+    assert history_schema["items"].get("$ref") == "#/components/schemas/VersionHistoryEvent"
+    history_model = document["components"]["schemas"]["VersionHistoryEvent"]
+    assert set(history_model["required"]) >= {"occurred_at", "event_type", "summary"}
     assert "ErrorDetail" in document["components"]["schemas"]
     raw = json.dumps(document, ensure_ascii=True)
     for forbidden in ("QMTOOL_PG_PASSWORD=", "documents.db", "storage_key", "I:/Projekte/"):

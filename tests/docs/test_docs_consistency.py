@@ -954,11 +954,12 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
         assert "PR #41" in text
         assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in text
 
-    assert current == "WCON00"
+    assert current == "INT00"
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "PR #40" in rows_by_id["UX00"]["notes"]
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in rows_by_id["UX00"]["notes"]
     assert rows_by_id["OPS00"]["status"] == "PASS"
+    assert rows_by_id["WCON00"]["status"] == "PASS"
 
     next_action = re.search(
         r"## Naechste freigegebene Aktion\s*(.*?)(?=\n## |\Z)",
@@ -967,12 +968,13 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     )
     assert next_action, "roadmap next-action section missing"
     next_body = next_action.group(1)
-    assert "ausschliesslich WCON00" in next_body
+    assert "ausschliesslich INT00" in next_body
     assert "PR #41" in next_body
     assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in next_body
     assert "CI-Jobs SUCCESS" in next_body
     assert "11/11 Review-Konversationen resolved" in next_body
-    assert "WCON00" in next_body and "IN_PROGRESS" in next_body
+    assert "WCON00 ist PASS" in next_body
+    assert "INT00" in next_body and "NOT RUN" in next_body
     assert "dritte Codex-Runde" in next_body
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in next_body
     assert "PR #40" in next_body
@@ -980,6 +982,7 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     assert "OPS00-Publikationsabschluss" not in next_body
     assert "977667fbdb2838c47d7564992157f984141d6a9e" not in next_body
     assert "CI auf dem lokalen Closeout ist bis zum Push" not in next_body
+    assert "ausschliesslich WCON00" not in next_body
 
 
 def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
@@ -989,12 +992,12 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     current, rows = _parse_ap029_ledger(plan)
     rows_by_id = {row["id"]: row for row in rows}
 
-    assert current == "WCON00"
+    assert current == "INT00"
     assert "Current ist UX00" not in plan
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "build/ap-029-ux00/" in rows_by_id["UX00"]["result_evidence"]
     assert rows_by_id["OPS00"]["status"] == "PASS"
-    assert rows_by_id["WCON00"]["status"] == "IN_PROGRESS"
+    assert rows_by_id["WCON00"]["status"] == "PASS"
     assert rows_by_id["INT00"]["status"] == "TODO"
     assert rows_by_id["WEB01"]["status"] == "TODO"
 
@@ -1003,8 +1006,8 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
         "UX00 → OPS00 → WCON00 → INT00 → WEB01 → PILOT00"
     )
     assert sequence in roadmap
-    assert "ausschliesslich WCON00" in roadmap
-    assert "WCON00" in roadmap and "IN_PROGRESS" in roadmap
+    assert "ausschliesslich INT00" in roadmap
+    assert "WCON00 ist PASS" in roadmap
     assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in roadmap
 
     ux00_section = plan.split("### UX00", 1)[1].split("\n### ", 1)[0]
@@ -1031,7 +1034,7 @@ def test_ops00_closeout_contract_and_evidence_are_current() -> None:
     current, rows = _parse_ap029_ledger(plan)
     rows_by_id = {row["id"]: row for row in rows}
 
-    assert current == "WCON00"
+    assert current == "INT00"
     ops00 = rows_by_id["OPS00"]
     assert ops00["status"] == "PASS"
     assert "a0e4c7253c4528f09447ae773bdafebf8455ecbd" in ops00["result_evidence"]
