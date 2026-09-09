@@ -468,9 +468,21 @@ async def _read_upload(request: Request, *, magic: bytes, label: str) -> bytes:
     return payload
 
 
-def _content_disposition(filename: str) -> str:
+def _content_disposition(filename: str, *, inline: bool = False) -> str:
     safe = "".join(ch for ch in filename if ch.isalnum() or ch in "._- ").strip() or "artifact"
-    return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(filename)}"
+    disposition = "inline" if inline else "attachment"
+    return f"{disposition}; filename=\"{safe}\"; filename*=UTF-8''{quote(filename)}"
+
+
+def _artifact_bytes_streaming_response(artifact, content: bytes, *, inline: bool) -> StreamingResponse:
+    headers = {
+        "Content-Disposition": _content_disposition(artifact.original_filename, inline=inline),
+        "Content-Length": str(len(content)),
+        "ETag": artifact.sha256,
+        "X-Content-SHA256": artifact.sha256,
+        "Cache-Control": "private, no-store",
+    }
+    return StreamingResponse(BytesIO(content), media_type=artifact.mime_type, headers=headers)
 
 
 def _etag_for_state(state) -> str:
@@ -669,8 +681,29 @@ def get_artifact(
     return artifact_to_public_payload(artifact)
 
 
-@router.get("/artifacts/{artifact_id}/content")
-def get_artifact_content(
+def _artifact_preview_response(request: Request, artifact_id: str, actor: UserContext):
+    api = _artifacts_api(request)
+    artifact = api.get_artifact_by_id_for_actor(artifact_id, actor)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "artifact not found"})
+    try:
+        content = api.read_artifact_bytes_for_actor(artifact_id, actor)
+    except Exception as exc:
+        raise _map_documents_error(exc) from exc
+    return _artifact_bytes_streaming_response(artifact, content, inline=True)
+
+
+@router.get("/artifacts/{artifact_id}/preview")
+def get_artifact_preview(
+    artifact_id: str,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+):
+    return _artifact_preview_response(request, artifact_id, actor)
+
+
+@router.get("/artifacts/{artifact_id}/download")
+def get_artifact_download(
     artifact_id: str,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
@@ -680,16 +713,19 @@ def get_artifact_content(
     if artifact is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "artifact not found"})
     try:
-        content = api.read_artifact_bytes_for_actor(artifact_id, actor)
+        content = api.read_artifact_download_bytes_for_actor(artifact_id, actor)
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    headers = {
-        "Content-Disposition": _content_disposition(artifact.original_filename),
-        "Content-Length": str(len(content)),
-        "ETag": artifact.sha256,
-        "X-Content-SHA256": artifact.sha256,
-    }
-    return StreamingResponse(BytesIO(content), media_type=artifact.mime_type, headers=headers)
+    return _artifact_bytes_streaming_response(artifact, content, inline=False)
+
+
+@router.get("/artifacts/{artifact_id}/content")
+def get_artifact_content(
+    artifact_id: str,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+):
+    return _artifact_preview_response(request, artifact_id, actor)
 
 
 @router.get("/headers/{document_id}")

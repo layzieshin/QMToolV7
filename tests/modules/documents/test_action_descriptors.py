@@ -46,8 +46,9 @@ def test_action_descriptors_cover_all_action_ids() -> None:
     state = _planned_state()
     actor = _actor(user_id="owner-1", role="User")
     descriptors = action_descriptors_for_actor(state, actor)
-    assert {descriptor.code for descriptor in descriptors} == set(ACTION_IDS)
-    assert [descriptor.code for descriptor in descriptors] == sorted(ACTION_IDS)
+    expected_codes = set(ACTION_IDS) | {"preview", "download"}
+    assert {descriptor.code for descriptor in descriptors} == expected_codes
+    assert [descriptor.code for descriptor in descriptors] == sorted(expected_codes)
 
 
 def test_enabled_codes_match_available_actions_for_actor() -> None:

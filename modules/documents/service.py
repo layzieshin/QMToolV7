@@ -1124,6 +1124,20 @@ class DocumentsService:
             raise PermissionDeniedError("artifact is not visible to the current actor")
         return self.read_artifact_bytes(artifact_id)
 
+    def read_artifact_download_bytes_for_actor(
+        self,
+        artifact_id: str,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> bytes:
+        """Return artifact bytes after the same visibility check as preview reads."""
+        return self.read_artifact_bytes_for_actor(
+            artifact_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
+
     def list_tasks_for_user(self, user_id: str, role: str, scope: str | None = None) -> list[DocumentTaskItem]:
         return self._readmodels.list_tasks_for_user(user_id=user_id, role=role, scope=scope)
 

@@ -401,6 +401,12 @@ class DocumentsArtifactsApi:
             artifact_id, actor_user_id=user_id, actor_role=role
         )
 
+    def read_artifact_download_bytes_for_actor(self, artifact_id: str, actor: UserContext) -> bytes:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.read_artifact_download_bytes_for_actor(
+            artifact_id, actor_user_id=user_id, actor_role=role
+        )
+
     def resolve_artifact_paths(
         self,
         artifact: DocumentArtifact,

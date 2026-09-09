@@ -184,6 +184,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/artifacts/{artifact_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact Download
+         * @description QMTool J04-M0 HTTP operation.
+         */
+        get: operations["get_api_v1_documents_artifacts_by_artifact_id_download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/artifacts/{artifact_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact Preview
+         * @description QMTool J04-M0 HTTP operation.
+         */
+        get: operations["get_api_v1_documents_artifacts_by_artifact_id_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/capabilities": {
         parameters: {
             query?: never;
@@ -1484,7 +1524,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         *  Health
+         * Health
          * @description QMTool J04-M0 HTTP operation.
          */
         get: operations["get_health"];
@@ -1504,7 +1544,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         *  Ready
+         * Ready
          * @description QMTool J04-M0 HTTP operation.
          */
         get: operations["get_ready"];
@@ -1725,6 +1765,25 @@ export interface components {
             /** @example document state is newer */
             message: string;
         };
+        /**
+         * @example {
+         *       "detail": {
+         *         "error": "unauthorized",
+         *         "message": "missing bearer token"
+         *       }
+         *     }
+         * @example {
+         *       "detail": {
+         *         "current_etag": "evt-42",
+         *         "current_state": {
+         *           "document_id": "DOC-1",
+         *           "version": 1
+         *         },
+         *         "error": "document_conflict",
+         *         "message": "document state is newer"
+         *       }
+         *     }
+         */
         ErrorResponse: {
             detail: components["schemas"]["ErrorDetail"] | Record<string, never>[];
         };
@@ -2981,6 +3040,218 @@ export interface operations {
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
                     "image/gif": string;
                     "image/png": string;
+                };
+            };
+            /** @description Structured QMTool error response. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_v1_documents_artifacts_by_artifact_id_download: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional correlation identifier echoed by the backend. */
+                "X-Request-ID"?: string | null;
+            };
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Structured QMTool error response. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Structured QMTool error response. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_api_v1_documents_artifacts_by_artifact_id_preview: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional correlation identifier echoed by the backend. */
+                "X-Request-ID"?: string | null;
+            };
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Structured QMTool error response. */
