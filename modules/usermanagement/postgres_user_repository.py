@@ -253,6 +253,30 @@ class PostgresUserRepository(UserRepository):
         if row is None:
             raise KeyError(f"unknown user: {username}")
 
+    def set_must_change_password(self, username: str, must_change_password: bool) -> None:
+        with runtime_connection(self._dsn) as conn:
+            self.set_must_change_password_on_connection(
+                conn, username, must_change_password
+            )
+
+    @staticmethod
+    def set_must_change_password_on_connection(
+        conn: psycopg.Connection,
+        username: str,
+        must_change_password: bool,
+    ) -> None:
+        row = conn.execute(
+            """
+            UPDATE usermanagement.users
+            SET must_change_password = %s, updated_at = %s
+            WHERE lower(username) = lower(%s)
+            RETURNING user_id
+            """,
+            (bool(must_change_password), _utc_now(), username),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown user: {username}")
+
     def update_user_profile(
         self,
         username: str,

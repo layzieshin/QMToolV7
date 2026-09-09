@@ -41,6 +41,10 @@ class UserRepository(ABC):
         pass
 
     @abstractmethod
+    def set_must_change_password(self, username: str, must_change_password: bool) -> None:
+        pass
+
+    @abstractmethod
     def update_user_profile(
         self,
         username: str,

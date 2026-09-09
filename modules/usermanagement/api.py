@@ -83,6 +83,9 @@ __all__ = [
     "change_own_password",
     "create_user_as_admin",
     "update_user_access_as_admin",
+    "list_users_for_admin",
+    "get_user_for_admin",
+    "set_user_password_as_admin",
     "ensure_postgres_schema_ready",
     "prepare_postgres_cutover",
     "is_effective_qmb",
@@ -281,6 +284,36 @@ def update_user_access_as_admin(
         role=role,
         is_qmb=is_qmb,
         is_active=is_active,
+    )
+
+
+def list_users_for_admin(container, actor: UserContext) -> list[AuthenticatedUser]:
+    """List all users including inactive; requires a confirmed Admin actor."""
+    svc = get_usermanagement_service(container)
+    return svc.list_users_for_admin(actor)
+
+
+def get_user_for_admin(container, actor: UserContext, username: str) -> AuthenticatedUser:
+    """Return one user for admin detail; raises ``UserNotFoundError`` when missing."""
+    svc = get_usermanagement_service(container)
+    return svc.get_user_for_admin(actor, username)
+
+
+def set_user_password_as_admin(
+    container,
+    actor: UserContext,
+    username: str,
+    new_password: str,
+    *,
+    must_change_password: bool = True,
+) -> None:
+    """Set a user's password as admin, force must_change, revoke all sessions."""
+    svc = get_usermanagement_service(container)
+    svc.set_user_password_as_admin(
+        actor,
+        username,
+        new_password,
+        must_change_password=must_change_password,
     )
 
 

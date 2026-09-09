@@ -548,6 +548,46 @@ class UserManagementService:
             actor=actor,
         )
 
+    def list_users_for_admin(self, actor: UserContext) -> list[AuthenticatedUser]:
+        _require_admin_actor(actor)
+        return self.list_users()
+
+    def get_user_for_admin(self, actor: UserContext, username: str) -> AuthenticatedUser:
+        _require_admin_actor(actor)
+        username = username.strip()
+        if not username:
+            raise ValueError("username is required")
+        if self.repository is not None:
+            user = self.repository.get_user(username)
+            if user is None:
+                raise UserNotFoundError(f"unknown user: {username}")
+            return user
+        if username not in self._admin_ops._fallback_users:
+            raise UserNotFoundError(f"unknown user: {username}")
+        _password, role = self._admin_ops._fallback_users[username]
+        return AuthenticatedUser(user_id=username, username=username, role=role)
+
+    def set_user_password_as_admin(
+        self,
+        actor: UserContext,
+        username: str,
+        new_password: str,
+        *,
+        must_change_password: bool = True,
+    ) -> None:
+        _require_admin_actor(actor)
+        username = username.strip()
+        if not username:
+            raise ValueError("username is required")
+        user = self.get_user_for_admin(actor, username)
+        try:
+            self._admin_ops.change_password(username, new_password)
+        except KeyError as exc:
+            raise UserNotFoundError(str(exc)) from exc
+        if must_change_password and self.repository is not None:
+            self.repository.set_must_change_password(username, True)
+        self.revoke_all_sessions_for_user(user.user_id)
+
     def update_user_profile(
         self,
         username: str,
