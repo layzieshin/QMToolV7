@@ -15,6 +15,9 @@ from modules.signature.sqlite_pg_import import SqlitePgImportError, fingerprint_
 from modules.signature.sqlite_repository import SQLiteSignatureRepository
 
 _MIGRATION = Path(__file__).resolve().parents[3] / "modules" / "signature" / "migrations" / "0001_initial.sql"
+_MIGRATION_PRESETS = (
+    Path(__file__).resolve().parents[3] / "modules" / "signature" / "migrations" / "0002_user_signature_template_presets.sql"
+)
 _DOC_MIG1 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0001_initial.sql"
 _DOC_MIG2 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0002_workflow_profiles.sql"
 _REG_MIG = Path(__file__).resolve().parents[3] / "modules" / "registry" / "migrations" / "0001_initial.sql"
@@ -23,6 +26,7 @@ _REG_MIG = Path(__file__).resolve().parents[3] / "modules" / "registry" / "migra
 def _init_db(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(_MIGRATION.read_text(encoding="utf-8"))
+        conn.executescript(_MIGRATION_PRESETS.read_text(encoding="utf-8"))
 
 
 def _store_asset(assets: Path, plaintext: bytes = b"png!") -> tuple[EncryptedSignatureBlobStore, SignatureAsset]:

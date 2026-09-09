@@ -27,6 +27,33 @@ def _is_technical_admin(actor: UserContext) -> bool:
     return any(str(role).strip().upper() == "ADMIN" for role in context.global_roles)
 
 
+def _template_matches_context(
+    template: UserSignatureTemplate,
+    *,
+    document_type: str | None,
+    role_context: str | None,
+) -> bool:
+    if template.document_type is not None and template.document_type != document_type:
+        return False
+    if template.role_context is not None and template.role_context != role_context:
+        return False
+    return True
+
+
+def _suggestion_rank_key(template: UserSignatureTemplate, *, user_scope: bool) -> tuple:
+    last_used_ts = (
+        template.last_used_at.timestamp()
+        if template.last_used_at is not None
+        else float("-inf")
+    )
+    return (
+        1 if user_scope else 0,
+        last_used_ts,
+        template.created_at.timestamp(),
+        template.template_id,
+    )
+
+
 class SignatureTemplateUseCases:
     def __init__(self, service: object) -> None:
         self._service = service
@@ -82,6 +109,8 @@ class SignatureTemplateUseCases:
         layout: LabelLayoutInput,
         signature_asset_id: str | None,
         scope: str = "user",
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -105,6 +134,8 @@ class SignatureTemplateUseCases:
             signature_asset_id=signature_asset_id,
             created_at=_utcnow(),
             scope="global" if scope == "global" else "user",
+            document_type=document_type,
+            role_context=role_context,
         )
         self._service.repository.upsert_template(template)
         self._service.audit_logger.emit(
@@ -154,6 +185,8 @@ class SignatureTemplateUseCases:
         layout: LabelLayoutInput,
         signature_asset_id: str | None,
         scope: str = "user",
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         if scope == "global" and not _is_technical_admin(actor):
             raise SignatureTemplateError("only technical admins may create global templates")
@@ -165,6 +198,8 @@ class SignatureTemplateUseCases:
             layout=layout,
             signature_asset_id=signature_asset_id,
             scope=scope,
+            document_type=document_type,
+            role_context=role_context,
         )
 
     def update_signature_template_for_actor(
@@ -176,6 +211,8 @@ class SignatureTemplateUseCases:
         placement: SignaturePlacementInput | None = None,
         layout: LabelLayoutInput | None = None,
         signature_asset_id: str | None = None,
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -196,6 +233,8 @@ class SignatureTemplateUseCases:
             placement=placement,
             layout=layout,
             signature_asset_id=signature_asset_id,
+            document_type=document_type,
+            role_context=role_context,
         )
 
     def copy_global_template_for_actor(
@@ -217,6 +256,8 @@ class SignatureTemplateUseCases:
         placement: SignaturePlacementInput | None = None,
         layout: LabelLayoutInput | None = None,
         signature_asset_id: str | None = None,
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -238,6 +279,8 @@ class SignatureTemplateUseCases:
             placement=placement if placement is not None else current.placement,
             layout=layout if layout is not None else current.layout,
             signature_asset_id=signature_asset_id if signature_asset_id is not None else current.signature_asset_id,
+            document_type=document_type if document_type is not None else current.document_type,
+            role_context=role_context if role_context is not None else current.role_context,
         )
         if not updated.name:
             raise SignatureTemplateError("template name is required")
@@ -288,7 +331,42 @@ class SignatureTemplateUseCases:
             layout=source.layout,
             signature_asset_id=asset_id,
             scope="user",
+            document_type=source.document_type,
+            role_context=source.role_context,
         )
+
+    def suggest_template_for_actor(
+        self,
+        actor: UserContext,
+        *,
+        document_type: str | None = None,
+        role_context: str | None = None,
+    ) -> UserSignatureTemplate | None:
+        if self._service.repository is None:
+            return None
+        actor = _confirmed_actor(actor)
+        candidates: list[tuple[UserSignatureTemplate, bool]] = []
+        for template in self._service.repository.list_templates(actor.user_id):
+            if _template_matches_context(
+                template,
+                document_type=document_type,
+                role_context=role_context,
+            ):
+                candidates.append((template, True))
+        for template in self._service.repository.list_global_templates():
+            if _template_matches_context(
+                template,
+                document_type=document_type,
+                role_context=role_context,
+            ):
+                candidates.append((template, False))
+        if not candidates:
+            return None
+        template, _user_scope = max(
+            candidates,
+            key=lambda item: _suggestion_rank_key(item[0], user_scope=item[1]),
+        )
+        return template
 
     def sign_with_template(
         self,
@@ -328,7 +406,7 @@ class SignatureTemplateUseCases:
         try:
             effective_placement = placement_override if placement_override is not None else template.placement
             effective_layout = layout_override if layout_override is not None else template.layout
-            return self._service.sign_with_fixed_position(
+            result = self._service.sign_with_fixed_position(
                 SignRequest(
                     input_pdf=input_pdf,
                     output_pdf=output_pdf,
@@ -343,6 +421,10 @@ class SignatureTemplateUseCases:
                     reason=reason,
                 )
             )
+            if not dry_run:
+                touched = replace(template, last_used_at=_utcnow())
+                self._service.repository.upsert_template(touched)
+            return result
         finally:
             if tmp_path is not None:
                 shutil.rmtree(tmp_path, ignore_errors=True)

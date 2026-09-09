@@ -29,6 +29,7 @@ def layout_to_payload(layout: LabelLayoutInput) -> dict[str, Any]:
         "show_signature": layout.show_signature,
         "show_name": layout.show_name,
         "show_date": layout.show_date,
+        "show_time": layout.show_time,
         "name_text": layout.name_text,
         "date_text": layout.date_text,
         "name_position": layout.name_position,
@@ -53,6 +54,7 @@ def layout_from_payload(data: dict[str, Any]) -> LabelLayoutInput:
         show_signature=bool(data.get("show_signature", True)),
         show_name=bool(data.get("show_name", True)),
         show_date=bool(data.get("show_date", True)),
+        show_time=bool(data.get("show_time", False)),
         name_text=data.get("name_text"),
         date_text=data.get("date_text"),
         name_position=data.get("name_position", "above"),
@@ -94,4 +96,7 @@ def template_to_payload(template: UserSignatureTemplate) -> dict[str, Any]:
         "signature_asset_id": template.signature_asset_id,
         "created_at": template.created_at.isoformat(),
         "scope": template.scope,
+        "document_type": template.document_type,
+        "role_context": template.role_context,
+        "last_used_at": template.last_used_at.isoformat() if template.last_used_at is not None else None,
     }

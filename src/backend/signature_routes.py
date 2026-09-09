@@ -43,6 +43,8 @@ class TemplateCreateBody(BaseModel):
     layout: dict[str, Any]
     signature_asset_id: str | None = None
     scope: str = "user"
+    document_type: str | None = None
+    role_context: str | None = None
 
 
 class TemplateUpdateBody(BaseModel):
@@ -50,6 +52,8 @@ class TemplateUpdateBody(BaseModel):
     placement: dict[str, Any] | None = None
     layout: dict[str, Any] | None = None
     signature_asset_id: str | None = None
+    document_type: str | None = None
+    role_context: str | None = None
 
 
 class SetActiveBody(BaseModel):
@@ -202,6 +206,24 @@ def list_user_templates(
     return [template_to_payload(row) for row in api.list_user_signature_templates(actor.user_id)]
 
 
+@router.get("/templates/suggestion")
+def suggest_template(
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+    document_type: str | None = None,
+    role_context: str | None = None,
+) -> dict[str, Any]:
+    api = _signature_api(request)
+    suggested = api.suggest_template_for_actor(
+        actor,
+        document_type=document_type,
+        role_context=role_context,
+    )
+    if suggested is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "no matching template"})
+    return template_to_payload(suggested)
+
+
 @router.get("/templates/global")
 def list_global_templates(
     request: Request,
@@ -226,6 +248,8 @@ def create_user_template(
             layout=layout_from_payload(body.layout),
             signature_asset_id=body.signature_asset_id,
             scope=body.scope if body.scope in {"user", "global"} else "user",
+            document_type=body.document_type,
+            role_context=body.role_context,
         )
     except Exception as exc:
         raise _map_signature_error(exc) from exc
@@ -248,6 +272,8 @@ def update_template(
             placement=placement_from_payload(body.placement) if body.placement is not None else None,
             layout=layout_from_payload(body.layout) if body.layout is not None else None,
             signature_asset_id=body.signature_asset_id,
+            document_type=body.document_type,
+            role_context=body.role_context,
         )
     except Exception as exc:
         raise _map_signature_error(exc) from exc

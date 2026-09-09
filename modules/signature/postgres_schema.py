@@ -42,9 +42,12 @@ EXPECTED_SIGNATURE_ASSETS_COLUMNS = frozenset(
 'asset_id', 'created_at', 'media_type', 'original_filename', 'owner_user_id', 'sha256', 'size_bytes', 'storage_key'
     })
 
+EXPECTED_USER_SIGNATURE_TEMPLATES_PRESET_COLUMNS = frozenset(
+    {"document_type", "last_used_at", "role_context", "show_time"}
+)
 EXPECTED_USER_SIGNATURE_TEMPLATES_COLUMNS = frozenset(
     {
-'color_hex', 'created_at', 'date_above', 'date_below', 'date_font_size', 'date_position', 'date_rel_x', 'date_rel_y', 'date_text', 'name', 'name_above', 'name_below', 'name_font_size', 'name_position', 'name_rel_x', 'name_rel_y', 'name_text', 'owner_user_id', 'placement_page_index', 'placement_target_width', 'placement_x', 'placement_y', 'scope', 'show_date', 'show_name', 'show_signature', 'signature_asset_id', 'template_id', 'x_offset'
+'color_hex', 'created_at', 'date_above', 'date_below', 'date_font_size', 'date_position', 'date_rel_x', 'date_rel_y', 'date_text', 'document_type', 'last_used_at', 'name', 'name_above', 'name_below', 'name_font_size', 'name_position', 'name_rel_x', 'name_rel_y', 'name_text', 'owner_user_id', 'placement_page_index', 'placement_target_width', 'placement_x', 'placement_y', 'role_context', 'scope', 'show_date', 'show_name', 'show_signature', 'show_time', 'signature_asset_id', 'template_id', 'x_offset'
     })
 
 EXPECTED_USER_ACTIVE_SIGNATURES_COLUMNS = frozenset(
@@ -465,11 +468,18 @@ def _validate_role_contract(
             )
 
 
+def _expected_user_signature_template_columns(*, applied_version: int) -> frozenset[str]:
+    if applied_version >= 3:
+        return EXPECTED_USER_SIGNATURE_TEMPLATES_COLUMNS
+    return EXPECTED_USER_SIGNATURE_TEMPLATES_COLUMNS - EXPECTED_USER_SIGNATURE_TEMPLATES_PRESET_COLUMNS
+
+
 def _validate_schema_contracts(
     conn: psycopg.Connection,
     *,
     require_history_select: bool,
     require_full: bool,
+    applied_version: int | None = None,
 ) -> None:
     expected_tables = EXPECTED_TABLES_FULL if require_full else EXPECTED_TABLES
     tables = _table_names(conn)
@@ -494,7 +504,12 @@ def _validate_schema_contracts(
     if missing_signature_assets:
         raise PostgresSchemaError(f"signature_assets missing columns: {sorted(missing_signature_assets)}")
 
-    missing_user_signature_templates = EXPECTED_USER_SIGNATURE_TEMPLATES_COLUMNS - columns_for("user_signature_templates")
+    template_columns = (
+        _expected_user_signature_template_columns(applied_version=applied_version)
+        if applied_version is not None
+        else EXPECTED_USER_SIGNATURE_TEMPLATES_COLUMNS
+    )
+    missing_user_signature_templates = template_columns - columns_for("user_signature_templates")
     if missing_user_signature_templates:
         raise PostgresSchemaError(f"user_signature_templates missing columns: {sorted(missing_user_signature_templates)}")
 
@@ -594,6 +609,7 @@ def migrate_signature_schema(
                         conn,
                         require_history_select=step.version >= 2,
                         require_full=False,
+                        applied_version=step.version,
                     )
                     fingerprint = _compute_schema_fingerprint(conn)
                     conn.execute(
@@ -621,6 +637,7 @@ def migrate_signature_schema(
                 conn,
                 require_history_select=target >= 2,
                 require_full=False,
+                applied_version=target,
             )
             return target
         finally:
@@ -651,5 +668,6 @@ def assert_runtime_schema_ready(dsn: str, *, migrations_dir: Path | None = None)
             conn,
             require_history_select=True,
             require_full=False,
+            applied_version=target,
         )
         return target

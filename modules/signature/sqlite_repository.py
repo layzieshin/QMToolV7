@@ -63,13 +63,13 @@ class SQLiteSignatureRepository(SignatureRepository):
                 (
                     template_id, owner_user_id, name,
                     placement_page_index, placement_x, placement_y, placement_target_width,
-                    show_signature, show_name, show_date, name_text, date_text,
+                    show_signature, show_name, show_date, show_time, name_text, date_text,
                     name_position, date_position, name_font_size, date_font_size, color_hex,
                     name_above, name_below, date_above, date_below, x_offset,
                     name_rel_x, name_rel_y, date_rel_x, date_rel_y,
-                    signature_asset_id, scope, created_at
+                    signature_asset_id, scope, document_type, role_context, last_used_at, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     template.template_id,
@@ -82,6 +82,7 @@ class SQLiteSignatureRepository(SignatureRepository):
                     1 if template.layout.show_signature else 0,
                     1 if template.layout.show_name else 0,
                     1 if template.layout.show_date else 0,
+                    1 if template.layout.show_time else 0,
                     template.layout.name_text,
                     template.layout.date_text,
                     template.layout.name_position,
@@ -100,6 +101,9 @@ class SQLiteSignatureRepository(SignatureRepository):
                     template.layout.date_rel_y,
                     template.signature_asset_id,
                     template.scope,
+                    template.document_type,
+                    template.role_context,
+                    template.last_used_at.isoformat() if template.last_used_at is not None else None,
                     template.created_at.isoformat(),
                 ),
             )
@@ -176,6 +180,7 @@ class SQLiteSignatureRepository(SignatureRepository):
                 show_signature=bool(row["show_signature"]),
                 show_name=bool(row["show_name"]),
                 show_date=bool(row["show_date"]),
+                show_time=bool(row["show_time"]) if "show_time" in row.keys() else False,
                 name_text=row["name_text"],
                 date_text=row["date_text"],
                 name_position=str(row["name_position"]),  # type: ignore[arg-type]
@@ -196,6 +201,13 @@ class SQLiteSignatureRepository(SignatureRepository):
             signature_asset_id=row["signature_asset_id"],
             created_at=datetime.fromisoformat(str(row["created_at"])),
             scope=str(row["scope"]) if "scope" in row.keys() and row["scope"] else "user",
+            document_type=row["document_type"] if "document_type" in row.keys() else None,
+            role_context=row["role_context"] if "role_context" in row.keys() else None,
+            last_used_at=(
+                datetime.fromisoformat(str(row["last_used_at"]))
+                if "last_used_at" in row.keys() and row["last_used_at"] is not None
+                else None
+            ),
         )
 
     @contextmanager

@@ -76,10 +76,12 @@ class SignatureServiceV2:
     def create_user_signature_template(
         self, *, owner_user_id: str, name: str, placement: SignaturePlacementInput,
         layout: LabelLayoutInput, signature_asset_id: str | None, scope: str = "user",
+        document_type: str | None = None, role_context: str | None = None,
     ) -> UserSignatureTemplate:
         return self._template_use_cases.create_user_signature_template(
             owner_user_id=owner_user_id, name=name, placement=placement,
             layout=layout, signature_asset_id=signature_asset_id, scope=scope,
+            document_type=document_type, role_context=role_context,
         )
 
     def list_user_signature_templates(self, owner_user_id: str) -> list[UserSignatureTemplate]:
@@ -100,11 +102,13 @@ class SignatureServiceV2:
     def update_signature_template(
         self, *, template_id: str, owner_user_id: str, name: str | None = None,
         placement: SignaturePlacementInput | None = None, layout: LabelLayoutInput | None = None,
-        signature_asset_id: str | None = None,
+        signature_asset_id: str | None = None, document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         return self._template_use_cases.update_signature_template(
             template_id=template_id, owner_user_id=owner_user_id, name=name,
             placement=placement, layout=layout, signature_asset_id=signature_asset_id,
+            document_type=document_type, role_context=role_context,
         )
 
     def update_signature_template_for_actor(self, **kwargs):
@@ -145,6 +149,13 @@ class SignatureServiceV2:
     ) -> SignatureAsset:
         return self._policy_ops.import_signature_asset_bytes_and_set_active(
             owner_user_id, png_bytes, filename_hint=filename_hint, password=password, import_fn=self.import_signature_asset,
+        )
+
+    def suggest_template_for_actor(
+        self, actor, *, document_type: str | None = None, role_context: str | None = None,
+    ) -> UserSignatureTemplate | None:
+        return self._template_use_cases.suggest_template_for_actor(
+            actor, document_type=document_type, role_context=role_context,
         )
 
     def sign_with_template(

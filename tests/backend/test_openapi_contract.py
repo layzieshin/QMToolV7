@@ -72,6 +72,7 @@ def test_openapi_has_complete_j04_routes_and_unique_operation_ids(monkeypatch) -
     assert "/api/v1/documents/versions/{document_id}/{version}/history" in document["paths"]
     assert "/api/v1/documents/versions/{document_id}/{version}" in document["paths"]
     assert "/api/v1/signature/templates/user" in document["paths"]
+    assert "/api/v1/signature/templates/suggestion" in document["paths"]
 
 
 def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:

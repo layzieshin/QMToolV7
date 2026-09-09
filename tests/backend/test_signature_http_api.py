@@ -17,7 +17,9 @@ from tests.backend.test_documents_http_api import (
     _login,
     _minimal_pdf_bytes,
 )
-from tests.database_helpers import prepare_test_database
+from qm_platform.persistence.database_evolution import DatabaseEvolutionService, DatabaseSpec, MigrationStep
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _create_signature_png(path: Path) -> None:
@@ -42,7 +44,27 @@ def _wire_signature_module(container, root: Path) -> None:
     )
     sig_db = root / "storage" / "signature" / "templates.db"
     sig_db.parent.mkdir(parents=True, exist_ok=True)
-    prepare_test_database("signature", sig_db)
+    DatabaseEvolutionService(app_home=root, backup_root=root / ".database-backups").migrate(
+        (
+            DatabaseSpec(
+                database_id="signature",
+                path=sig_db,
+                migrations=(
+                    MigrationStep(
+                        version=1,
+                        name="initial",
+                        sql_path=_REPO_ROOT / "modules" / "signature" / "migrations" / "0001_initial.sql",
+                    ),
+                    MigrationStep(
+                        version=2,
+                        name="user_signature_template_presets",
+                        sql_path=_REPO_ROOT / "modules" / "signature" / "migrations" / "0002_user_signature_template_presets.sql",
+                    ),
+                ),
+            ),
+        ),
+        reason="test_setup",
+    )
     (root / "storage" / "signature" / "assets").mkdir(parents=True, exist_ok=True)
     (root / "storage" / "platform").mkdir(parents=True, exist_ok=True)
     container.register_port("signature_runtime_owner", "backend")
@@ -217,3 +239,41 @@ def test_upload_store_purges_only_own_root(tmp_path: Path) -> None:
     assert not path.exists()
     assert foreign.exists()
     assert handle not in app.state.signature_upload_handles
+
+
+def test_template_suggestion_requires_auth(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    response = client.get("/api/v1/signature/templates/suggestion")
+    assert response.status_code == 401
+
+
+def test_template_suggestion_after_create(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    created = client.post(
+        "/api/v1/signature/templates/user",
+        headers=_auth(editor),
+        json={
+            "name": "sop-default",
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": False, "show_name": True, "show_date": True, "show_time": True},
+            "document_type": "SOP",
+            "role_context": "approver",
+        },
+    )
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["layout"]["show_time"] is True
+    assert body["document_type"] == "SOP"
+    assert body["role_context"] == "approver"
+    assert body["last_used_at"] is None
+
+    suggested = client.get(
+        "/api/v1/signature/templates/suggestion",
+        headers=_auth(editor),
+        params={"document_type": "SOP", "role_context": "approver"},
+    )
+    assert suggested.status_code == 200, suggested.text
+    assert suggested.json()["template_id"] == body["template_id"]

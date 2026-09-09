@@ -84,6 +84,8 @@ class SignatureApi:
         layout: LabelLayoutInput,
         signature_asset_id: str | None,
         scope: str = "user",
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         return self.service.create_user_signature_template(
             owner_user_id=owner_user_id,
@@ -92,6 +94,8 @@ class SignatureApi:
             layout=layout,
             signature_asset_id=signature_asset_id,
             scope=scope,
+            document_type=document_type,
+            role_context=role_context,
         )
 
     def create_user_signature_template_for_actor(self, actor, **kwargs):
@@ -118,6 +122,8 @@ class SignatureApi:
         placement: SignaturePlacementInput | None = None,
         layout: LabelLayoutInput | None = None,
         signature_asset_id: str | None = None,
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         return self.service.update_signature_template(
             template_id=template_id,
@@ -126,6 +132,8 @@ class SignatureApi:
             placement=placement,
             layout=layout,
             signature_asset_id=signature_asset_id,
+            document_type=document_type,
+            role_context=role_context,
         )
 
     def update_signature_template_for_actor(self, actor, **kwargs):
@@ -174,6 +182,19 @@ class SignatureApi:
             png_bytes,
             filename_hint=filename_hint,
             password=password,
+        )
+
+    def suggest_template_for_actor(
+        self,
+        actor,
+        *,
+        document_type: str | None = None,
+        role_context: str | None = None,
+    ) -> UserSignatureTemplate | None:
+        return self.service.suggest_template_for_actor(
+            actor,
+            document_type=document_type,
+            role_context=role_context,
         )
 
     def sign_with_template(

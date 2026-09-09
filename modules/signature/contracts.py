@@ -26,6 +26,7 @@ class LabelLayoutInput:
     show_signature: bool = True
     show_name: bool = True
     show_date: bool = True
+    show_time: bool = False
     name_text: str | None = None
     date_text: str | None = None
     name_position: TextPosition = "above"
@@ -91,4 +92,7 @@ class UserSignatureTemplate:
     signature_asset_id: str | None
     created_at: datetime
     scope: TemplateScope = "user"
+    document_type: str | None = None
+    role_context: str | None = None
+    last_used_at: datetime | None = None
 
