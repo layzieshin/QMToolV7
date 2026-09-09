@@ -789,3 +789,103 @@ def test_http_read_port_routes_through_documents_client() -> None:
         source="TRAINING_READ",
         min_seconds_per_page=10,
     )
+
+
+def _create_planned_doc(client: TestClient, token: str, *, doc_id: str, title: str | None = None) -> None:
+    response = client.post(
+        "/api/v1/documents/versions/create",
+        headers=_auth(token),
+        json={
+            "document_id": doc_id,
+            "version": 1,
+            "title": title or doc_id,
+            "workflow_profile_id": "http_flow_profile",
+        },
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_query_requires_auth(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    response = client.get("/api/v1/documents/query")
+    assert response.status_code == 401
+
+
+def test_query_invalid_params_return_field_errors(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    for path in (
+        "/api/v1/documents/query?sort=bad",
+        "/api/v1/documents/query?limit=0",
+        "/api/v1/documents/query?limit=101",
+        "/api/v1/documents/query?cursor=not-valid",
+    ):
+        response = client.get(path, headers=_auth(admin))
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"]
+        assert "field_errors" in detail
+
+
+def test_query_pagination_and_unreadable_omission(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-Q-1")
+    _create_planned_doc(client, admin, doc_id="DOC-Q-2")
+    _create_planned_doc(client, admin, doc_id="DOC-Q-3")
+    _create_planned_doc(client, admin, doc_id="DOC-PRIVATE", title="private planned")
+    page1 = client.get("/api/v1/documents/query?limit=2&sort=title&order=asc", headers=_auth(admin))
+    assert page1.status_code == 200, page1.text
+    body1 = page1.json()
+    assert body1["limit"] == 2
+    assert len(body1["items"]) == 2
+    assert body1["next_cursor"]
+    ids1 = {item["document_id"] for item in body1["items"]}
+    page2 = client.get(
+        f"/api/v1/documents/query?limit=2&sort=title&order=asc&cursor={body1['next_cursor']}",
+        headers=_auth(admin),
+    )
+    assert page2.status_code == 200, page2.text
+    body2 = page2.json()
+    ids2 = {item["document_id"] for item in body2["items"]}
+    assert ids1.isdisjoint(ids2)
+    assert ids1 | ids2 == {"DOC-PRIVATE", "DOC-Q-1", "DOC-Q-2", "DOC-Q-3"}
+    assert body2["next_cursor"] is None
+
+    observer = _login(client, "observer", "observerpass01")
+    observer_page = client.get("/api/v1/documents/query?sort=title&order=asc", headers=_auth(observer))
+    assert observer_page.status_code == 200, observer_page.text
+    observer_ids = {item["document_id"] for item in observer_page.json()["items"]}
+    assert "DOC-PRIVATE" not in observer_ids
+
+
+def test_pool_by_status_still_returns_list(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-POOL-LIST")
+    response = client.get("/api/v1/documents/pool/by-status/PLANNED", headers=_auth(admin))
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert any(row["document_id"] == "DOC-POOL-LIST" for row in payload)
+
+
+def test_history_requires_auth_and_hides_unreadable(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-HIST", title="History doc")
+    unauth = client.get("/api/v1/documents/versions/DOC-HIST/1/history")
+    assert unauth.status_code == 401
+    ok = client.get("/api/v1/documents/versions/DOC-HIST/1/history", headers=_auth(admin))
+    assert ok.status_code == 200, ok.text
+    items = ok.json()
+    assert items
+    assert items[0]["event_type"] == "created"
+    assert all("full_text" not in item for item in items)
+    observer = _login(client, "observer", "observerpass01")
+    denied = client.get("/api/v1/documents/versions/DOC-HIST/1/history", headers=_auth(observer))
+    assert denied.status_code == 404

@@ -68,6 +68,8 @@ def test_openapi_has_complete_j04_routes_and_unique_operation_ids(monkeypatch) -
     assert "/api/v1/session/connection" in document["paths"]
     assert "/api/v1/session/bootstrap" in document["paths"]
     assert "/api/v1/documents/pool/by-status/{status}" in document["paths"]
+    assert "/api/v1/documents/query" in document["paths"]
+    assert "/api/v1/documents/versions/{document_id}/{version}/history" in document["paths"]
     assert "/api/v1/documents/versions/{document_id}/{version}" in document["paths"]
     assert "/api/v1/signature/templates/user" in document["paths"]
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 from .contracts import (
     ArtifactType,
@@ -14,6 +15,46 @@ from .contracts import (
     WorkflowCommentContext,
     WorkflowCommentRecord,
 )
+
+
+@dataclass(frozen=True)
+class DocumentQueryKeyset:
+    sort_value: str
+    document_id: str
+    version: int
+
+
+def document_query_sort_sql_expression(sort: str, *, dialect: str = "sqlite") -> str:
+    if sort == "updated_at":
+        if dialect == "postgres":
+            return "COALESCE(updated_at, last_event_at, created_at)"
+        return "COALESCE(updated_at, last_event_at, created_at, '')"
+    if sort == "title":
+        return "COALESCE(title, '')"
+    if sort == "status":
+        return "status"
+    raise ValueError(f"unsupported sort field: {sort}")
+
+
+def document_query_keyset_bind_value(sort: str, sort_value: str, *, dialect: str = "sqlite") -> object:
+    """Return a SQL-bindable keyset sort value for the target dialect."""
+    if sort == "updated_at" and dialect == "postgres":
+        if not sort_value:
+            # timestamptz columns cannot compare against an empty string bind.
+            return "1970-01-01T00:00:00+00:00"
+        return sort_value
+    return sort_value
+
+
+def document_query_keyset_sort_value(state: DocumentVersionState, sort: str) -> str:
+    if sort == "updated_at":
+        moment = state.updated_at or state.last_event_at or state.created_at
+        return moment.isoformat() if moment is not None else ""
+    if sort == "title":
+        return state.title or ""
+    if sort == "status":
+        return state.status.value
+    raise ValueError(f"unsupported sort field: {sort}")
 
 
 class DocumentsRepository(ABC):
@@ -35,6 +76,20 @@ class DocumentsRepository(ABC):
 
     @abstractmethod
     def list_by_status(self, status: DocumentStatus) -> list[DocumentVersionState]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def query_document_versions(
+        self,
+        *,
+        status: DocumentStatus | None,
+        search_q: str | None,
+        sort: str,
+        order: str,
+        limit: int,
+        after: DocumentQueryKeyset | None,
+    ) -> tuple[list[DocumentVersionState], bool]:
+        """Return up to ``limit`` rows in sort order and whether more rows exist."""
         raise NotImplementedError
 
     @abstractmethod

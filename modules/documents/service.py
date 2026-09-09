@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
+import json
 import tempfile
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timezone
+from functools import cmp_to_key
 from pathlib import Path
 from threading import RLock
 from typing import Callable
@@ -25,12 +28,14 @@ from .contracts import (
     DocumentArtifact,
     DocumentHeader,
     DocumentReadReceipt,
+    DocumentQueryPage,
     PdfReadProgress,
     DocumentReadSession,
     DocumentStatus,
     DocumentTaskItem,
     DocumentType,
     DocumentVersionState,
+    DocumentVersionHistoryItem,
     RecentDocumentItem,
     RejectionReason,
     ReleasedDocumentItem,
@@ -49,7 +54,7 @@ from .contracts import (
 )
 from .errors import CommentConflictError, DocumentConflictError, HeaderConflictError, InvalidTransitionError, PermissionDeniedError, ValidationError
 from .readmodel_use_cases import DocumentsReadmodelUseCases
-from .repository import DocumentsRepository
+from .repository import DocumentQueryKeyset, DocumentsRepository, document_query_keyset_sort_value
 from .storage import DocumentsStoragePort
 from .workflow_profile_store import (
     WorkflowProfileRelationalStore,
@@ -61,6 +66,173 @@ from .workflow_use_cases import DocumentsWorkflowUseCases
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+_QUERY_SORTS = frozenset({"updated_at", "title", "status"})
+_QUERY_ORDERS = frozenset({"asc", "desc"})
+_HISTORY_PREVIEW_MAX = 200
+_QUERY_INTERNAL_BATCH = 50
+_QUERY_MAX_LOOPS = 20
+
+
+def _field_error(field: str, code: str, message: str) -> dict[str, str]:
+    return {"field": field, "code": code, "message": message}
+
+
+def _history_summary(text: str) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= _HISTORY_PREVIEW_MAX:
+        return cleaned
+    return cleaned[:_HISTORY_PREVIEW_MAX]
+
+
+def build_version_history_events(
+    state: DocumentVersionState,
+    *,
+    comment_items: tuple[WorkflowCommentListItem, ...] = (),
+) -> list[DocumentVersionHistoryItem]:
+    events: list[DocumentVersionHistoryItem] = []
+    if state.created_at is not None:
+        events.append(
+            DocumentVersionHistoryItem(
+                occurred_at=state.created_at,
+                event_type="created",
+                actor_user_id=state.created_by,
+                summary="created",
+            )
+        )
+    if state.review_completed_at is not None:
+        events.append(
+            DocumentVersionHistoryItem(
+                occurred_at=state.review_completed_at,
+                event_type="status_changed",
+                actor_user_id=state.review_completed_by,
+                summary="review completed",
+            )
+        )
+    if state.approval_completed_at is not None:
+        events.append(
+            DocumentVersionHistoryItem(
+                occurred_at=state.approval_completed_at,
+                event_type="status_changed",
+                actor_user_id=state.approval_completed_by,
+                summary="approval completed",
+            )
+        )
+    if state.released_at is not None:
+        events.append(
+            DocumentVersionHistoryItem(
+                occurred_at=state.released_at,
+                event_type="released",
+                actor_user_id=state.last_actor_user_id,
+                summary="released",
+            )
+        )
+    if state.archived_at is not None:
+        events.append(
+            DocumentVersionHistoryItem(
+                occurred_at=state.archived_at,
+                event_type="archived",
+                actor_user_id=state.archived_by,
+                summary="archived",
+            )
+        )
+    if state.edit_signature_done:
+        signed_at = state.last_event_at or state.released_at or state.created_at
+        if signed_at is not None:
+            events.append(
+                DocumentVersionHistoryItem(
+                    occurred_at=signed_at,
+                    event_type="signed",
+                    actor_user_id=state.last_actor_user_id,
+                    summary="signed",
+                )
+            )
+    for comment in comment_items:
+        if comment.created_at is None:
+            continue
+        events.append(
+            DocumentVersionHistoryItem(
+                occurred_at=comment.created_at,
+                event_type="comment_added",
+                actor_user_id=None,
+                summary=_history_summary(comment.preview_text),
+            )
+        )
+    events.sort(key=lambda item: (item.occurred_at, item.event_type, item.actor_user_id or ""))
+    return events
+
+
+def _encode_document_query_cursor(
+    *,
+    status: DocumentStatus | None,
+    search_q: str | None,
+    sort: str,
+    order: str,
+    state: DocumentVersionState,
+) -> str:
+    payload = {
+        "v": 1,
+        "status": status.value if status is not None else None,
+        "q": search_q,
+        "sort": sort,
+        "order": order,
+        "sk": document_query_keyset_sort_value(state, sort),
+        "document_id": state.document_id,
+        "version": state.version,
+    }
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def _decode_document_query_cursor(
+    cursor: str,
+    *,
+    status: DocumentStatus | None,
+    search_q: str | None,
+    sort: str,
+    order: str,
+) -> DocumentQueryKeyset:
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii"))
+        payload = json.loads(raw.decode("utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        raise ValidationError(
+            "invalid query cursor",
+            field_errors=[_field_error("cursor", "invalid", "cursor is not valid")],
+        ) from None
+    if not isinstance(payload, dict) or payload.get("v") != 1:
+        raise ValidationError(
+            "invalid query cursor",
+            field_errors=[_field_error("cursor", "invalid", "cursor is not valid")],
+        )
+    expected_status = status.value if status is not None else None
+    if payload.get("status") != expected_status:
+        raise ValidationError(
+            "query cursor does not match filters",
+            field_errors=[_field_error("cursor", "mismatch", "cursor does not match query filters")],
+        )
+    if payload.get("q") != search_q:
+        raise ValidationError(
+            "query cursor does not match filters",
+            field_errors=[_field_error("cursor", "mismatch", "cursor does not match query filters")],
+        )
+    if payload.get("sort") != sort or payload.get("order") != order:
+        raise ValidationError(
+            "query cursor does not match filters",
+            field_errors=[_field_error("cursor", "mismatch", "cursor does not match query filters")],
+        )
+    try:
+        return DocumentQueryKeyset(
+            sort_value=str(payload["sk"]),
+            document_id=str(payload["document_id"]),
+            version=int(payload["version"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        raise ValidationError(
+            "invalid query cursor",
+            field_errors=[_field_error("cursor", "invalid", "cursor is not valid")],
+        ) from None
 
 
 class DocumentsService:
@@ -460,6 +632,187 @@ class DocumentsService:
             row for row in rows
             if self._has_read_access(row, actor_user_id=actor_user_id, actor_role=actor_role)
         ]
+
+    def _validate_document_query_params(
+        self,
+        *,
+        status: DocumentStatus | None,
+        sort: str,
+        order: str,
+        limit: int,
+    ) -> None:
+        if sort not in _QUERY_SORTS:
+            raise ValidationError(
+                "invalid sort field",
+                field_errors=[_field_error("sort", "invalid", f"sort must be one of: {', '.join(sorted(_QUERY_SORTS))}")],
+            )
+        if order not in _QUERY_ORDERS:
+            raise ValidationError(
+                "invalid sort order",
+                field_errors=[_field_error("order", "invalid", f"order must be one of: {', '.join(sorted(_QUERY_ORDERS))}")],
+            )
+        if limit < 1 or limit > 100:
+            raise ValidationError(
+                "invalid limit",
+                field_errors=[_field_error("limit", "invalid", "limit must be between 1 and 100")],
+            )
+        del status
+
+    def query_document_versions_for_actor(
+        self,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+        status: DocumentStatus | None = None,
+        search_q: str | None = None,
+        sort: str = "updated_at",
+        order: str = "desc",
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> DocumentQueryPage:
+        normalized_q = search_q.strip() if search_q is not None and search_q.strip() else None
+        self._validate_document_query_params(status=status, sort=sort, order=order, limit=limit)
+        after = _decode_document_query_cursor(
+            cursor,
+            status=status,
+            search_q=normalized_q,
+            sort=sort,
+            order=order,
+        ) if cursor else None
+
+        visible: list[DocumentVersionState] = []
+        next_cursor: str | None = None
+        loops = 0
+        while len(visible) < limit and loops < _QUERY_MAX_LOOPS:
+            loops += 1
+            batch_limit = max(limit - len(visible), 1)
+            fetch_size = min(max(batch_limit, _QUERY_INTERNAL_BATCH), _QUERY_INTERNAL_BATCH)
+            if self._repository is not None:
+                batch, has_more = self._repository.query_document_versions(
+                    status=status,
+                    search_q=normalized_q,
+                    sort=sort,
+                    order=order,
+                    limit=fetch_size,
+                    after=after,
+                )
+            else:
+                batch, has_more = self._query_document_versions_in_memory(
+                    status=status,
+                    search_q=normalized_q,
+                    sort=sort,
+                    order=order,
+                    limit=fetch_size,
+                    after=after,
+                )
+            if not batch:
+                break
+            batch_exhausted = True
+            for index, row in enumerate(batch):
+                after = DocumentQueryKeyset(
+                    sort_value=document_query_keyset_sort_value(row, sort),
+                    document_id=row.document_id,
+                    version=row.version,
+                )
+                if not self._has_read_access(row, actor_user_id=actor_user_id, actor_role=actor_role):
+                    continue
+                visible.append(row)
+                if len(visible) >= limit:
+                    batch_exhausted = index == len(batch) - 1
+                    break
+            if len(visible) >= limit:
+                if has_more or not batch_exhausted:
+                    next_cursor = _encode_document_query_cursor(
+                        status=status,
+                        search_q=normalized_q,
+                        sort=sort,
+                        order=order,
+                        state=visible[-1],
+                    )
+                break
+            if not has_more:
+                break
+        return DocumentQueryPage(items=tuple(visible), limit=limit, next_cursor=next_cursor)
+
+    def _query_document_versions_in_memory(
+        self,
+        *,
+        status: DocumentStatus | None,
+        search_q: str | None,
+        sort: str,
+        order: str,
+        limit: int,
+        after: DocumentQueryKeyset | None,
+    ) -> tuple[list[DocumentVersionState], bool]:
+        rows: list[DocumentVersionState] = []
+        for state in self._iter_all_states():
+            if status is not None and state.status != status:
+                continue
+            if search_q is not None:
+                needle = search_q.casefold()
+                haystack_id = state.document_id.casefold()
+                haystack_title = (state.title or "").casefold()
+                if needle not in haystack_id and needle not in haystack_title:
+                    continue
+            rows.append(state)
+
+        def _compare_rows(left: DocumentVersionState, right: DocumentVersionState) -> int:
+            left_primary = document_query_keyset_sort_value(left, sort)
+            right_primary = document_query_keyset_sort_value(right, sort)
+            if left_primary != right_primary:
+                if order == "desc":
+                    return (right_primary > left_primary) - (right_primary < left_primary)
+                return (left_primary > right_primary) - (left_primary < right_primary)
+            if left.document_id != right.document_id:
+                return (left.document_id > right.document_id) - (left.document_id < right.document_id)
+            return (left.version > right.version) - (left.version < right.version)
+
+        def _row_is_after_cursor(row: DocumentVersionState) -> bool:
+            row_primary = document_query_keyset_sort_value(row, sort)
+            if row_primary != after.sort_value:
+                if order == "desc":
+                    return row_primary < after.sort_value
+                return row_primary > after.sort_value
+            if row.document_id != after.document_id:
+                return row.document_id > after.document_id
+            return row.version > after.version
+
+        rows.sort(key=cmp_to_key(_compare_rows))
+        if after is not None:
+            rows = [row for row in rows if _row_is_after_cursor(row)]
+        has_more = len(rows) > limit
+        return rows[:limit], has_more
+
+    def list_version_history_for_actor(
+        self,
+        document_id: str,
+        version: int,
+        *,
+        actor_user_id: str,
+        actor_role: SystemRole,
+    ) -> list[DocumentVersionHistoryItem] | None:
+        state = self.get_document_version_for_actor(
+            document_id,
+            version,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
+        if state is None:
+            return None
+        comment_items: list[WorkflowCommentListItem] = []
+        for context in WorkflowCommentContext:
+            try:
+                comment_items.extend(
+                    self.list_workflow_comments(
+                        state,
+                        context=context,
+                        actor_user_id=actor_user_id,
+                        actor_role=actor_role,
+                    )
+                )
+            except PermissionDeniedError:
+                continue
+        return build_version_history_events(state, comment_items=tuple(comment_items))
 
     def get_document_header(self, document_id: str) -> DocumentHeader | None:
         if self._repository is None:

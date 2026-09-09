@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from io import BytesIO
@@ -545,6 +545,86 @@ def list_by_status(
         raise HTTPException(status_code=400, detail={"error": "invalid_status"}) from exc
     rows = _pool_api(request).list_by_status_for_actor(parsed, actor)
     return [_state_payload(row, actor)[0] for row in rows]
+
+
+def _parse_query_limit(raw: str | None) -> int:
+    if raw is None or not str(raw).strip():
+        return 50
+    try:
+        return int(str(raw).strip())
+    except ValueError as exc:
+        raise ValidationError(
+            "invalid limit",
+            field_errors=[{"field": "limit", "code": "invalid", "message": "limit must be an integer"}],
+        ) from exc
+
+
+def _parse_query_status(raw: str | None) -> DocumentStatus | None:
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        return DocumentStatus(str(raw).strip())
+    except ValueError as exc:
+        raise ValidationError(
+            "invalid status",
+            field_errors=[{"field": "status", "code": "invalid", "message": "status is not valid"}],
+        ) from exc
+
+
+@router.get("/query")
+def query_documents(
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    sort: str = Query(default="updated_at"),
+    order: str = Query(default="desc"),
+    limit: str | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+) -> dict[str, object]:
+    try:
+        parsed_status = _parse_query_status(status)
+        parsed_limit = _parse_query_limit(limit)
+        page = _pool_api(request).query_document_versions_for_actor(
+            actor,
+            status=parsed_status,
+            q=q,
+            sort=sort,
+            order=order,
+            limit=parsed_limit,
+            cursor=cursor,
+        )
+    except Exception as exc:
+        raise _map_documents_error(exc) from exc
+    return {
+        "items": [_state_payload(row, actor)[0] for row in page.items],
+        "next_cursor": page.next_cursor,
+        "limit": page.limit,
+    }
+
+
+@router.get("/versions/{document_id}/{version}/history")
+def list_version_history(
+    document_id: str,
+    version: int,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+) -> list[dict[str, object]]:
+    try:
+        rows = _pool_api(request).list_version_history_for_actor(document_id, version, actor)
+    except Exception as exc:
+        raise _map_documents_error(exc) from exc
+    if rows is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "document version not found"})
+    return [
+        {
+            "occurred_at": row.occurred_at.isoformat(),
+            "event_type": row.event_type,
+            "actor_user_id": row.actor_user_id,
+            "summary": row.summary,
+        }
+        for row in rows
+    ]
 
 
 @router.get("/versions/{document_id}/{version}", response_model=VersionStateResponse)

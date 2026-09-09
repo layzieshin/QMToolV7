@@ -29,7 +29,12 @@ from .contracts import (
     WorkflowAssignments,
     WorkflowProfile,
 )
-from .repository import DocumentsRepository
+from .repository import (
+    DocumentsRepository,
+    DocumentQueryKeyset,
+    document_query_keyset_bind_value,
+    document_query_sort_sql_expression,
+)
 
 
 class PostgresDocumentsRepository(DocumentsRepository):
@@ -252,6 +257,58 @@ class PostgresDocumentsRepository(DocumentsRepository):
                 (status.value,),
             ).fetchall()
         return [self._row_to_state(row) for row in rows]
+
+    def query_document_versions(
+        self,
+        *,
+        status: DocumentStatus | None,
+        search_q: str | None,
+        sort: str,
+        order: str,
+        limit: int,
+        after: DocumentQueryKeyset | None,
+    ) -> tuple[list[DocumentVersionState], bool]:
+        sort_expr = document_query_sort_sql_expression(sort, dialect="postgres")
+        where_parts = ["1=1"]
+        params: list[object] = []
+        if status is not None:
+            where_parts.append("status = %s")
+            params.append(status.value)
+        if search_q:
+            pattern = f"%{search_q.casefold()}%"
+            where_parts.append("(LOWER(document_id) LIKE %s OR LOWER(COALESCE(title, '')) LIKE %s)")
+            params.extend([pattern, pattern])
+        if after is not None:
+            comparator = "<" if order == "desc" else ">"
+            bound_sort_value = document_query_keyset_bind_value(
+                sort, after.sort_value, dialect="postgres"
+            )
+            where_parts.append(
+                f"(({sort_expr} {comparator} %s) OR ({sort_expr} = %s AND document_id > %s) "
+                f"OR ({sort_expr} = %s AND document_id = %s AND version > %s))"
+            )
+            params.extend(
+                [
+                    bound_sort_value,
+                    bound_sort_value,
+                    after.document_id,
+                    bound_sort_value,
+                    after.document_id,
+                    after.version,
+                ]
+            )
+        order_dir = "DESC" if order == "desc" else "ASC"
+        fetch_limit = max(limit, 1) + 1
+        sql = (
+            f"SELECT * FROM documents.document_versions WHERE {' AND '.join(where_parts)} "
+            f"ORDER BY {sort_expr} {order_dir}, document_id ASC, version ASC LIMIT %s"
+        )
+        params.append(fetch_limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        has_more = len(rows) > limit
+        selected = rows[:limit]
+        return [self._row_to_state(row) for row in selected], has_more
 
     def list_versions(self, document_id: str) -> list[DocumentVersionState]:
         with self._connect() as conn:
@@ -515,6 +572,7 @@ class PostgresDocumentsRepository(DocumentsRepository):
             last_actor_user_id=str(row["last_actor_user_id"]) if "last_actor_user_id" in row.keys() and row["last_actor_user_id"] else None,
             created_at=self._parse_dt(row["created_at"]) if "created_at" in row.keys() else None,
             created_by=str(row["created_by"]) if "created_by" in row.keys() and row["created_by"] else None,
+            updated_at=self._parse_dt(row["updated_at"]) if "updated_at" in row.keys() else None,
         )
 
     @staticmethod
