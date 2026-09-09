@@ -94,15 +94,15 @@ def _app_home_from_request(request: Request) -> Path | None:
     return None
 
 
-def _is_module_licensed(request: Request, module_id: str) -> bool:
-    if module_id == "usermanagement":
+def _is_module_licensed(request: Request, *, module_id: str, license_tag: str | None) -> bool:
+    if module_id == "usermanagement" or not license_tag:
         return True
     container = getattr(request.app.state, "container", None)
     if container is None or not container.has_port("license_service"):
         return False
     try:
         license_service = container.get_port("license_service")
-        return bool(license_service.is_module_allowed(module_id))
+        return bool(license_service.is_module_allowed(license_tag))
     except Exception:
         return False
 
@@ -310,7 +310,11 @@ def session_bootstrap(
         runtime_bootstrap.core_module_contracts(),
         key=lambda item: item.module_id,
     ):
-        licensed = _is_module_licensed(request, contract.module_id)
+        licensed = _is_module_licensed(
+            request,
+            module_id=contract.module_id,
+            license_tag=contract.license_tag,
+        )
         modules.append(
             ModuleBootstrapItem(
                 id=contract.module_id,

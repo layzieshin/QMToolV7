@@ -169,17 +169,28 @@ def _encode_document_query_cursor(
     search_q: str | None,
     sort: str,
     order: str,
-    state: DocumentVersionState,
+    state: DocumentVersionState | None = None,
+    keyset: DocumentQueryKeyset | None = None,
 ) -> str:
+    if state is not None:
+        sort_value = document_query_keyset_sort_value(state, sort)
+        document_id = state.document_id
+        version = state.version
+    elif keyset is not None:
+        sort_value = keyset.sort_value
+        document_id = keyset.document_id
+        version = keyset.version
+    else:
+        raise ValueError("document query cursor requires state or keyset")
     payload = {
         "v": 1,
         "status": status.value if status is not None else None,
         "q": search_q,
         "sort": sort,
         "order": order,
-        "sk": document_query_keyset_sort_value(state, sort),
-        "document_id": state.document_id,
-        "version": state.version,
+        "sk": sort_value,
+        "document_id": document_id,
+        "version": version,
     }
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii")
@@ -683,6 +694,7 @@ class DocumentsService:
         visible: list[DocumentVersionState] = []
         next_cursor: str | None = None
         loops = 0
+        last_has_more = False
         while len(visible) < limit and loops < _QUERY_MAX_LOOPS:
             loops += 1
             batch_limit = max(limit - len(visible), 1)
@@ -705,7 +717,9 @@ class DocumentsService:
                     limit=fetch_size,
                     after=after,
                 )
+            last_has_more = has_more
             if not batch:
+                last_has_more = False
                 break
             batch_exhausted = True
             for index, row in enumerate(batch):
@@ -732,6 +746,14 @@ class DocumentsService:
                 break
             if not has_more:
                 break
+        if next_cursor is None and last_has_more and after is not None:
+            next_cursor = _encode_document_query_cursor(
+                status=status,
+                search_q=normalized_q,
+                sort=sort,
+                order=order,
+                keyset=after,
+            )
         return DocumentQueryPage(items=tuple(visible), limit=limit, next_cursor=next_cursor)
 
     def _query_document_versions_in_memory(

@@ -87,6 +87,37 @@ def test_bootstrap_after_login_lists_licensed_modules(licensed_client: TestClien
     assert isinstance(modules["documents"]["capabilities"], list)
 
 
+def test_bootstrap_uses_license_tags_not_module_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(create_app(_build_licensed_test_container(tmp_path, monkeypatch)))
+    license_service = client.app.state.container.get_port("license_service")
+    original_allowed = license_service.is_module_allowed
+
+    def _is_module_allowed(module_tag: str) -> bool:
+        if module_tag in {"documents", "signature", "registry", "training"}:
+            return False
+        return original_allowed(module_tag)
+
+    monkeypatch.setattr(license_service, "is_module_allowed", _is_module_allowed)
+    login = client.post(
+        "/api/v1/auth/token",
+        json={"username": "bob", "password": "bob-secret"},
+    )
+    assert login.status_code == 200
+    response = client.get(
+        "/api/v1/session/bootstrap",
+        headers={"Authorization": f"Bearer {login.json()['token']}"},
+    )
+    assert response.status_code == 200
+    modules = {item["id"]: item for item in response.json()["modules"]}
+    assert modules["documents"]["licensed"] is True
+    assert modules["usermanagement"]["licensed"] is True
+    assert modules["training"]["licensed"] is False
+    assert modules["training"]["authorized"] is False
+
+
 def test_connection_reports_maintenance_when_enabled(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

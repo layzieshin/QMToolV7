@@ -862,6 +862,49 @@ def test_query_pagination_and_unreadable_omission(tmp_path: Path) -> None:
     assert "DOC-PRIVATE" not in observer_ids
 
 
+def test_query_continues_after_hidden_row_scan_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import modules.documents.service as documents_service_mod
+
+    monkeypatch.setattr(documents_service_mod, "_QUERY_MAX_LOOPS", 1)
+    monkeypatch.setattr(documents_service_mod, "_QUERY_INTERNAL_BATCH", 1)
+    container, _users = _build_documents_backend_container(tmp_path)
+    original = documents_service_mod.DocumentsService._has_read_access
+
+    def _gated_read(cls, state, *, actor_user_id, actor_role):
+        if state.document_id.startswith("DOC-HIDDEN-"):
+            return False
+        return original(state, actor_user_id=actor_user_id, actor_role=actor_role)
+
+    monkeypatch.setattr(
+        documents_service_mod.DocumentsService,
+        "_has_read_access",
+        classmethod(_gated_read),
+    )
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-HIDDEN-1", title="aaa hidden")
+    _create_planned_doc(client, admin, doc_id="DOC-VISIBLE-1", title="zzz visible")
+    page1 = client.get(
+        "/api/v1/documents/query?limit=10&sort=title&order=asc",
+        headers=_auth(admin),
+    )
+    assert page1.status_code == 200, page1.text
+    body1 = page1.json()
+    assert body1["items"] == []
+    assert body1["next_cursor"]
+    page2 = client.get(
+        "/api/v1/documents/query?limit=10&sort=title&order=asc"
+        f"&cursor={body1['next_cursor']}",
+        headers=_auth(admin),
+    )
+    assert page2.status_code == 200, page2.text
+    body2 = page2.json()
+    assert [item["document_id"] for item in body2["items"]] == ["DOC-VISIBLE-1"]
+
+
 def test_pool_by_status_still_returns_list(tmp_path: Path) -> None:
     container, _users = _build_documents_backend_container(tmp_path)
     client = TestClient(create_app(container))
