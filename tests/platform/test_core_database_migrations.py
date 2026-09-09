@@ -96,6 +96,14 @@ def test_all_six_client_databases_build_from_empty_and_wire_after_preflight(
                     (1, "platform_settings"),
                     (2, "platform_settings_integrity"),
                 ]
+            elif spec.database_id == "signature":
+                assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+                assert conn.execute(
+                    "SELECT version, name FROM _qm_schema_migrations ORDER BY version"
+                ).fetchall() == [
+                    (1, "initial"),
+                    (2, "user_signature_template_presets"),
+                ]
             else:
                 assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
                 assert conn.execute(

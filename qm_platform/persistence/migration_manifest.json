@@ -35,6 +35,12 @@
       "name": "initial",
       "path": "modules/signature/migrations/0001_initial.sql",
       "sha256": "2aab1f743f15cb8a1db79f2cbd314b52c58a693940bd708d46b3d77c3c222835"
+    },
+    {
+      "version": 2,
+      "name": "user_signature_template_presets",
+      "path": "modules/signature/migrations/0002_user_signature_template_presets.sql",
+      "sha256": "c08ee966c6dd352edbe695f4ba97c2698847f55ff3dd4a05e95c31cc97d6dd83"
     }
   ],
   "training": [

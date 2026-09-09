@@ -1,6 +1,7 @@
 """HTTP session connection and bootstrap contracts (WCON00-B)."""
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -101,3 +102,16 @@ def test_connection_reports_maintenance_when_enabled(
     assert body["maintenance"] is True
     assert body["writes_allowed"] is False
     assert body["status"] == "degraded"
+
+
+def test_auth_routes_does_not_import_runtime_bootstrap_at_module_level() -> None:
+    """Keep create_app importable without pulling incident_management/reportlab."""
+    source = Path("src/backend/auth_routes.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module == "qm_platform.runtime.bootstrap":
+            raise AssertionError("auth_routes must not import runtime.bootstrap at module level")
+        if isinstance(node, ast.ImportFrom) and node.module == "qm_platform.runtime":
+            imported = {alias.name for alias in node.names}
+            assert "bootstrap" not in imported
+

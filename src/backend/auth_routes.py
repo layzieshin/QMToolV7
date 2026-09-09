@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from modules.documents.api import compute_global_capabilities
 from modules.usermanagement import api as um_api
 from modules.usermanagement.api import UserContext
-from qm_platform.runtime.bootstrap import core_module_contracts
 from qm_platform.runtime.maintenance import is_maintenance_active
 
 from src.backend.auth_dependencies import (
@@ -304,8 +303,13 @@ def session_bootstrap(
     context: Annotated[UserContext, Depends(require_user_context_normal)],
 ) -> BootstrapResponse:
     """Server-computed module licence and capability manifest for the confirmed session."""
+    from qm_platform.runtime import bootstrap as runtime_bootstrap
+
     modules: list[ModuleBootstrapItem] = []
-    for contract in sorted(core_module_contracts(), key=lambda item: item.module_id):
+    for contract in sorted(
+        runtime_bootstrap.core_module_contracts(),
+        key=lambda item: item.module_id,
+    ):
         licensed = _is_module_licensed(request, contract.module_id)
         modules.append(
             ModuleBootstrapItem(

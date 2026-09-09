@@ -99,11 +99,19 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
     ),
     ("modules/signature/migrations/0001_initial.sql", "modules/signature/migrations"),
     (
+        "modules/signature/migrations/0002_user_signature_template_presets.sql",
+        "modules/signature/migrations",
+    ),
+    (
         "modules/signature/postgres/migrations/0001_initial.sql",
         "modules/signature/postgres/migrations",
     ),
     (
         "modules/signature/postgres/migrations/0002_grant_history_select.sql",
+        "modules/signature/postgres/migrations",
+    ),
+    (
+        "modules/signature/postgres/migrations/0003_user_signature_template_presets.sql",
         "modules/signature/postgres/migrations",
     ),
     (
