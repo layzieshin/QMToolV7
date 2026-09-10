@@ -37,19 +37,16 @@ def execute_sign_dispatch(
         sign_fn = getattr(signature_api, "sign_with_template_for_actor", None)
         if not callable(sign_fn):
             raise SignatureTransitionError("signature_api does not provide sign_with_template_for_actor")
-        signer_user = sign_request.signer_user
-        if not signer_user:
-            raise SignatureTransitionError("signer_user is required for template signing")
         try:
             sign_fn(
                 actor,
                 template_id=sign_request.template_id,
                 input_pdf=sign_request.input_pdf,
-                signer_user=signer_user,
                 password=sign_request.password,
                 output_pdf=sign_request.output_pdf,
                 dry_run=sign_request.dry_run,
                 overwrite_output=sign_request.overwrite_output,
+                sign_mode=sign_request.sign_mode,
                 reason=sign_request.reason,
                 placement_override=sign_request.placement,
                 layout_override=sign_request.layout,

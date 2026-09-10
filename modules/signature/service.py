@@ -161,13 +161,13 @@ class SignatureServiceV2:
     def sign_with_template(
         self, *, template_id: str, input_pdf: Path, signer_user: str, password: str | None = None,
         output_pdf: Path | None = None, dry_run: bool = False, overwrite_output: bool = False,
-        reason: str = "template_api", placement_override: SignaturePlacementInput | None = None,
+        sign_mode: str = "visual", reason: str = "template_api", placement_override: SignaturePlacementInput | None = None,
         layout_override: LabelLayoutInput | None = None,
     ) -> SignResult:
         return self._template_use_cases.sign_with_template(
             template_id=template_id, input_pdf=input_pdf, signer_user=signer_user,
             password=password, output_pdf=output_pdf, dry_run=dry_run, overwrite_output=overwrite_output,
-            reason=reason, placement_override=placement_override, layout_override=layout_override,
+            sign_mode=sign_mode, reason=reason, placement_override=placement_override, layout_override=layout_override,
         )
 
     def sign_with_template_for_actor(self, actor, **kwargs) -> SignResult:

@@ -399,7 +399,6 @@ class SignatureTemplatesTest(unittest.TestCase):
                     foreign,
                     template_id=template.template_id,
                     input_pdf=root / "in.pdf",
-                    signer_user="other",
                 )
             self.assertIn("ownership mismatch", str(exc.exception))
 
@@ -422,10 +421,59 @@ class SignatureTemplatesTest(unittest.TestCase):
                     actor,
                     template_id="missing-template",
                     input_pdf=root / "in.pdf",
-                    signer_user="admin",
                 )
             self.assertIsNotNone(exc.exception.field_errors)
             self.assertEqual(exc.exception.field_errors[0]["field"], "template_id")
+
+    def test_sign_with_template_for_actor_owns_signer_identity_and_rejects_nonvisual_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, _repository = _service_with_repo(root)
+            template = service.create_user_signature_template(
+                owner_user_id="admin",
+                name="actor-bound",
+                placement=SignaturePlacementInput(page_index=0, x=1.0, y=2.0, target_width=3.0),
+                layout=LabelLayoutInput(show_signature=False),
+                signature_asset_id=None,
+            )
+            actor = issue_user_context(
+                user_id="admin",
+                session_id="sess-4",
+                request_id="req-4",
+                organization_id=INSTALLATION_ORGANIZATION_ID,
+                username="admin",
+                global_roles=(),
+                is_qmb=False,
+                authenticated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            input_pdf = root / "in.pdf"
+            _create_pdf(input_pdf)
+            with patch.object(service, "sign_with_fixed_position") as mock_sign:
+                mock_sign.return_value = SignResult(
+                    output_pdf=input_pdf,
+                    signed=False,
+                    sha256="",
+                    dry_run=True,
+                    mode="visual",
+                )
+                service.sign_with_template_for_actor(
+                    actor,
+                    template_id=template.template_id,
+                    input_pdf=input_pdf,
+                    dry_run=True,
+                )
+            request = mock_sign.call_args.args[0]
+            self.assertEqual("admin", request.signer_user)
+            self.assertEqual("visual", request.sign_mode)
+
+            with self.assertRaises(SignatureTemplateError) as exc:
+                service.sign_with_template_for_actor(
+                    actor,
+                    template_id=template.template_id,
+                    input_pdf=input_pdf,
+                    sign_mode="both",
+                )
+            self.assertEqual(exc.exception.field_errors[0]["field"], "sign_mode")
 
 
 if __name__ == "__main__":

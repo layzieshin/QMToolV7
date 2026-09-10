@@ -193,6 +193,7 @@ def test_execute_sign_dispatch_routes_template_id_to_for_actor() -> None:
         def sign_with_template_for_actor(self, actor, **kwargs):
             recorded["actor_id"] = actor.user_id
             recorded["template_id"] = kwargs["template_id"]
+            recorded["sign_mode"] = kwargs["sign_mode"]
 
         def sign_with_fixed_position(self, request):
             recorded["fixed"] = True
@@ -217,6 +218,7 @@ def test_execute_sign_dispatch_routes_template_id_to_for_actor() -> None:
     execute_sign_dispatch(request, signature_api=_Api(), actor=actor)
     assert recorded["template_id"] == "tpl-extend"
     assert recorded["actor_id"] == "editor-1"
+    assert recorded["sign_mode"] == "visual"
     assert "fixed" not in recorded
 
     with pytest.raises(SignatureTransitionError):

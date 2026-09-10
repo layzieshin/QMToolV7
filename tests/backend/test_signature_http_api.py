@@ -409,6 +409,40 @@ def test_standalone_sign_unknown_template_returns_field_errors(tmp_path: Path) -
     assert detail["field_errors"][0]["field"] == "template_id"
 
 
+def test_standalone_template_rejects_nonvisual_sign_mode(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    created = client.post(
+        "/api/v1/signature/templates/user",
+        headers=_auth(editor),
+        json={
+            "name": "visual-only",
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": False, "show_name": True, "show_date": False},
+        },
+    )
+    assert created.status_code == 200, created.text
+    upload = client.post(
+        "/api/v1/signature/standalone/upload",
+        headers={**_auth(editor), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert upload.status_code == 200, upload.text
+    payload = _standalone_sign_payload(
+        upload_handle=upload.json()["upload_handle"],
+        template_id=created.json()["template_id"],
+    )
+    payload["sign_mode"] = "both"
+    failed = client.post(
+        "/api/v1/signature/standalone/sign",
+        headers=_auth(editor),
+        json=payload,
+    )
+    assert failed.status_code == 400, failed.text
+    assert failed.json()["detail"]["field_errors"][0]["field"] == "sign_mode"
+
+
 def test_standalone_sign_foreign_template_returns_403(tmp_path: Path) -> None:
     if importlib.util.find_spec("pypdf") is None or importlib.util.find_spec("reportlab") is None:
         pytest.skip("visual signing dependencies missing")

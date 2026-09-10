@@ -145,4 +145,3 @@ def test_auth_routes_does_not_import_runtime_bootstrap_at_module_level() -> None
         if isinstance(node, ast.ImportFrom) and node.module == "qm_platform.runtime":
             imported = {alias.name for alias in node.names}
             assert "bootstrap" not in imported
-

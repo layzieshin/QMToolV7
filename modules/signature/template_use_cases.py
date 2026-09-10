@@ -378,6 +378,7 @@ class SignatureTemplateUseCases:
         output_pdf: Path | None = None,
         dry_run: bool = False,
         overwrite_output: bool = False,
+        sign_mode: str = "visual",
         reason: str = "template_api",
         placement_override: SignaturePlacementInput | None = None,
         layout_override: LabelLayoutInput | None = None,
@@ -393,6 +394,17 @@ class SignatureTemplateUseCases:
                         "field": "template_id",
                         "code": "unknown",
                         "message": f"unknown signature template: {template_id}",
+                    }
+                ],
+            )
+        if sign_mode != "visual":
+            raise SignatureTemplateError(
+                "signature templates support visual signing only",
+                field_errors=[
+                    {
+                        "field": "sign_mode",
+                        "code": "unsupported_with_template",
+                        "message": "signature templates support visual signing only",
                     }
                 ],
             )
@@ -424,13 +436,13 @@ class SignatureTemplateUseCases:
                     layout=effective_layout,
                     overwrite_output=overwrite_output,
                     dry_run=dry_run,
-                    sign_mode="visual",
+                    sign_mode=sign_mode,
                     signer_user=signer_user,
                     password=password,
                     reason=reason,
                 )
             )
-            if not dry_run:
+            if result.signed and not result.dry_run:
                 self._service.repository.touch_template_last_used_at(template_id, used_at=_utcnow())
             return result
         finally:
@@ -443,11 +455,11 @@ class SignatureTemplateUseCases:
         *,
         template_id: str,
         input_pdf: Path,
-        signer_user: str,
         password: str | None = None,
         output_pdf: Path | None = None,
         dry_run: bool = False,
         overwrite_output: bool = False,
+        sign_mode: str = "visual",
         reason: str = "template_api",
         placement_override: SignaturePlacementInput | None = None,
         layout_override: LabelLayoutInput | None = None,
@@ -472,11 +484,12 @@ class SignatureTemplateUseCases:
         return self.sign_with_template(
             template_id=template_id,
             input_pdf=input_pdf,
-            signer_user=signer_user,
+            signer_user=actor.username,
             password=password,
             output_pdf=output_pdf,
             dry_run=dry_run,
             overwrite_output=overwrite_output,
+            sign_mode=sign_mode,
             reason=reason,
             placement_override=placement_override,
             layout_override=layout_override,
