@@ -275,6 +275,8 @@ def update_template(
             signature_asset_id=body.signature_asset_id,
             document_type=body.document_type,
             role_context=body.role_context,
+            document_type_provided="document_type" in body.model_fields_set,
+            role_context_provided="role_context" in body.model_fields_set,
         )
     except Exception as exc:
         raise _map_signature_error(exc) from exc

@@ -124,6 +124,8 @@ class SignatureApi:
         signature_asset_id: str | None = None,
         document_type: str | None = None,
         role_context: str | None = None,
+        document_type_provided: bool = False,
+        role_context_provided: bool = False,
     ) -> UserSignatureTemplate:
         return self.service.update_signature_template(
             template_id=template_id,
@@ -134,6 +136,8 @@ class SignatureApi:
             signature_asset_id=signature_asset_id,
             document_type=document_type,
             role_context=role_context,
+            document_type_provided=document_type_provided,
+            role_context_provided=role_context_provided,
         )
 
     def update_signature_template_for_actor(self, actor, **kwargs):

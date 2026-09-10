@@ -425,6 +425,142 @@ class SignatureTemplatesTest(unittest.TestCase):
             self.assertIsNotNone(exc.exception.field_errors)
             self.assertEqual(exc.exception.field_errors[0]["field"], "template_id")
 
+    def test_update_empty_preserves_document_type_and_role_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, repository = _service_with_repo(root)
+            placement = SignaturePlacementInput(page_index=0, x=1.0, y=2.0, target_width=3.0)
+            layout = LabelLayoutInput(show_signature=False)
+            created = service.create_user_signature_template(
+                owner_user_id="admin",
+                name="preset",
+                placement=placement,
+                layout=layout,
+                signature_asset_id=None,
+                document_type="SOP",
+                role_context="approver",
+            )
+            updated = service.update_signature_template(
+                template_id=created.template_id,
+                owner_user_id="admin",
+                name="renamed",
+            )
+            self.assertEqual("SOP", updated.document_type)
+            self.assertEqual("approver", updated.role_context)
+            loaded = repository.get_template(created.template_id)
+            assert loaded is not None
+            self.assertEqual("SOP", loaded.document_type)
+            self.assertEqual("approver", loaded.role_context)
+
+    def test_update_explicit_null_unbinds_document_type_and_role_context_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, repository = _service_with_repo(root)
+            placement = SignaturePlacementInput(page_index=0, x=1.0, y=2.0, target_width=3.0)
+            layout = LabelLayoutInput(show_signature=False)
+            created = service.create_user_signature_template(
+                owner_user_id="admin",
+                name="preset",
+                placement=placement,
+                layout=layout,
+                signature_asset_id=None,
+                document_type="SOP",
+                role_context="approver",
+            )
+            unbind_doc = service.update_signature_template(
+                template_id=created.template_id,
+                owner_user_id="admin",
+                document_type=None,
+                document_type_provided=True,
+            )
+            self.assertIsNone(unbind_doc.document_type)
+            self.assertEqual("approver", unbind_doc.role_context)
+            unbind_role = service.update_signature_template(
+                template_id=created.template_id,
+                owner_user_id="admin",
+                role_context=None,
+                role_context_provided=True,
+            )
+            self.assertIsNone(unbind_role.document_type)
+            self.assertIsNone(unbind_role.role_context)
+            loaded = repository.get_template(created.template_id)
+            assert loaded is not None
+            self.assertIsNone(loaded.document_type)
+            self.assertIsNone(loaded.role_context)
+
+    def test_suggestion_personal_user_scope_beats_newer_own_global(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, _repository = _service_with_repo(root)
+            placement = SignaturePlacementInput(page_index=0, x=1.0, y=2.0, target_width=3.0)
+            layout = LabelLayoutInput(show_signature=False)
+            actor = issue_user_context(
+                user_id="admin",
+                session_id="sess-5",
+                request_id="req-5",
+                organization_id=INSTALLATION_ORGANIZATION_ID,
+                username="admin",
+                global_roles=("ADMIN",),
+                is_qmb=False,
+                authenticated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            personal = service.create_user_signature_template(
+                owner_user_id="admin",
+                name="personal",
+                placement=placement,
+                layout=layout,
+                signature_asset_id=None,
+                scope="user",
+                document_type="SOP",
+            )
+            service.create_user_signature_template(
+                owner_user_id="admin",
+                name="global-newer",
+                placement=placement,
+                layout=layout,
+                signature_asset_id=None,
+                scope="global",
+                document_type="SOP",
+            )
+            suggested = service.suggest_template_for_actor(actor, document_type="SOP")
+            assert suggested is not None
+            self.assertEqual(personal.template_id, suggested.template_id)
+
+    def test_suggestion_global_not_double_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, repository = _service_with_repo(root)
+            placement = SignaturePlacementInput(page_index=0, x=1.0, y=2.0, target_width=3.0)
+            layout = LabelLayoutInput(show_signature=False)
+            actor = issue_user_context(
+                user_id="admin",
+                session_id="sess-6",
+                request_id="req-6",
+                organization_id=INSTALLATION_ORGANIZATION_ID,
+                username="admin",
+                global_roles=("ADMIN",),
+                is_qmb=False,
+                authenticated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            global_template = service.create_user_signature_template(
+                owner_user_id="admin",
+                name="global-only",
+                placement=placement,
+                layout=layout,
+                signature_asset_id=None,
+                scope="global",
+                document_type="SOP",
+            )
+            repository.upsert_template(
+                replace(
+                    global_template,
+                    last_used_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                )
+            )
+            suggested = service.suggest_template_for_actor(actor, document_type="SOP")
+            assert suggested is not None
+            self.assertEqual(global_template.template_id, suggested.template_id)
+
     def test_sign_with_template_for_actor_owns_signer_identity_and_rejects_nonvisual_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -443,6 +443,69 @@ def test_standalone_template_rejects_nonvisual_sign_mode(tmp_path: Path) -> None
     assert failed.json()["detail"]["field_errors"][0]["field"] == "sign_mode"
 
 
+def test_template_update_empty_body_preserves_bindings(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    created = client.post(
+        "/api/v1/signature/templates/user",
+        headers=_auth(editor),
+        json={
+            "name": "bound-preset",
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": False, "show_name": True, "show_date": False},
+            "document_type": "SOP",
+            "role_context": "approver",
+        },
+    )
+    assert created.status_code == 200, created.text
+    template_id = created.json()["template_id"]
+    updated = client.put(
+        f"/api/v1/signature/templates/{template_id}",
+        headers=_auth(editor),
+        json={},
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["document_type"] == "SOP"
+    assert body["role_context"] == "approver"
+
+
+def test_template_update_explicit_null_unbinds_bindings(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    created = client.post(
+        "/api/v1/signature/templates/user",
+        headers=_auth(editor),
+        json={
+            "name": "bound-preset",
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": False, "show_name": True, "show_date": False},
+            "document_type": "SOP",
+            "role_context": "approver",
+        },
+    )
+    assert created.status_code == 200, created.text
+    template_id = created.json()["template_id"]
+    unbind_doc = client.put(
+        f"/api/v1/signature/templates/{template_id}",
+        headers=_auth(editor),
+        json={"document_type": None},
+    )
+    assert unbind_doc.status_code == 200, unbind_doc.text
+    assert unbind_doc.json()["document_type"] is None
+    assert unbind_doc.json()["role_context"] == "approver"
+    unbind_role = client.put(
+        f"/api/v1/signature/templates/{template_id}",
+        headers=_auth(editor),
+        json={"role_context": None},
+    )
+    assert unbind_role.status_code == 200, unbind_role.text
+    assert unbind_role.json()["document_type"] is None
+    assert unbind_role.json()["role_context"] is None
+
+
 def test_standalone_sign_foreign_template_returns_403(tmp_path: Path) -> None:
     if importlib.util.find_spec("pypdf") is None or importlib.util.find_spec("reportlab") is None:
         pytest.skip("visual signing dependencies missing")

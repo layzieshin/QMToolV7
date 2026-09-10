@@ -213,6 +213,8 @@ class SignatureTemplateUseCases:
         signature_asset_id: str | None = None,
         document_type: str | None = None,
         role_context: str | None = None,
+        document_type_provided: bool = False,
+        role_context_provided: bool = False,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -235,6 +237,8 @@ class SignatureTemplateUseCases:
             signature_asset_id=signature_asset_id,
             document_type=document_type,
             role_context=role_context,
+            document_type_provided=document_type_provided,
+            role_context_provided=role_context_provided,
         )
 
     def copy_global_template_for_actor(
@@ -258,6 +262,8 @@ class SignatureTemplateUseCases:
         signature_asset_id: str | None = None,
         document_type: str | None = None,
         role_context: str | None = None,
+        document_type_provided: bool = False,
+        role_context_provided: bool = False,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -279,8 +285,8 @@ class SignatureTemplateUseCases:
             placement=placement if placement is not None else current.placement,
             layout=layout if layout is not None else current.layout,
             signature_asset_id=signature_asset_id if signature_asset_id is not None else current.signature_asset_id,
-            document_type=document_type if document_type is not None else current.document_type,
-            role_context=role_context if role_context is not None else current.role_context,
+            document_type=document_type if document_type_provided else current.document_type,
+            role_context=role_context if role_context_provided else current.role_context,
         )
         if not updated.name:
             raise SignatureTemplateError("template name is required")
@@ -346,20 +352,35 @@ class SignatureTemplateUseCases:
             return None
         actor = _confirmed_actor(actor)
         candidates: list[tuple[UserSignatureTemplate, bool]] = []
+        seen_global_ids: set[str] = set()
         for template in self._service.repository.list_templates(actor.user_id):
-            if _template_matches_context(
-                template,
-                document_type=document_type,
-                role_context=role_context,
-            ):
-                candidates.append((template, True))
+            if template.scope == "user":
+                if _template_matches_context(
+                    template,
+                    document_type=document_type,
+                    role_context=role_context,
+                ):
+                    candidates.append((template, True))
+            elif template.scope == "global":
+                if template.template_id in seen_global_ids:
+                    continue
+                if _template_matches_context(
+                    template,
+                    document_type=document_type,
+                    role_context=role_context,
+                ):
+                    candidates.append((template, False))
+                    seen_global_ids.add(template.template_id)
         for template in self._service.repository.list_global_templates():
+            if template.template_id in seen_global_ids:
+                continue
             if _template_matches_context(
                 template,
                 document_type=document_type,
                 role_context=role_context,
             ):
                 candidates.append((template, False))
+                seen_global_ids.add(template.template_id)
         if not candidates:
             return None
         template, _user_scope = max(

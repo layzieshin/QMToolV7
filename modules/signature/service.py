@@ -103,12 +103,15 @@ class SignatureServiceV2:
         self, *, template_id: str, owner_user_id: str, name: str | None = None,
         placement: SignaturePlacementInput | None = None, layout: LabelLayoutInput | None = None,
         signature_asset_id: str | None = None, document_type: str | None = None,
-        role_context: str | None = None,
+        role_context: str | None = None, document_type_provided: bool = False,
+        role_context_provided: bool = False,
     ) -> UserSignatureTemplate:
         return self._template_use_cases.update_signature_template(
             template_id=template_id, owner_user_id=owner_user_id, name=name,
             placement=placement, layout=layout, signature_asset_id=signature_asset_id,
             document_type=document_type, role_context=role_context,
+            document_type_provided=document_type_provided,
+            role_context_provided=role_context_provided,
         )
 
     def update_signature_template_for_actor(self, **kwargs):
