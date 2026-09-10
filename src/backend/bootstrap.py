@@ -30,8 +30,6 @@ from qm_platform.licensing.license_verifier import LicenseVerifier
 from qm_platform.licensing.machine_id import get_machine_id
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
-from modules.documents.module import create_documents_module_contract
-from modules.usermanagement.module import create_usermanagement_module_contract
 from qm_platform.runtime.backend_bootstrap import wire_backend_documents, wire_backend_usermanagement
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.sdk.module_contract import ModuleContract
@@ -288,11 +286,16 @@ def build_backend_container() -> RuntimeContainer:
     container.register_port("signature_postgres_dsn", dsn)
     lifecycle = wire_backend_usermanagement(container)
     wire_backend_documents(container, lifecycle=lifecycle)
+    contracts_by_id = {contract.module_id: contract for contract in lifecycle.contracts()}
+    required_pilot_modules = ("usermanagement", "documents")
+    missing = [module_id for module_id in required_pilot_modules if module_id not in contracts_by_id]
+    if missing:
+        raise BackendBootstrapError(
+            "backend composition missing wired pilot modules: "
+            + ", ".join(missing)
+        )
     register_active_backend_module_contracts(
         container,
-        (
-            create_usermanagement_module_contract(),
-            create_documents_module_contract(),
-        ),
+        tuple(contracts_by_id[module_id] for module_id in required_pilot_modules),
     )
     return container

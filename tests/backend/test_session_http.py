@@ -203,10 +203,11 @@ def test_auth_routes_does_not_import_runtime_bootstrap_at_module_level() -> None
                 assert alias.name != "qm_platform.runtime.bootstrap"
 
 
-def test_backend_composition_registers_full_documents_module_contract() -> None:
-    """Backend wiring must publish the full documents contract, not the client variant."""
+def test_backend_composition_obtains_contracts_from_lifecycle() -> None:
+    """Backend wiring must publish pilot contracts from lifecycle, not module factories."""
     backend_source = Path("src/backend/bootstrap.py").read_text(encoding="utf-8")
-    assert "create_documents_module_contract" in backend_source
+    assert "modules.documents.module" not in backend_source
+    assert "modules.usermanagement.module" not in backend_source
     assert "create_documents_client_module_contract" not in backend_source
 
     backend_contract = create_documents_module_contract()
@@ -225,5 +226,16 @@ def test_backend_composition_registers_full_documents_module_contract() -> None:
         for node in ast.walk(build_fn)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
-    assert "create_documents_module_contract" in call_names
+    assert "create_documents_module_contract" not in call_names
+    assert "create_usermanagement_module_contract" not in call_names
     assert "create_documents_client_module_contract" not in call_names
+
+    uses_lifecycle_contracts = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "contracts"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "lifecycle"
+        for node in ast.walk(build_fn)
+    )
+    assert uses_lifecycle_contracts
