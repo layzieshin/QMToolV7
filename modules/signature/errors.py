@@ -30,7 +30,14 @@ class CryptoSigningNotConfiguredError(SignatureError):
 
 
 class SignatureTemplateError(SignatureError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        field_errors: list[dict[str, str]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.field_errors = field_errors
 
 
 class SignatureAssetError(SignatureError):

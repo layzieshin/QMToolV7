@@ -1279,6 +1279,17 @@
               }
             ],
             "title": "Reason"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           }
         },
         "required": [
@@ -1325,6 +1336,17 @@
             "default": "visual",
             "title": "Sign Mode",
             "type": "string"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           },
           "upload_handle": {
             "minLength": 1,

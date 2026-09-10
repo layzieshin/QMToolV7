@@ -16,7 +16,13 @@ from modules.usermanagement.service import UserManagementService
 from qm_platform.events.event_bus import EventBus
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
-from qm_platform.persistence.database_evolution import DATABASE_PREFLIGHT_STATUSES_PORT, DatabaseStatus
+from qm_platform.persistence.database_evolution import (
+    DATABASE_PREFLIGHT_STATUSES_PORT,
+    DatabaseEvolutionService,
+    DatabaseSpec,
+    DatabaseStatus,
+    MigrationStep,
+)
 from qm_platform.runtime.backend_bootstrap import wire_backend_documents
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.settings.testing import build_settings_service_for_tests
@@ -46,13 +52,53 @@ class _FakeSignatureApi:
     def sign_with_fixed_position(self, request: object) -> object:
         return request
 
+    def sign_with_template_for_actor(self, actor, **kwargs) -> object:
+        output_pdf = kwargs.get("output_pdf")
+        input_pdf = kwargs.get("input_pdf")
+        if output_pdf is not None and input_pdf is not None:
+            from pathlib import Path
+
+            out = Path(output_pdf)
+            src = Path(input_pdf)
+            if src.exists():
+                out.write_bytes(src.read_bytes())
+        return kwargs
+
 
 def _build_documents_backend_container(root: Path) -> tuple[RuntimeContainer, object]:
     container = RuntimeContainer()
     events = EventBus()
     docs_db = root / "storage" / "documents" / "documents.db"
     docs_db.parent.mkdir(parents=True, exist_ok=True)
-    prepare_test_database("documents", docs_db)
+    DatabaseEvolutionService(
+        app_home=docs_db.parent,
+        backup_root=docs_db.parent / ".database-backups",
+    ).migrate(
+        (
+            DatabaseSpec(
+                database_id="documents",
+                path=docs_db,
+                migrations=(
+                    MigrationStep(
+                        version=1,
+                        name="initial",
+                        sql_path=ROOT / "modules/documents/migrations/0001_initial.sql",
+                    ),
+                    MigrationStep(
+                        version=2,
+                        name="workflow_profiles",
+                        sql_path=ROOT / "modules/documents/migrations/0002_workflow_profiles.sql",
+                    ),
+                    MigrationStep(
+                        version=3,
+                        name="edit_signed_fields",
+                        sql_path=ROOT / "modules/documents/migrations/0003_edit_signed_fields.sql",
+                    ),
+                ),
+            ),
+        ),
+        reason="test_http_wcon00_r3",
+    )
     container.register_port("logger", LoggerService(root / "platform.log"))
     container.register_port("audit_logger", AuditLogger(root / "audit.log"))
     container.register_port("event_bus", events)
@@ -68,9 +114,9 @@ def _build_documents_backend_container(root: Path) -> tuple[RuntimeContainer, ob
                     database_id="documents",
                     path=str(docs_db),
                     state="adoptable_v1",
-                    current_version=1,
-                    target_version=2,
-                    pending_versions=(2,),
+                    current_version=3,
+                    target_version=3,
+                    pending_versions=(),
                     integrity="ok",
                     detail=None,
                 )
@@ -517,9 +563,9 @@ def test_wire_backend_documents_registers_documents_sqlite_owner(tmp_path: Path,
                     database_id="documents",
                     path=str(docs_db),
                     state="adoptable_v1",
-                    current_version=1,
-                    target_version=2,
-                    pending_versions=(2,),
+                    current_version=3,
+                    target_version=3,
+                    pending_versions=(),
                     integrity="ok",
                     detail=None,
                 )

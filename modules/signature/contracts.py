@@ -59,6 +59,7 @@ class SignRequest:
     signer_user: str | None = None
     password: str | None = None
     reason: str = "api"
+    template_id: str | None = None
 
 
 @dataclass(frozen=True)

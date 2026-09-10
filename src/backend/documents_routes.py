@@ -169,6 +169,7 @@ class SignIntentBody(BaseModel):
     layout: dict[str, object]
     password: str | None = None
     reason: str | None = None
+    template_id: str | None = None
 
 
 class WorkflowSignBody(BaseModel):
@@ -240,6 +241,7 @@ def _optional_sign_request(request: Request, state, transition: str, body: Workf
             "layout": body.sign_intent.layout,
             "password": body.sign_intent.password,
             "reason": body.sign_intent.reason,
+            "template_id": body.sign_intent.template_id,
         },
         actor=actor,
         signature_api=get_container(request).get_port("signature_api"),
@@ -1598,6 +1600,7 @@ def extend_annual_validity_route(
                 "layout": body.sign_intent.layout,
                 "password": body.sign_intent.password,
                 "reason": body.sign_intent.reason,
+                "template_id": body.sign_intent.template_id,
             },
             signature_api=get_container(request).get_port("signature_api"),
             scratch_root=Path(get_container(request).get_port("app_home")) / "scratch" / "workflow-sign",

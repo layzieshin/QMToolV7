@@ -198,6 +198,18 @@ class PostgresSignatureRepository(SignatureRepository):
             )
             conn.commit()
 
+    def touch_template_last_used_at(self, template_id: str, *, used_at: datetime) -> None:
+        with runtime_connection(self._dsn) as conn:
+            conn.execute(
+                """
+                UPDATE signature.user_signature_templates
+                SET last_used_at = %s
+                WHERE template_id = %s
+                """,
+                (used_at, template_id),
+            )
+            conn.commit()
+
     def set_active_signature_asset(self, owner_user_id: str, asset_id: str) -> None:
         with runtime_connection(self._dsn) as conn:
             conn.execute(

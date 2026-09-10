@@ -136,6 +136,18 @@ class SQLiteSignatureRepository(SignatureRepository):
             conn.execute("DELETE FROM user_signature_templates WHERE template_id = ?", (template_id,))
             conn.commit()
 
+    def touch_template_last_used_at(self, template_id: str, *, used_at: datetime) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE user_signature_templates
+                SET last_used_at = ?
+                WHERE template_id = ?
+                """,
+                (used_at.isoformat(), template_id),
+            )
+            conn.commit()
+
     def set_active_signature_asset(self, owner_user_id: str, asset_id: str) -> None:
         with self._connect() as conn:
             conn.execute(

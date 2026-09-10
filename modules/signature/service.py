@@ -170,6 +170,9 @@ class SignatureServiceV2:
             reason=reason, placement_override=placement_override, layout_override=layout_override,
         )
 
+    def sign_with_template_for_actor(self, actor, **kwargs) -> SignResult:
+        return self._template_use_cases.sign_with_template_for_actor(actor, **kwargs)
+
     def resolve_runtime_layout(self, layout: LabelLayoutInput, *, signer_user: str | None = None) -> LabelLayoutInput:
         return self._policy_ops.resolve_runtime_layout(layout, signer_user=signer_user)
 

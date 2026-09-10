@@ -386,7 +386,16 @@ class SignatureTemplateUseCases:
             raise SignatureTemplateError("signature template storage is not configured")
         template = self._service.repository.get_template(template_id)
         if template is None:
-            raise SignatureTemplateError(f"unknown signature template: {template_id}")
+            raise SignatureTemplateError(
+                f"unknown signature template: {template_id}",
+                field_errors=[
+                    {
+                        "field": "template_id",
+                        "code": "unknown",
+                        "message": f"unknown signature template: {template_id}",
+                    }
+                ],
+            )
         signature_path: Path | None = None
         tmp_path: Path | None = None
         if template.layout.show_signature:
@@ -422,9 +431,53 @@ class SignatureTemplateUseCases:
                 )
             )
             if not dry_run:
-                touched = replace(template, last_used_at=_utcnow())
-                self._service.repository.upsert_template(touched)
+                self._service.repository.touch_template_last_used_at(template_id, used_at=_utcnow())
             return result
         finally:
             if tmp_path is not None:
                 shutil.rmtree(tmp_path, ignore_errors=True)
+
+    def sign_with_template_for_actor(
+        self,
+        actor: UserContext,
+        *,
+        template_id: str,
+        input_pdf: Path,
+        signer_user: str,
+        password: str | None = None,
+        output_pdf: Path | None = None,
+        dry_run: bool = False,
+        overwrite_output: bool = False,
+        reason: str = "template_api",
+        placement_override: SignaturePlacementInput | None = None,
+        layout_override: LabelLayoutInput | None = None,
+    ) -> SignResult:
+        if self._service.repository is None:
+            raise SignatureTemplateError("signature template storage is not configured")
+        actor = _confirmed_actor(actor)
+        template = self._service.repository.get_template(template_id)
+        if template is None:
+            raise SignatureTemplateError(
+                f"unknown signature template: {template_id}",
+                field_errors=[
+                    {
+                        "field": "template_id",
+                        "code": "unknown",
+                        "message": f"unknown signature template: {template_id}",
+                    }
+                ],
+            )
+        if template.scope != "global" and template.owner_user_id != actor.user_id:
+            raise SignatureTemplateError("template ownership mismatch")
+        return self.sign_with_template(
+            template_id=template_id,
+            input_pdf=input_pdf,
+            signer_user=signer_user,
+            password=password,
+            output_pdf=output_pdf,
+            dry_run=dry_run,
+            overwrite_output=overwrite_output,
+            reason=reason,
+            placement_override=placement_override,
+            layout_override=layout_override,
+        )

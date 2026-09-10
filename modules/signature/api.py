@@ -224,3 +224,6 @@ class SignatureApi:
             layout_override=layout_override,
         )
 
+    def sign_with_template_for_actor(self, actor, **kwargs) -> SignResult:
+        return self.service.sign_with_template_for_actor(actor, **kwargs)
+

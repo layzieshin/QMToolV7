@@ -93,7 +93,7 @@ class PostgresDocumentsRepository(DocumentsRepository):
                     document_id, version, title, description, doc_type, control_class, workflow_profile_id, owner_user_id, status, workflow_active,
                     workflow_profile_json,
                     editors_json, reviewers_json, approvers_json, reviewed_by_json, approved_by_json,
-                    edit_signature_done, valid_from, valid_until, next_review_at,
+                    edit_signature_done, edit_signed_at, edit_signed_by, valid_from, valid_until, next_review_at,
                     review_completed_at, review_completed_by, approval_completed_at, approval_completed_by,
                     released_at, archived_at, archived_by, superseded_by_version,
                     extension_count, last_extended_at, last_extended_by, last_extension_reason, last_extension_review_outcome,
@@ -103,7 +103,8 @@ class PostgresDocumentsRepository(DocumentsRepository):
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s
                 )
                 ON CONFLICT(document_id, version) DO UPDATE SET
                     title = excluded.title,
@@ -121,6 +122,8 @@ class PostgresDocumentsRepository(DocumentsRepository):
                     reviewed_by_json = excluded.reviewed_by_json,
                     approved_by_json = excluded.approved_by_json,
                     edit_signature_done = excluded.edit_signature_done,
+                    edit_signed_at = COALESCE(documents.document_versions.edit_signed_at, excluded.edit_signed_at),
+                    edit_signed_by = COALESCE(documents.document_versions.edit_signed_by, excluded.edit_signed_by),
                     valid_from = excluded.valid_from,
                     valid_until = excluded.valid_until,
                     next_review_at = excluded.next_review_at,
@@ -163,6 +166,8 @@ class PostgresDocumentsRepository(DocumentsRepository):
                     json.dumps(sorted(state.reviewed_by), ensure_ascii=True),
                     json.dumps(sorted(state.approved_by), ensure_ascii=True),
                     state.edit_signature_done,
+                    state.edit_signed_at.isoformat() if state.edit_signed_at else None,
+                    state.edit_signed_by,
                     state.valid_from.isoformat() if state.valid_from else None,
                     state.valid_until.isoformat() if state.valid_until else None,
                     state.next_review_at.isoformat() if state.next_review_at else None,
@@ -542,6 +547,8 @@ class PostgresDocumentsRepository(DocumentsRepository):
             reviewed_by=frozenset(json.loads(row["reviewed_by_json"])),
             approved_by=frozenset(json.loads(row["approved_by_json"])),
             edit_signature_done=bool(row["edit_signature_done"]),
+            edit_signed_at=self._parse_dt(row["edit_signed_at"]) if "edit_signed_at" in row.keys() else None,
+            edit_signed_by=str(row["edit_signed_by"]) if "edit_signed_by" in row.keys() and row["edit_signed_by"] else None,
             valid_from=self._parse_dt(row["valid_from"]) if "valid_from" in row.keys() else None,
             valid_until=self._parse_dt(row["valid_until"]) if "valid_until" in row.keys() else None,
             next_review_at=self._parse_dt(row["next_review_at"]) if "next_review_at" in row.keys() else None,

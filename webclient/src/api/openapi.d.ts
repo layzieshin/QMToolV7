@@ -2063,6 +2063,8 @@ export interface components {
             };
             /** Reason */
             reason?: string | null;
+            /** Template Id */
+            template_id?: string | null;
         };
         /** StandaloneSignBody */
         StandaloneSignBody: {
@@ -2091,6 +2093,8 @@ export interface components {
              * @default visual
              */
             sign_mode: string;
+            /** Template Id */
+            template_id?: string | null;
             /** Upload Handle */
             upload_handle: string;
         };

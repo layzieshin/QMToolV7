@@ -277,3 +277,175 @@ def test_template_suggestion_after_create(tmp_path: Path) -> None:
     )
     assert suggested.status_code == 200, suggested.text
     assert suggested.json()["template_id"] == body["template_id"]
+
+
+def _standalone_sign_payload(*, upload_handle: str, template_id: str | None = None, dry_run: bool = False) -> dict:
+    payload = {
+        "upload_handle": upload_handle,
+        "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+        "layout": {
+            "show_signature": True,
+            "show_name": True,
+            "show_date": True,
+            "name_position": "above",
+            "date_position": "below",
+        },
+        "reason": "standalone_template_test",
+        "dry_run": dry_run,
+    }
+    if template_id is not None:
+        payload["template_id"] = template_id
+    return payload
+
+
+def test_standalone_sign_with_template_id_updates_last_used(tmp_path: Path) -> None:
+    if importlib.util.find_spec("pypdf") is None or importlib.util.find_spec("reportlab") is None:
+        pytest.skip("visual signing dependencies missing")
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    png = tmp_path / "sig.png"
+    _create_signature_png(png)
+    assert client.post(
+        "/api/v1/signature/assets/import-and-activate",
+        headers={**_auth(editor), "Content-Type": "image/png"},
+        content=png.read_bytes(),
+    ).status_code == 200
+    created = client.post(
+        "/api/v1/signature/templates/user",
+        headers=_auth(editor),
+        json={
+            "name": "standalone-preset",
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": True, "show_name": False, "show_date": False},
+        },
+    )
+    assert created.status_code == 200, created.text
+    template_id = created.json()["template_id"]
+    assert created.json()["last_used_at"] is None
+    upload = client.post(
+        "/api/v1/signature/standalone/upload",
+        headers={**_auth(editor), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert upload.status_code == 200, upload.text
+    signed = client.post(
+        "/api/v1/signature/standalone/sign",
+        headers=_auth(editor),
+        json=_standalone_sign_payload(upload_handle=upload.json()["upload_handle"], template_id=template_id),
+    )
+    assert signed.status_code == 200, signed.text
+    listed = client.get("/api/v1/signature/templates/user", headers=_auth(editor))
+    assert listed.status_code == 200, listed.text
+    row = next(item for item in listed.json() if item["template_id"] == template_id)
+    assert row["last_used_at"] is not None
+
+
+def test_standalone_sign_template_dry_run_does_not_update_last_used(tmp_path: Path) -> None:
+    if importlib.util.find_spec("pypdf") is None or importlib.util.find_spec("reportlab") is None:
+        pytest.skip("visual signing dependencies missing")
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    png = tmp_path / "sig.png"
+    _create_signature_png(png)
+    assert client.post(
+        "/api/v1/signature/assets/import-and-activate",
+        headers={**_auth(editor), "Content-Type": "image/png"},
+        content=png.read_bytes(),
+    ).status_code == 200
+    created = client.post(
+        "/api/v1/signature/templates/user",
+        headers=_auth(editor),
+        json={
+            "name": "dry-run-preset",
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": True, "show_name": False, "show_date": False},
+        },
+    )
+    assert created.status_code == 200, created.text
+    template_id = created.json()["template_id"]
+    upload = client.post(
+        "/api/v1/signature/standalone/upload",
+        headers={**_auth(editor), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert upload.status_code == 200, upload.text
+    signed = client.post(
+        "/api/v1/signature/standalone/sign",
+        headers=_auth(editor),
+        json=_standalone_sign_payload(
+            upload_handle=upload.json()["upload_handle"],
+            template_id=template_id,
+            dry_run=True,
+        ),
+    )
+    assert signed.status_code == 200, signed.text
+    listed = client.get("/api/v1/signature/templates/user", headers=_auth(editor))
+    row = next(item for item in listed.json() if item["template_id"] == template_id)
+    assert row["last_used_at"] is None
+
+
+def test_standalone_sign_unknown_template_returns_field_errors(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+    upload = client.post(
+        "/api/v1/signature/standalone/upload",
+        headers={**_auth(editor), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert upload.status_code == 200, upload.text
+    failed = client.post(
+        "/api/v1/signature/standalone/sign",
+        headers=_auth(editor),
+        json=_standalone_sign_payload(
+            upload_handle=upload.json()["upload_handle"],
+            template_id="missing-template-id",
+        ),
+    )
+    assert failed.status_code == 400, failed.text
+    detail = failed.json()["detail"]
+    assert detail["field_errors"][0]["field"] == "template_id"
+
+
+def test_standalone_sign_foreign_template_returns_403(tmp_path: Path) -> None:
+    if importlib.util.find_spec("pypdf") is None or importlib.util.find_spec("reportlab") is None:
+        pytest.skip("visual signing dependencies missing")
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    owner = _login(client, "editor", "editorpass01")
+    foreign = _login(client, "reviewer", "reviewerpass01")
+    png = tmp_path / "sig.png"
+    _create_signature_png(png)
+    assert client.post(
+        "/api/v1/signature/assets/import-and-activate",
+        headers={**_auth(owner), "Content-Type": "image/png"},
+        content=png.read_bytes(),
+    ).status_code == 200
+    created = client.post(
+        "/api/v1/signature/templates/user",
+        headers=_auth(owner),
+        json={
+            "name": "owner-only",
+            "placement": {"page_index": 0, "x": 72.0, "y": 72.0, "target_width": 120.0},
+            "layout": {"show_signature": True, "show_name": False, "show_date": False},
+        },
+    )
+    assert created.status_code == 200, created.text
+    template_id = created.json()["template_id"]
+    upload = client.post(
+        "/api/v1/signature/standalone/upload",
+        headers={**_auth(foreign), "Content-Type": "application/pdf"},
+        content=_minimal_pdf_bytes(),
+    )
+    assert upload.status_code == 200, upload.text
+    failed = client.post(
+        "/api/v1/signature/standalone/sign",
+        headers=_auth(foreign),
+        json=_standalone_sign_payload(
+            upload_handle=upload.json()["upload_handle"],
+            template_id=template_id,
+        ),
+    )
+    assert failed.status_code == 403, failed.text

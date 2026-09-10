@@ -11,6 +11,12 @@
       "name": "workflow_profiles",
       "path": "modules/documents/migrations/0002_workflow_profiles.sql",
       "sha256": "dd5f189604c4ad2aa74b228bfe6b08357f9f423d0b96ae7cd34297d05085ec8a"
+    },
+    {
+      "version": 3,
+      "name": "edit_signed_fields",
+      "path": "modules/documents/migrations/0003_edit_signed_fields.sql",
+      "sha256": "5e138043386fba2e371160aaf04390edf5017bcda023e225510fe79a8b62fa50"
     }
   ],
   "incidents": [

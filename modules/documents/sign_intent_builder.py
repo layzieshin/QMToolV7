@@ -29,6 +29,10 @@ def build_workflow_sign_request_from_intent(
     password = sign_intent.get("password")
     password_s = str(password).strip() if password is not None else None
     reason = str(sign_intent.get("reason") or "WORKFLOW_TRANSITION")
+    raw_template_id = sign_intent.get("template_id")
+    template_id = str(raw_template_id).strip() if raw_template_id is not None else None
+    if template_id == "":
+        template_id = None
 
     input_pdf = signature_guard._resolve_signature_input_pdf(  # noqa: SLF001
         state,
@@ -40,10 +44,12 @@ def build_workflow_sign_request_from_intent(
         raise ValueError(f"no PDF artifact available for signed transition '{transition}'")
 
     scratch_root.mkdir(parents=True, exist_ok=True)
-    signature_png = scratch_root / f"active-signature-{uuid4().hex}.png"
-    exported = signature_api.export_active_signature(actor.user_id, signature_png)
-    if not exported.exists():
-        raise ValueError("active signature could not be exported on the server")
+    signature_png = None
+    if template_id is None:
+        signature_png = scratch_root / f"active-signature-{uuid4().hex}.png"
+        exported = signature_api.export_active_signature(actor.user_id, signature_png)
+        if not exported.exists():
+            raise ValueError("active signature could not be exported on the server")
 
     resolved_layout = signature_api.resolve_runtime_layout(layout, signer_user=actor.username)
     output_pdf = scratch_root / f"signed-{uuid4().hex}.pdf"
@@ -51,7 +57,7 @@ def build_workflow_sign_request_from_intent(
     return SignRequest(
         input_pdf=input_pdf,
         output_pdf=output_pdf,
-        signature_png=exported,
+        signature_png=signature_png,
         placement=placement,
         layout=resolved_layout,
         overwrite_output=True,
@@ -60,4 +66,5 @@ def build_workflow_sign_request_from_intent(
         signer_user=actor.username,
         password=password_s or None,
         reason=reason,
+        template_id=template_id,
     )

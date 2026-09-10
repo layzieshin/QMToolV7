@@ -77,6 +77,7 @@ class StandaloneSignBody(BaseModel):
     reason: str = "standalone_http"
     sign_mode: str = "visual"
     dry_run: bool = False
+    template_id: str | None = None
 
 
 def _signature_api(request: Request):
@@ -461,24 +462,39 @@ def standalone_sign(
     content = b""
     sha256 = ""
     try:
-        exported = api.export_active_signature(actor.user_id, signature_png)
         placement = placement_from_payload(body.placement)
         layout = layout_from_payload(body.layout)
         resolved_layout = api.resolve_runtime_layout(layout, signer_user=actor.username)
-        sign_request = SignRequest(
-            input_pdf=input_path,
-            output_pdf=output_pdf,
-            signature_png=exported,
-            placement=placement,
-            layout=resolved_layout,
-            overwrite_output=True,
-            dry_run=body.dry_run,
-            sign_mode=body.sign_mode if body.sign_mode in {"visual", "crypto", "both"} else "visual",
-            signer_user=actor.username,
-            password=body.password.strip() if body.password else None,
-            reason=body.reason,
-        )
-        result = api.sign_with_fixed_position(sign_request)
+        if body.template_id:
+            result = api.sign_with_template_for_actor(
+                actor,
+                template_id=body.template_id,
+                input_pdf=input_path,
+                signer_user=actor.username,
+                password=body.password.strip() if body.password else None,
+                output_pdf=output_pdf,
+                dry_run=body.dry_run,
+                overwrite_output=True,
+                reason=body.reason,
+                placement_override=placement,
+                layout_override=resolved_layout,
+            )
+        else:
+            exported = api.export_active_signature(actor.user_id, signature_png)
+            sign_request = SignRequest(
+                input_pdf=input_path,
+                output_pdf=output_pdf,
+                signature_png=exported,
+                placement=placement,
+                layout=resolved_layout,
+                overwrite_output=True,
+                dry_run=body.dry_run,
+                sign_mode=body.sign_mode if body.sign_mode in {"visual", "crypto", "both"} else "visual",
+                signer_user=actor.username,
+                password=body.password.strip() if body.password else None,
+                reason=body.reason,
+            )
+            result = api.sign_with_fixed_position(sign_request)
         content = result.output_pdf.read_bytes()
         sha256 = result.sha256
     except Exception as exc:

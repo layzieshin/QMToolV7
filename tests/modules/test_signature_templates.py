@@ -18,7 +18,7 @@ from dataclasses import replace
 from modules.signature.contracts import LabelLayoutInput, SignResult, SignaturePlacementInput
 from modules.usermanagement.contracts import issue_user_context
 from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
-from modules.signature.errors import PasswordRequiredError
+from modules.signature.errors import PasswordRequiredError, SignatureTemplateError
 from modules.signature.module import SIGNATURE_SETTINGS_CONTRIBUTION
 from modules.signature.secure_store import EncryptedSignatureBlobStore
 from modules.signature.service import SignatureServiceV2
@@ -330,6 +330,102 @@ class SignatureTemplatesTest(unittest.TestCase):
             updated = repository.get_template(template.template_id)
             assert updated is not None
             self.assertEqual(moment, updated.last_used_at)
+
+    def test_sign_with_template_touch_preserves_renamed_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, repository = _service_with_repo(root)
+            input_pdf = root / "in.pdf"
+            _create_pdf(input_pdf)
+            gif_path = root / "sig.gif"
+            Image.new("RGBA", (32, 16), (0, 0, 0, 255)).save(gif_path, format="GIF")
+            asset = service.import_signature_asset("admin", gif_path)
+            template = service.create_user_signature_template(
+                owner_user_id="admin",
+                name="original-name",
+                placement=SignaturePlacementInput(page_index=0, x=10.0, y=20.0, target_width=60.0),
+                layout=LabelLayoutInput(show_signature=True, show_name=False, show_date=False),
+                signature_asset_id=asset.asset_id,
+            )
+            service.update_signature_template(
+                template_id=template.template_id,
+                owner_user_id="admin",
+                name="renamed-before-sign",
+            )
+            with patch.object(service, "sign_with_fixed_position") as mock_sign:
+                mock_sign.return_value = SignResult(
+                    output_pdf=input_pdf,
+                    signed=True,
+                    sha256="abc",
+                    dry_run=False,
+                    mode="visual",
+                )
+                service.sign_with_template(
+                    template_id=template.template_id,
+                    input_pdf=input_pdf,
+                    signer_user="admin",
+                    password="admin",
+                    dry_run=False,
+                )
+            updated = repository.get_template(template.template_id)
+            assert updated is not None
+            self.assertEqual("renamed-before-sign", updated.name)
+
+    def test_sign_with_template_for_actor_foreign_user_scope_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, _repository = _service_with_repo(root)
+            placement = SignaturePlacementInput(page_index=0, x=1.0, y=2.0, target_width=3.0)
+            layout = LabelLayoutInput(show_signature=False)
+            template = service.create_user_signature_template(
+                owner_user_id="admin",
+                name="admin-only",
+                placement=placement,
+                layout=layout,
+                signature_asset_id=None,
+            )
+            foreign = issue_user_context(
+                user_id="other",
+                session_id="sess-2",
+                request_id="req-2",
+                organization_id=INSTALLATION_ORGANIZATION_ID,
+                username="other",
+                global_roles=(),
+                is_qmb=False,
+                authenticated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            with self.assertRaises(SignatureTemplateError) as exc:
+                service.sign_with_template_for_actor(
+                    foreign,
+                    template_id=template.template_id,
+                    input_pdf=root / "in.pdf",
+                    signer_user="other",
+                )
+            self.assertIn("ownership mismatch", str(exc.exception))
+
+    def test_sign_with_template_for_actor_unknown_has_field_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, _repository = _service_with_repo(root)
+            actor = issue_user_context(
+                user_id="admin",
+                session_id="sess-3",
+                request_id="req-3",
+                organization_id=INSTALLATION_ORGANIZATION_ID,
+                username="admin",
+                global_roles=(),
+                is_qmb=False,
+                authenticated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            )
+            with self.assertRaises(SignatureTemplateError) as exc:
+                service.sign_with_template_for_actor(
+                    actor,
+                    template_id="missing-template",
+                    input_pdf=root / "in.pdf",
+                    signer_user="admin",
+                )
+            self.assertIsNotNone(exc.exception.field_errors)
+            self.assertEqual(exc.exception.field_errors[0]["field"], "template_id")
 
 
 if __name__ == "__main__":

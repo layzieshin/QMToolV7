@@ -52,7 +52,7 @@ from .contracts import (
     ChangeRequest,
     control_class_for,
 )
-from .errors import CommentConflictError, DocumentConflictError, HeaderConflictError, InvalidTransitionError, PermissionDeniedError, ValidationError
+from .errors import CommentConflictError, DocumentConflictError, HeaderConflictError, InvalidTransitionError, PermissionDeniedError, SignatureTransitionError, ValidationError
 from .readmodel_use_cases import DocumentsReadmodelUseCases
 from .repository import DocumentQueryKeyset, DocumentsRepository, document_query_keyset_sort_value
 from .storage import DocumentsStoragePort
@@ -137,17 +137,15 @@ def build_version_history_events(
                 summary="archived",
             )
         )
-    if state.edit_signature_done:
-        signed_at = state.last_event_at or state.released_at or state.created_at
-        if signed_at is not None:
-            events.append(
-                DocumentVersionHistoryItem(
-                    occurred_at=signed_at,
-                    event_type="signed",
-                    actor_user_id=state.last_actor_user_id,
-                    summary="signed",
-                )
+    if state.edit_signed_at is not None:
+        events.append(
+            DocumentVersionHistoryItem(
+                occurred_at=state.edit_signed_at,
+                event_type="signed",
+                actor_user_id=state.edit_signed_by,
+                summary="signed",
             )
+        )
     for comment in comment_items:
         if comment.created_at is None:
             continue
@@ -520,6 +518,8 @@ class DocumentsService:
         state: DocumentVersionState,
         transition: str,
         sign_request: object | None,
+        *,
+        actor=None,
     ) -> None:
         signature_guard.enforce_signature_transition(
             state, transition, sign_request,
@@ -528,6 +528,7 @@ class DocumentsService:
             storage_port=self._storage_port,
             create_artifact_fn=self._create_artifact,
             resolve_artifact_path_fn=self._resolve_artifact_path,
+            actor=actor,
         )
 
     def _resolve_signature_input_pdf_for_transition(
@@ -1418,17 +1419,35 @@ class DocumentsService:
             actor_role=actor_role,
         )
 
-    def complete_editing(self, state, *, sign_request=None, actor_user_id=None, actor_role=None):
-        return self._workflow_use_cases.complete_editing(state, sign_request=sign_request, actor_user_id=actor_user_id, actor_role=actor_role)
+    def complete_editing(self, state, *, sign_request=None, actor=None, actor_user_id=None, actor_role=None):
+        return self._workflow_use_cases.complete_editing(
+            state,
+            sign_request=sign_request,
+            actor=actor,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
 
-    def accept_review(self, state, actor_user_id, *, sign_request=None, actor_role=None):
-        return self._workflow_use_cases.accept_review(state, actor_user_id, sign_request=sign_request, actor_role=actor_role)
+    def accept_review(self, state, actor_user_id, *, sign_request=None, actor=None, actor_role=None):
+        return self._workflow_use_cases.accept_review(
+            state,
+            actor_user_id,
+            sign_request=sign_request,
+            actor=actor,
+            actor_role=actor_role,
+        )
 
     def reject_review(self, state, actor_user_id, reason, actor_role=None):
         return self._workflow_use_cases.reject_review(state, actor_user_id, reason, actor_role=actor_role)
 
-    def accept_approval(self, state, actor_user_id, *, sign_request=None, actor_role=None):
-        return self._workflow_use_cases.accept_approval(state, actor_user_id, sign_request=sign_request, actor_role=actor_role)
+    def accept_approval(self, state, actor_user_id, *, sign_request=None, actor=None, actor_role=None):
+        return self._workflow_use_cases.accept_approval(
+            state,
+            actor_user_id,
+            sign_request=sign_request,
+            actor=actor,
+            actor_role=actor_role,
+        )
 
     def reject_approval(self, state, actor_user_id, reason, actor_role=None):
         return self._workflow_use_cases.reject_approval(state, actor_user_id, reason, actor_role=actor_role)
@@ -1471,19 +1490,29 @@ class DocumentsService:
             self._ensure_editor_or_owner_or_privileged(state, actor_user_id, actor_role)
         return self._ensure_source_pdf_artifact_for_signing(state, actor_user_id=actor_user_id)
 
-    def sign_and_store_signed_artifact(self, state, sign_request, *, transition: str) -> DocumentArtifact:
+    def sign_and_store_signed_artifact(
+        self,
+        state,
+        sign_request,
+        *,
+        transition: str,
+        actor=None,
+    ) -> DocumentArtifact:
         """Execute a server-built signing request and register its SIGNED_PDF."""
         if self._signature_api is None:
             raise ValidationError("signature_api is required for signing")
-        sign = getattr(self._signature_api, "sign_with_fixed_position", None)
-        if not callable(sign):
-            raise ValidationError("signature_api does not provide sign_with_fixed_position")
         signature_png = getattr(sign_request, "signature_png", None)
         output_pdf = getattr(sign_request, "output_pdf", None)
         input_pdf = getattr(sign_request, "input_pdf", None)
         try:
             try:
-                sign(sign_request)
+                signature_guard.execute_sign_dispatch(
+                    sign_request,
+                    signature_api=self._signature_api,
+                    actor=actor,
+                )
+            except SignatureTransitionError:
+                raise
             except Exception as exc:
                 raise ValidationError(f"signature step failed: {exc}") from exc
             if not isinstance(output_pdf, Path) or not output_pdf.is_file() or output_pdf.suffix.lower() != ".pdf":

@@ -200,6 +200,8 @@ class DocumentVersionState:
     reviewed_by: frozenset[str] = field(default_factory=frozenset)
     approved_by: frozenset[str] = field(default_factory=frozenset)
     edit_signature_done: bool = False
+    edit_signed_at: datetime | None = None
+    edit_signed_by: str | None = None
     valid_from: datetime | None = None
     valid_until: datetime | None = None
     next_review_at: datetime | None = None

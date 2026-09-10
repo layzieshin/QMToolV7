@@ -870,6 +870,7 @@ class DocumentsWorkflowApi:
             lambda current: self._service.complete_editing(
                 current,
                 sign_request=sign_request,
+                actor=actor,
                 actor_user_id=actor_user_id,
                 actor_role=actor_role,
             ),
@@ -927,6 +928,7 @@ class DocumentsWorkflowApi:
                 current,
                 actor_user_id,
                 sign_request=sign_request,
+                actor=actor,
                 actor_role=actor_role,
             ),
             actor_user_id=actor_user_id,
@@ -984,6 +986,7 @@ class DocumentsWorkflowApi:
                 current,
                 actor_user_id,
                 sign_request=sign_request,
+                actor=actor,
                 actor_role=actor_role,
             ),
             actor_user_id=actor_user_id,
@@ -1107,7 +1110,7 @@ class DocumentsWorkflowApi:
             artifact = None
             try:
                 artifact = self._service.sign_and_store_signed_artifact(
-                    current, sign_request, transition="EXTEND_VALIDITY"
+                    current, sign_request, transition="EXTEND_VALIDITY", actor=actor,
                 )
                 return self._service.extend_annual_validity(
                     current,
