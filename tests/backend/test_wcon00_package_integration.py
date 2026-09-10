@@ -48,8 +48,8 @@ def test_wcon00_pis1_connection_and_bootstrap(
     assert modules["documents"]["authorized"] is True
     assert modules["usermanagement"]["licensed"] is True
     assert modules["usermanagement"]["authorized"] is True
-    assert modules["training"]["licensed"] is False
-    assert modules["training"]["authorized"] is False
+    assert "training" not in modules
+    assert "incident_management" not in modules
 
 
 def test_wcon00_pis1_documents_admin_signature_and_users(tmp_path: Path) -> None:
