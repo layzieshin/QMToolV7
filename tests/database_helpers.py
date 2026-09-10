@@ -29,6 +29,11 @@ _DOCUMENTS_MIGRATIONS = (
         name="workflow_profiles",
         sql_path=Path("modules/documents/migrations/0002_workflow_profiles.sql"),
     ),
+    MigrationStep(
+        version=3,
+        name="edit_signed_fields",
+        sql_path=Path("modules/documents/migrations/0003_edit_signed_fields.sql"),
+    ),
 )
 
 _USERS_MIGRATIONS = (

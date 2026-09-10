@@ -46,6 +46,11 @@ _CREATE_TABLE_RE = re.compile(
     r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)\s*\((.*?)\)\s*;",
     re.IGNORECASE | re.DOTALL,
 )
+_ALTER_ADD_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)\b",
+    re.IGNORECASE,
+)
+_DISCOVERABLE_LOWER = {name.lower() for name in DISCOVERABLE_IDENTITY_COLUMNS}
 
 
 @dataclass(frozen=True)
@@ -129,6 +134,13 @@ def prepare_postgres_cutover(
     return CutoverPrepResult(status=status, report_path=str(report_path), blocker_codes=blockers)
 
 
+def _is_discoverable_identity_column(table: str, column: str) -> bool:
+    lowered = column.lower()
+    if lowered not in _DISCOVERABLE_LOWER:
+        return False
+    return not (lowered == "storage_key" and table != "signature_assets")
+
+
 def discover_schema_identity_columns(migration_sql: Path) -> set[tuple[str, str]]:
     """Return (table, column) pairs that look like identity storage in one migration."""
     text = migration_sql.read_text(encoding="utf-8")
@@ -143,11 +155,26 @@ def discover_schema_identity_columns(migration_sql: Path) -> set[tuple[str, str]
             ):
                 continue
             column = line.split(None, 1)[0].strip("`\"[]")
-            if column.lower() in {c.lower() for c in DISCOVERABLE_IDENTITY_COLUMNS}:
-                if column.lower() == "storage_key" and table != "signature_assets":
-                    continue
+            if _is_discoverable_identity_column(table, column):
                 found.add((table, column))
     return found
+
+
+def discover_alter_identity_columns(migrations_dir: Path) -> set[tuple[str, str]]:
+    """Return identity columns added by later sqlite ALTER TABLE ... ADD COLUMN files."""
+    found: set[tuple[str, str]] = set()
+    for path in sorted(migrations_dir.glob("*.sql")):
+        text = path.read_text(encoding="utf-8")
+        for match in _ALTER_ADD_COLUMN_RE.finditer(text):
+            table, column = match.group(1), match.group(2)
+            if _is_discoverable_identity_column(table, column):
+                found.add((table, column))
+    return found
+
+
+def _sqlite_migration_sql_bundle(migration_sql: Path) -> str:
+    folder = migration_sql.parent
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(folder.glob("*.sql")))
 
 
 def catalog_coverage_gaps() -> dict[str, list[str]]:
@@ -156,6 +183,7 @@ def catalog_coverage_gaps() -> dict[str, list[str]]:
     catalogued = catalog_keys()
     for module in MODULE_DATABASES:
         discovered = discover_schema_identity_columns(module.migration_sql)
+        discovered |= discover_alter_identity_columns(module.migration_sql.parent)
         for table, column in sorted(discovered):
             key = (module.module_id, table, column)
             if key not in catalogued:
@@ -163,7 +191,7 @@ def catalog_coverage_gaps() -> dict[str, list[str]]:
     missing_from_schema: list[str] = []
     for ref in IDENTITY_COLUMNS:
         module = module_database_by_id(ref.module_id)
-        sql = module.migration_sql.read_text(encoding="utf-8")
+        sql = _sqlite_migration_sql_bundle(module.migration_sql)
         if ref.table not in sql or ref.column not in sql:
             missing_from_schema.append(f"{ref.module_id}.{ref.table}.{ref.column}")
     return {
