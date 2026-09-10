@@ -189,3 +189,127 @@ def test_postgres_concurrent_mutual_admin_demotion_keeps_one_admin(runtime_env) 
         if user.is_active and user.role == "Admin"
     ]
     assert len(active_admins) == 1
+
+
+def _read_password_changed_audits(migrator_dsn: str, *, target_user_id: str) -> list[dict]:
+    with psycopg.connect(migrator_dsn, row_factory=psycopg.rows.dict_row) as conn:
+        conn.execute(f"SET ROLE {pgs.MIGRATOR_ROLE}")
+        rows = conn.execute(
+            """
+            SELECT event_type, target_user_id::text AS target_user_id
+            FROM usermanagement.audit_events
+            WHERE event_type = 'user.password_changed'
+              AND target_user_id = %s::uuid
+            ORDER BY occurred_at, audit_id
+            """,
+            (target_user_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def test_postgres_admin_password_reset_revokes_sessions_and_sets_must_change(runtime_env) -> None:
+    admin_dsn, migrator_dsn, runtime_dsn = runtime_env
+    client, service = _wired_client(runtime_dsn)
+    admin_token = client.post(
+        "/api/v1/auth/token", json={"username": "opsadmin", "password": "ops-secret-1"}
+    ).json()["token"]
+    client.post(
+        "/api/v1/auth/change-password",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"new_password": "ops-secret-2"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "username": "worker",
+            "password": "workerpass1",
+            "must_change_password": False,
+        },
+    )
+    assert created.status_code == 201
+    worker_token_a = client.post(
+        "/api/v1/auth/token", json={"username": "worker", "password": "workerpass1"}
+    ).json()["token"]
+    worker_token_b = client.post(
+        "/api/v1/auth/token", json={"username": "worker", "password": "workerpass1"}
+    ).json()["token"]
+
+    reset = client.post(
+        "/api/v1/users/worker/password-actions",
+        headers=admin_headers,
+        json={"new_password": "workerreset1"},
+    )
+    assert reset.status_code == 204
+    assert (
+        client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {worker_token_a}"}).status_code
+        == 401
+    )
+    assert (
+        client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {worker_token_b}"}).status_code
+        == 401
+    )
+    assert service.authenticate("worker", "workerreset1") is not None
+    detail = client.get("/api/v1/users/worker", headers=admin_headers)
+    assert detail.status_code == 200
+    assert detail.json()["must_change_password"] is True
+    del admin_dsn, migrator_dsn
+
+
+def test_postgres_admin_password_reset_rolls_back_on_late_failure(
+    runtime_env,
+    monkeypatch,
+) -> None:
+    admin_dsn, migrator_dsn, runtime_dsn = runtime_env
+    client, service = _wired_client(runtime_dsn)
+    from modules.usermanagement.postgres_user_repository import PostgresUserRepository
+
+    admin_token = client.post(
+        "/api/v1/auth/token", json={"username": "opsadmin", "password": "ops-secret-1"}
+    ).json()["token"]
+    client.post(
+        "/api/v1/auth/change-password",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"new_password": "ops-secret-2"},
+    )
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "username": "worker",
+            "password": "workerpass1",
+            "must_change_password": False,
+        },
+    )
+    assert created.status_code == 201
+    worker = service.repository.get_user("worker")
+    assert worker is not None
+    worker_token = client.post(
+        "/api/v1/auth/token", json={"username": "worker", "password": "workerpass1"}
+    ).json()["token"]
+
+    def _fail_after_password_update(conn, username, must_change_password):
+        raise RuntimeError("injected admin password reset failure")
+
+    monkeypatch.setattr(
+        PostgresUserRepository,
+        "set_must_change_password_on_connection",
+        _fail_after_password_update,
+    )
+
+    with pytest.raises(RuntimeError):
+        client.post(
+            "/api/v1/users/worker/password-actions",
+            headers=admin_headers,
+            json={"new_password": "workerreset1"},
+        )
+
+    assert service.authenticate("worker", "workerpass1") is not None
+    assert (
+        client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {worker_token}"}).status_code
+        == 200
+    )
+    assert _read_password_changed_audits(migrator_dsn, target_user_id=worker.user_id) == []
+    del admin_dsn
