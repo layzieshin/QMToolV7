@@ -975,7 +975,10 @@ def test_history_requires_auth_and_hides_unreadable(tmp_path: Path) -> None:
     items = ok.json()
     assert items
     assert items[0]["event_type"] == "created"
-    assert all("full_text" not in item for item in items)
+    expected_keys = {"occurred_at", "event_type", "actor_user_id", "summary"}
+    for item in items:
+        assert set(item.keys()) == expected_keys
+        assert "full_text" not in item
     observer = _login(client, "observer", "observerpass01")
     denied = client.get("/api/v1/documents/versions/DOC-HIST/1/history", headers=_auth(observer))
     assert denied.status_code == 404

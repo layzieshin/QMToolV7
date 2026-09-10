@@ -124,7 +124,7 @@ def build_version_history_events(
             DocumentVersionHistoryItem(
                 occurred_at=state.released_at,
                 event_type="released",
-                actor_user_id=state.last_actor_user_id,
+                actor_user_id=state.approval_completed_by,
                 summary="released",
             )
         )

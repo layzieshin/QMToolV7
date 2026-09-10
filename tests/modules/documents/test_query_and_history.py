@@ -86,9 +86,27 @@ def test_build_version_history_events_maps_timestamps_and_comments() -> None:
     assert events[-1].summary == "Needs clarification on section 2"
     assert events[1].summary == "review completed"
     assert events[2].summary == "approval completed"
+    released = next(event for event in events if event.event_type == "released")
+    assert released.actor_user_id == "approver"
+    assert released.actor_user_id != "later-actor"
     signed = next(event for event in events if event.event_type == "signed")
     assert signed.occurred_at == _moment(7)
     assert signed.actor_user_id == "editor"
+
+
+def test_released_history_uses_approval_completed_by_not_last_actor() -> None:
+    state = replace(
+        _state(),
+        approval_completed_at=_moment(4),
+        approval_completed_by="approver",
+        released_at=_moment(5),
+        last_event_at=_moment(9),
+        last_actor_user_id="later-actor",
+    )
+    events = build_version_history_events(state)
+    released = next(event for event in events if event.event_type == "released")
+    assert released.actor_user_id == "approver"
+    assert released.actor_user_id != "later-actor"
 
 
 def test_signed_history_uses_edit_signed_fields_not_last_event() -> None:
