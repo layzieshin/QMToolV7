@@ -187,14 +187,15 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich INT00. Der Checkpoint bleibt
-TODO und NOT RUN; er startet nicht automatisch. **WCON00 ist PASS** auf
-`feature/ap-029-wcon00` (Start SHA `eb39875423b3d2bb34f87ebc1a0716c724aa4ecc`;
-FINAL_PASS agent `d052735b-fbdd-40ee-b30c-4a5e375fe333`). **WCON00-R3 ist
-PASS** auf demselben Branch (edit-signed history, optional template_id,
-last_used touch). INT00 und WEB01 sind
-nicht gestartet. Merge, Branch-/Worktree-Cleanup und eine dritte Codex-Runde
-bleiben unautorisiert.
+Die naechste freizugebende Aktion ist ausschliesslich WCON00 als begrenzter
+**WCON00-R4-Closeout**. WCON00 bleibt `IN_PROGRESS` auf
+`feature/ap-029-wcon00`: A-F und die R3-Kernziele besitzen gruenes historisches
+Evidence, aber fuenf echte Contract-/Integritaetsfindings, ein frischer
+Gesamtregressionsnachweis und ein finaler Audit sind noch offen. Der lokale
+Audit-Fix `a3520c0f1820fc7ea46b6c62e7b8a45956611141` ist nicht gepusht; CI
+34443500364 beweist nur den vorherigen Remote-Head `d0d5aad`. INT00 und WEB01
+sind TODO und NOT RUN. Merge, Branch-/Worktree-Cleanup und eine dritte
+Codex-Runde bleiben unautorisiert.
 **OPS00 ist PASS** und wurde via PR #41 per Squash nach `main` @
 `98feef61dcfe0e40741c254da16feb9383a0d1b0` gemergt. Vor dem Merge waren beide
 CI-Jobs SUCCESS und 11/11 Review-Konversationen resolved. Die technische Evidence
