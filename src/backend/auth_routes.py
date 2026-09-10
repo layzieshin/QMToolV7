@@ -21,6 +21,7 @@ from src.backend.auth_dependencies import (
     require_user_context_password_change,
     resolve_auth_token,
 )
+from src.backend.bootstrap import ACTIVE_BACKEND_MODULE_CONTRACTS_PORT
 from src.backend.cookie_csrf import (
     clear_csrf_cookie,
     clear_session_cookie,
@@ -303,13 +304,13 @@ def session_bootstrap(
     context: Annotated[UserContext, Depends(require_user_context_normal)],
 ) -> BootstrapResponse:
     """Server-computed module licence and capability manifest for the confirmed session."""
-    from qm_platform.runtime import bootstrap as runtime_bootstrap
+    container = getattr(request.app.state, "container", None)
+    if container is None or not container.has_port(ACTIVE_BACKEND_MODULE_CONTRACTS_PORT):
+        return BootstrapResponse(modules=[])
 
+    contracts = container.get_port(ACTIVE_BACKEND_MODULE_CONTRACTS_PORT)
     modules: list[ModuleBootstrapItem] = []
-    for contract in sorted(
-        runtime_bootstrap.core_module_contracts(),
-        key=lambda item: item.module_id,
-    ):
+    for contract in sorted(contracts, key=lambda item: item.module_id):
         licensed = _is_module_licensed(
             request,
             module_id=contract.module_id,

@@ -30,8 +30,11 @@ from qm_platform.licensing.license_verifier import LicenseVerifier
 from qm_platform.licensing.machine_id import get_machine_id
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
+from modules.documents.module import create_documents_module_contract
+from modules.usermanagement.module import create_usermanagement_module_contract
 from qm_platform.runtime.backend_bootstrap import wire_backend_documents, wire_backend_usermanagement
 from qm_platform.runtime.container import RuntimeContainer
+from qm_platform.sdk.module_contract import ModuleContract
 from qm_platform.runtime.paths import resolve_home_path, resource_root, runtime_home
 from qm_platform.settings.settings_registry import SettingsRegistry
 from qm_platform.settings.settings_service import SettingsService
@@ -39,6 +42,16 @@ from qm_platform.blob import FilesystemBlobStore
 
 _ROOT = Path(__file__).resolve().parents[2]
 _ENV_PATH = _ROOT / ".env"
+
+ACTIVE_BACKEND_MODULE_CONTRACTS_PORT = "active_backend_module_contracts"
+
+
+def register_active_backend_module_contracts(
+    container: RuntimeContainer,
+    contracts: tuple[ModuleContract, ...],
+) -> None:
+    """Store the immutable backend composition catalogue on the runtime container."""
+    container.register_port(ACTIVE_BACKEND_MODULE_CONTRACTS_PORT, contracts)
 
 
 class BackendBootstrapError(RuntimeError):
@@ -275,4 +288,11 @@ def build_backend_container() -> RuntimeContainer:
     container.register_port("signature_postgres_dsn", dsn)
     lifecycle = wire_backend_usermanagement(container)
     wire_backend_documents(container, lifecycle=lifecycle)
+    register_active_backend_module_contracts(
+        container,
+        (
+            create_usermanagement_module_contract(),
+            create_documents_module_contract(),
+        ),
+    )
     return container
