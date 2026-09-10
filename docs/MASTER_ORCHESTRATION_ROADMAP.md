@@ -187,14 +187,11 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich WCON00 als begrenzter
-**WCON00-R4-Closeout**. WCON00 bleibt `IN_PROGRESS` auf
-`feature/ap-029-wcon00`: A-F und die R3-Kernziele besitzen gruenes historisches
-Evidence, aber fuenf echte Contract-/Integritaetsfindings, ein frischer
-Gesamtregressionsnachweis und ein finaler Audit sind noch offen. Der lokale
-Audit-Fix `a3520c0f1820fc7ea46b6c62e7b8a45956611141` ist nicht gepusht; CI
-34443500364 beweist nur den vorherigen Remote-Head `d0d5aad`. INT00 und WEB01
-sind TODO und NOT RUN. Merge, Branch-/Worktree-Cleanup und eine dritte
+Die naechste freizugebende Aktion ist ausschliesslich INT00 als Joint
+Integration Gate. INT00 und WEB01 bleiben TODO und NOT RUN. WCON00 ist `PASS`
+auf `feature/ap-029-wcon00` @ `065e4bb8c21ff296eaeab58fcfdf4bec982a9326`
+(bounded R4 closeout; independent local final audit FINAL_PASS). Merge,
+GitHub-Review-Thread-Resolution, Branch-/Worktree-Cleanup und eine dritte
 Codex-Runde bleiben unautorisiert.
 **OPS00 ist PASS** und wurde via PR #41 per Squash nach `main` @
 `98feef61dcfe0e40741c254da16feb9383a0d1b0` gemergt. Vor dem Merge waren beide
