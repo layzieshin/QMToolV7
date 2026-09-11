@@ -122,7 +122,7 @@ export async function logoutBrowser(): Promise<void> {
 
 export async function probeHealth(): Promise<boolean> {
   try {
-    const response = await fetch("/health", { credentials: "include" });
+    const response = await apiFetch("/session/connection", { method: "GET" });
     return response.ok;
   } catch {
     return false;

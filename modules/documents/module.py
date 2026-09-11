@@ -92,6 +92,11 @@ DOCUMENTS_DATABASE_CONTRIBUTION = DatabaseContribution(
             name="workflow_profiles",
             sql_path=Path(__file__).parent / "migrations" / "0002_workflow_profiles.sql",
         ),
+        DatabaseMigrationContribution(
+            version=3,
+            name="edit_signed_fields",
+            sql_path=Path(__file__).parent / "migrations" / "0003_edit_signed_fields.sql",
+        ),
     ),
     validation_queries=(
         DatabaseValidationContribution(

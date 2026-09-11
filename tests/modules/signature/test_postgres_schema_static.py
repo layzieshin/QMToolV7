@@ -47,9 +47,23 @@ def test_initial_sql_contains_required_schema_contracts() -> None:
 
 def test_history_select_grant_is_versioned_separately() -> None:
     steps = pgs.discover_migrations()
-    assert [step.name for step in steps] == ["initial", "grant_history_select"]
+    assert [step.name for step in steps] == [
+        "initial",
+        "grant_history_select",
+        "user_signature_template_presets",
+    ]
     sql = (pgs.MIGRATIONS_DIR / "0002_grant_history_select.sql").read_text(encoding="utf-8").lower()
     assert "grant select on signature._qm_schema_migrations to qmtool_runtime" in sql
+
+
+def test_user_signature_template_presets_migration_alters_existing_table() -> None:
+    sql = (pgs.MIGRATIONS_DIR / "0003_user_signature_template_presets.sql").read_text(encoding="utf-8").lower()
+    assert "alter table signature.user_signature_templates" in sql
+    assert "show_time boolean not null default false" in sql
+    assert "document_type text" in sql
+    assert "role_context text" in sql
+    assert "last_used_at timestamptz" in sql
+    assert "create table" not in sql
 
 
 def test_provision_signature_schema_bootstrap_contract() -> None:

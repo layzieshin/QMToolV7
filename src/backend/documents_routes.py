@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from io import BytesIO
 from urllib.parse import quote
 
@@ -33,6 +33,7 @@ from modules.documents.api import (
     WorkflowCommentRecord,
     WorkflowCommentStatus,
     actor_user_and_role,
+    action_descriptors_for_actor,
     available_actions_for_actor,
     artifact_to_public_payload,
     compute_global_capabilities,
@@ -46,10 +47,44 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
+class ActionDescriptorModel(BaseModel):
+    code: str
+    label_key: str
+    enabled: bool
+    disabled_reason: str | None = None
+    requires_reason: bool
+    requires_confirmation: bool
+    destructive: bool
+    severity: str
+
+
 class VersionStateResponse(BaseModel):
     state: dict[str, Any]
     available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
     etag: str
+
+
+class DocumentQueryItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    document_id: str
+    version: int
+    available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
+
+
+class DocumentQueryPageResponse(BaseModel):
+    items: list[DocumentQueryItem]
+    next_cursor: str | None = None
+    limit: int
+
+
+class VersionHistoryEvent(BaseModel):
+    occurred_at: str
+    event_type: str
+    actor_user_id: str | None = None
+    summary: str
 
 
 class AssignRolesBody(BaseModel):
@@ -134,6 +169,7 @@ class SignIntentBody(BaseModel):
     layout: dict[str, object]
     password: str | None = None
     reason: str | None = None
+    template_id: str | None = None
 
 
 class WorkflowSignBody(BaseModel):
@@ -176,6 +212,7 @@ class NewVersionAfterArchiveBody(BaseModel):
 class ExtendAnnualResponse(BaseModel):
     state: dict[str, Any]
     available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
     etag: str
     is_maxed: bool
 
@@ -183,6 +220,7 @@ class ExtendAnnualResponse(BaseModel):
 class EnsureSourcePdfResponse(BaseModel):
     state: dict[str, Any]
     available_actions: list[str]
+    allowed_actions: list[ActionDescriptorModel]
     etag: str
     artifact_id: str | None = None
 
@@ -203,6 +241,7 @@ def _optional_sign_request(request: Request, state, transition: str, body: Workf
             "layout": body.sign_intent.layout,
             "password": body.sign_intent.password,
             "reason": body.sign_intent.reason,
+            "template_id": body.sign_intent.template_id,
         },
         actor=actor,
         signature_api=get_container(request).get_port("signature_api"),
@@ -211,6 +250,8 @@ def _optional_sign_request(request: Request, state, transition: str, body: Workf
 
 
 def _map_documents_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
     if isinstance(exc, HeaderConflictError):
         current = exc.current_header
         etag = current.updated_at.isoformat()
@@ -253,7 +294,11 @@ def _map_documents_error(exc: Exception) -> HTTPException:
                 status_code=404,
                 detail={"error": "not_found", "message": str(exc)},
             )
-        return HTTPException(status_code=400, detail={"error": "documents_workflow", "message": str(exc)})
+        detail: dict[str, object] = {"error": "documents_workflow", "message": str(exc)}
+        field_errors = getattr(exc, "field_errors", None)
+        if field_errors:
+            detail["field_errors"] = field_errors
+        return HTTPException(status_code=400, detail=detail)
     return HTTPException(status_code=500, detail={"error": "internal", "message": "documents request failed"})
 
 
@@ -286,13 +331,29 @@ def _comments_api(request: Request):
     return get_container(request).get_port("documents_comments_api")
 
 
-def _parse_optional_iso8601(raw: str | None) -> datetime | None:
+def _parse_optional_iso8601(raw: str | None, *, field: str) -> datetime | None:
     if raw is None:
         return None
     value = raw.strip()
     if not value:
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_field",
+                "message": f"{field} is not a valid ISO-8601 timestamp",
+                "field_errors": [
+                    {
+                        "field": field,
+                        "code": "invalid",
+                        "message": f"{field} is not a valid ISO-8601 timestamp",
+                    }
+                ],
+            },
+        ) from None
 
 
 def _header_payload(header) -> dict[str, Any]:
@@ -449,28 +510,64 @@ async def _read_upload(request: Request, *, magic: bytes, label: str) -> bytes:
     return payload
 
 
-def _content_disposition(filename: str) -> str:
+def _content_disposition(filename: str, *, inline: bool = False) -> str:
     safe = "".join(ch for ch in filename if ch.isalnum() or ch in "._- ").strip() or "artifact"
-    return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(filename)}"
+    disposition = "inline" if inline else "attachment"
+    return f"{disposition}; filename=\"{safe}\"; filename*=UTF-8''{quote(filename)}"
+
+
+def _artifact_bytes_streaming_response(artifact, content: bytes, *, inline: bool) -> StreamingResponse:
+    headers = {
+        "Content-Disposition": _content_disposition(artifact.original_filename, inline=inline),
+        "Content-Length": str(len(content)),
+        "ETag": artifact.sha256,
+        "X-Content-SHA256": artifact.sha256,
+        "Cache-Control": "private, no-store",
+    }
+    return StreamingResponse(BytesIO(content), media_type=artifact.mime_type, headers=headers)
 
 
 def _etag_for_state(state) -> str:
     return str(getattr(state, "last_event_id", None) or "none")
 
 
-def _state_payload(state, actor: UserContext) -> tuple[dict[str, Any], list[str]]:
+def _serialize_action_descriptors(descriptors) -> list[dict[str, object]]:
+    return [
+        {
+            "code": descriptor.code,
+            "label_key": descriptor.label_key,
+            "enabled": descriptor.enabled,
+            "disabled_reason": descriptor.disabled_reason,
+            "requires_reason": descriptor.requires_reason,
+            "requires_confirmation": descriptor.requires_confirmation,
+            "destructive": descriptor.destructive,
+            "severity": descriptor.severity,
+        }
+        for descriptor in sorted(descriptors, key=lambda item: item.code)
+    ]
+
+
+def _state_payload(state, actor: UserContext) -> tuple[dict[str, Any], list[str], list[dict[str, object]]]:
+    descriptors = action_descriptors_for_actor(state, actor)
     actions = sorted(available_actions_for_actor(state, actor))
+    allowed_actions = _serialize_action_descriptors(descriptors)
     payload = document_version_state_to_payload(state)
     payload["available_actions"] = actions
-    return payload, actions
+    payload["allowed_actions"] = allowed_actions
+    return payload, actions, allowed_actions
 
 
 def _state_response(state, actor: UserContext, response: Response | None = None) -> VersionStateResponse:
-    payload, actions = _state_payload(state, actor)
+    payload, actions, allowed_actions = _state_payload(state, actor)
     etag = _etag_for_state(state)
     if response is not None:
         response.headers["ETag"] = etag
-    return VersionStateResponse(state=payload, available_actions=actions, etag=etag)
+    return VersionStateResponse(
+        state=payload,
+        available_actions=actions,
+        allowed_actions=allowed_actions,
+        etag=etag,
+    )
 
 
 def _required_if_match(raw: str | None) -> str | None:
@@ -502,6 +599,86 @@ def list_by_status(
         raise HTTPException(status_code=400, detail={"error": "invalid_status"}) from exc
     rows = _pool_api(request).list_by_status_for_actor(parsed, actor)
     return [_state_payload(row, actor)[0] for row in rows]
+
+
+def _parse_query_limit(raw: str | None) -> int:
+    if raw is None or not str(raw).strip():
+        return 50
+    try:
+        return int(str(raw).strip())
+    except ValueError as exc:
+        raise ValidationError(
+            "invalid limit",
+            field_errors=[{"field": "limit", "code": "invalid", "message": "limit must be an integer"}],
+        ) from exc
+
+
+def _parse_query_status(raw: str | None) -> DocumentStatus | None:
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        return DocumentStatus(str(raw).strip())
+    except ValueError as exc:
+        raise ValidationError(
+            "invalid status",
+            field_errors=[{"field": "status", "code": "invalid", "message": "status is not valid"}],
+        ) from exc
+
+
+@router.get("/query")
+def query_documents(
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+    status: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    sort: str = Query(default="updated_at"),
+    order: str = Query(default="desc"),
+    limit: str | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+) -> DocumentQueryPageResponse:
+    try:
+        parsed_status = _parse_query_status(status)
+        parsed_limit = _parse_query_limit(limit)
+        page = _pool_api(request).query_document_versions_for_actor(
+            actor,
+            status=parsed_status,
+            q=q,
+            sort=sort,
+            order=order,
+            limit=parsed_limit,
+            cursor=cursor,
+        )
+    except Exception as exc:
+        raise _map_documents_error(exc) from exc
+    return DocumentQueryPageResponse(
+        items=[DocumentQueryItem.model_validate(_state_payload(row, actor)[0]) for row in page.items],
+        next_cursor=page.next_cursor,
+        limit=page.limit,
+    )
+
+
+@router.get("/versions/{document_id}/{version}/history")
+def list_version_history(
+    document_id: str,
+    version: int,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+) -> list[VersionHistoryEvent]:
+    try:
+        rows = _pool_api(request).list_version_history_for_actor(document_id, version, actor)
+    except Exception as exc:
+        raise _map_documents_error(exc) from exc
+    if rows is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "document version not found"})
+    return [
+        VersionHistoryEvent(
+            occurred_at=row.occurred_at.isoformat(),
+            event_type=row.event_type,
+            actor_user_id=row.actor_user_id,
+            summary=row.summary,
+        )
+        for row in rows
+    ]
 
 
 @router.get("/versions/{document_id}/{version}", response_model=VersionStateResponse)
@@ -546,8 +723,29 @@ def get_artifact(
     return artifact_to_public_payload(artifact)
 
 
-@router.get("/artifacts/{artifact_id}/content")
-def get_artifact_content(
+def _artifact_preview_response(request: Request, artifact_id: str, actor: UserContext):
+    api = _artifacts_api(request)
+    artifact = api.get_artifact_by_id_for_actor(artifact_id, actor)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "artifact not found"})
+    try:
+        content = api.read_artifact_bytes_for_actor(artifact_id, actor)
+    except Exception as exc:
+        raise _map_documents_error(exc) from exc
+    return _artifact_bytes_streaming_response(artifact, content, inline=True)
+
+
+@router.get("/artifacts/{artifact_id}/preview")
+def get_artifact_preview(
+    artifact_id: str,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+):
+    return _artifact_preview_response(request, artifact_id, actor)
+
+
+@router.get("/artifacts/{artifact_id}/download")
+def get_artifact_download(
     artifact_id: str,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
@@ -557,16 +755,19 @@ def get_artifact_content(
     if artifact is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "artifact not found"})
     try:
-        content = api.read_artifact_bytes_for_actor(artifact_id, actor)
+        content = api.read_artifact_download_bytes_for_actor(artifact_id, actor)
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    headers = {
-        "Content-Disposition": _content_disposition(artifact.original_filename),
-        "Content-Length": str(len(content)),
-        "ETag": artifact.sha256,
-        "X-Content-SHA256": artifact.sha256,
-    }
-    return StreamingResponse(BytesIO(content), media_type=artifact.mime_type, headers=headers)
+    return _artifact_bytes_streaming_response(artifact, content, inline=False)
+
+
+@router.get("/artifacts/{artifact_id}/content")
+def get_artifact_content(
+    artifact_id: str,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+):
+    return _artifact_preview_response(request, artifact_id, actor)
 
 
 @router.get("/headers/{document_id}")
@@ -1087,12 +1288,13 @@ def ensure_source_pdf_for_signing_route(
         if artifact.artifact_type == ArtifactType.SOURCE_PDF and artifact.is_current:
             artifact_id = artifact.artifact_id
             break
-    state_dict, actions = _state_payload(updated, actor)
+    state_dict, actions, allowed_actions = _state_payload(updated, actor)
     etag = _etag_for_state(updated)
     response.headers["ETag"] = etag
     return EnsureSourcePdfResponse(
         state=state_dict,
         available_actions=actions,
+        allowed_actions=allowed_actions,
         etag=etag,
         artifact_id=artifact_id,
     )
@@ -1187,6 +1389,8 @@ def patch_version_metadata(
     state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
+    valid_until = _parse_optional_iso8601(body.valid_until, field="valid_until")
+    next_review_at = _parse_optional_iso8601(body.next_review_at, field="next_review_at")
     api = _workflow_api(request)
     try:
         updated = _mutate_version_state(
@@ -1197,8 +1401,8 @@ def patch_version_metadata(
                 current,
                 title=body.title,
                 description=body.description,
-                valid_until=_parse_optional_iso8601(body.valid_until),
-                next_review_at=_parse_optional_iso8601(body.next_review_at),
+                valid_until=valid_until,
+                next_review_at=next_review_at,
                 custom_fields=body.custom_fields,
                 actor_user_id=user_id,
                 actor_role=role,
@@ -1396,6 +1600,7 @@ def extend_annual_validity_route(
                 "layout": body.sign_intent.layout,
                 "password": body.sign_intent.password,
                 "reason": body.sign_intent.reason,
+                "template_id": body.sign_intent.template_id,
             },
             signature_api=get_container(request).get_port("signature_api"),
             scratch_root=Path(get_container(request).get_port("app_home")) / "scratch" / "workflow-sign",
@@ -1406,10 +1611,16 @@ def extend_annual_validity_route(
         )
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    payload, actions = _state_payload(updated, actor)
+    payload, actions, allowed_actions = _state_payload(updated, actor)
     etag = _etag_for_state(updated)
     response.headers["ETag"] = etag
-    return ExtendAnnualResponse(state=payload, available_actions=actions, etag=etag, is_maxed=is_maxed)
+    return ExtendAnnualResponse(
+        state=payload,
+        available_actions=actions,
+        allowed_actions=allowed_actions,
+        etag=etag,
+        is_maxed=is_maxed,
+    )
 
 
 @router.post("/versions/{document_id}/{version}/lifecycle/new-version-after-archive", response_model=VersionStateResponse)

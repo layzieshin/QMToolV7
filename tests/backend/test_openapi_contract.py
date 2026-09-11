@@ -58,16 +58,21 @@ def test_openapi_has_complete_j04_routes_and_unique_operation_ids(monkeypatch) -
     operations = list(_operations(document))
     ids = [str(operation["operationId"]) for _path, _method, operation in operations]
     assert len(ids) == len(set(ids))
-    assert {"auth", "users", "documents", "signature"}.issubset(
+    assert {"auth", "users", "documents", "signature", "session"}.issubset(
         {tag for _path, _method, operation in operations for tag in operation.get("tags", [])}
     )
     assert "/api/v1/auth/csrf" in document["paths"]
     assert "/api/v1/auth/token" in document["paths"]
     assert "/api/v1/auth/login" in document["paths"]
     assert "/api/v1/auth/me" in document["paths"]
+    assert "/api/v1/session/connection" in document["paths"]
+    assert "/api/v1/session/bootstrap" in document["paths"]
     assert "/api/v1/documents/pool/by-status/{status}" in document["paths"]
+    assert "/api/v1/documents/query" in document["paths"]
+    assert "/api/v1/documents/versions/{document_id}/{version}/history" in document["paths"]
     assert "/api/v1/documents/versions/{document_id}/{version}" in document["paths"]
     assert "/api/v1/signature/templates/user" in document["paths"]
+    assert "/api/v1/signature/templates/suggestion" in document["paths"]
 
 
 def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
@@ -80,6 +85,7 @@ def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
     assert document["paths"]["/api/v1/auth/login"]["post"]["security"] == [{"CsrfHeader": []}]
     assert "security" not in document["paths"]["/api/v1/auth/token"]["post"]
     assert "security" not in document["paths"]["/api/v1/auth/csrf"]["get"]
+    assert "security" not in document["paths"]["/api/v1/session/connection"]["get"]
     me_security = document["paths"]["/api/v1/auth/me"]["get"]["security"]
     assert {"BearerAuth": []} in me_security
     assert {"CookieSessionAuth": []} in me_security
@@ -101,6 +107,19 @@ def test_openapi_security_headers_and_binary_contract(monkeypatch) -> None:
 
     binary = document["paths"]["/api/v1/documents/artifacts/{artifact_id}/content"]["get"]["responses"]["200"]
     assert {"application/pdf", "image/png", "application/octet-stream"}.issubset(binary["content"])
+    for suffix in ("preview", "download"):
+        artifact_binary = document["paths"][f"/api/v1/documents/artifacts/{{artifact_id}}/{suffix}"]["get"]["responses"]["200"]
+        assert artifact_binary["content"] == binary["content"]
+        assert "application/json" not in artifact_binary["content"]
+    query_schema = document["paths"]["/api/v1/documents/query"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert query_schema.get("$ref") == "#/components/schemas/DocumentQueryPageResponse"
+    query_model = document["components"]["schemas"]["DocumentQueryPageResponse"]
+    assert set(query_model["required"]) >= {"items", "limit"}
+    history_schema = document["paths"]["/api/v1/documents/versions/{document_id}/{version}/history"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert history_schema["type"] == "array"
+    assert history_schema["items"].get("$ref") == "#/components/schemas/VersionHistoryEvent"
+    history_model = document["components"]["schemas"]["VersionHistoryEvent"]
+    assert set(history_model["required"]) >= {"occurred_at", "event_type", "summary"}
     assert "ErrorDetail" in document["components"]["schemas"]
     raw = json.dumps(document, ensure_ascii=True)
     for forbidden in ("QMTOOL_PG_PASSWORD=", "documents.db", "storage_key", "I:/Projekte/"):
@@ -153,11 +172,28 @@ def test_openapi_error_detail_and_available_actions_contract(monkeypatch) -> Non
     detail = document["components"]["schemas"]["ErrorDetail"]
     assert "current_state" in detail["properties"]
     assert "state" not in detail["properties"]
+    field_errors = detail["properties"]["field_errors"]
+    assert field_errors["type"] == "array"
+    item = field_errors["items"]
+    assert set(item["required"]) == {"field", "code", "message"}
     schemas = document["components"]["schemas"]
     for name in _DOCUMENTS_STATE_RESPONSE_SCHEMAS:
         model = schemas[name]
         assert "available_actions" in model["required"]
         assert model["properties"]["available_actions"]["type"] == "array"
+        assert "allowed_actions" in model["required"]
+        allowed = model["properties"]["allowed_actions"]
+        assert allowed["type"] == "array"
+        descriptor = allowed["items"]
+        assert "code" in descriptor["properties"]
+        assert "label_key" in descriptor["properties"]
+        assert "enabled" in descriptor["properties"]
+        assert "requires_reason" in descriptor["properties"]
+        assert "requires_confirmation" in descriptor["properties"]
+        assert "destructive" in descriptor["properties"]
+        assert "severity" in descriptor["properties"]
+    assert "/ready" in document["paths"]
+    assert "/health" in document["paths"]
 
 
 def test_openapi_snapshot_is_reproducible(monkeypatch) -> None:

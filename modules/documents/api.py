@@ -9,6 +9,7 @@ from .contracts import (
     ControlClass,
     DocumentArtifact,
     DocumentHeader,
+    DocumentQueryPage,
     DocumentReadReceipt,
     DocumentReadSession,
     DocumentTaskItem,
@@ -18,6 +19,7 @@ from .contracts import (
     DocumentStatus,
     DocumentType,
     DocumentVersionState,
+    DocumentVersionHistoryItem,
     OpenableArtifactRef,
     RejectionReason,
     SystemRole,
@@ -131,11 +133,13 @@ def import_sqlite_to_postgres(*, sqlite_path, postgres_dsn, report_dir, artifact
 
 from .capabilities import (
     ACTION_IDS,
+    ActionDescriptor,
+    action_descriptors_for_actor,
     available_actions_for_actor,
     compute_available_actions,
     compute_global_capabilities,
 )
-from .service import DocumentsService
+from .service import DocumentsService, build_version_history_events
 from .state_transport import (
     document_version_state_from_json,
     document_version_state_from_payload,
@@ -156,6 +160,7 @@ __all__ = [
     "docx_conversion_available",
     "prepare_docx_conversion_runtime",
     "build_workflow_sign_request_from_intent",
+    "build_version_history_events",
     "DocumentsArtifactsApi",
     "DocumentsCommentsApi",
     "DocumentsPoolApi",
@@ -186,6 +191,8 @@ __all__ = [
     "document_version_state_to_json",
     "document_version_state_to_payload",
     "ACTION_IDS",
+    "ActionDescriptor",
+    "action_descriptors_for_actor",
     "available_actions_for_actor",
     "compute_available_actions",
     "compute_global_capabilities",
@@ -268,6 +275,40 @@ class DocumentsPoolApi:
     def list_by_status_for_actor(self, status: DocumentStatus, actor: UserContext) -> list[DocumentVersionState]:
         user_id, role = actor_user_and_role(actor)
         return self._service.list_by_status_for_actor(status, actor_user_id=user_id, actor_role=role)
+
+    def query_document_versions_for_actor(
+        self,
+        actor: UserContext,
+        *,
+        status: DocumentStatus | None = None,
+        q: str | None = None,
+        sort: str = "updated_at",
+        order: str = "desc",
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> DocumentQueryPage:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.query_document_versions_for_actor(
+            actor_user_id=user_id,
+            actor_role=role,
+            status=status,
+            search_q=q,
+            sort=sort,
+            order=order,
+            limit=limit,
+            cursor=cursor,
+        )
+
+    def list_version_history_for_actor(
+        self, document_id: str, version: int, actor: UserContext
+    ) -> list[DocumentVersionHistoryItem] | None:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.list_version_history_for_actor(
+            document_id,
+            version,
+            actor_user_id=user_id,
+            actor_role=role,
+        )
 
     def list_artifacts(self, document_id: str, version: int) -> list[DocumentArtifact]:
         return self._service.list_artifacts(document_id, version)
@@ -357,6 +398,12 @@ class DocumentsArtifactsApi:
     def read_artifact_bytes_for_actor(self, artifact_id: str, actor: UserContext) -> bytes:
         user_id, role = actor_user_and_role(actor)
         return self._service.read_artifact_bytes_for_actor(
+            artifact_id, actor_user_id=user_id, actor_role=role
+        )
+
+    def read_artifact_download_bytes_for_actor(self, artifact_id: str, actor: UserContext) -> bytes:
+        user_id, role = actor_user_and_role(actor)
+        return self._service.read_artifact_download_bytes_for_actor(
             artifact_id, actor_user_id=user_id, actor_role=role
         )
 
@@ -823,6 +870,7 @@ class DocumentsWorkflowApi:
             lambda current: self._service.complete_editing(
                 current,
                 sign_request=sign_request,
+                actor=actor,
                 actor_user_id=actor_user_id,
                 actor_role=actor_role,
             ),
@@ -880,6 +928,7 @@ class DocumentsWorkflowApi:
                 current,
                 actor_user_id,
                 sign_request=sign_request,
+                actor=actor,
                 actor_role=actor_role,
             ),
             actor_user_id=actor_user_id,
@@ -937,6 +986,7 @@ class DocumentsWorkflowApi:
                 current,
                 actor_user_id,
                 sign_request=sign_request,
+                actor=actor,
                 actor_role=actor_role,
             ),
             actor_user_id=actor_user_id,
@@ -1060,7 +1110,7 @@ class DocumentsWorkflowApi:
             artifact = None
             try:
                 artifact = self._service.sign_and_store_signed_artifact(
-                    current, sign_request, transition="EXTEND_VALIDITY"
+                    current, sign_request, transition="EXTEND_VALIDITY", actor=actor,
                 )
                 return self._service.extend_annual_validity(
                     current,

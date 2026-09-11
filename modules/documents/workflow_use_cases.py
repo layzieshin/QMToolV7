@@ -12,6 +12,8 @@ from .contracts import (
     WorkflowAssignments,
     WorkflowProfile,
 )
+from modules.usermanagement.api import UserContext
+
 from .errors import InvalidTransitionError, PermissionDeniedError, ValidationError
 from .eventing import stamp_event_on_state as _stamp_event
 
@@ -127,6 +129,7 @@ class DocumentsWorkflowUseCases:
         state: DocumentVersionState,
         *,
         sign_request: object | None = None,
+        actor: UserContext | None = None,
         actor_user_id: str | None = None,
         actor_role: SystemRole | None = None,
     ) -> DocumentVersionState:
@@ -136,11 +139,20 @@ class DocumentsWorkflowUseCases:
         if state.status != DocumentStatus.IN_PROGRESS:
             raise InvalidTransitionError("editing can only be completed from IN_PROGRESS")
         self._service._ensure_source_pdf_artifact_for_signing(state, actor_user_id=actor_user_id)
-        self._service._enforce_signature_transition(state, "IN_PROGRESS->IN_REVIEW", sign_request)
+        self._service._enforce_signature_transition(
+            state, "IN_PROGRESS->IN_REVIEW", sign_request, actor=actor,
+        )
         next_status = self._service._next_status_from_profile(state.workflow_profile, DocumentStatus.IN_PROGRESS)
         updated = replace(state, status=next_status)
         if self._service._is_signature_required(state, "IN_PROGRESS->IN_REVIEW"):
             updated = replace(updated, edit_signature_done=True)
+            if updated.edit_signed_at is None and actor_user_id:
+                signed_moment = _utcnow()
+                updated = replace(
+                    updated,
+                    edit_signed_at=signed_moment,
+                    edit_signed_by=actor_user_id,
+                )
         now = _utcnow()
         if next_status == DocumentStatus.APPROVED:
             updated = replace(
@@ -181,6 +193,7 @@ class DocumentsWorkflowUseCases:
         actor_user_id: str,
         *,
         sign_request: object | None = None,
+        actor: UserContext | None = None,
         actor_role: SystemRole | None = None,
     ) -> DocumentVersionState:
         self._service._assert_active_profile(state)
@@ -188,7 +201,9 @@ class DocumentsWorkflowUseCases:
             raise InvalidTransitionError("review accept can only be executed in IN_REVIEW")
         if actor_user_id not in state.assignments.reviewers:
             raise PermissionDeniedError("actor is not assigned as reviewer")
-        self._service._enforce_signature_transition(state, "IN_REVIEW->IN_APPROVAL", sign_request)
+        self._service._enforce_signature_transition(
+            state, "IN_REVIEW->IN_APPROVAL", sign_request, actor=actor,
+        )
         next_status = self._service._next_status_from_profile(state.workflow_profile, DocumentStatus.IN_REVIEW)
         updated = replace(
             state,
@@ -256,6 +271,7 @@ class DocumentsWorkflowUseCases:
         actor_user_id: str,
         *,
         sign_request: object | None = None,
+        actor: UserContext | None = None,
         actor_role: SystemRole | None = None,
     ) -> DocumentVersionState:
         self._service._assert_active_profile(state)
@@ -265,7 +281,9 @@ class DocumentsWorkflowUseCases:
             raise PermissionDeniedError("actor is not assigned as approver")
         if state.workflow_profile and state.workflow_profile.four_eyes_required and actor_user_id in state.reviewed_by:
             raise PermissionDeniedError("four-eyes principle prevents reviewer from approving the same version")
-        self._service._enforce_signature_transition(state, "IN_APPROVAL->APPROVED", sign_request)
+        self._service._enforce_signature_transition(
+            state, "IN_APPROVAL->APPROVED", sign_request, actor=actor,
+        )
         now = _utcnow()
         with self._service._write_transaction():
             superseded = self._service._supersede_other_approved_versions(state, actor_user_id)

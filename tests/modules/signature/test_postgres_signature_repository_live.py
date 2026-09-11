@@ -74,6 +74,26 @@ def test_postgres_signature_repository_metadata_roundtrip(signature_repository: 
     assert signature_repository.get_template("tpl-pg-1") is None
 
 
+def test_postgres_signature_repository_preset_fields_roundtrip(signature_repository: PostgresSignatureRepository) -> None:
+    moment = datetime(2024, 6, 1, 10, 0, tzinfo=timezone.utc)
+    used = datetime(2024, 7, 1, 15, 30, tzinfo=timezone.utc)
+    template = UserSignatureTemplate(
+        template_id="tpl-preset",
+        owner_user_id="user-1",
+        name="Preset template",
+        placement=SignaturePlacementInput(page_index=0, x=12.0, y=34.0, target_width=80.0),
+        layout=LabelLayoutInput(show_signature=True, show_name=True, show_date=True, show_time=True),
+        signature_asset_id=None,
+        created_at=moment,
+        scope="user",
+        document_type="SOP",
+        role_context="approver",
+        last_used_at=used,
+    )
+    signature_repository.upsert_template(template)
+    assert signature_repository.get_template("tpl-preset") == template
+
+
 def test_postgres_signature_repository_global_templates(signature_repository: PostgresSignatureRepository) -> None:
     global_template = _sample_template("tpl-global", asset_id=None)
     global_template = UserSignatureTemplate(

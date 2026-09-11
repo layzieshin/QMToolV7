@@ -76,10 +76,12 @@ class SignatureServiceV2:
     def create_user_signature_template(
         self, *, owner_user_id: str, name: str, placement: SignaturePlacementInput,
         layout: LabelLayoutInput, signature_asset_id: str | None, scope: str = "user",
+        document_type: str | None = None, role_context: str | None = None,
     ) -> UserSignatureTemplate:
         return self._template_use_cases.create_user_signature_template(
             owner_user_id=owner_user_id, name=name, placement=placement,
             layout=layout, signature_asset_id=signature_asset_id, scope=scope,
+            document_type=document_type, role_context=role_context,
         )
 
     def list_user_signature_templates(self, owner_user_id: str) -> list[UserSignatureTemplate]:
@@ -100,11 +102,16 @@ class SignatureServiceV2:
     def update_signature_template(
         self, *, template_id: str, owner_user_id: str, name: str | None = None,
         placement: SignaturePlacementInput | None = None, layout: LabelLayoutInput | None = None,
-        signature_asset_id: str | None = None,
+        signature_asset_id: str | None = None, document_type: str | None = None,
+        role_context: str | None = None, document_type_provided: bool = False,
+        role_context_provided: bool = False,
     ) -> UserSignatureTemplate:
         return self._template_use_cases.update_signature_template(
             template_id=template_id, owner_user_id=owner_user_id, name=name,
             placement=placement, layout=layout, signature_asset_id=signature_asset_id,
+            document_type=document_type, role_context=role_context,
+            document_type_provided=document_type_provided,
+            role_context_provided=role_context_provided,
         )
 
     def update_signature_template_for_actor(self, **kwargs):
@@ -147,17 +154,27 @@ class SignatureServiceV2:
             owner_user_id, png_bytes, filename_hint=filename_hint, password=password, import_fn=self.import_signature_asset,
         )
 
+    def suggest_template_for_actor(
+        self, actor, *, document_type: str | None = None, role_context: str | None = None,
+    ) -> UserSignatureTemplate | None:
+        return self._template_use_cases.suggest_template_for_actor(
+            actor, document_type=document_type, role_context=role_context,
+        )
+
     def sign_with_template(
         self, *, template_id: str, input_pdf: Path, signer_user: str, password: str | None = None,
         output_pdf: Path | None = None, dry_run: bool = False, overwrite_output: bool = False,
-        reason: str = "template_api", placement_override: SignaturePlacementInput | None = None,
+        sign_mode: str = "visual", reason: str = "template_api", placement_override: SignaturePlacementInput | None = None,
         layout_override: LabelLayoutInput | None = None,
     ) -> SignResult:
         return self._template_use_cases.sign_with_template(
             template_id=template_id, input_pdf=input_pdf, signer_user=signer_user,
             password=password, output_pdf=output_pdf, dry_run=dry_run, overwrite_output=overwrite_output,
-            reason=reason, placement_override=placement_override, layout_override=layout_override,
+            sign_mode=sign_mode, reason=reason, placement_override=placement_override, layout_override=layout_override,
         )
+
+    def sign_with_template_for_actor(self, actor, **kwargs) -> SignResult:
+        return self._template_use_cases.sign_with_template_for_actor(actor, **kwargs)
 
     def resolve_runtime_layout(self, layout: LabelLayoutInput, *, signer_user: str | None = None) -> LabelLayoutInput:
         return self._policy_ops.resolve_runtime_layout(layout, signer_user=signer_user)

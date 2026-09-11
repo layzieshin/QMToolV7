@@ -193,6 +193,24 @@ class SQLiteUserRepository(UserRepository):
             if cur.rowcount == 0:
                 raise KeyError(f"unknown user: {username}")
 
+    def set_must_change_password(self, username: str, must_change_password: bool) -> None:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE users
+                SET must_change_password = ?, updated_at = ?
+                WHERE username = ?
+                """,
+                (
+                    int(bool(must_change_password)),
+                    datetime.now(timezone.utc).isoformat(),
+                    username,
+                ),
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                raise KeyError(f"unknown user: {username}")
+
     def update_user_profile(
         self,
         username: str,

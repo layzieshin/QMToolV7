@@ -22,6 +22,7 @@ from modules.documents.contracts import (
 )
 from modules.documents.postgres_connection import PostgresRepositoryError
 from modules.documents.postgres_repository import PostgresDocumentsRepository
+from modules.documents.repository import DocumentQueryKeyset, document_query_keyset_sort_value
 from modules.documents.sqlite_repository import SQLiteDocumentsRepository
 from tests.postgres_live_support import LivePostgresEnv
 
@@ -95,6 +96,47 @@ def _sample_comment(document_id: str = "DOC-PG-1", version: int = 1) -> Workflow
         created_at=moment,
         updated_at=moment,
     )
+
+
+def test_postgres_query_document_versions_updated_at_pagination(
+    documents_repository: PostgresDocumentsRepository,
+) -> None:
+    """Default updated_at sort must not fail on timestamptz COALESCE and paginate deterministically."""
+    for index in range(3):
+        document_id = f"DOC-PG-Q-{index}"
+        documents_repository.upsert_header(_sample_header(document_id))
+        documents_repository.upsert(_sample_state(document_id, 1))
+
+    page1, has_more1 = documents_repository.query_document_versions(
+        status=None,
+        search_q=None,
+        sort="updated_at",
+        order="desc",
+        limit=2,
+        after=None,
+    )
+    assert len(page1) == 2
+    assert has_more1 is True
+
+    last = page1[-1]
+    after = DocumentQueryKeyset(
+        sort_value=document_query_keyset_sort_value(last, "updated_at"),
+        document_id=last.document_id,
+        version=last.version,
+    )
+    page2, has_more2 = documents_repository.query_document_versions(
+        status=None,
+        search_q=None,
+        sort="updated_at",
+        order="desc",
+        limit=2,
+        after=after,
+    )
+    assert len(page2) == 1
+    assert has_more2 is False
+    page1_ids = {(item.document_id, item.version) for item in page1}
+    page2_ids = {(item.document_id, item.version) for item in page2}
+    assert page1_ids.isdisjoint(page2_ids)
 
 
 def test_postgres_documents_repository_crud_roundtrip(

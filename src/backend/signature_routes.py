@@ -43,6 +43,8 @@ class TemplateCreateBody(BaseModel):
     layout: dict[str, Any]
     signature_asset_id: str | None = None
     scope: str = "user"
+    document_type: str | None = None
+    role_context: str | None = None
 
 
 class TemplateUpdateBody(BaseModel):
@@ -50,6 +52,8 @@ class TemplateUpdateBody(BaseModel):
     placement: dict[str, Any] | None = None
     layout: dict[str, Any] | None = None
     signature_asset_id: str | None = None
+    document_type: str | None = None
+    role_context: str | None = None
 
 
 class SetActiveBody(BaseModel):
@@ -73,6 +77,7 @@ class StandaloneSignBody(BaseModel):
     reason: str = "standalone_http"
     sign_mode: str = "visual"
     dry_run: bool = False
+    template_id: str | None = None
 
 
 def _signature_api(request: Request):
@@ -80,16 +85,26 @@ def _signature_api(request: Request):
 
 
 def _map_signature_error(exc: Exception) -> HTTPException:
+    def _detail(*, error: str, message: str) -> dict[str, object]:
+        detail: dict[str, object] = {"error": error, "message": message}
+        field_errors = getattr(exc, "field_errors", None)
+        if field_errors:
+            detail["field_errors"] = field_errors
+        return detail
+
     if isinstance(exc, SignatureTemplateError):
         message = str(exc)
         status = 403 if any(token in message for token in ("only technical admins", "ownership mismatch")) else 400
-        return HTTPException(status_code=status, detail={"error": "forbidden" if status == 403 else "signature", "message": message})
+        return HTTPException(
+            status_code=status,
+            detail=_detail(error="forbidden" if status == 403 else "signature", message=message),
+        )
     if isinstance(exc, PasswordRequiredError):
-        return HTTPException(status_code=400, detail={"error": "password_required", "message": str(exc)})
+        return HTTPException(status_code=400, detail=_detail(error="password_required", message=str(exc)))
     if isinstance(exc, PasswordInvalidError):
-        return HTTPException(status_code=403, detail={"error": "password_invalid", "message": str(exc)})
+        return HTTPException(status_code=403, detail=_detail(error="password_invalid", message=str(exc)))
     if isinstance(exc, SignatureError):
-        return HTTPException(status_code=400, detail={"error": "signature", "message": str(exc)})
+        return HTTPException(status_code=400, detail=_detail(error="signature", message=str(exc)))
     return HTTPException(status_code=500, detail={"error": "internal", "message": "signature request failed"})
 
 
@@ -192,6 +207,24 @@ def list_user_templates(
     return [template_to_payload(row) for row in api.list_user_signature_templates(actor.user_id)]
 
 
+@router.get("/templates/suggestion")
+def suggest_template(
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_user_context_normal)],
+    document_type: str | None = None,
+    role_context: str | None = None,
+) -> dict[str, Any]:
+    api = _signature_api(request)
+    suggested = api.suggest_template_for_actor(
+        actor,
+        document_type=document_type,
+        role_context=role_context,
+    )
+    if suggested is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "no matching template"})
+    return template_to_payload(suggested)
+
+
 @router.get("/templates/global")
 def list_global_templates(
     request: Request,
@@ -216,6 +249,8 @@ def create_user_template(
             layout=layout_from_payload(body.layout),
             signature_asset_id=body.signature_asset_id,
             scope=body.scope if body.scope in {"user", "global"} else "user",
+            document_type=body.document_type,
+            role_context=body.role_context,
         )
     except Exception as exc:
         raise _map_signature_error(exc) from exc
@@ -238,6 +273,10 @@ def update_template(
             placement=placement_from_payload(body.placement) if body.placement is not None else None,
             layout=layout_from_payload(body.layout) if body.layout is not None else None,
             signature_asset_id=body.signature_asset_id,
+            document_type=body.document_type,
+            role_context=body.role_context,
+            document_type_provided="document_type" in body.model_fields_set,
+            role_context_provided="role_context" in body.model_fields_set,
         )
     except Exception as exc:
         raise _map_signature_error(exc) from exc
@@ -425,24 +464,39 @@ def standalone_sign(
     content = b""
     sha256 = ""
     try:
-        exported = api.export_active_signature(actor.user_id, signature_png)
         placement = placement_from_payload(body.placement)
         layout = layout_from_payload(body.layout)
         resolved_layout = api.resolve_runtime_layout(layout, signer_user=actor.username)
-        sign_request = SignRequest(
-            input_pdf=input_path,
-            output_pdf=output_pdf,
-            signature_png=exported,
-            placement=placement,
-            layout=resolved_layout,
-            overwrite_output=True,
-            dry_run=body.dry_run,
-            sign_mode=body.sign_mode if body.sign_mode in {"visual", "crypto", "both"} else "visual",
-            signer_user=actor.username,
-            password=body.password.strip() if body.password else None,
-            reason=body.reason,
-        )
-        result = api.sign_with_fixed_position(sign_request)
+        if body.template_id:
+            result = api.sign_with_template_for_actor(
+                actor,
+                template_id=body.template_id,
+                input_pdf=input_path,
+                password=body.password.strip() if body.password else None,
+                output_pdf=output_pdf,
+                dry_run=body.dry_run,
+                overwrite_output=True,
+                sign_mode=body.sign_mode,
+                reason=body.reason,
+                placement_override=placement,
+                layout_override=resolved_layout,
+            )
+        else:
+            exported = api.export_active_signature(actor.user_id, signature_png)
+            sign_request = SignRequest(
+                input_pdf=input_path,
+                output_pdf=output_pdf,
+                signature_png=exported,
+                placement=placement,
+                layout=resolved_layout,
+                overwrite_output=True,
+                dry_run=body.dry_run,
+                sign_mode=body.sign_mode if body.sign_mode in {"visual", "crypto", "both"} else "visual",
+                signer_user=actor.username,
+                password=body.password.strip() if body.password else None,
+                reason=body.reason,
+            )
+            result = api.sign_with_fixed_position(sign_request)
         content = result.output_pdf.read_bytes()
         sha256 = result.sha256
     except Exception as exc:

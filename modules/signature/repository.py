@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from datetime import datetime
+
 from .contracts import SignatureAsset, UserSignatureTemplate
 
 
@@ -32,6 +34,10 @@ class SignatureRepository(ABC):
 
     @abstractmethod
     def delete_template(self, template_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def touch_template_last_used_at(self, template_id: str, *, used_at: datetime) -> None:
         raise NotImplementedError
 
     @abstractmethod

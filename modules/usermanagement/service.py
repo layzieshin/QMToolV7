@@ -548,6 +548,87 @@ class UserManagementService:
             actor=actor,
         )
 
+    def list_users_for_admin(self, actor: UserContext) -> list[AuthenticatedUser]:
+        _require_admin_actor(actor)
+        return self.list_users()
+
+    def get_user_for_admin(self, actor: UserContext, username: str) -> AuthenticatedUser:
+        _require_admin_actor(actor)
+        username = username.strip()
+        if not username:
+            raise ValueError("username is required")
+        if self.repository is not None:
+            user = self.repository.get_user(username)
+            if user is None:
+                raise UserNotFoundError(f"unknown user: {username}")
+            return user
+        if username not in self._admin_ops._fallback_users:
+            raise UserNotFoundError(f"unknown user: {username}")
+        _password, role = self._admin_ops._fallback_users[username]
+        return AuthenticatedUser(user_id=username, username=username, role=role)
+
+    def set_user_password_as_admin(
+        self,
+        actor: UserContext,
+        username: str,
+        new_password: str,
+        *,
+        must_change_password: bool = True,
+    ) -> None:
+        _require_admin_actor(actor)
+        username = username.strip()
+        if not username:
+            raise ValueError("username is required")
+        cleaned = new_password.strip() if isinstance(new_password, str) else ""
+        validate_password(cleaned, self.password_policy)
+        user_repo = self.repository
+        session_repo = self.session_repository
+        if isinstance(user_repo, PostgresUserRepository):
+            if not isinstance(session_repo, PostgresSessionRepository):
+                raise RuntimeError(
+                    "opaque session repository is required to reset PostgreSQL user passwords"
+                )
+            moment = _utc_now()
+            with runtime_connection(user_repo._dsn) as conn:
+                before = PostgresUserRepository.get_user_on_connection(conn, username)
+                if before is None:
+                    raise UserNotFoundError(f"unknown user: {username}")
+                must_before = before.must_change_password
+                PostgresUserRepository.change_password_on_connection(
+                    conn, username, cleaned
+                )
+                PostgresUserRepository.set_must_change_password_on_connection(
+                    conn, username, must_change_password
+                )
+                revoked = PostgresSessionRepository.revoke_all_for_user_on_connection(
+                    conn, before.user_id, moment
+                )
+                PostgresAuditRepository.insert_on_connection(
+                    conn,
+                    AuditEventWrite(
+                        event_type=EVENT_USER_PASSWORD_CHANGED,
+                        result=RESULT_SUCCEEDED,
+                        actor_kind=ACTOR_USER,
+                        request_id=actor.request_id,
+                        actor_user_id=actor.user_id,
+                        actor_session_id=actor.session_id,
+                        target_user_id=before.user_id,
+                        affected_session_count=len(revoked),
+                        must_change_password_before=must_before,
+                        must_change_password_after=must_change_password,
+                        occurred_at=moment,
+                    ),
+                )
+            return
+        user = self.get_user_for_admin(actor, username)
+        try:
+            self._admin_ops.change_password(username, cleaned)
+        except KeyError as exc:
+            raise UserNotFoundError(str(exc)) from exc
+        if must_change_password and self.repository is not None:
+            self.repository.set_must_change_password(username, True)
+        self.revoke_all_sessions_for_user(user.user_id)
+
     def update_user_profile(
         self,
         username: str,

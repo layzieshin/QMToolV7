@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from modules.documents.api import ACTION_IDS
 from modules.documents.wiring import register_documents_ports
 from modules.registry.projection_api import RegistryProjectionApi
 from modules.registry.service import RegistryService
@@ -15,7 +16,13 @@ from modules.usermanagement.service import UserManagementService
 from qm_platform.events.event_bus import EventBus
 from qm_platform.logging.audit_logger import AuditLogger
 from qm_platform.logging.logger_service import LoggerService
-from qm_platform.persistence.database_evolution import DATABASE_PREFLIGHT_STATUSES_PORT, DatabaseStatus
+from qm_platform.persistence.database_evolution import (
+    DATABASE_PREFLIGHT_STATUSES_PORT,
+    DatabaseEvolutionService,
+    DatabaseSpec,
+    DatabaseStatus,
+    MigrationStep,
+)
 from qm_platform.runtime.backend_bootstrap import wire_backend_documents
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.settings.testing import build_settings_service_for_tests
@@ -45,13 +52,53 @@ class _FakeSignatureApi:
     def sign_with_fixed_position(self, request: object) -> object:
         return request
 
+    def sign_with_template_for_actor(self, actor, **kwargs) -> object:
+        output_pdf = kwargs.get("output_pdf")
+        input_pdf = kwargs.get("input_pdf")
+        if output_pdf is not None and input_pdf is not None:
+            from pathlib import Path
+
+            out = Path(output_pdf)
+            src = Path(input_pdf)
+            if src.exists():
+                out.write_bytes(src.read_bytes())
+        return kwargs
+
 
 def _build_documents_backend_container(root: Path) -> tuple[RuntimeContainer, object]:
     container = RuntimeContainer()
     events = EventBus()
     docs_db = root / "storage" / "documents" / "documents.db"
     docs_db.parent.mkdir(parents=True, exist_ok=True)
-    prepare_test_database("documents", docs_db)
+    DatabaseEvolutionService(
+        app_home=docs_db.parent,
+        backup_root=docs_db.parent / ".database-backups",
+    ).migrate(
+        (
+            DatabaseSpec(
+                database_id="documents",
+                path=docs_db,
+                migrations=(
+                    MigrationStep(
+                        version=1,
+                        name="initial",
+                        sql_path=ROOT / "modules/documents/migrations/0001_initial.sql",
+                    ),
+                    MigrationStep(
+                        version=2,
+                        name="workflow_profiles",
+                        sql_path=ROOT / "modules/documents/migrations/0002_workflow_profiles.sql",
+                    ),
+                    MigrationStep(
+                        version=3,
+                        name="edit_signed_fields",
+                        sql_path=ROOT / "modules/documents/migrations/0003_edit_signed_fields.sql",
+                    ),
+                ),
+            ),
+        ),
+        reason="test_http_wcon00_r3",
+    )
     container.register_port("logger", LoggerService(root / "platform.log"))
     container.register_port("audit_logger", AuditLogger(root / "audit.log"))
     container.register_port("event_bus", events)
@@ -67,9 +114,9 @@ def _build_documents_backend_container(root: Path) -> tuple[RuntimeContainer, ob
                     database_id="documents",
                     path=str(docs_db),
                     state="adoptable_v1",
-                    current_version=1,
-                    target_version=2,
-                    pending_versions=(2,),
+                    current_version=3,
+                    target_version=3,
+                    pending_versions=(),
                     integrity="ok",
                     detail=None,
                 )
@@ -516,9 +563,9 @@ def test_wire_backend_documents_registers_documents_sqlite_owner(tmp_path: Path,
                     database_id="documents",
                     path=str(docs_db),
                     state="adoptable_v1",
-                    current_version=1,
-                    target_version=2,
-                    pending_versions=(2,),
+                    current_version=3,
+                    target_version=3,
+                    pending_versions=(),
                     integrity="ok",
                     detail=None,
                 )
@@ -695,6 +742,30 @@ def test_version_read_after_restart(tmp_path: Path) -> None:
     after = restarted.get("/api/v1/documents/versions/DOC-RESTART-1/1", headers=_auth(reviewer))
     assert after.status_code == 200, after.text
     assert after.json()["state"]["status"] == "IN_PROGRESS"
+    body = after.json()
+    assert "allowed_actions" in body
+    assert isinstance(body["allowed_actions"], list)
+    codes = {item["code"] for item in body["allowed_actions"]}
+    assert codes >= set(ACTION_IDS) | {"preview", "download"}
+    enabled_codes = sorted(item["code"] for item in body["allowed_actions"] if item["enabled"])
+    assert body["available_actions"] == enabled_codes
+    assert body["state"]["available_actions"] == enabled_codes
+
+
+def test_create_pdf_comment_empty_text_returns_field_errors(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-COMMENT-EMPTY")
+    response = client.post(
+        "/api/v1/documents/versions/DOC-COMMENT-EMPTY/1/comments",
+        headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
+        json={"context": "DOCX_EDIT", "page_number": 1, "comment_text": "   "},
+    )
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "documents_workflow"
+    assert detail["field_errors"][0]["field"] == "comment_text"
+    assert detail["field_errors"][0]["code"] == "required"
 
 
 def test_header_read(tmp_path: Path) -> None:
@@ -765,3 +836,149 @@ def test_http_read_port_routes_through_documents_client() -> None:
         source="TRAINING_READ",
         min_seconds_per_page=10,
     )
+
+
+def _create_planned_doc(client: TestClient, token: str, *, doc_id: str, title: str | None = None) -> None:
+    response = client.post(
+        "/api/v1/documents/versions/create",
+        headers=_auth(token),
+        json={
+            "document_id": doc_id,
+            "version": 1,
+            "title": title or doc_id,
+            "workflow_profile_id": "http_flow_profile",
+        },
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_query_requires_auth(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    response = client.get("/api/v1/documents/query")
+    assert response.status_code == 401
+
+
+def test_query_invalid_params_return_field_errors(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    for path in (
+        "/api/v1/documents/query?sort=bad",
+        "/api/v1/documents/query?limit=0",
+        "/api/v1/documents/query?limit=101",
+        "/api/v1/documents/query?cursor=not-valid",
+    ):
+        response = client.get(path, headers=_auth(admin))
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"]
+        assert "field_errors" in detail
+
+
+def test_query_pagination_and_unreadable_omission(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-Q-1")
+    _create_planned_doc(client, admin, doc_id="DOC-Q-2")
+    _create_planned_doc(client, admin, doc_id="DOC-Q-3")
+    _create_planned_doc(client, admin, doc_id="DOC-PRIVATE", title="private planned")
+    page1 = client.get("/api/v1/documents/query?limit=2&sort=title&order=asc", headers=_auth(admin))
+    assert page1.status_code == 200, page1.text
+    body1 = page1.json()
+    assert body1["limit"] == 2
+    assert len(body1["items"]) == 2
+    assert body1["next_cursor"]
+    ids1 = {item["document_id"] for item in body1["items"]}
+    page2 = client.get(
+        f"/api/v1/documents/query?limit=2&sort=title&order=asc&cursor={body1['next_cursor']}",
+        headers=_auth(admin),
+    )
+    assert page2.status_code == 200, page2.text
+    body2 = page2.json()
+    ids2 = {item["document_id"] for item in body2["items"]}
+    assert ids1.isdisjoint(ids2)
+    assert ids1 | ids2 == {"DOC-PRIVATE", "DOC-Q-1", "DOC-Q-2", "DOC-Q-3"}
+    assert body2["next_cursor"] is None
+
+    observer = _login(client, "observer", "observerpass01")
+    observer_page = client.get("/api/v1/documents/query?sort=title&order=asc", headers=_auth(observer))
+    assert observer_page.status_code == 200, observer_page.text
+    observer_ids = {item["document_id"] for item in observer_page.json()["items"]}
+    assert "DOC-PRIVATE" not in observer_ids
+
+
+def test_query_continues_after_hidden_row_scan_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import modules.documents.service as documents_service_mod
+
+    monkeypatch.setattr(documents_service_mod, "_QUERY_MAX_LOOPS", 1)
+    monkeypatch.setattr(documents_service_mod, "_QUERY_INTERNAL_BATCH", 1)
+    container, _users = _build_documents_backend_container(tmp_path)
+    original = documents_service_mod.DocumentsService._has_read_access
+
+    def _gated_read(cls, state, *, actor_user_id, actor_role):
+        if state.document_id.startswith("DOC-HIDDEN-"):
+            return False
+        return original(state, actor_user_id=actor_user_id, actor_role=actor_role)
+
+    monkeypatch.setattr(
+        documents_service_mod.DocumentsService,
+        "_has_read_access",
+        classmethod(_gated_read),
+    )
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-HIDDEN-1", title="aaa hidden")
+    _create_planned_doc(client, admin, doc_id="DOC-VISIBLE-1", title="zzz visible")
+    page1 = client.get(
+        "/api/v1/documents/query?limit=10&sort=title&order=asc",
+        headers=_auth(admin),
+    )
+    assert page1.status_code == 200, page1.text
+    body1 = page1.json()
+    assert body1["items"] == []
+    assert body1["next_cursor"]
+    page2 = client.get(
+        "/api/v1/documents/query?limit=10&sort=title&order=asc"
+        f"&cursor={body1['next_cursor']}",
+        headers=_auth(admin),
+    )
+    assert page2.status_code == 200, page2.text
+    body2 = page2.json()
+    assert [item["document_id"] for item in body2["items"]] == ["DOC-VISIBLE-1"]
+
+
+def test_pool_by_status_still_returns_list(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-POOL-LIST")
+    response = client.get("/api/v1/documents/pool/by-status/PLANNED", headers=_auth(admin))
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert any(row["document_id"] == "DOC-POOL-LIST" for row in payload)
+
+
+def test_history_requires_auth_and_hides_unreadable(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    _create_planned_doc(client, admin, doc_id="DOC-HIST", title="History doc")
+    unauth = client.get("/api/v1/documents/versions/DOC-HIST/1/history")
+    assert unauth.status_code == 401
+    ok = client.get("/api/v1/documents/versions/DOC-HIST/1/history", headers=_auth(admin))
+    assert ok.status_code == 200, ok.text
+    items = ok.json()
+    assert items
+    assert items[0]["event_type"] == "created"
+    expected_keys = {"occurred_at", "event_type", "actor_user_id", "summary"}
+    for item in items:
+        assert set(item.keys()) == expected_keys
+        assert "full_text" not in item
+    observer = _login(client, "observer", "observerpass01")
+    denied = client.get("/api/v1/documents/versions/DOC-HIST/1/history", headers=_auth(observer))
+    assert denied.status_code == 404

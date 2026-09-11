@@ -186,6 +186,7 @@ def test_patch_access_role_qmb_deactivate_and_errors(tmp_path: Path) -> None:
     )
     assert weak.status_code == 400
     assert weak.json()["detail"]["error"] == "weak_password"
+    assert weak.json()["detail"]["field_errors"][0]["field"] == "password"
 
     dup = client.post(
         "/api/v1/users",

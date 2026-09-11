@@ -44,7 +44,7 @@ EXPECTED_DOCUMENT_HEADERS_COLUMNS = frozenset(
 
 EXPECTED_DOCUMENT_VERSIONS_COLUMNS = frozenset(
     {
-'approval_completed_at', 'approval_completed_by', 'approved_by_json', 'approvers_json', 'archived_at', 'archived_by', 'control_class', 'created_at', 'created_by', 'custom_fields_json', 'description', 'doc_type', 'document_id', 'edit_signature_done', 'editors_json', 'extension_count', 'last_actor_user_id', 'last_event_at', 'last_event_id', 'last_extended_at', 'last_extended_by', 'last_extension_reason', 'last_extension_review_outcome', 'next_review_at', 'owner_user_id', 'released_at', 'review_completed_at', 'review_completed_by', 'reviewed_by_json', 'reviewers_json', 'status', 'superseded_by_version', 'title', 'updated_at', 'valid_from', 'valid_until', 'version', 'workflow_active', 'workflow_profile_id', 'workflow_profile_json'
+'approval_completed_at', 'approval_completed_by', 'approved_by_json', 'approvers_json', 'archived_at', 'archived_by', 'control_class', 'created_at', 'created_by', 'custom_fields_json', 'description', 'doc_type', 'document_id', 'edit_signature_done', 'edit_signed_at', 'edit_signed_by', 'editors_json', 'extension_count', 'last_actor_user_id', 'last_event_at', 'last_event_id', 'last_extended_at', 'last_extended_by', 'last_extension_reason', 'last_extension_review_outcome', 'next_review_at', 'owner_user_id', 'released_at', 'review_completed_at', 'review_completed_by', 'reviewed_by_json', 'reviewers_json', 'status', 'superseded_by_version', 'title', 'updated_at', 'valid_from', 'valid_until', 'version', 'workflow_active', 'workflow_profile_id', 'workflow_profile_json'
     })
 
 EXPECTED_WORKFLOW_PROFILE_DEFINITIONS_COLUMNS = frozenset(
@@ -470,6 +470,7 @@ def _validate_schema_contracts(
     *,
     require_history_select: bool,
     require_full: bool,
+    migration_version: int | None = None,
 ) -> None:
     expected_tables = EXPECTED_TABLES_FULL if require_full else EXPECTED_TABLES
     tables = _table_names(conn)
@@ -494,7 +495,10 @@ def _validate_schema_contracts(
     if missing_document_headers:
         raise PostgresSchemaError(f"document_headers missing columns: {sorted(missing_document_headers)}")
 
-    missing_document_versions = EXPECTED_DOCUMENT_VERSIONS_COLUMNS - columns_for("document_versions")
+    expected_document_versions = set(EXPECTED_DOCUMENT_VERSIONS_COLUMNS)
+    if migration_version is not None and migration_version < 4:
+        expected_document_versions -= {"edit_signed_at", "edit_signed_by"}
+    missing_document_versions = expected_document_versions - columns_for("document_versions")
     if missing_document_versions:
         raise PostgresSchemaError(f"document_versions missing columns: {sorted(missing_document_versions)}")
 
@@ -601,6 +605,7 @@ def migrate_documents_schema(
                         conn,
                         require_history_select=step.version >= 3,
                         require_full=step.version >= 2,
+                        migration_version=step.version,
                     )
                     fingerprint = _compute_schema_fingerprint(conn)
                     conn.execute(

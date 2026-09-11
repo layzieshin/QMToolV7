@@ -51,6 +51,11 @@ SIGNATURE_DATABASE_CONTRIBUTION = DatabaseContribution(
             name="initial",
             sql_path=Path(__file__).parent / "migrations" / "0001_initial.sql",
         ),
+        DatabaseMigrationContribution(
+            version=2,
+            name="user_signature_template_presets",
+            sql_path=Path(__file__).parent / "migrations" / "0002_user_signature_template_presets.sql",
+        ),
     ),
     validation_queries=(
         DatabaseValidationContribution(

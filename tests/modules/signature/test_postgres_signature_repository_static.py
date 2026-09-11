@@ -71,7 +71,7 @@ def test_ensure_postgres_schema_ready_delegates_to_schema_module(monkeypatch) ->
 
     def _assert_ready(dsn: str) -> int:
         calls.append(dsn)
-        return 2
+        return 3
 
     monkeypatch.setattr(
         "modules.signature.postgres_schema.assert_runtime_schema_ready",
@@ -79,7 +79,7 @@ def test_ensure_postgres_schema_ready_delegates_to_schema_module(monkeypatch) ->
     )
     container = RuntimeContainer()
     container.register_port("signature_postgres_dsn", "postgresql://runtime.example/db")
-    assert ensure_postgres_schema_ready(container) == 2
+    assert ensure_postgres_schema_ready(container) == 3
     assert calls == ["postgresql://runtime.example/db"]
 
 

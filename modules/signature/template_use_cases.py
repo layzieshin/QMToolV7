@@ -27,6 +27,33 @@ def _is_technical_admin(actor: UserContext) -> bool:
     return any(str(role).strip().upper() == "ADMIN" for role in context.global_roles)
 
 
+def _template_matches_context(
+    template: UserSignatureTemplate,
+    *,
+    document_type: str | None,
+    role_context: str | None,
+) -> bool:
+    if template.document_type is not None and template.document_type != document_type:
+        return False
+    if template.role_context is not None and template.role_context != role_context:
+        return False
+    return True
+
+
+def _suggestion_rank_key(template: UserSignatureTemplate, *, user_scope: bool) -> tuple:
+    last_used_ts = (
+        template.last_used_at.timestamp()
+        if template.last_used_at is not None
+        else float("-inf")
+    )
+    return (
+        1 if user_scope else 0,
+        last_used_ts,
+        template.created_at.timestamp(),
+        template.template_id,
+    )
+
+
 class SignatureTemplateUseCases:
     def __init__(self, service: object) -> None:
         self._service = service
@@ -82,6 +109,8 @@ class SignatureTemplateUseCases:
         layout: LabelLayoutInput,
         signature_asset_id: str | None,
         scope: str = "user",
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -105,6 +134,8 @@ class SignatureTemplateUseCases:
             signature_asset_id=signature_asset_id,
             created_at=_utcnow(),
             scope="global" if scope == "global" else "user",
+            document_type=document_type,
+            role_context=role_context,
         )
         self._service.repository.upsert_template(template)
         self._service.audit_logger.emit(
@@ -154,6 +185,8 @@ class SignatureTemplateUseCases:
         layout: LabelLayoutInput,
         signature_asset_id: str | None,
         scope: str = "user",
+        document_type: str | None = None,
+        role_context: str | None = None,
     ) -> UserSignatureTemplate:
         if scope == "global" and not _is_technical_admin(actor):
             raise SignatureTemplateError("only technical admins may create global templates")
@@ -165,6 +198,8 @@ class SignatureTemplateUseCases:
             layout=layout,
             signature_asset_id=signature_asset_id,
             scope=scope,
+            document_type=document_type,
+            role_context=role_context,
         )
 
     def update_signature_template_for_actor(
@@ -176,6 +211,10 @@ class SignatureTemplateUseCases:
         placement: SignaturePlacementInput | None = None,
         layout: LabelLayoutInput | None = None,
         signature_asset_id: str | None = None,
+        document_type: str | None = None,
+        role_context: str | None = None,
+        document_type_provided: bool = False,
+        role_context_provided: bool = False,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -196,6 +235,10 @@ class SignatureTemplateUseCases:
             placement=placement,
             layout=layout,
             signature_asset_id=signature_asset_id,
+            document_type=document_type,
+            role_context=role_context,
+            document_type_provided=document_type_provided,
+            role_context_provided=role_context_provided,
         )
 
     def copy_global_template_for_actor(
@@ -217,6 +260,10 @@ class SignatureTemplateUseCases:
         placement: SignaturePlacementInput | None = None,
         layout: LabelLayoutInput | None = None,
         signature_asset_id: str | None = None,
+        document_type: str | None = None,
+        role_context: str | None = None,
+        document_type_provided: bool = False,
+        role_context_provided: bool = False,
     ) -> UserSignatureTemplate:
         if self._service.repository is None:
             raise SignatureTemplateError("signature template storage is not configured")
@@ -238,6 +285,8 @@ class SignatureTemplateUseCases:
             placement=placement if placement is not None else current.placement,
             layout=layout if layout is not None else current.layout,
             signature_asset_id=signature_asset_id if signature_asset_id is not None else current.signature_asset_id,
+            document_type=document_type if document_type_provided else current.document_type,
+            role_context=role_context if role_context_provided else current.role_context,
         )
         if not updated.name:
             raise SignatureTemplateError("template name is required")
@@ -288,7 +337,57 @@ class SignatureTemplateUseCases:
             layout=source.layout,
             signature_asset_id=asset_id,
             scope="user",
+            document_type=source.document_type,
+            role_context=source.role_context,
         )
+
+    def suggest_template_for_actor(
+        self,
+        actor: UserContext,
+        *,
+        document_type: str | None = None,
+        role_context: str | None = None,
+    ) -> UserSignatureTemplate | None:
+        if self._service.repository is None:
+            return None
+        actor = _confirmed_actor(actor)
+        candidates: list[tuple[UserSignatureTemplate, bool]] = []
+        seen_global_ids: set[str] = set()
+        for template in self._service.repository.list_templates(actor.user_id):
+            if template.scope == "user":
+                if _template_matches_context(
+                    template,
+                    document_type=document_type,
+                    role_context=role_context,
+                ):
+                    candidates.append((template, True))
+            elif template.scope == "global":
+                if template.template_id in seen_global_ids:
+                    continue
+                if _template_matches_context(
+                    template,
+                    document_type=document_type,
+                    role_context=role_context,
+                ):
+                    candidates.append((template, False))
+                    seen_global_ids.add(template.template_id)
+        for template in self._service.repository.list_global_templates():
+            if template.template_id in seen_global_ids:
+                continue
+            if _template_matches_context(
+                template,
+                document_type=document_type,
+                role_context=role_context,
+            ):
+                candidates.append((template, False))
+                seen_global_ids.add(template.template_id)
+        if not candidates:
+            return None
+        template, _user_scope = max(
+            candidates,
+            key=lambda item: _suggestion_rank_key(item[0], user_scope=item[1]),
+        )
+        return template
 
     def sign_with_template(
         self,
@@ -300,6 +399,7 @@ class SignatureTemplateUseCases:
         output_pdf: Path | None = None,
         dry_run: bool = False,
         overwrite_output: bool = False,
+        sign_mode: str = "visual",
         reason: str = "template_api",
         placement_override: SignaturePlacementInput | None = None,
         layout_override: LabelLayoutInput | None = None,
@@ -308,7 +408,27 @@ class SignatureTemplateUseCases:
             raise SignatureTemplateError("signature template storage is not configured")
         template = self._service.repository.get_template(template_id)
         if template is None:
-            raise SignatureTemplateError(f"unknown signature template: {template_id}")
+            raise SignatureTemplateError(
+                f"unknown signature template: {template_id}",
+                field_errors=[
+                    {
+                        "field": "template_id",
+                        "code": "unknown",
+                        "message": f"unknown signature template: {template_id}",
+                    }
+                ],
+            )
+        if sign_mode != "visual":
+            raise SignatureTemplateError(
+                "signature templates support visual signing only",
+                field_errors=[
+                    {
+                        "field": "sign_mode",
+                        "code": "unsupported_with_template",
+                        "message": "signature templates support visual signing only",
+                    }
+                ],
+            )
         signature_path: Path | None = None
         tmp_path: Path | None = None
         if template.layout.show_signature:
@@ -328,7 +448,7 @@ class SignatureTemplateUseCases:
         try:
             effective_placement = placement_override if placement_override is not None else template.placement
             effective_layout = layout_override if layout_override is not None else template.layout
-            return self._service.sign_with_fixed_position(
+            result = self._service.sign_with_fixed_position(
                 SignRequest(
                     input_pdf=input_pdf,
                     output_pdf=output_pdf,
@@ -337,12 +457,61 @@ class SignatureTemplateUseCases:
                     layout=effective_layout,
                     overwrite_output=overwrite_output,
                     dry_run=dry_run,
-                    sign_mode="visual",
+                    sign_mode=sign_mode,
                     signer_user=signer_user,
                     password=password,
                     reason=reason,
                 )
             )
+            if result.signed and not result.dry_run:
+                self._service.repository.touch_template_last_used_at(template_id, used_at=_utcnow())
+            return result
         finally:
             if tmp_path is not None:
                 shutil.rmtree(tmp_path, ignore_errors=True)
+
+    def sign_with_template_for_actor(
+        self,
+        actor: UserContext,
+        *,
+        template_id: str,
+        input_pdf: Path,
+        password: str | None = None,
+        output_pdf: Path | None = None,
+        dry_run: bool = False,
+        overwrite_output: bool = False,
+        sign_mode: str = "visual",
+        reason: str = "template_api",
+        placement_override: SignaturePlacementInput | None = None,
+        layout_override: LabelLayoutInput | None = None,
+    ) -> SignResult:
+        if self._service.repository is None:
+            raise SignatureTemplateError("signature template storage is not configured")
+        actor = _confirmed_actor(actor)
+        template = self._service.repository.get_template(template_id)
+        if template is None:
+            raise SignatureTemplateError(
+                f"unknown signature template: {template_id}",
+                field_errors=[
+                    {
+                        "field": "template_id",
+                        "code": "unknown",
+                        "message": f"unknown signature template: {template_id}",
+                    }
+                ],
+            )
+        if template.scope != "global" and template.owner_user_id != actor.user_id:
+            raise SignatureTemplateError("template ownership mismatch")
+        return self.sign_with_template(
+            template_id=template_id,
+            input_pdf=input_pdf,
+            signer_user=actor.username,
+            password=password,
+            output_pdf=output_pdf,
+            dry_run=dry_run,
+            overwrite_output=overwrite_output,
+            sign_mode=sign_mode,
+            reason=reason,
+            placement_override=placement_override,
+            layout_override=layout_override,
+        )

@@ -403,3 +403,55 @@ def test_create_user_audit_actor_is_admin_not_target(pg_service) -> None:
     assert row["actor_user_id"] == admin.user_id
     assert row["target_user_id"] == created.user_id
     assert row["actor_user_id"] != row["target_user_id"]
+
+
+def test_admin_password_reset_audit_actor_is_admin_not_target(pg_service) -> None:
+    service: UserManagementService = pg_service["service"]
+    admin = pg_service["admin"]
+    migrator_dsn = pg_service["migrator_dsn"]
+
+    issued = service.login_backend("opsadmin", "ops-secret-1", request_id="req-admin-login")
+    ctx = issue_user_context(
+        user_id=admin.user_id,
+        session_id=issued.session.session_id,
+        request_id="req-admin-reset",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
+        username=admin.username,
+        global_roles={"ADMIN"},
+        is_qmb=False,
+        authenticated_at=issued.session.created_at,
+    )
+    created = service.create_user_as_admin(
+        ctx,
+        "target",
+        "target-secret-1",
+        role="User",
+        is_qmb=False,
+        must_change_password=False,
+    )
+    service.login_backend("target", "target-secret-1", request_id="req-target-1")
+    service.login_backend("target", "target-secret-1", request_id="req-target-2")
+
+    service.set_user_password_as_admin(
+        ctx,
+        "target",
+        "target-reset-1",
+        must_change_password=True,
+    )
+
+    rows = [
+        r
+        for r in _read_audits(migrator_dsn)
+        if r["event_type"] == "user.password_changed" and r["target_user_id"] == created.user_id
+    ]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["actor_user_id"] == admin.user_id
+    assert row["target_user_id"] == created.user_id
+    assert row["actor_user_id"] != row["target_user_id"]
+    assert row["request_id"] == "req-admin-reset"
+    assert row["actor_session_id"] == issued.session.session_id
+    assert row["affected_session_count"] == 2
+    assert row["must_change_password_before"] is False
+    assert row["must_change_password_after"] is True
+    assert "domain.usermanagement.user.password_changed.v1" not in pg_service["published"]

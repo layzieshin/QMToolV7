@@ -67,12 +67,17 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
     ),
     ("modules/documents/migrations/0001_initial.sql", "modules/documents/migrations"),
     ("modules/documents/migrations/0002_workflow_profiles.sql", "modules/documents/migrations"),
+    ("modules/documents/migrations/0003_edit_signed_fields.sql", "modules/documents/migrations"),
     (
         "modules/documents/postgres/migrations/0001_initial.sql",
         "modules/documents/postgres/migrations",
     ),
     (
         "modules/documents/postgres/migrations/0002_workflow_profiles.sql",
+        "modules/documents/postgres/migrations",
+    ),
+    (
+        "modules/documents/postgres/migrations/0004_edit_signed_fields.sql",
         "modules/documents/postgres/migrations",
     ),
     (
@@ -99,11 +104,19 @@ _BUNDLE_DATA: list[tuple[str, str]] = [
     ),
     ("modules/signature/migrations/0001_initial.sql", "modules/signature/migrations"),
     (
+        "modules/signature/migrations/0002_user_signature_template_presets.sql",
+        "modules/signature/migrations",
+    ),
+    (
         "modules/signature/postgres/migrations/0001_initial.sql",
         "modules/signature/postgres/migrations",
     ),
     (
         "modules/signature/postgres/migrations/0002_grant_history_select.sql",
+        "modules/signature/postgres/migrations",
+    ),
+    (
+        "modules/signature/postgres/migrations/0003_user_signature_template_presets.sql",
         "modules/signature/postgres/migrations",
     ),
     (

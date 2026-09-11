@@ -71,15 +71,15 @@ class PostgresSignatureRepository(SignatureRepository):
                 INSERT INTO signature.user_signature_templates (
                     template_id, owner_user_id, name,
                     placement_page_index, placement_x, placement_y, placement_target_width,
-                    show_signature, show_name, show_date, name_text, date_text,
+                    show_signature, show_name, show_date, show_time, name_text, date_text,
                     name_position, date_position, name_font_size, date_font_size, color_hex,
                     name_above, name_below, date_above, date_below, x_offset,
                     name_rel_x, name_rel_y, date_rel_x, date_rel_y,
-                    signature_asset_id, scope, created_at
+                    signature_asset_id, scope, document_type, role_context, last_used_at, created_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (template_id) DO UPDATE SET
                     owner_user_id = EXCLUDED.owner_user_id,
@@ -91,6 +91,7 @@ class PostgresSignatureRepository(SignatureRepository):
                     show_signature = EXCLUDED.show_signature,
                     show_name = EXCLUDED.show_name,
                     show_date = EXCLUDED.show_date,
+                    show_time = EXCLUDED.show_time,
                     name_text = EXCLUDED.name_text,
                     date_text = EXCLUDED.date_text,
                     name_position = EXCLUDED.name_position,
@@ -109,6 +110,9 @@ class PostgresSignatureRepository(SignatureRepository):
                     date_rel_y = EXCLUDED.date_rel_y,
                     signature_asset_id = EXCLUDED.signature_asset_id,
                     scope = EXCLUDED.scope,
+                    document_type = EXCLUDED.document_type,
+                    role_context = EXCLUDED.role_context,
+                    last_used_at = EXCLUDED.last_used_at,
                     created_at = EXCLUDED.created_at
                 """,
                 (
@@ -122,6 +126,7 @@ class PostgresSignatureRepository(SignatureRepository):
                     bool(template.layout.show_signature),
                     bool(template.layout.show_name),
                     bool(template.layout.show_date),
+                    bool(template.layout.show_time),
                     template.layout.name_text,
                     template.layout.date_text,
                     template.layout.name_position,
@@ -140,6 +145,9 @@ class PostgresSignatureRepository(SignatureRepository):
                     template.layout.date_rel_y,
                     template.signature_asset_id,
                     template.scope,
+                    template.document_type,
+                    template.role_context,
+                    template.last_used_at,
                     template.created_at,
                 ),
             )
@@ -187,6 +195,18 @@ class PostgresSignatureRepository(SignatureRepository):
             conn.execute(
                 "DELETE FROM signature.user_signature_templates WHERE template_id = %s",
                 (template_id,),
+            )
+            conn.commit()
+
+    def touch_template_last_used_at(self, template_id: str, *, used_at: datetime) -> None:
+        with runtime_connection(self._dsn) as conn:
+            conn.execute(
+                """
+                UPDATE signature.user_signature_templates
+                SET last_used_at = %s
+                WHERE template_id = %s
+                """,
+                (used_at, template_id),
             )
             conn.commit()
 
@@ -255,6 +275,7 @@ def _row_to_template(row: dict[str, object]) -> UserSignatureTemplate:
             show_signature=bool(row["show_signature"]),
             show_name=bool(row["show_name"]),
             show_date=bool(row["show_date"]),
+            show_time=bool(row.get("show_time", False)),
             name_text=row["name_text"],  # type: ignore[arg-type]
             date_text=row["date_text"],  # type: ignore[arg-type]
             name_position=str(row["name_position"]),  # type: ignore[arg-type]
@@ -275,4 +296,7 @@ def _row_to_template(row: dict[str, object]) -> UserSignatureTemplate:
         signature_asset_id=row["signature_asset_id"],  # type: ignore[arg-type]
         created_at=_coerce_timestamp(row["created_at"]),
         scope=str(row["scope"]) if row.get("scope") else "user",
+        document_type=row.get("document_type"),  # type: ignore[arg-type]
+        role_context=row.get("role_context"),  # type: ignore[arg-type]
+        last_used_at=_coerce_timestamp(row["last_used_at"]) if row.get("last_used_at") is not None else None,
     )

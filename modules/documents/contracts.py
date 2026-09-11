@@ -200,6 +200,8 @@ class DocumentVersionState:
     reviewed_by: frozenset[str] = field(default_factory=frozenset)
     approved_by: frozenset[str] = field(default_factory=frozenset)
     edit_signature_done: bool = False
+    edit_signed_at: datetime | None = None
+    edit_signed_by: str | None = None
     valid_from: datetime | None = None
     valid_until: datetime | None = None
     next_review_at: datetime | None = None
@@ -222,9 +224,25 @@ class DocumentVersionState:
     last_actor_user_id: str | None = None
     created_at: datetime | None = None
     created_by: str | None = None
+    updated_at: datetime | None = None
     # Transport-enriched server authority. ``None`` means no capability
     # projection was supplied (for example in an in-process module test).
     available_actions: frozenset[str] | None = None
+
+
+@dataclass(frozen=True)
+class DocumentQueryPage:
+    items: tuple[DocumentVersionState, ...]
+    limit: int
+    next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class DocumentVersionHistoryItem:
+    occurred_at: datetime
+    event_type: str
+    actor_user_id: str | None
+    summary: str
 
 
 @dataclass(frozen=True)

@@ -75,6 +75,8 @@ def assert_state_invariants(state: DocumentVersionState) -> None:
         raise ValidationError("review_completed_by must be set when review_completed_at is set")
     if state.approval_completed_at is not None and state.approval_completed_by is None:
         raise ValidationError("approval_completed_by must be set when approval_completed_at is set")
+    if state.edit_signed_at is not None and state.edit_signed_by is None:
+        raise ValidationError("edit_signed_by must be set when edit_signed_at is set")
     if state.released_at is not None and state.approval_completed_at is None:
         raise ValidationError("released_at requires approval_completed_at")
     if state.archived_at is not None and state.status != DocumentStatus.ARCHIVED:

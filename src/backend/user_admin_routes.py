@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from modules.usermanagement import api as um_api
@@ -26,6 +26,10 @@ class PatchUserAccessRequest(BaseModel):
     role: str | None = None
     is_qmb: bool | None = None
     is_active: bool | None = None
+
+
+class PasswordActionRequest(BaseModel):
+    new_password: str
 
 
 class UserAccessResponse(BaseModel):
@@ -75,6 +79,53 @@ def _user_payload(user: AuthenticatedUser) -> UserAccessResponse:
     )
 
 
+def _map_user_admin_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, um_api.WeakPasswordError):
+        mapped = map_auth_error(exc)
+        detail = dict(mapped.detail)
+        field_errors = detail.get("field_errors")
+        if field_errors:
+            detail["field_errors"] = [
+                {**item, "field": "new_password"} if item.get("field") == "password" else item
+                for item in field_errors
+            ]
+        return HTTPException(status_code=mapped.status_code, detail=detail)
+    if isinstance(exc, um_api.UsermanagementError):
+        return map_auth_error(exc)
+    if isinstance(exc, ValueError):
+        return map_auth_error(um_api.InvalidUserUpdateError(str(exc)))
+    if isinstance(exc, KeyError):
+        return map_auth_error(um_api.UserNotFoundError(str(exc)))
+    raise exc
+
+
+@router.get("", response_model=list[UserAccessResponse])
+def list_users(
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_admin_context)],
+) -> list[UserAccessResponse]:
+    container = get_container(request)
+    try:
+        users = um_api.list_users_for_admin(container, actor)
+    except Exception as exc:
+        raise _map_user_admin_error(exc) from exc
+    return [_user_payload(user) for user in users]
+
+
+@router.get("/{username}", response_model=UserAccessResponse)
+def get_user(
+    username: str,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_admin_context)],
+) -> UserAccessResponse:
+    container = get_container(request)
+    try:
+        user = um_api.get_user_for_admin(container, actor, username)
+    except Exception as exc:
+        raise _map_user_admin_error(exc) from exc
+    return _user_payload(user)
+
+
 @router.post("", response_model=UserAccessResponse, status_code=201)
 def create_user(
     body: CreateUserRequest,
@@ -119,11 +170,24 @@ def patch_user_access(
             is_active=body.is_active,
         )
     except Exception as exc:
-        if isinstance(exc, um_api.UsermanagementError):
-            raise map_auth_error(exc) from exc
-        if isinstance(exc, ValueError):
-            raise map_auth_error(um_api.InvalidUserUpdateError(str(exc))) from exc
-        if isinstance(exc, KeyError):
-            raise map_auth_error(um_api.UserNotFoundError(str(exc))) from exc
-        raise
+        raise _map_user_admin_error(exc) from exc
     return _user_payload(user)
+
+
+@router.post(
+    "/{username}/password-actions",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def password_action(
+    username: str,
+    body: PasswordActionRequest,
+    request: Request,
+    actor: Annotated[UserContext, Depends(require_admin_context)],
+) -> Response:
+    container = get_container(request)
+    try:
+        um_api.set_user_password_as_admin(container, actor, username, body.new_password)
+    except Exception as exc:
+        raise _map_user_admin_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

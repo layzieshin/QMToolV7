@@ -17,6 +17,7 @@ from fastapi.routing import APIRoute
 from qm_platform.runtime.health import build_readiness_report
 from qm_platform.runtime.maintenance import is_maintenance_active
 from src.backend.auth_routes import router as auth_router
+from src.backend.auth_routes import session_router
 from src.backend.bootstrap import BackendBootstrapError, resolve_usermanagement_postgres_dsn
 from src.backend.cookie_csrf import SAFE_METHODS
 from src.backend.csrf_middleware import enforce_cookie_csrf
@@ -38,11 +39,18 @@ class ReadinessResponse(BaseModel):
     checks: dict[str, str]
 
 
+class FieldErrorItem(BaseModel):
+    field: str
+    code: str
+    message: str
+
+
 class ErrorDetail(BaseModel):
     error: str
     message: str
     current_etag: str | None = None
     current_state: dict[str, Any] | None = None
+    field_errors: list[FieldErrorItem] | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -223,6 +231,28 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
     schemas = schema.get("components", {}).get("schemas", {})
     if not isinstance(schemas, dict):
         return
+    action_descriptor = {
+        "type": "object",
+        "required": [
+            "code",
+            "label_key",
+            "enabled",
+            "requires_reason",
+            "requires_confirmation",
+            "destructive",
+            "severity",
+        ],
+        "properties": {
+            "code": {"type": "string"},
+            "label_key": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "disabled_reason": {"type": "string", "nullable": True},
+            "requires_reason": {"type": "boolean"},
+            "requires_confirmation": {"type": "boolean"},
+            "destructive": {"type": "boolean"},
+            "severity": {"type": "string", "enum": ["info", "warning", "danger"]},
+        },
+    }
     for name in _DOCUMENTS_STATE_RESPONSE_SCHEMAS:
         model = schemas.get(name)
         if not isinstance(model, dict):
@@ -230,11 +260,18 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
         required = model.setdefault("required", [])
         if "available_actions" not in required:
             required.append("available_actions")
+        if "allowed_actions" not in required:
+            required.append("allowed_actions")
         properties = model.setdefault("properties", {})
         properties["available_actions"] = {
             "type": "array",
             "items": {"type": "string"},
             "description": "Server-computed available_actions for the confirmed actor.",
+        }
+        properties["allowed_actions"] = {
+            "type": "array",
+            "items": action_descriptor,
+            "description": "Server-computed action descriptors for the confirmed actor.",
         }
 
 
@@ -244,6 +281,7 @@ _OPENAPI_NO_SECURITY_PATHS = frozenset(
         "/ready",
         f"{_API_V1}/auth/csrf",
         f"{_API_V1}/auth/token",
+        f"{_API_V1}/session/connection",
     }
 )
 _BROWSER_LOGIN = ("post", f"{_API_V1}/auth/login")
@@ -276,6 +314,7 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
         routes=app.routes,
         tags=[
             {"name": "auth", "description": "Login, Session und Passwortwechsel."},
+            {"name": "session", "description": "Browser-Verbindungs- und Bootstrap-Vertrag."},
             {"name": "users", "description": "Directory- und administrative Benutzervertraege."},
             {"name": "documents", "description": "Dokumentenpool, Artefakte und Workflow."},
             {"name": "signature", "description": "Signatur- und Signaturvorlagenvertrag."},
@@ -309,6 +348,18 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
             "message": {"type": "string", "example": "document state is newer"},
             "current_etag": {"type": "string", "nullable": True, "example": "evt-42"},
             "current_state": {"type": "object", "nullable": True, "additionalProperties": True},
+            "field_errors": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["field", "code", "message"],
+                    "properties": {
+                        "field": {"type": "string"},
+                        "code": {"type": "string"},
+                        "message": {"type": "string"},
+                    },
+                },
+            },
         },
     }
     # Ensure public conflict field name is current_state only.
@@ -362,7 +413,7 @@ def _customize_openapi(app: FastAPI) -> dict[str, Any]:
                 required=False,
             )
             _apply_if_match_contract(path, method, operation)
-            if path.endswith("/content"):
+            if path.endswith("/content") or path.endswith("/preview") or path.endswith("/download"):
                 response_200 = operation.setdefault("responses", {}).setdefault("200", {"description": "Binary artifact."})
                 response_200["content"] = {
                     media_type: {"schema": {"type": "string", "format": "binary"}}
@@ -462,6 +513,7 @@ def create_app(container=None) -> FastAPI:
         return JSONResponse(status_code=200 if report.ready else 503, content=payload)
 
     app.include_router(auth_router, prefix=_API_V1)
+    app.include_router(session_router, prefix=_API_V1)
     app.include_router(user_admin_router, prefix=_API_V1)
     app.include_router(documents_router, prefix=_API_V1)
     app.include_router(signature_router, prefix=_API_V1)

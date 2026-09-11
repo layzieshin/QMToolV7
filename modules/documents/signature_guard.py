@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 
 from modules.signature.api import SignatureError
+from modules.signature.contracts import SignRequest
+from modules.usermanagement.api import UserContext
 
 from .contracts import (
     ArtifactSourceType,
@@ -18,6 +20,53 @@ from .contracts import (
 from .errors import SignatureTransitionError, ValidationError
 from .repository import DocumentsRepository
 from .storage import DocumentsStoragePort
+
+
+def execute_sign_dispatch(
+    sign_request: object,
+    *,
+    signature_api: object | None,
+    actor: UserContext | None = None,
+) -> None:
+    """Run fixed-position or template signing based on ``SignRequest.template_id``."""
+    if signature_api is None:
+        raise SignatureTransitionError("signature_api missing for signing")
+    if isinstance(sign_request, SignRequest) and sign_request.template_id:
+        if actor is None:
+            raise SignatureTransitionError("template_id requires authenticated actor")
+        sign_fn = getattr(signature_api, "sign_with_template_for_actor", None)
+        if not callable(sign_fn):
+            raise SignatureTransitionError("signature_api does not provide sign_with_template_for_actor")
+        try:
+            sign_fn(
+                actor,
+                template_id=sign_request.template_id,
+                input_pdf=sign_request.input_pdf,
+                password=sign_request.password,
+                output_pdf=sign_request.output_pdf,
+                dry_run=sign_request.dry_run,
+                overwrite_output=sign_request.overwrite_output,
+                sign_mode=sign_request.sign_mode,
+                reason=sign_request.reason,
+                placement_override=sign_request.placement,
+                layout_override=sign_request.layout,
+            )
+        except SignatureError as exc:
+            raise SignatureTransitionError(
+                f"signature step failed: {exc}",
+                field_errors=getattr(exc, "field_errors", None),
+            ) from exc
+        return
+    sign = getattr(signature_api, "sign_with_fixed_position", None)
+    if not callable(sign):
+        raise SignatureTransitionError("signature_api does not provide sign_with_fixed_position")
+    try:
+        sign(sign_request)
+    except SignatureError as exc:
+        raise SignatureTransitionError(
+            f"signature step failed: {exc}",
+            field_errors=getattr(exc, "field_errors", None),
+        ) from exc
 
 
 def enforce_signature_transition(
@@ -30,6 +79,7 @@ def enforce_signature_transition(
     storage_port: DocumentsStoragePort | None,
     create_artifact_fn,
     resolve_artifact_path_fn,
+    actor: UserContext | None = None,
 ) -> None:
     """Enforce signature requirement for a workflow transition."""
     profile = state.workflow_profile
@@ -37,8 +87,6 @@ def enforce_signature_transition(
         raise ValidationError("workflow profile is missing")
     if transition not in profile.signature_required_transitions:
         return
-    if signature_api is None:
-        raise SignatureTransitionError(f"signature_api missing for required transition '{transition}'")
     if sign_request is None:
         raise SignatureTransitionError(f"signature request required for transition '{transition}'")
 
@@ -52,13 +100,7 @@ def enforce_signature_transition(
     output_pdf = getattr(sign_request, "output_pdf", None)
     input_pdf = getattr(sign_request, "input_pdf", None)
     try:
-        sign = getattr(signature_api, "sign_with_fixed_position", None)
-        if not callable(sign):
-            raise SignatureTransitionError("signature_api does not provide sign_with_fixed_position")
-        try:
-            sign(sign_request)
-        except SignatureError as exc:
-            raise SignatureTransitionError(f"signature step failed: {exc}") from exc
+        execute_sign_dispatch(sign_request, signature_api=signature_api, actor=actor)
 
         output_pdf = getattr(sign_request, "output_pdf", None)
         if repository is None or storage_port is None:
@@ -161,4 +203,3 @@ def _resolve_signature_input_pdf(
         if resolved is not None:
             return resolved
     return None
-

@@ -166,12 +166,22 @@ class SignatureServiceV2Test(unittest.TestCase):
         with self.assertRaises(CryptoSigningNotConfiguredError):
             self.svc.sign_with_fixed_position(req)
 
-    def test_resolve_runtime_layout_uses_signer_and_timestamp(self) -> None:
+    def test_resolve_runtime_layout_date_only_without_show_time(self) -> None:
         resolved = self.svc.resolve_runtime_layout(
-            LabelLayoutInput(show_name=True, show_date=True, name_text=None, date_text=None),
+            LabelLayoutInput(show_name=True, show_date=True, show_time=False, name_text=None, date_text=None),
             signer_user="admin",
         )
         self.assertEqual("admin", resolved.name_text)
+        self.assertIsNotNone(resolved.date_text)
+        assert resolved.date_text is not None
+        self.assertEqual(10, len(resolved.date_text))
+        self.assertNotIn(":", resolved.date_text)
+
+    def test_resolve_runtime_layout_includes_time_when_show_time(self) -> None:
+        resolved = self.svc.resolve_runtime_layout(
+            LabelLayoutInput(show_name=False, show_date=True, show_time=True, date_text=None),
+            signer_user="admin",
+        )
         self.assertIsNotNone(resolved.date_text)
         assert resolved.date_text is not None
         self.assertGreaterEqual(len(resolved.date_text), 16)

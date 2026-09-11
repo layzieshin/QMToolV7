@@ -25,6 +25,7 @@ def test_migration_chain_is_contiguous_and_checksum_stable() -> None:
         "initial",
         "workflow_profiles",
         "grant_history_select",
+        "edit_signed_fields",
     ]
 
 

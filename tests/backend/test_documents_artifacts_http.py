@@ -125,3 +125,71 @@ def test_import_scratch_target_stays_in_scratch_root(tmp_path: Path) -> None:
     assert target.suffix == ".pdf"
     assert target.stem.isalnum()
     assert len(target.stem) == 32
+
+
+def _artifact_id_for_editor(client: TestClient, tokens: dict[str, str], doc_id: str) -> str:
+    listed = client.get(f"/api/v1/documents/versions/{doc_id}/1/artifacts", headers=_auth(tokens["editor"]))
+    assert listed.status_code == 200, listed.text
+    rows = listed.json()
+    assert rows
+    return rows[0]["artifact_id"]
+
+
+def test_artifact_preview_and_download_require_authentication(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-ART-AUTH")
+    artifact_id = _artifact_id_for_editor(client, tokens, "DOC-ART-AUTH")
+
+    for suffix in ("preview", "download"):
+        response = client.get(f"/api/v1/documents/artifacts/{artifact_id}/{suffix}")
+        assert response.status_code == 401, response.text
+
+
+def test_artifact_preview_download_and_content_for_entitled_editor(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-ART-ENTITLED")
+    artifact_id = _artifact_id_for_editor(client, tokens, "DOC-ART-ENTITLED")
+
+    preview = client.get(
+        f"/api/v1/documents/artifacts/{artifact_id}/preview",
+        headers=_auth(tokens["editor"]),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.content.startswith(b"%PDF")
+    assert "inline" in preview.headers.get("Content-Disposition", "")
+    assert "no-store" in preview.headers.get("Cache-Control", "")
+
+    download = client.get(
+        f"/api/v1/documents/artifacts/{artifact_id}/download",
+        headers=_auth(tokens["editor"]),
+    )
+    assert download.status_code == 200, download.text
+    assert download.content.startswith(b"%PDF")
+    assert "attachment" in download.headers.get("Content-Disposition", "")
+    assert "no-store" in download.headers.get("Cache-Control", "")
+
+    content = client.get(
+        f"/api/v1/documents/artifacts/{artifact_id}/content",
+        headers=_auth(tokens["editor"]),
+    )
+    assert content.status_code == 200, content.text
+    assert content.content == preview.content
+    assert "inline" in content.headers.get("Content-Disposition", "")
+    assert "no-store" in content.headers.get("Cache-Control", "")
+
+
+def test_artifact_preview_and_download_hide_invisible_artifacts(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-ART-HIDE")
+    artifact_id = _artifact_id_for_editor(client, tokens, "DOC-ART-HIDE")
+    observer = _login(client, "observer", "observerpass01")
+
+    for suffix in ("preview", "download", "content"):
+        response = client.get(
+            f"/api/v1/documents/artifacts/{artifact_id}/{suffix}",
+            headers=_auth(observer),
+        )
+        assert response.status_code == 404, response.text

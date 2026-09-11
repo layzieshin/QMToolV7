@@ -86,6 +86,8 @@ def document_version_state_to_payload(state: DocumentVersionState) -> dict[str, 
         "reviewed_by": sorted(state.reviewed_by),
         "approved_by": sorted(state.approved_by),
         "edit_signature_done": state.edit_signature_done,
+        "edit_signed_at": _dt_to_str(state.edit_signed_at),
+        "edit_signed_by": state.edit_signed_by,
         "valid_from": _dt_to_str(state.valid_from),
         "valid_until": _dt_to_str(state.valid_until),
         "next_review_at": _dt_to_str(state.next_review_at),
@@ -108,6 +110,7 @@ def document_version_state_to_payload(state: DocumentVersionState) -> dict[str, 
         "last_actor_user_id": state.last_actor_user_id,
         "created_at": _dt_to_str(state.created_at),
         "created_by": state.created_by,
+        "updated_at": _dt_to_str(state.updated_at),
     }
     if state.available_actions is not None:
         payload["available_actions"] = sorted(state.available_actions)
@@ -143,6 +146,8 @@ def document_version_state_from_payload(payload: dict[str, Any]) -> DocumentVers
         reviewed_by=frozenset(str(v) for v in payload.get("reviewed_by", [])),
         approved_by=frozenset(str(v) for v in payload.get("approved_by", [])),
         edit_signature_done=bool(payload.get("edit_signature_done", False)),
+        edit_signed_at=_dt_from_str(payload.get("edit_signed_at")),
+        edit_signed_by=str(payload["edit_signed_by"]) if payload.get("edit_signed_by") else None,
         valid_from=_dt_from_str(payload.get("valid_from")),
         valid_until=_dt_from_str(payload.get("valid_until")),
         next_review_at=_dt_from_str(payload.get("next_review_at")),
@@ -167,6 +172,7 @@ def document_version_state_from_payload(payload: dict[str, Any]) -> DocumentVers
         last_actor_user_id=str(payload["last_actor_user_id"]) if payload.get("last_actor_user_id") else None,
         created_at=_dt_from_str(payload.get("created_at")),
         created_by=str(payload["created_by"]) if payload.get("created_by") else None,
+        updated_at=_dt_from_str(payload.get("updated_at")),
         available_actions=(
             frozenset(str(value) for value in payload.get("available_actions", []))
             if "available_actions" in payload
