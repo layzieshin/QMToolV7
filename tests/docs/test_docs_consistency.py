@@ -955,8 +955,6 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
         assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in text
         assert "PR #43" in text
         assert "fc61887f77c4e8e7d3442af8e7c5f5eb534f193e" in text
-        assert "no merge and no review-thread resolution" not in text
-        assert "GitHub-Review-Thread-Resolution" not in text
 
     assert current == "INT00"
     assert rows_by_id["UX00"]["status"] == "PASS"
@@ -1011,6 +1009,7 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     assert "977667fbdb2838c47d7564992157f984141d6a9e" not in next_body
     assert "CI auf dem lokalen Closeout ist bis zum Push" not in next_body
     assert "INT00 und WEB01" in next_body
+    assert "no merge and no review-thread resolution" not in next_body
     assert "GitHub-Review-Thread-Resolution" not in next_body
     assert "Codex-PASS" not in next_body.replace("kein Codex-PASS", "")
 
