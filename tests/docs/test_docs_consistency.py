@@ -953,13 +953,26 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
         assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in text
         assert "PR #41" in text
         assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in text
+        assert "PR #43" in text
+        assert "fc61887f77c4e8e7d3442af8e7c5f5eb534f193e" in text
 
     assert current == "INT00"
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "PR #40" in rows_by_id["UX00"]["notes"]
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in rows_by_id["UX00"]["notes"]
     assert rows_by_id["OPS00"]["status"] == "PASS"
-    assert rows_by_id["WCON00"]["status"] == "PASS"
+    wcon00 = rows_by_id["WCON00"]
+    assert wcon00["status"] == "PASS"
+    assert "PR #43" in wcon00["result_evidence"]
+    assert "fc61887f77c4e8e7d3442af8e7c5f5eb534f193e" in wcon00["result_evidence"]
+    assert "squash-merged" in wcon00["result_evidence"]
+    assert "34518815271" in wcon00["result_evidence"]
+    assert "quality-gates" in wcon00["result_evidence"]
+    assert "postgres-usermanagement" in wcon00["result_evidence"]
+    assert "12/12 review threads resolved" in wcon00["notes"]
+    assert "BOUNDED_COMPLETE" in wcon00["notes"]
+    assert "no Codex PASS" in wcon00["notes"]
+    assert "no merge and no review-thread resolution" not in wcon00["notes"]
     assert rows_by_id["INT00"]["status"] == "TODO"
     assert rows_by_id["WEB01"]["status"] == "TODO"
 
@@ -976,6 +989,15 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     assert "CI-Jobs SUCCESS" in next_body
     assert "11/11 Review-Konversationen resolved" in next_body
     assert "WCON00 ist `PASS`" in next_body
+    assert "PR #43" in next_body
+    assert "fc61887f77c4e8e7d3442af8e7c5f5eb534f193e" in next_body
+    assert "12/12 Review-Konversationen resolved" in next_body
+    assert "34518815271" in next_body
+    assert "quality-gates" in next_body
+    assert "postgres-usermanagement" in next_body
+    assert "eigenen Worktree" in next_body
+    assert "Branch-/Worktree-Cleanup" in next_body
+    assert "kein Codex-PASS" in next_body
     assert "WCON00 bleibt `IN_PROGRESS`" not in next_body
     assert "WCON00-R4-Closeout" not in next_body
     assert "INT00" in next_body and "NOT RUN" in next_body
@@ -987,6 +1009,9 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     assert "977667fbdb2838c47d7564992157f984141d6a9e" not in next_body
     assert "CI auf dem lokalen Closeout ist bis zum Push" not in next_body
     assert "INT00 und WEB01" in next_body
+    assert "no merge and no review-thread resolution" not in next_body
+    assert "GitHub-Review-Thread-Resolution" not in next_body
+    assert "Codex-PASS" not in next_body.replace("kein Codex-PASS", "")
 
 
 def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
