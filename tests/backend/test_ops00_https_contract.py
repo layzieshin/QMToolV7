@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import datetime
-import importlib
 import socket
 import ssl
+import subprocess
 import sys
 from pathlib import Path
 
@@ -91,6 +91,30 @@ def _reserve_port() -> int:
         return sock.getsockname()[1]
 
 
+def assert_module_imports_no_windows_modules(module_name: str, forbidden: tuple[str, ...]) -> None:
+    script = """
+import importlib
+import sys
+
+forbidden = set(sys.argv[2].split(","))
+preloaded = sorted(forbidden.intersection(sys.modules))
+if preloaded:
+    raise SystemExit(f"unexpected modules loaded before target import: {preloaded!r}")
+importlib.import_module(sys.argv[1])
+loaded = sorted(forbidden.intersection(sys.modules))
+if loaded:
+    raise SystemExit(f"target import loaded forbidden modules: {loaded!r}")
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, module_name, ",".join(forbidden)],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 def test_tls_module_has_no_windows_cert_store_imports() -> None:
     forbidden = (
         "win32crypt",
@@ -101,11 +125,7 @@ def test_tls_module_has_no_windows_cert_store_imports() -> None:
         "pywintypes",
         "certifi_win32",
     )
-    for name in forbidden:
-        assert name not in sys.modules, f"unexpected import of {name!r} before tls_config load"
-    importlib.import_module("src.backend.tls_config")
-    for name in forbidden:
-        assert name not in sys.modules, f"tls_config must not import {name!r}"
+    assert_module_imports_no_windows_modules("src.backend.tls_config", forbidden)
 
 
 def test_production_valid_self_signed_pem_serves_https_health(
