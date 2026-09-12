@@ -1588,7 +1588,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         *  Health
+         * Health
          * @description QMTool J04-M0 HTTP operation.
          */
         get: operations["get_health"];
@@ -1608,7 +1608,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         *  Ready
+         * Ready
          * @description QMTool J04-M0 HTTP operation.
          */
         get: operations["get_ready"];
@@ -1851,6 +1851,25 @@ export interface components {
             /** @example document state is newer */
             message: string;
         };
+        /**
+         * @example {
+         *       "detail": {
+         *         "error": "unauthorized",
+         *         "message": "missing bearer token"
+         *       }
+         *     }
+         * @example {
+         *       "detail": {
+         *         "current_etag": "evt-42",
+         *         "current_state": {
+         *           "document_id": "DOC-1",
+         *           "version": 1
+         *         },
+         *         "error": "document_conflict",
+         *         "message": "document state is newer"
+         *       }
+         *     }
+         */
         ErrorResponse: {
             detail: components["schemas"]["ErrorDetail"] | Record<string, never>[];
         };
