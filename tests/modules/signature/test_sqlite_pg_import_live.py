@@ -40,6 +40,7 @@ pytestmark = pytest.mark.postgres
 _SIG_MIG = Path(__file__).resolve().parents[3] / "modules" / "signature" / "migrations" / "0001_initial.sql"
 _DOC_MIG1 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0001_initial.sql"
 _DOC_MIG2 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0002_workflow_profiles.sql"
+_DOC_MIG3 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0003_edit_signed_fields.sql"
 _REG_MIG = Path(__file__).resolve().parents[3] / "modules" / "registry" / "migrations" / "0001_initial.sql"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -233,7 +234,12 @@ def test_live_cutover_rehearsal_documents_registry_signature(
     reg.parent.mkdir(parents=True)
     sig.parent.mkdir(parents=True)
 
-    _exec_sqlite_script(docs, _DOC_MIG1.read_text(encoding="utf-8") + _DOC_MIG2.read_text(encoding="utf-8"))
+    _exec_sqlite_script(
+        docs,
+        _DOC_MIG1.read_text(encoding="utf-8")
+        + _DOC_MIG2.read_text(encoding="utf-8")
+        + _DOC_MIG3.read_text(encoding="utf-8"),
+    )
     _exec_sqlite_script(reg, _REG_MIG.read_text(encoding="utf-8"))
     _exec_sqlite_script(sig, _SIG_MIG.read_text(encoding="utf-8"))
 

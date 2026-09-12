@@ -13,9 +13,9 @@ from modules.registry.contracts import RegisterState, ReleaseEvidenceMode, Regis
 from modules.registry.postgres_connection import PostgresRepositoryError
 from modules.registry.postgres_repository import PostgresRegistryRepository
 from modules.registry.service import RegistryService
-from modules.registry.sqlite_repository import SQLiteRegistryRepository
 from qm_platform.events.event_envelope import EventEnvelope
 
+from tests.database_helpers import registry_repository as make_registry_repository
 from tests.postgres_live_support import LivePostgresEnv
 
 pytestmark = pytest.mark.postgres
@@ -85,7 +85,7 @@ def test_postgres_registry_service_replay_matches_sqlite_reference(
     )
     pg_service = RegistryService(registry_repository)
     with tempfile.TemporaryDirectory() as tmp:
-        sqlite_service = RegistryService(SQLiteRegistryRepository(Path(tmp) / "registry.db"))
+        sqlite_service = RegistryService(make_registry_repository(Path(tmp) / "registry.db"))
         pg_result = pg_service.apply_documents_state(
             document_id="DOC-R-PG",
             version=2,
