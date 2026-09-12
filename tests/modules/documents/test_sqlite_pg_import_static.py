@@ -35,12 +35,14 @@ from modules.documents.sqlite_repository import SQLiteDocumentsRepository
 
 _MIG1 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0001_initial.sql"
 _MIG2 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0002_workflow_profiles.sql"
+_MIG3 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0003_edit_signed_fields.sql"
 
 
 def _init_db(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(_MIG1.read_text(encoding="utf-8"))
         conn.executescript(_MIG2.read_text(encoding="utf-8"))
+        conn.executescript(_MIG3.read_text(encoding="utf-8"))
 
 
 def _header() -> DocumentHeader:
