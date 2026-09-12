@@ -1,7 +1,38 @@
+# Acceptance harnesses (test-only)
+
+This directory contains **test-only** orchestration. It is not a product CLI,
+entrypoint, or alternate backend port contract.
+
+## INT00 joint browser/PostgreSQL/HTTPS gate
+
+INT00 proves PG00/WEB00/PG01/UX00/OPS00/WCON00 on one integrated candidate.
+The joint test starts the unchanged production `ServiceHost` /
+`build_backend_container()` against guarded Slot-2 PostgreSQL, file-PEM HTTPS,
+built `webclient/dist`, and real Chromium. It must not use the WEB00 smoke
+gateway or `tests.backend.web00_browser_smoke_backend`.
+
+Canonical start (never bare `pytest -m postgres`, never the runtime/lab DSN):
+
+```powershell
+$Py = ".\.venv\Scripts\python.exe"
+$Node = "I:\Projekte\QMToolV7\webclient\.tools\node-v20.11.0-win-x64\node.exe"
+$env:QMTOOL_INT00_NODE_EXE = $Node
+$env:QMTOOL_INT00_EVIDENCE_DIR = "build/ap-029-int00/<run>/INT00-A/focused"
+$Py scripts/run_postgres_live_tests.py `
+  tests/acceptance/test_int00_joint_integration.py `
+  --basetemp build/ap-029-int00/<run>/INT00-A/basetemp-focused `
+  --junitxml build/ap-029-int00/<run>/INT00-A/focused-junit.xml
+```
+
+Evidence belongs under `build/ap-029-int00/` only (gitignored). Historical J04
+or WEB00 evidence is not an INT00 result. The Playwright spec
+`webclient/e2e/int00-joint-integration.spec.ts` runs only when the Python
+harness sets `QMTOOL_INT00_JOINT=1`.
+
 # J04-M0 real-process acceptance harness (test-only)
 
-This directory contains **test-only** orchestration for the J04-M0 final acceptance
-gate. It is not a product CLI, entrypoint, or alternate backend port contract.
+This directory also contains **test-only** orchestration for the J04-M0 final
+acceptance gate.
 
 ## Components
 
