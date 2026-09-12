@@ -59,11 +59,37 @@ def _container(root: Path, *, postgres_dsn: str | None = None) -> RuntimeContain
     return container
 
 
-def test_adapt_sql_converts_placeholders_and_active_predicate() -> None:
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    (
+        ("is_active = 1", "is_active = true"),
+        ("is_active = 0", "is_active = false"),
+        ("d.is_active = 1", "d.is_active = true"),
+        ("d.is_active = 0", "d.is_active = false"),
+    ),
+)
+def test_adapt_sql_converts_placeholders_and_active_predicates(
+    predicate: str,
+    expected: str,
+) -> None:
     repo = PostgresDocumentsRepository("postgresql://example.invalid/db")
-    sql = "SELECT 1 FROM workflow_profile_definitions WHERE profile_code = ? AND is_active = 1"
+    sql = f"SELECT 1 FROM workflow_profile_definitions WHERE profile_code = ? AND {predicate}"
     assert repo.adapt_sql(sql) == (
-        "SELECT 1 FROM workflow_profile_definitions WHERE profile_code = %s AND is_active = true"
+        f"SELECT 1 FROM workflow_profile_definitions WHERE profile_code = %s AND {expected}"
+    )
+
+
+def test_adapt_sql_does_not_rewrite_similar_identifiers_or_string_literals() -> None:
+    repo = PostgresDocumentsRepository("postgresql://example.invalid/db")
+    sql = (
+        "SELECT 'd.is_active = 1' AS marker, not_is_active, d.is_active_flag "
+        "FROM workflow_profile_definitions d "
+        "WHERE not_is_active = 1 AND d.is_active_flag = 0 AND d.is_active = 1"
+    )
+    assert repo.adapt_sql(sql) == (
+        "SELECT 'd.is_active = 1' AS marker, not_is_active, d.is_active_flag "
+        "FROM workflow_profile_definitions d "
+        "WHERE not_is_active = 1 AND d.is_active_flag = 0 AND d.is_active = true"
     )
 
 

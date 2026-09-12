@@ -39,6 +39,12 @@ from .repository import (
 
 class PostgresDocumentsRepository(DocumentsRepository):
     _SCHEMA = "documents"
+    _SQL_STRING_LITERAL_RE = re.compile(r"('(?:''|[^'])*')")
+    _ACTIVE_BOOLEAN_PREDICATE_RE = re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<column>(?:[A-Za-z_][A-Za-z0-9_]*\.)?is_active)"
+        r"\s*=\s*(?P<value>[01])\b"
+    )
 
     def __init__(self, dsn: str) -> None:
         self._dsn = str(dsn)
@@ -46,11 +52,16 @@ class PostgresDocumentsRepository(DocumentsRepository):
 
     def adapt_sql(self, sql: str) -> str:
         adapted = sql.replace("?", "%s")
-        adapted = adapted.replace(" is_active = 1", " is_active = true")
-        adapted = adapted.replace(" is_active = 0", " is_active = false")
-        adapted = adapted.replace("WHERE is_active = 1", "WHERE is_active = true")
-        adapted = adapted.replace("AND is_active = 1", "AND is_active = true")
-        return adapted
+        parts = PostgresDocumentsRepository._SQL_STRING_LITERAL_RE.split(adapted)
+        for index in range(0, len(parts), 2):
+            parts[index] = PostgresDocumentsRepository._ACTIVE_BOOLEAN_PREDICATE_RE.sub(
+                lambda match: (
+                    f"{match.group('column')} = "
+                    f"{'true' if match.group('value') == '1' else 'false'}"
+                ),
+                parts[index],
+            )
+        return "".join(parts)
 
     @staticmethod
     def adapt_params(params: tuple[object, ...] | list[object]) -> tuple[object, ...]:
