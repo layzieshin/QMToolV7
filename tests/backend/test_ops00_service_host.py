@@ -1,11 +1,9 @@
 """OPS00-A/B uninstalled backend service host lifecycle and production negatives."""
 from __future__ import annotations
 
-import importlib
 import os
 import shutil
 import socket
-import sys
 import threading
 from pathlib import Path
 
@@ -31,6 +29,7 @@ from src.backend.service_host import (
     validate_service_host_config,
 )
 from tests.backend.test_ops00_https_contract import (
+    assert_module_imports_no_windows_modules,
     ssl_context_trusting,
     write_ephemeral_self_signed_pem,
 )
@@ -72,11 +71,7 @@ def test_service_host_module_has_no_windows_service_imports() -> None:
         "pywintypes",
         "nssm",
     )
-    for name in module_names:
-        assert name not in sys.modules, f"unexpected import of {name!r} before service_host load"
-    importlib.import_module("src.backend.service_host")
-    for name in module_names:
-        assert name not in sys.modules, f"service_host must not import {name!r}"
+    assert_module_imports_no_windows_modules("src.backend.service_host", module_names)
 
 
 def test_service_host_start_status_graceful_stop(

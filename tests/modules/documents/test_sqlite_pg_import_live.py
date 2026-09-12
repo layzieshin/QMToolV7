@@ -30,6 +30,7 @@ from tests.postgres_live_support import LivePostgresEnv
 pytestmark = pytest.mark.postgres
 _MIG1 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0001_initial.sql"
 _MIG2 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0002_workflow_profiles.sql"
+_MIG3 = Path(__file__).resolve().parents[3] / "modules" / "documents" / "migrations" / "0003_edit_signed_fields.sql"
 
 
 @pytest.fixture
@@ -45,6 +46,7 @@ def _seed_core(source: Path, *, with_artifact: bool = False, art_root: Path | No
     with sqlite3.connect(source) as conn:
         conn.executescript(_MIG1.read_text(encoding="utf-8"))
         conn.executescript(_MIG2.read_text(encoding="utf-8"))
+        conn.executescript(_MIG3.read_text(encoding="utf-8"))
     moment = datetime(2024, 6, 1, tzinfo=timezone.utc)
     repo = SQLiteDocumentsRepository(source)
     repo.upsert_header(
