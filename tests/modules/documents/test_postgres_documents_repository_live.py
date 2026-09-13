@@ -23,7 +23,7 @@ from modules.documents.contracts import (
 from modules.documents.postgres_connection import PostgresRepositoryError
 from modules.documents.postgres_repository import PostgresDocumentsRepository
 from modules.documents.repository import DocumentQueryKeyset, document_query_keyset_sort_value
-from modules.documents.sqlite_repository import SQLiteDocumentsRepository
+from tests.database_helpers import make_docs_repository
 from tests.postgres_live_support import LivePostgresEnv
 
 pytestmark = pytest.mark.postgres
@@ -167,7 +167,7 @@ def test_postgres_documents_repository_matches_sqlite_reference(
     header = _sample_header("DOC-PARITY")
     state = _sample_state("DOC-PARITY", 1)
     with tempfile.TemporaryDirectory() as tmp:
-        sqlite_repo = SQLiteDocumentsRepository(Path(tmp) / "documents.db")
+        sqlite_repo = make_docs_repository(Path(tmp) / "documents.db")
         sqlite_repo.upsert_header(header)
         sqlite_repo.upsert(state)
         documents_repository.upsert_header(header)
