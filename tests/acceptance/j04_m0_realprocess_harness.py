@@ -165,9 +165,9 @@ BACKEND_SIGBREAK_SITECUSTOMIZE = (
     "_sigbreak = getattr(signal, \"SIGBREAK\", None)\n"
     "if _sigbreak is not None:\n"
     "    try:\n"
-    "        signal.signal(_sigbreak, signal.default_int_handler)\n"
-    "    except (ValueError, OSError, RuntimeError):\n"
-    "        pass\n"
+    "        signal.signal(signal.SIGBREAK, signal.default_int_handler)\n"
+    "    except Exception:\n"
+    "        raise SystemExit(\"sitecustomize: SIGBREAK handler registration failed\") from None\n"
 )
 
 

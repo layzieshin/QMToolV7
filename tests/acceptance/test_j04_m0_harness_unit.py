@@ -1,6 +1,7 @@
 """Unit tests for the J04-M0 real-process harness (no full final acceptance run)."""
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -31,6 +33,7 @@ from tests.acceptance.j04_m0_realprocess_harness import (
     backend_popen_creationflags,
     is_port_free,
     prepend_pythonpath,
+    python_executable,
     redact_log_text,
     require_final_acceptance_opt_in,
     repo_root,
@@ -812,10 +815,7 @@ def test_windows_backend_command_stays_module_and_gets_sitecustomize(
         popen.return_value = _mock_child(pid=91, exit_on_graceful_signal=True)
         managed = harness.start_backend(extra_env={"PYTHONPATH": extra_pythonpath})
         command = popen.call_args.args[0]
-        assert command == [sys.executable, "-m", BACKEND_MODULE] or command[-2:] == [
-            "-m",
-            BACKEND_MODULE,
-        ]
+        assert command == [python_executable(), "-m", BACKEND_MODULE]
         env = popen.call_args.kwargs["env"]
         parts = env["PYTHONPATH"].split(os.pathsep)
         startup = harness.workspace / BACKEND_SIGBREAK_STARTUP_DIRNAME
@@ -826,8 +826,9 @@ def test_windows_backend_command_stays_module_and_gets_sitecustomize(
         assert sitecustomize.is_file()
         text = sitecustomize.read_text(encoding="utf-8")
         assert text == BACKEND_SIGBREAK_SITECUSTOMIZE
-        assert "getattr(signal, \"SIGBREAK\", None)" in text
-        assert "signal.default_int_handler" in text
+        assert "signal.signal(signal.SIGBREAK, signal.default_int_handler)" in text
+        assert "raise SystemExit" in text
+        assert "except (ValueError, OSError, RuntimeError)" not in text
         assert "postgresql://" not in text
         assert managed.supports_graceful_stop is True
     harness.cleanup()
@@ -847,7 +848,7 @@ def test_posix_backend_does_not_inject_sitecustomize(
         env = popen.call_args.kwargs["env"]
         assert BACKEND_SIGBREAK_STARTUP_DIRNAME not in env.get("PYTHONPATH", "")
         assert not (harness.workspace / BACKEND_SIGBREAK_STARTUP_DIRNAME).exists()
-        assert popen.call_args.args[0][-2:] == ["-m", BACKEND_MODULE]
+        assert popen.call_args.args[0] == [python_executable(), "-m", BACKEND_MODULE]
     harness.cleanup()
 
 
@@ -875,8 +876,103 @@ def test_prepend_pythonpath_keeps_existing_entries(tmp_path: Path) -> None:
 def test_write_backend_sigbreak_startup_is_platform_neutral_without_sigbreak(tmp_path: Path) -> None:
     startup = write_backend_sigbreak_startup(tmp_path)
     text = (startup / "sitecustomize.py").read_text(encoding="utf-8")
+    assert text == BACKEND_SIGBREAK_SITECUSTOMIZE
     assert "getattr(signal, \"SIGBREAK\", None)" in text
+    assert "signal.signal(signal.SIGBREAK, signal.default_int_handler)" in text
+    assert "raise SystemExit" in text
+    assert "except (ValueError, OSError, RuntimeError)" not in text
     assert "host-running.pid" not in text
+    assert "postgresql://" not in text
+
+
+def _exec_generated_sitecustomize(path: Path, fake_signal: object) -> None:
+    spec = importlib.util.spec_from_file_location("qmtool_test_backend_sitecustomize", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    original = sys.modules.get("signal")
+    sys.modules["signal"] = fake_signal  # type: ignore[assignment]
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if original is None:
+            sys.modules.pop("signal", None)
+        else:
+            sys.modules["signal"] = original
+
+
+def test_sitecustomize_registers_sigbreak_with_default_int_handler(tmp_path: Path) -> None:
+    startup = write_backend_sigbreak_startup(tmp_path)
+    calls: list[tuple[object, object]] = []
+    handler = object()
+    fake_signal = types.SimpleNamespace(
+        SIGBREAK=21,
+        default_int_handler=handler,
+        signal=lambda sig, cb: calls.append((sig, cb)),
+    )
+    _exec_generated_sitecustomize(startup / "sitecustomize.py", fake_signal)
+    assert calls == [(21, handler)]
+
+
+def test_sitecustomize_skips_registration_when_sigbreak_missing(tmp_path: Path) -> None:
+    startup = write_backend_sigbreak_startup(tmp_path)
+
+    def _must_not_register(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("signal.signal must not run without SIGBREAK")
+
+    fake_signal = types.SimpleNamespace(default_int_handler=object(), signal=_must_not_register)
+    _exec_generated_sitecustomize(startup / "sitecustomize.py", fake_signal)
+
+
+def test_sitecustomize_signal_failure_is_fail_closed_not_swallowed(tmp_path: Path) -> None:
+    startup = write_backend_sigbreak_startup(tmp_path)
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise OSError("cannot register")
+
+    fake_signal = types.SimpleNamespace(
+        SIGBREAK=21,
+        default_int_handler=object(),
+        signal=_boom,
+    )
+    with pytest.raises(SystemExit) as caught:
+        _exec_generated_sitecustomize(startup / "sitecustomize.py", fake_signal)
+    assert caught.value.code == "sitecustomize: SIGBREAK handler registration failed"
+    assert "cannot register" not in str(caught.value)
+
+
+def test_sitecustomize_signal_failure_aborts_child_before_main(tmp_path: Path) -> None:
+    startup = write_backend_sigbreak_startup(tmp_path)
+    (startup / "signal.py").write_text(
+        "SIGBREAK = 21\n"
+        "default_int_handler = object()\n"
+        "def signal(*args, **kwargs):\n"
+        "    raise OSError('cannot register')\n",
+        encoding="utf-8",
+    )
+    reached = tmp_path / "reached.txt"
+    child = tmp_path / "child.py"
+    child.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(reached)!r}).write_text('reached\\n', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(startup)
+    env.pop("PYTHONSAFEPATH", None)
+    completed = subprocess.run(
+        [sys.executable, str(child)],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert completed.returncode != 0
+    assert not reached.is_file()
+    combined = (completed.stdout or "") + (completed.stderr or "")
+    assert "sitecustomize: SIGBREAK handler registration failed" in combined
+    assert "postgresql://" not in combined
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="CTRL_BREAK sitecustomize proof is Windows-only")
