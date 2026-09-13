@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from tests.acceptance import j04_m0_acceptance_scenario as scenario
 from tests.acceptance.j04_m0_acceptance_scenario import (
     ACCEPTANCE_DOC_ID,
     AcceptanceHttpClient,
@@ -60,6 +61,28 @@ from tests.acceptance.j04_m0_realprocess_harness import (
     require_inside_closure_evidence,
 )
 from tests.postgres_live_support import LivePostgresEnv
+
+
+def _serve_started(server: ThreadingHTTPServer) -> tuple[threading.Thread, str]:
+    ready = threading.Event()
+
+    def run() -> None:
+        ready.set()
+        server.serve_forever()
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    if not ready.wait(timeout=2.0):
+        server.shutdown()
+        thread.join(timeout=2.0)
+        raise AssertionError("local HTTP fixture thread did not start")
+    host, port = server.server_address
+    return thread, f"http://{host}:{port}"
+
+
+def _stop_http(server: ThreadingHTTPServer, thread: threading.Thread) -> None:
+    server.shutdown()
+    thread.join(timeout=2.0)
 
 
 class _BootstrapAuthHandler(BaseHTTPRequestHandler):
@@ -140,15 +163,12 @@ def bootstrap_auth_url() -> str:
     _BootstrapAuthHandler.changed = False
     _BootstrapAuthHandler.me_auths = []
     _BootstrapAuthHandler.unexpected_409 = False
-    server = HTTPServer(("127.0.0.1", 0), _BootstrapAuthHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _BootstrapAuthHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 class _HealthOpenApiHandler(BaseHTTPRequestHandler):
@@ -173,15 +193,12 @@ class _HealthOpenApiHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def mock_backend_url() -> str:
-    server = HTTPServer(("127.0.0.1", 0), _HealthOpenApiHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _HealthOpenApiHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_scenario_step_catalog_matches_m0_contract() -> None:
@@ -281,6 +298,292 @@ def test_build_backend_extra_env_uses_runtime_dsn_only() -> None:
     assert backend_env["QMTOOL_BOOTSTRAP_ADMIN_USERNAME"]
 
 
+def test_pg_bootstrap_prepares_all_backend_schemas_in_order(monkeypatch) -> None:
+    pg_env = LivePostgresEnv(
+        admin_dsn="admin-dsn",
+        migrator_dsn="migrator-dsn",
+        runtime_dsn="runtime-dsn",
+        migrator_password="migrator-secret",
+        runtime_password="runtime-secret",
+    )
+    calls: list[tuple[str, str | None]] = []
+
+    def prepare() -> LivePostgresEnv:
+        calls.append(("prepare", None))
+        return pg_env
+
+    def drop_extra_schemas(admin_dsn: str) -> None:
+        calls.append(("drop_extra_schemas", admin_dsn))
+
+    def record(name: str):
+        def invoke(dsn: str) -> None:
+            calls.append((name, dsn))
+
+        return invoke
+
+    def build_env(actual: LivePostgresEnv) -> dict[str, str]:
+        assert actual is pg_env
+        calls.append(("build_backend_extra_env", actual.runtime_dsn))
+        return {"QMTOOL_PG_DSN": actual.runtime_dsn}
+
+    monkeypatch.setattr(scenario, "prepare_live_environment", prepare)
+    monkeypatch.setattr(scenario, "_drop_extra_schemas", drop_extra_schemas)
+    monkeypatch.setattr(
+        scenario.usermanagement_schema,
+        "migrate_usermanagement_schema",
+        record("usermanagement.migrate"),
+    )
+    monkeypatch.setattr(
+        scenario.documents_schema,
+        "provision_documents_schema",
+        record("documents.provision"),
+    )
+    monkeypatch.setattr(
+        scenario.documents_schema,
+        "migrate_documents_schema",
+        record("documents.migrate"),
+    )
+    monkeypatch.setattr(
+        scenario.registry_schema,
+        "provision_registry_schema",
+        record("registry.provision"),
+    )
+    monkeypatch.setattr(
+        scenario.registry_schema,
+        "migrate_registry_schema",
+        record("registry.migrate"),
+    )
+    monkeypatch.setattr(
+        scenario.signature_schema,
+        "provision_signature_schema",
+        record("signature.provision"),
+    )
+    monkeypatch.setattr(
+        scenario.signature_schema,
+        "migrate_signature_schema",
+        record("signature.migrate"),
+    )
+
+    def seed(runtime_dsn: str) -> None:
+        calls.append(("seed_postgres_workflow_profiles", runtime_dsn))
+
+    monkeypatch.setattr(scenario, "seed_postgres_workflow_profiles", seed)
+    monkeypatch.setattr(scenario, "build_backend_extra_env", build_env)
+    ctx = SimpleNamespace(pg_env=None, backend_extra_env={})
+
+    detail = scenario._step_pg_bootstrap(ctx)
+
+    assert detail == "isolated PG schemas migrated"
+    assert ctx.pg_env is pg_env
+    assert ctx.backend_extra_env == {"QMTOOL_PG_DSN": "runtime-dsn"}
+    assert calls == [
+        ("prepare", None),
+        ("drop_extra_schemas", "admin-dsn"),
+        ("usermanagement.migrate", "migrator-dsn"),
+        ("documents.provision", "admin-dsn"),
+        ("documents.migrate", "migrator-dsn"),
+        ("registry.provision", "admin-dsn"),
+        ("registry.migrate", "migrator-dsn"),
+        ("signature.provision", "admin-dsn"),
+        ("signature.migrate", "migrator-dsn"),
+        ("seed_postgres_workflow_profiles", "runtime-dsn"),
+        ("build_backend_extra_env", "runtime-dsn"),
+    ]
+
+
+def test_drop_extra_schemas_uses_admin_dsn_autocommit_and_identifier_sql(monkeypatch) -> None:
+    import psycopg
+
+    connect_calls: list[tuple[str, bool]] = []
+    execute_calls: list[object] = []
+
+    class _FakeConn:
+        def execute(self, query: object) -> None:
+            execute_calls.append(query)
+
+        def __enter__(self) -> _FakeConn:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def fake_connect(admin_dsn: str, *, autocommit: bool):
+        connect_calls.append((admin_dsn, autocommit))
+        return _FakeConn()
+
+    monkeypatch.setattr(scenario.psycopg, "connect", fake_connect)
+
+    scenario._drop_extra_schemas("admin-dsn")
+
+    assert connect_calls == [("admin-dsn", True)]
+    assert len(execute_calls) == 3
+    for expected_name, query in zip(
+        ("documents", "registry", "signature"),
+        execute_calls,
+        strict=True,
+    ):
+        assert isinstance(query, psycopg.sql.Composed)
+        identifier_parts = [
+            part for part in query if isinstance(part, psycopg.sql.Identifier)
+        ]
+        assert len(identifier_parts) == 1
+        assert identifier_parts[0] == psycopg.sql.Identifier(expected_name)
+
+
+_SCHEMA_OWNER_SEQUENCE = (
+    "usermanagement.migrate",
+    "documents.provision",
+    "documents.migrate",
+    "registry.provision",
+    "registry.migrate",
+    "signature.provision",
+    "signature.migrate",
+)
+
+_BOOTSTRAP_OWNER_SEQUENCE = _SCHEMA_OWNER_SEQUENCE + ("seed_postgres_workflow_profiles",)
+
+_SCHEMA_OWNER_PATCH_TARGETS = {
+    "usermanagement.migrate": (
+        scenario.usermanagement_schema,
+        "migrate_usermanagement_schema",
+    ),
+    "documents.provision": (scenario.documents_schema, "provision_documents_schema"),
+    "documents.migrate": (scenario.documents_schema, "migrate_documents_schema"),
+    "registry.provision": (scenario.registry_schema, "provision_registry_schema"),
+    "registry.migrate": (scenario.registry_schema, "migrate_registry_schema"),
+    "signature.provision": (scenario.signature_schema, "provision_signature_schema"),
+    "signature.migrate": (scenario.signature_schema, "migrate_signature_schema"),
+}
+
+
+def _pg_bootstrap_test_env() -> LivePostgresEnv:
+    return LivePostgresEnv(
+        admin_dsn="admin-dsn",
+        migrator_dsn="migrator-dsn",
+        runtime_dsn="runtime-dsn",
+        migrator_password="migrator-secret",
+        runtime_password="runtime-secret",
+    )
+
+
+def _install_pg_bootstrap_owner_recorders(
+    monkeypatch,
+    *,
+    fail_at: str | None = None,
+    fail_exc: BaseException | None = None,
+) -> tuple[list[str], list[str]]:
+    calls: list[str] = []
+    drop_calls: list[str] = []
+
+    def record(name: str):
+        def invoke(_dsn: str) -> None:
+            calls.append(name)
+
+        return invoke
+
+    def drop_extra_schemas(admin_dsn: str) -> None:
+        drop_calls.append(admin_dsn)
+
+    monkeypatch.setattr(scenario, "prepare_live_environment", _pg_bootstrap_test_env)
+    monkeypatch.setattr(scenario, "_drop_extra_schemas", drop_extra_schemas)
+    for name in _SCHEMA_OWNER_SEQUENCE:
+        module, attr = _SCHEMA_OWNER_PATCH_TARGETS[name]
+        if name == fail_at:
+            assert fail_exc is not None
+
+            def fail_invoke(_dsn: str, *, _name=name, _exc=fail_exc) -> None:
+                calls.append(_name)
+                raise _exc
+
+            monkeypatch.setattr(module, attr, fail_invoke)
+        else:
+            monkeypatch.setattr(module, attr, record(name))
+    if fail_at == "seed_postgres_workflow_profiles":
+        assert fail_exc is not None
+
+        def fail_seed(_dsn: str, *, _exc=fail_exc) -> None:
+            calls.append("seed_postgres_workflow_profiles")
+            raise _exc
+
+        monkeypatch.setattr(scenario, "seed_postgres_workflow_profiles", fail_seed)
+    elif fail_at is not None:
+        monkeypatch.setattr(
+            scenario,
+            "seed_postgres_workflow_profiles",
+            lambda _dsn: pytest.fail("seed must not run after schema failure"),
+        )
+    else:
+        monkeypatch.setattr(
+            scenario,
+            "seed_postgres_workflow_profiles",
+            record("seed_postgres_workflow_profiles"),
+        )
+    monkeypatch.setattr(
+        scenario,
+        "build_backend_extra_env",
+        lambda _env: pytest.fail("backend env must not be published after bootstrap failure"),
+    )
+    return calls, drop_calls
+
+
+@pytest.mark.parametrize("fail_at", _BOOTSTRAP_OWNER_SEQUENCE)
+def test_pg_bootstrap_fail_closed_matrix(fail_at: str, monkeypatch) -> None:
+    fail_exc = RuntimeError(f"{fail_at} failed")
+    calls, drop_calls = _install_pg_bootstrap_owner_recorders(
+        monkeypatch,
+        fail_at=fail_at,
+        fail_exc=fail_exc,
+    )
+    ctx = SimpleNamespace(pg_env=None, backend_extra_env={})
+
+    with pytest.raises(RuntimeError) as exc_info:
+        scenario._step_pg_bootstrap(ctx)
+
+    assert exc_info.value is fail_exc
+    assert ctx.pg_env is not None
+    assert ctx.backend_extra_env == {}
+    assert drop_calls == ["admin-dsn"]
+    fail_index = _BOOTSTRAP_OWNER_SEQUENCE.index(fail_at)
+    assert calls == list(_BOOTSTRAP_OWNER_SEQUENCE[: fail_index + 1])
+
+
+def test_pg_bootstrap_propagates_drop_failure_before_schema_owners(monkeypatch) -> None:
+    pg_env = _pg_bootstrap_test_env()
+    fail_exc = RuntimeError("drop failed")
+
+    monkeypatch.setattr(scenario, "prepare_live_environment", lambda: pg_env)
+
+    def fail_drop(_admin_dsn: str) -> None:
+        raise fail_exc
+
+    monkeypatch.setattr(scenario, "_drop_extra_schemas", fail_drop)
+    for name in _SCHEMA_OWNER_SEQUENCE:
+        module, attr = _SCHEMA_OWNER_PATCH_TARGETS[name]
+        monkeypatch.setattr(
+            module,
+            attr,
+            lambda _dsn, *, _name=name: pytest.fail(f"{_name} must not run after drop failure"),
+        )
+    monkeypatch.setattr(
+        scenario,
+        "seed_postgres_workflow_profiles",
+        lambda _dsn: pytest.fail("seed must not run after drop failure"),
+    )
+    monkeypatch.setattr(
+        scenario,
+        "build_backend_extra_env",
+        lambda _env: pytest.fail("backend env must not be published after drop failure"),
+    )
+    ctx = SimpleNamespace(pg_env=None, backend_extra_env={})
+
+    with pytest.raises(RuntimeError) as exc_info:
+        scenario._step_pg_bootstrap(ctx)
+
+    assert exc_info.value is fail_exc
+    assert ctx.pg_env is pg_env
+    assert ctx.backend_extra_env == {}
+
+
 def test_acceptance_http_client_reads_health_and_openapi(mock_backend_url: str) -> None:
     client = AcceptanceHttpClient(mock_backend_url)
     health = client.request("GET", "/health", auth=False)
@@ -330,6 +633,9 @@ class _DocumentCreateHandler(BaseHTTPRequestHandler):
         return
 
     def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length:
+            self.rfile.read(length)
         if self.path != "/api/v1/documents/versions/create":
             self.send_response(404)
             self.end_headers()
@@ -351,15 +657,12 @@ class _DocumentCreateHandler(BaseHTTPRequestHandler):
 @pytest.fixture
 def document_create_url() -> str:
     _DocumentCreateHandler.create_auths = []
-    server = HTTPServer(("127.0.0.1", 0), _DocumentCreateHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _DocumentCreateHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_acceptance_document_create_with_qmb_token_returns_etag(document_create_url: str) -> None:
@@ -523,15 +826,12 @@ class _AuthMeHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def auth_me_url() -> str:
-    server = HTTPServer(("127.0.0.1", 0), _AuthMeHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _AuthMeHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_capture_authenticated_user_id_reads_me_not_username(auth_me_url: str) -> None:
@@ -571,6 +871,7 @@ class _DirectorySeedHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path == "/api/v1/users":
+            self._read_json()
             self._send(201, b'{"ok":true}')
             return
         if self.path == "/api/v1/auth/token":
@@ -600,15 +901,12 @@ class _DirectorySeedHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def directory_seed_url() -> str:
-    server = HTTPServer(("127.0.0.1", 0), _DirectorySeedHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _DirectorySeedHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_seed_directory_users_stores_user_ids_from_auth_me(
@@ -666,15 +964,12 @@ class _BaselineAssignHandler(BaseHTTPRequestHandler):
 @pytest.fixture
 def baseline_assign_url() -> str:
     _BaselineAssignHandler.assign_bodies = []
-    server = HTTPServer(("127.0.0.1", 0), _BaselineAssignHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _BaselineAssignHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_baseline_and_race_requests_send_user_ids_never_usernames(
@@ -785,15 +1080,12 @@ def artifact_transport_url() -> str:
     _ArtifactTransportHandler.leaked = False
     _ArtifactTransportHandler.pdf_bytes = b"%PDF-1.4 artifact-body\n%%EOF\n"
     _ArtifactTransportHandler.listed_sha = hashlib.sha256(_ArtifactTransportHandler.pdf_bytes).hexdigest()
-    server = HTTPServer(("127.0.0.1", 0), _ArtifactTransportHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _ArtifactTransportHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_artifacts_transport_checks_content_hash_etag_and_length(artifact_transport_url: str) -> None:
@@ -867,15 +1159,12 @@ def signature_verify_url() -> str:
     _SignatureVerifyHandler.actors = []
     _SignatureVerifyHandler.verified = []
     _SignatureVerifyHandler.header_passwords = []
-    server = HTTPServer(("127.0.0.1", 0), _SignatureVerifyHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _SignatureVerifyHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_signature_verify_password_activates_editor_reviewer_approver(
@@ -940,15 +1229,12 @@ def signed_editing_url() -> str:
     _SignedEditingHandler.actor_sequence = []
     _SignedEditingHandler.passwords = []
     _SignedEditingHandler.saw_empty_intent = False
-    server = HTTPServer(("127.0.0.1", 0), _SignedEditingHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _SignedEditingHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_signed_editing_complete_fail_closed_then_reaches_in_review(signed_editing_url: str) -> None:
@@ -1038,15 +1324,12 @@ def signed_review_url() -> str:
     _SignedReviewHandler.actor_sequence = []
     _SignedReviewHandler.passwords = []
     _SignedReviewHandler.review_status = 200
-    server = HTTPServer(("127.0.0.1", 0), _SignedReviewHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _SignedReviewHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_signed_review_approval_uses_reviewer_then_approver(signed_review_url: str) -> None:
@@ -1128,15 +1411,12 @@ def comment_flow_url() -> str:
     _CommentFlowHandler.pdf_created = 0
     _CommentFlowHandler.sync_calls = 0
     _CommentFlowHandler.version_etag = "etag-review"
-    server = HTTPServer(("127.0.0.1", 0), _CommentFlowHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CommentFlowHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_pdf_and_docx_comments_stay_separate_and_docx_sync_is_idempotent(
@@ -1170,15 +1450,12 @@ class _PersistenceHandler(_JsonHandler):
 
 @pytest.fixture
 def persistence_url() -> str:
-    server = HTTPServer(("127.0.0.1", 0), _PersistenceHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _PersistenceHandler)
+    thread, url = _serve_started(server)
     try:
-        yield f"http://{host}:{port}"
+        yield url
     finally:
-        server.shutdown()
-        thread.join(timeout=2.0)
+        _stop_http(server, thread)
 
 
 def test_persistence_contract_expects_approved_not_archived(persistence_url: str) -> None:

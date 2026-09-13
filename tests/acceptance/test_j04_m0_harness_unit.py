@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import signal
 import socket
 import subprocess
 import sys
@@ -17,6 +19,8 @@ import pytest
 from tests.acceptance.j04_m0_realprocess_harness import (
     BACKEND_MODULE,
     BACKEND_PORT,
+    BACKEND_SIGBREAK_SITECUSTOMIZE,
+    BACKEND_SIGBREAK_STARTUP_DIRNAME,
     FINAL_ACCEPTANCE_ENV,
     FINAL_ACCEPTANCE_OPT_IN,
     HarnessBlockedError,
@@ -24,10 +28,13 @@ from tests.acceptance.j04_m0_realprocess_harness import (
     J04M0RealProcessHarness,
     _BackendStdoutDrainer,
     assert_backend_port_free,
+    backend_popen_creationflags,
     is_port_free,
+    prepend_pythonpath,
     redact_log_text,
     require_final_acceptance_opt_in,
     repo_root,
+    write_backend_sigbreak_startup,
 )
 
 
@@ -133,10 +140,15 @@ def test_harness_backend_launch_uses_canonical_module(tmp_path: Path) -> None:
         popen.return_value = mock_proc
         managed = harness.start_backend(extra_env={"QMTOOL_LICENSE_MODE": "dev"})
         assert managed.pid == 4242
+        assert managed.supports_graceful_stop is True
         command = popen.call_args.args[0]
         assert command[-2:] == ["-m", BACKEND_MODULE]
         assert popen.call_args.kwargs["cwd"] == str(repo_root())
         assert popen.call_args.kwargs["env"]["QMTOOL_HOME"] == str(harness.backend_home)
+        if sys.platform == "win32":
+            assert popen.call_args.kwargs["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            assert "creationflags" not in popen.call_args.kwargs
     harness.cleanup()
 
 
@@ -568,3 +580,361 @@ def test_backend_drain_reader_error_surfaces_via_cleanup(tmp_path: Path) -> None
     assert harness._processes == []
     assert managed.popen.poll() is not None
     harness.cleanup()
+
+
+def _mock_child(*, pid: int, exit_on_graceful_signal: bool) -> MagicMock:
+    popen = MagicMock()
+    popen.pid = pid
+    popen.stdout = None
+    state = {"live": True}
+    signals: list[int] = []
+
+    def poll() -> int | None:
+        return None if state["live"] else 0
+
+    def wait(timeout: float | None = None) -> int:
+        if state["live"]:
+            raise subprocess.TimeoutExpired(cmd="mock-backend", timeout=timeout or 0)
+        return 0
+
+    def send_signal(sig: int) -> None:
+        signals.append(sig)
+        if exit_on_graceful_signal:
+            state["live"] = False
+
+    def terminate() -> None:
+        state["live"] = False
+        popen.terminate_calls += 1
+
+    def kill() -> None:
+        state["live"] = False
+        popen.kill_calls += 1
+
+    popen.poll.side_effect = poll
+    popen.wait.side_effect = wait
+    popen.send_signal.side_effect = send_signal
+    popen.terminate.side_effect = terminate
+    popen.kill.side_effect = kill
+    popen.signals = signals
+    popen.terminate_calls = 0
+    popen.kill_calls = 0
+    popen._state = state
+    return popen
+
+
+def test_windows_backend_start_uses_new_process_group(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tests.acceptance.j04_m0_realprocess_harness as harness_mod
+
+    monkeypatch.setattr(harness_mod.sys, "platform", "win32")
+    monkeypatch.setattr(harness_mod.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen") as popen:
+        popen.return_value = _mock_child(pid=11, exit_on_graceful_signal=True)
+        managed = harness.start_backend()
+        assert managed.supports_graceful_stop is True
+        assert popen.call_args.kwargs["creationflags"] == 0x200
+        assert backend_popen_creationflags() == 0x200
+    harness.cleanup()
+
+
+def test_posix_backend_start_omits_creationflags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tests.acceptance.j04_m0_realprocess_harness as harness_mod
+
+    monkeypatch.setattr(harness_mod.sys, "platform", "linux")
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen") as popen:
+        popen.return_value = _mock_child(pid=13, exit_on_graceful_signal=True)
+        managed = harness.start_backend()
+        assert managed.supports_graceful_stop is True
+        assert "creationflags" not in popen.call_args.kwargs
+    harness.cleanup()
+
+
+def test_windows_backend_stop_sends_ctrl_break(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tests.acceptance.j04_m0_realprocess_harness as harness_mod
+
+    monkeypatch.setattr(harness_mod.sys, "platform", "win32")
+    monkeypatch.setattr(harness_mod.signal, "CTRL_BREAK_EVENT", 1, raising=False)
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=21, exit_on_graceful_signal=True)
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen", return_value=child):
+        harness.start_backend()
+    harness.stop_process("backend")
+    assert child.signals == [1]
+    assert child.terminate_calls == 0
+    assert harness._processes == []
+
+
+def test_posix_backend_stop_sends_sigint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tests.acceptance.j04_m0_realprocess_harness as harness_mod
+
+    monkeypatch.setattr(harness_mod.sys, "platform", "linux")
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=22, exit_on_graceful_signal=True)
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen", return_value=child):
+        harness.start_backend()
+    harness.stop_process("backend")
+    assert child.signals == [signal.SIGINT]
+    assert child.terminate_calls == 0
+
+
+def test_unflagged_worker_does_not_receive_backend_signal(tmp_path: Path) -> None:
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=31, exit_on_graceful_signal=True)
+    child._state["live"] = True
+    managed = harness._register_process(child, label="backend")
+    assert managed.supports_graceful_stop is False
+    harness.stop_process("backend")
+    assert child.signals == []
+    assert child.terminate_calls == 1
+
+
+def test_client_worker_start_has_no_graceful_stop(tmp_path: Path) -> None:
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=32, exit_on_graceful_signal=True)
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen", return_value=child) as popen:
+        managed = harness.start_client_worker(
+            home=harness.client1_home,
+            args=["--action", "login", "--username", "bob", "--password", "x"],
+            label="client-a",
+        )
+        assert managed.supports_graceful_stop is False
+        assert "creationflags" not in popen.call_args.kwargs
+    harness.stop_process("client-a")
+    assert child.signals == []
+    assert child.terminate_calls == 1
+
+
+def test_graceful_stop_waits_and_joins_drainer(tmp_path: Path) -> None:
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=41, exit_on_graceful_signal=True)
+    joined: list[float] = []
+
+    class _Drainer:
+        def join(self, timeout: float = 10.0) -> None:
+            joined.append(timeout)
+
+        def is_alive(self) -> bool:
+            return False
+
+        def get_error(self) -> Exception | None:
+            return None
+
+    harness._register_process(
+        child,
+        label="backend",
+        drainer=_Drainer(),  # type: ignore[arg-type]
+        supports_graceful_stop=True,
+    )
+    harness.stop_process("backend")
+    assert joined
+    assert child.signals
+    assert not child._state["live"]
+
+
+def test_restart_requires_exit_and_removed_marker(tmp_path: Path) -> None:
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    first = _mock_child(pid=51, exit_on_graceful_signal=True)
+    second = _mock_child(pid=52, exit_on_graceful_signal=True)
+    with patch(
+        "tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen",
+        side_effect=[first, second],
+    ):
+        harness.start_backend()
+        harness.stop_process("backend")
+        assert first.signals
+        assert first.terminate_calls == 0
+        harness.start_backend()
+        assert second.pid == 52
+        assert harness._processes[-1].supports_graceful_stop is True
+    harness.cleanup()
+
+
+def test_harness_does_not_delete_host_running_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tests.acceptance.j04_m0_realprocess_harness as harness_mod
+
+    monkeypatch.setattr(harness_mod, "_MARKER_GONE_WAIT_SECONDS", 0)
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=61, exit_on_graceful_signal=True)
+    marker = harness.backend_home / "storage" / "platform" / "host-running.pid"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.mkdir()
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen", return_value=child):
+        harness.start_backend()
+    with pytest.raises(HarnessError, match="stale marker"):
+        harness.stop_process("backend")
+    assert marker.exists()
+    assert list(marker.iterdir()) == []
+
+
+def test_restart_fallback_is_fail_closed(tmp_path: Path) -> None:
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=71, exit_on_graceful_signal=False)
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen", return_value=child):
+        harness.start_backend()
+    with pytest.raises(HarnessError, match="fallback to terminate/kill"):
+        harness.stop_process("backend", grace_seconds=0.01)
+    assert child.terminate_calls == 1
+    fallback_log = harness.log_dir / "backend-graceful-stop-fallback.log"
+    assert fallback_log.is_file()
+    assert "fallback to terminate/kill" in fallback_log.read_text(encoding="utf-8")
+    assert harness._processes == []
+
+
+def test_cleanup_uses_graceful_path_for_backend_child(tmp_path: Path) -> None:
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=81, exit_on_graceful_signal=True)
+    worker = _mock_child(pid=82, exit_on_graceful_signal=True)
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen", return_value=child):
+        harness.start_backend()
+    harness._register_process(worker, label="client-a")
+    harness.cleanup()
+    assert child.signals
+    assert child.terminate_calls == 0
+    assert worker.signals == []
+    assert worker.terminate_calls == 1
+    assert harness._processes == []
+
+
+def test_windows_backend_command_stays_module_and_gets_sitecustomize(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tests.acceptance.j04_m0_realprocess_harness as harness_mod
+
+    monkeypatch.setattr(harness_mod.sys, "platform", "win32")
+    monkeypatch.setattr(harness_mod.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    other = tmp_path / "other-path"
+    more = tmp_path / "more-path"
+    extra_pythonpath = os.pathsep.join((str(other), str(more)))
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen") as popen:
+        popen.return_value = _mock_child(pid=91, exit_on_graceful_signal=True)
+        managed = harness.start_backend(extra_env={"PYTHONPATH": extra_pythonpath})
+        command = popen.call_args.args[0]
+        assert command == [sys.executable, "-m", BACKEND_MODULE] or command[-2:] == [
+            "-m",
+            BACKEND_MODULE,
+        ]
+        env = popen.call_args.kwargs["env"]
+        parts = env["PYTHONPATH"].split(os.pathsep)
+        startup = harness.workspace / BACKEND_SIGBREAK_STARTUP_DIRNAME
+        assert parts[0] == str(startup)
+        assert str(other) in parts
+        assert str(more) in parts
+        sitecustomize = startup / "sitecustomize.py"
+        assert sitecustomize.is_file()
+        text = sitecustomize.read_text(encoding="utf-8")
+        assert text == BACKEND_SIGBREAK_SITECUSTOMIZE
+        assert "getattr(signal, \"SIGBREAK\", None)" in text
+        assert "signal.default_int_handler" in text
+        assert "postgresql://" not in text
+        assert managed.supports_graceful_stop is True
+    harness.cleanup()
+
+
+def test_posix_backend_does_not_inject_sitecustomize(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import tests.acceptance.j04_m0_realprocess_harness as harness_mod
+
+    monkeypatch.setattr(harness_mod.sys, "platform", "linux")
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen") as popen:
+        popen.return_value = _mock_child(pid=92, exit_on_graceful_signal=True)
+        harness.start_backend()
+        env = popen.call_args.kwargs["env"]
+        assert BACKEND_SIGBREAK_STARTUP_DIRNAME not in env.get("PYTHONPATH", "")
+        assert not (harness.workspace / BACKEND_SIGBREAK_STARTUP_DIRNAME).exists()
+        assert popen.call_args.args[0][-2:] == ["-m", BACKEND_MODULE]
+    harness.cleanup()
+
+
+def test_client_worker_pythonpath_excludes_sigbreak_startup(tmp_path: Path) -> None:
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    child = _mock_child(pid=93, exit_on_graceful_signal=True)
+    with patch("tests.acceptance.j04_m0_realprocess_harness.subprocess.Popen", return_value=child) as popen:
+        harness.start_client_worker(
+            home=harness.client1_home,
+            args=["--action", "login", "--username", "bob", "--password", "x"],
+            label="client-a",
+        )
+        env = popen.call_args.kwargs["env"]
+        assert BACKEND_SIGBREAK_STARTUP_DIRNAME not in env.get("PYTHONPATH", "")
+    harness.stop_process("client-a")
+
+
+def test_prepend_pythonpath_keeps_existing_entries(tmp_path: Path) -> None:
+    prefix = tmp_path / "startup"
+    result = prepend_pythonpath(os.pathsep.join(("keep-a", "keep-b")), prefix)
+    parts = result.split(os.pathsep)
+    assert parts == [str(prefix), "keep-a", "keep-b"]
+
+
+def test_write_backend_sigbreak_startup_is_platform_neutral_without_sigbreak(tmp_path: Path) -> None:
+    startup = write_backend_sigbreak_startup(tmp_path)
+    text = (startup / "sitecustomize.py").read_text(encoding="utf-8")
+    assert "getattr(signal, \"SIGBREAK\", None)" in text
+    assert "host-running.pid" not in text
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="CTRL_BREAK sitecustomize proof is Windows-only")
+def test_windows_sigbreak_sitecustomize_runs_python_finally(tmp_path: Path) -> None:
+    """Real Windows child: sitecustomize registers SIGBREAK; script itself must not."""
+    harness = J04M0RealProcessHarness(workspace=tmp_path / "ws")
+    startup = write_backend_sigbreak_startup(harness.workspace)
+    ready = tmp_path / "ready.txt"
+    sentinel = tmp_path / "finally.txt"
+    child_script = tmp_path / "sigbreak_child.py"
+    child_source = (
+        "import sys\n"
+        "import time\n"
+        "from pathlib import Path\n"
+        "ready_path = Path(sys.argv[1])\n"
+        "sentinel_path = Path(sys.argv[2])\n"
+        "ready_path.write_text('ready\\n', encoding='utf-8')\n"
+        "try:\n"
+        "    deadline = time.monotonic() + 20.0\n"
+        "    while time.monotonic() < deadline:\n"
+        "        time.sleep(0.2)\n"
+        "finally:\n"
+        "    sentinel_path.write_text('finally\\n', encoding='utf-8')\n"
+    )
+    assert "SIGBREAK" not in child_source
+    assert "signal.signal" not in child_source
+    child_script.write_text(child_source, encoding="utf-8")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(startup)
+    popen = subprocess.Popen(
+        [sys.executable, str(child_script), str(ready), str(sentinel)],
+        cwd=str(tmp_path),
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
+    try:
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if ready.is_file():
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("child did not write ready signal")
+        popen.send_signal(signal.CTRL_BREAK_EVENT)
+        try:
+            popen.wait(timeout=10.0)
+        except subprocess.TimeoutExpired:
+            popen.kill()
+            popen.wait(timeout=2.0)
+            raise AssertionError("child did not exit after CTRL_BREAK_EVENT")
+        assert sentinel.is_file(), "Python finally did not run"
+        assert sentinel.read_text(encoding="utf-8").strip() == "finally"
+    finally:
+        if popen.poll() is None:
+            popen.kill()
+            popen.wait(timeout=2.0)
+        ready.unlink(missing_ok=True)
+        sentinel.unlink(missing_ok=True)
+        child_script.unlink(missing_ok=True)
