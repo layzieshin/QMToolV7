@@ -20,8 +20,6 @@ from io import BytesIO
 from typing import Any, Callable
 from zipfile import ZipFile
 
-import psycopg
-
 from modules.documents import api as documents_api
 from modules.registry import api as registry_api
 from modules.signature import api as signature_api
@@ -501,16 +499,6 @@ def _profile_transitions() -> list[dict[str, object]]:
     ]
 
 
-def _drop_extra_schemas(admin_dsn: str) -> None:
-    with psycopg.connect(admin_dsn, autocommit=True) as conn:
-        for name in ("documents", "registry", "signature"):
-            conn.execute(
-                psycopg.sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
-                    psycopg.sql.Identifier(name)
-                )
-            )
-
-
 def _step_preconditions(ctx: ScenarioContext) -> str:
     require_final_acceptance_opt_in()
     assert_backend_port_free()
@@ -522,7 +510,6 @@ def _step_preconditions(ctx: ScenarioContext) -> str:
 
 def _step_pg_bootstrap(ctx: ScenarioContext) -> str:
     ctx.pg_env = prepare_live_environment()
-    _drop_extra_schemas(ctx.pg_env.admin_dsn)
     usermanagement_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
     documents_api.provision_postgres_schema(ctx.pg_env.admin_dsn)
     documents_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)

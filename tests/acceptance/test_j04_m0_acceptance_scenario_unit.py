@@ -331,9 +331,6 @@ def test_pg_bootstrap_prepares_all_backend_schemas_in_order(monkeypatch) -> None
         calls.append(("prepare", None))
         return pg_env
 
-    def drop_extra_schemas(admin_dsn: str) -> None:
-        calls.append(("drop_extra_schemas", admin_dsn))
-
     def record(name: str):
         def invoke(dsn: str) -> None:
             calls.append((name, dsn))
@@ -346,7 +343,6 @@ def test_pg_bootstrap_prepares_all_backend_schemas_in_order(monkeypatch) -> None
         return {"QMTOOL_PG_DSN": actual.runtime_dsn}
 
     monkeypatch.setattr(scenario, "prepare_live_environment", prepare)
-    monkeypatch.setattr(scenario, "_drop_extra_schemas", drop_extra_schemas)
     monkeypatch.setattr(
         scenario.usermanagement_api,
         "migrate_postgres_schema",
@@ -397,7 +393,6 @@ def test_pg_bootstrap_prepares_all_backend_schemas_in_order(monkeypatch) -> None
     assert ctx.backend_extra_env == {"QMTOOL_PG_DSN": "runtime-dsn"}
     assert calls == [
         ("prepare", None),
-        ("drop_extra_schemas", "admin-dsn"),
         ("usermanagement.migrate", "migrator-dsn"),
         ("documents.provision", "admin-dsn"),
         ("documents.migrate", "migrator-dsn"),
@@ -408,45 +403,6 @@ def test_pg_bootstrap_prepares_all_backend_schemas_in_order(monkeypatch) -> None
         ("seed_postgres_workflow_profiles", "runtime-dsn"),
         ("build_backend_extra_env", "runtime-dsn"),
     ]
-
-
-def test_drop_extra_schemas_uses_admin_dsn_autocommit_and_identifier_sql(monkeypatch) -> None:
-    import psycopg
-
-    connect_calls: list[tuple[str, bool]] = []
-    execute_calls: list[object] = []
-
-    class _FakeConn:
-        def execute(self, query: object) -> None:
-            execute_calls.append(query)
-
-        def __enter__(self) -> _FakeConn:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-    def fake_connect(admin_dsn: str, *, autocommit: bool):
-        connect_calls.append((admin_dsn, autocommit))
-        return _FakeConn()
-
-    monkeypatch.setattr(scenario.psycopg, "connect", fake_connect)
-
-    scenario._drop_extra_schemas("admin-dsn")
-
-    assert connect_calls == [("admin-dsn", True)]
-    assert len(execute_calls) == 3
-    for expected_name, query in zip(
-        ("documents", "registry", "signature"),
-        execute_calls,
-        strict=True,
-    ):
-        assert isinstance(query, psycopg.sql.Composed)
-        identifier_parts = [
-            part for part in query if isinstance(part, psycopg.sql.Identifier)
-        ]
-        assert len(identifier_parts) == 1
-        assert identifier_parts[0] == psycopg.sql.Identifier(expected_name)
 
 
 _SCHEMA_OWNER_SEQUENCE = (
@@ -490,9 +446,8 @@ def _install_pg_bootstrap_owner_recorders(
     *,
     fail_at: str | None = None,
     fail_exc: BaseException | None = None,
-) -> tuple[list[str], list[str]]:
+) -> list[str]:
     calls: list[str] = []
-    drop_calls: list[str] = []
 
     def record(name: str):
         def invoke(_dsn: str) -> None:
@@ -500,11 +455,7 @@ def _install_pg_bootstrap_owner_recorders(
 
         return invoke
 
-    def drop_extra_schemas(admin_dsn: str) -> None:
-        drop_calls.append(admin_dsn)
-
     monkeypatch.setattr(scenario, "prepare_live_environment", _pg_bootstrap_test_env)
-    monkeypatch.setattr(scenario, "_drop_extra_schemas", drop_extra_schemas)
     for name in _SCHEMA_OWNER_SEQUENCE:
         module, attr = _SCHEMA_OWNER_PATCH_TARGETS[name]
         if name == fail_at:
@@ -542,13 +493,13 @@ def _install_pg_bootstrap_owner_recorders(
         "build_backend_extra_env",
         lambda _env: pytest.fail("backend env must not be published after bootstrap failure"),
     )
-    return calls, drop_calls
+    return calls
 
 
 @pytest.mark.parametrize("fail_at", _BOOTSTRAP_OWNER_SEQUENCE)
 def test_pg_bootstrap_fail_closed_matrix(fail_at: str, monkeypatch) -> None:
     fail_exc = RuntimeError(f"{fail_at} failed")
-    calls, drop_calls = _install_pg_bootstrap_owner_recorders(
+    calls = _install_pg_bootstrap_owner_recorders(
         monkeypatch,
         fail_at=fail_at,
         fail_exc=fail_exc,
@@ -561,37 +512,35 @@ def test_pg_bootstrap_fail_closed_matrix(fail_at: str, monkeypatch) -> None:
     assert exc_info.value is fail_exc
     assert ctx.pg_env is not None
     assert ctx.backend_extra_env == {}
-    assert drop_calls == ["admin-dsn"]
     fail_index = _BOOTSTRAP_OWNER_SEQUENCE.index(fail_at)
     assert calls == list(_BOOTSTRAP_OWNER_SEQUENCE[: fail_index + 1])
 
 
-def test_pg_bootstrap_propagates_drop_failure_before_schema_owners(monkeypatch) -> None:
-    pg_env = _pg_bootstrap_test_env()
-    fail_exc = RuntimeError("drop failed")
+def test_pg_bootstrap_propagates_prepare_failure_before_schema_owners(monkeypatch) -> None:
+    fail_exc = RuntimeError("prepare failed")
 
-    monkeypatch.setattr(scenario, "prepare_live_environment", lambda: pg_env)
-
-    def fail_drop(_admin_dsn: str) -> None:
+    def fail_prepare() -> LivePostgresEnv:
         raise fail_exc
 
-    monkeypatch.setattr(scenario, "_drop_extra_schemas", fail_drop)
+    monkeypatch.setattr(scenario, "prepare_live_environment", fail_prepare)
     for name in _SCHEMA_OWNER_SEQUENCE:
         module, attr = _SCHEMA_OWNER_PATCH_TARGETS[name]
         monkeypatch.setattr(
             module,
             attr,
-            lambda _dsn, *, _name=name: pytest.fail(f"{_name} must not run after drop failure"),
+            lambda _dsn, *, _name=name: pytest.fail(
+                f"{_name} must not run after prepare failure"
+            ),
         )
     monkeypatch.setattr(
         scenario.documents_api,
         "seed_postgres_workflow_profiles",
-        lambda _dsn: pytest.fail("seed must not run after drop failure"),
+        lambda _dsn: pytest.fail("seed must not run after prepare failure"),
     )
     monkeypatch.setattr(
         scenario,
         "build_backend_extra_env",
-        lambda _env: pytest.fail("backend env must not be published after drop failure"),
+        lambda _env: pytest.fail("backend env must not be published after prepare failure"),
     )
     ctx = SimpleNamespace(pg_env=None, backend_extra_env={})
 
@@ -599,7 +548,57 @@ def test_pg_bootstrap_propagates_drop_failure_before_schema_owners(monkeypatch) 
         scenario._step_pg_bootstrap(ctx)
 
     assert exc_info.value is fail_exc
-    assert ctx.pg_env is pg_env
+    assert ctx.pg_env is None
+    assert ctx.backend_extra_env == {}
+
+
+def test_pg_bootstrap_propagates_cleanup_failure_before_schema_owners(monkeypatch) -> None:
+    import tests.postgres_live_support as live_support
+
+    fail_exc = RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(
+        live_support,
+        "require_approved_admin_dsn",
+        lambda candidate=None: "approved-dsn",
+    )
+    monkeypatch.setattr(
+        live_support,
+        "cleanup_live_environment",
+        lambda *, admin_dsn=None: (_ for _ in ()).throw(fail_exc),
+    )
+    monkeypatch.setattr(
+        live_support.pgs,
+        "provision_usermanagement_roles",
+        lambda _dsn: pytest.fail("provision must not run after cleanup failure"),
+    )
+    monkeypatch.setattr(scenario, "prepare_live_environment", live_support.prepare_live_environment)
+    for name in _SCHEMA_OWNER_SEQUENCE:
+        module, attr = _SCHEMA_OWNER_PATCH_TARGETS[name]
+        monkeypatch.setattr(
+            module,
+            attr,
+            lambda _dsn, *, _name=name: pytest.fail(
+                f"{_name} must not run after cleanup failure"
+            ),
+        )
+    monkeypatch.setattr(
+        scenario.documents_api,
+        "seed_postgres_workflow_profiles",
+        lambda _dsn: pytest.fail("seed must not run after cleanup failure"),
+    )
+    monkeypatch.setattr(
+        scenario,
+        "build_backend_extra_env",
+        lambda _env: pytest.fail("backend env must not be published after cleanup failure"),
+    )
+    ctx = SimpleNamespace(pg_env=None, backend_extra_env={})
+
+    with pytest.raises(RuntimeError) as exc_info:
+        scenario._step_pg_bootstrap(ctx)
+
+    assert exc_info.value is fail_exc
+    assert ctx.pg_env is None
     assert ctx.backend_extra_env == {}
 
 

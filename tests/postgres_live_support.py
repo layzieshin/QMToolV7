@@ -29,6 +29,8 @@ RUNTIME_LOGIN = "qmtool_j04_rt_login"
 RESTORE_DB_PREFIX = "qmtool_um_restore_"
 RESTORE_DB = "qmtool_um_restore_drill"
 WRONG_RESTORE_DB = "qmtool_um_restore_wrong_target"
+# Fixed J04 destructive-test cleanup allowlist. Never accept caller-supplied names.
+J04_CLEANUP_SCHEMAS = ("usermanagement", "documents", "registry", "signature")
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,14 @@ def require_test_admin_dsn() -> str:
         pytest.skip(str(exc))
 
 
+def _drop_schema_if_exists(conn: psycopg.Connection, schema_name: str) -> None:
+    conn.execute(
+        psycopg.sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
+            psycopg.sql.Identifier(schema_name)
+        )
+    )
+
+
 def _drop_role_if_exists(conn: psycopg.Connection, role: str) -> None:
     exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
     if not exists:
@@ -95,7 +105,8 @@ def cleanup_live_environment(*, admin_dsn: str | None = None) -> None:
         current = conn.execute("SELECT current_database()").fetchone()[0]
         if str(current) != EXPECTED_DATABASE:
             raise DestructivePostgresGuardError("refusing cleanup outside isolated test database")
-        conn.execute("DROP SCHEMA IF EXISTS usermanagement CASCADE")
+        for schema_name in J04_CLEANUP_SCHEMAS:
+            _drop_schema_if_exists(conn, schema_name)
         for role in (MIGRATOR_LOGIN, RUNTIME_LOGIN, "qmtool_runtime", "qmtool_migrator"):
             _drop_role_if_exists(conn, role)
 

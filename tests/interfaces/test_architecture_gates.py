@@ -365,7 +365,8 @@ def test_documents_workflow_uses_business_document_id_in_creation_flow() -> None
 def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
     """J04 realprocess bootstrap must not import postgres_schema internals."""
     rel = "tests/acceptance/j04_m0_acceptance_scenario.py"
-    tree = ast.parse(_read(rel))
+    source = _read(rel)
+    tree = ast.parse(source)
     allowed_api = {
         "modules.documents.api",
         "modules.registry.api",
@@ -388,6 +389,9 @@ def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
             ):
                 offenders.append(f"{rel}:{node.lineno} -> {module or 'postgres_schema'}")
                 continue
+            if (module or "").startswith("psycopg"):
+                offenders.append(f"{rel}:{node.lineno} -> {module}")
+                continue
             if module in allowed_api:
                 seen.add(module)
             elif module in schema_modules:
@@ -400,8 +404,12 @@ def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
             for alias in node.names:
                 if "postgres_schema" in alias.name:
                     offenders.append(f"{rel}:{node.lineno} -> {alias.name}")
+                if alias.name == "psycopg" or alias.name.startswith("psycopg."):
+                    offenders.append(f"{rel}:{node.lineno} -> {alias.name}")
     assert offenders == []
     assert seen == allowed_api
+    assert "DROP SCHEMA" not in source.upper()
+    assert "psycopg.connect" not in source
 
 
 def test_cli_uses_only_public_module_interfaces() -> None:

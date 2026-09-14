@@ -484,3 +484,209 @@ def test_destructive_helper_connects_only_with_approved_dsn(monkeypatch) -> None
     cleanup_live_environment(admin_dsn=candidate)
     assert approved in captured
     assert all("other-secret" not in dsn for dsn in captured)
+
+
+def test_cleanup_has_no_arbitrary_schema_parameter() -> None:
+    import inspect
+
+    from tests.postgres_live_support import J04_CLEANUP_SCHEMAS
+
+    signature = inspect.signature(cleanup_live_environment)
+    assert list(signature.parameters) == ["admin_dsn"]
+    parameter = signature.parameters["admin_dsn"]
+    assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameter.default is None
+    assert J04_CLEANUP_SCHEMAS == ("usermanagement", "documents", "registry", "signature")
+
+
+def _cleanup_connect(database: str, execute_calls: list[object], captured: list[str]):
+    class _CleanupConn:
+        def execute(self, query, params=None):  # noqa: ANN001
+            execute_calls.append(query)
+            result = MagicMock()
+            text = " ".join(str(query).split()).lower()
+            if "select current_database()" in text:
+                result.fetchone.return_value = (database,)
+            elif "pg_roles" in text:
+                result.fetchone.return_value = None
+            else:
+                result.fetchone.return_value = None
+            return result
+
+        def __enter__(self) -> _CleanupConn:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def _connect(dsn=None, *args, **kwargs):  # noqa: ANN001
+        if dsn is not None:
+            captured.append(str(dsn))
+        return _CleanupConn()
+
+    return _connect
+
+
+def _guard_and_cleanup_connect(
+    *,
+    cleanup_database: str,
+    execute_calls: list[object],
+    captured: list[str],
+):
+    guard_connect = _mock_connect(
+        {
+            "database": EXPECTED_DATABASE,
+            "version_num": "160001",
+            "marker": (EXPECTED_CLUSTER_MARKER,),
+        },
+        capture_dsn=captured,
+    )
+    cleanup_connect = _cleanup_connect(cleanup_database, execute_calls, captured)
+
+    def _dispatch(dsn=None, *args, **kwargs):  # noqa: ANN001
+        if kwargs.get("autocommit"):
+            return cleanup_connect(dsn, *args, **kwargs)
+        return guard_connect(dsn, *args, **kwargs)
+
+    return _dispatch
+
+
+def test_cleanup_resets_fixed_four_schemas_with_identifier_sql(monkeypatch) -> None:
+    import psycopg
+
+    from tests.postgres_live_support import J04_CLEANUP_SCHEMAS
+
+    _arm_valid(monkeypatch)
+    execute_calls: list[object] = []
+    captured: list[str] = []
+    dispatch = _guard_and_cleanup_connect(
+        cleanup_database=EXPECTED_DATABASE,
+        execute_calls=execute_calls,
+        captured=captured,
+    )
+    monkeypatch.setattr("tests.postgres_destructive_guard.psycopg.connect", dispatch)
+    monkeypatch.setattr("tests.postgres_live_support.psycopg.connect", dispatch)
+
+    cleanup_live_environment()
+
+    assert any(dsn == _valid_test_dsn() for dsn in captured)
+    assert "SELECT current_database()" in str(execute_calls[0])
+    schema_drops = [
+        query
+        for query in execute_calls
+        if isinstance(query, psycopg.sql.Composed)
+        and any(isinstance(part, psycopg.sql.SQL) and "DROP SCHEMA" in str(part) for part in query)
+    ]
+    assert len(schema_drops) == 4
+    for expected_name, query in zip(J04_CLEANUP_SCHEMAS, schema_drops, strict=True):
+        identifier_parts = [part for part in query if isinstance(part, psycopg.sql.Identifier)]
+        assert identifier_parts == [psycopg.sql.Identifier(expected_name)]
+    first_drop_index = execute_calls.index(schema_drops[0])
+    assert first_drop_index > 0
+
+
+def test_cleanup_rejects_wrong_current_database_before_drop(monkeypatch) -> None:
+    import psycopg
+
+    _arm_valid(monkeypatch)
+    execute_calls: list[object] = []
+    captured: list[str] = []
+    dispatch = _guard_and_cleanup_connect(
+        cleanup_database="other_db",
+        execute_calls=execute_calls,
+        captured=captured,
+    )
+    monkeypatch.setattr("tests.postgres_destructive_guard.psycopg.connect", dispatch)
+    monkeypatch.setattr("tests.postgres_live_support.psycopg.connect", dispatch)
+
+    with pytest.raises(DestructivePostgresGuardError, match="isolated test database"):
+        cleanup_live_environment()
+
+    assert not any(
+        isinstance(query, psycopg.sql.Composed)
+        and any(isinstance(part, psycopg.sql.SQL) and "DROP SCHEMA" in str(part) for part in query)
+        for query in execute_calls
+    )
+
+
+def test_cleanup_propagates_schema_drop_error_after_database_check(monkeypatch) -> None:
+    import psycopg
+
+    _arm_valid(monkeypatch)
+    execute_calls: list[object] = []
+    captured: list[str] = []
+    fail_exc = RuntimeError("drop failed")
+
+    class _FailingCleanupConn:
+        def execute(self, query, params=None):  # noqa: ANN001
+            execute_calls.append(query)
+            result = MagicMock()
+            text = " ".join(str(query).split()).lower()
+            if "select current_database()" in text:
+                result.fetchone.return_value = (EXPECTED_DATABASE,)
+                return result
+            if isinstance(query, psycopg.sql.Composed) and any(
+                isinstance(part, psycopg.sql.SQL) and "DROP SCHEMA" in str(part) for part in query
+            ):
+                raise fail_exc
+            result.fetchone.return_value = None
+            return result
+
+        def __enter__(self) -> _FailingCleanupConn:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    guard_connect = _mock_connect(
+        {
+            "database": EXPECTED_DATABASE,
+            "version_num": "160001",
+            "marker": (EXPECTED_CLUSTER_MARKER,),
+        },
+        capture_dsn=captured,
+    )
+
+    def _dispatch(dsn=None, *args, **kwargs):  # noqa: ANN001
+        if kwargs.get("autocommit"):
+            if dsn is not None:
+                captured.append(str(dsn))
+            return _FailingCleanupConn()
+        return guard_connect(dsn, *args, **kwargs)
+
+    monkeypatch.setattr("tests.postgres_destructive_guard.psycopg.connect", _dispatch)
+    monkeypatch.setattr("tests.postgres_live_support.psycopg.connect", _dispatch)
+
+    with pytest.raises(RuntimeError) as captured_exc:
+        cleanup_live_environment()
+
+    assert captured_exc.value is fail_exc
+    assert "SELECT current_database()" in str(execute_calls[0])
+    assert any(
+        isinstance(query, psycopg.sql.Composed)
+        and any(isinstance(part, psycopg.sql.SQL) and "DROP SCHEMA" in str(part) for part in query)
+        for query in execute_calls
+    )
+
+
+def test_prepare_live_environment_does_not_provision_when_cleanup_fails(monkeypatch) -> None:
+    fail_exc = RuntimeError("cleanup failed")
+    provision_calls: list[str] = []
+    monkeypatch.setattr(
+        "tests.postgres_live_support.require_approved_admin_dsn",
+        lambda candidate=None: "approved-dsn",
+    )
+    monkeypatch.setattr(
+        "tests.postgres_live_support.cleanup_live_environment",
+        lambda *, admin_dsn=None: (_ for _ in ()).throw(fail_exc),
+    )
+    monkeypatch.setattr(
+        "tests.postgres_live_support.pgs.provision_usermanagement_roles",
+        lambda dsn: provision_calls.append(dsn),
+    )
+
+    with pytest.raises(RuntimeError) as captured_exc:
+        prepare_live_environment()
+
+    assert captured_exc.value is fail_exc
+    assert provision_calls == []
