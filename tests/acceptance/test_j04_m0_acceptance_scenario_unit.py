@@ -298,6 +298,25 @@ def test_build_backend_extra_env_uses_runtime_dsn_only() -> None:
     assert backend_env["QMTOOL_BOOTSTRAP_ADMIN_USERNAME"]
 
 
+def test_pg_bootstrap_orchestrator_source_has_no_postgres_schema_import() -> None:
+    import ast
+
+    tree = ast.parse(Path(scenario.__file__).read_text(encoding="utf-8"))
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.endswith("postgres_schema") or any(
+                alias.name == "postgres_schema" for alias in node.names
+            ):
+                offenders.append(f"{node.lineno}:{module}")
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.endswith("postgres_schema"):
+                    offenders.append(f"{node.lineno}:{alias.name}")
+    assert offenders == []
+
+
 def test_pg_bootstrap_prepares_all_backend_schemas_in_order(monkeypatch) -> None:
     pg_env = LivePostgresEnv(
         admin_dsn="admin-dsn",
@@ -329,45 +348,45 @@ def test_pg_bootstrap_prepares_all_backend_schemas_in_order(monkeypatch) -> None
     monkeypatch.setattr(scenario, "prepare_live_environment", prepare)
     monkeypatch.setattr(scenario, "_drop_extra_schemas", drop_extra_schemas)
     monkeypatch.setattr(
-        scenario.usermanagement_schema,
-        "migrate_usermanagement_schema",
+        scenario.usermanagement_api,
+        "migrate_postgres_schema",
         record("usermanagement.migrate"),
     )
     monkeypatch.setattr(
-        scenario.documents_schema,
-        "provision_documents_schema",
+        scenario.documents_api,
+        "provision_postgres_schema",
         record("documents.provision"),
     )
     monkeypatch.setattr(
-        scenario.documents_schema,
-        "migrate_documents_schema",
+        scenario.documents_api,
+        "migrate_postgres_schema",
         record("documents.migrate"),
     )
     monkeypatch.setattr(
-        scenario.registry_schema,
-        "provision_registry_schema",
+        scenario.registry_api,
+        "provision_postgres_schema",
         record("registry.provision"),
     )
     monkeypatch.setattr(
-        scenario.registry_schema,
-        "migrate_registry_schema",
+        scenario.registry_api,
+        "migrate_postgres_schema",
         record("registry.migrate"),
     )
     monkeypatch.setattr(
-        scenario.signature_schema,
-        "provision_signature_schema",
+        scenario.signature_api,
+        "provision_postgres_schema",
         record("signature.provision"),
     )
     monkeypatch.setattr(
-        scenario.signature_schema,
-        "migrate_signature_schema",
+        scenario.signature_api,
+        "migrate_postgres_schema",
         record("signature.migrate"),
     )
 
     def seed(runtime_dsn: str) -> None:
         calls.append(("seed_postgres_workflow_profiles", runtime_dsn))
 
-    monkeypatch.setattr(scenario, "seed_postgres_workflow_profiles", seed)
+    monkeypatch.setattr(scenario.documents_api, "seed_postgres_workflow_profiles", seed)
     monkeypatch.setattr(scenario, "build_backend_extra_env", build_env)
     ctx = SimpleNamespace(pg_env=None, backend_extra_env={})
 
@@ -444,15 +463,15 @@ _BOOTSTRAP_OWNER_SEQUENCE = _SCHEMA_OWNER_SEQUENCE + ("seed_postgres_workflow_pr
 
 _SCHEMA_OWNER_PATCH_TARGETS = {
     "usermanagement.migrate": (
-        scenario.usermanagement_schema,
-        "migrate_usermanagement_schema",
+        scenario.usermanagement_api,
+        "migrate_postgres_schema",
     ),
-    "documents.provision": (scenario.documents_schema, "provision_documents_schema"),
-    "documents.migrate": (scenario.documents_schema, "migrate_documents_schema"),
-    "registry.provision": (scenario.registry_schema, "provision_registry_schema"),
-    "registry.migrate": (scenario.registry_schema, "migrate_registry_schema"),
-    "signature.provision": (scenario.signature_schema, "provision_signature_schema"),
-    "signature.migrate": (scenario.signature_schema, "migrate_signature_schema"),
+    "documents.provision": (scenario.documents_api, "provision_postgres_schema"),
+    "documents.migrate": (scenario.documents_api, "migrate_postgres_schema"),
+    "registry.provision": (scenario.registry_api, "provision_postgres_schema"),
+    "registry.migrate": (scenario.registry_api, "migrate_postgres_schema"),
+    "signature.provision": (scenario.signature_api, "provision_postgres_schema"),
+    "signature.migrate": (scenario.signature_api, "migrate_postgres_schema"),
 }
 
 
@@ -505,16 +524,16 @@ def _install_pg_bootstrap_owner_recorders(
             calls.append("seed_postgres_workflow_profiles")
             raise _exc
 
-        monkeypatch.setattr(scenario, "seed_postgres_workflow_profiles", fail_seed)
+        monkeypatch.setattr(scenario.documents_api, "seed_postgres_workflow_profiles", fail_seed)
     elif fail_at is not None:
         monkeypatch.setattr(
-            scenario,
+            scenario.documents_api,
             "seed_postgres_workflow_profiles",
             lambda _dsn: pytest.fail("seed must not run after schema failure"),
         )
     else:
         monkeypatch.setattr(
-            scenario,
+            scenario.documents_api,
             "seed_postgres_workflow_profiles",
             record("seed_postgres_workflow_profiles"),
         )
@@ -565,7 +584,7 @@ def test_pg_bootstrap_propagates_drop_failure_before_schema_owners(monkeypatch) 
             lambda _dsn, *, _name=name: pytest.fail(f"{_name} must not run after drop failure"),
         )
     monkeypatch.setattr(
-        scenario,
+        scenario.documents_api,
         "seed_postgres_workflow_profiles",
         lambda _dsn: pytest.fail("seed must not run after drop failure"),
     )

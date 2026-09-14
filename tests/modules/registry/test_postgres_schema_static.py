@@ -93,3 +93,70 @@ def test_discover_migrations_rejects_gaps(tmp_path: Path) -> None:
     (tmp_path / "0003_gap.sql").write_text("SELECT 1;", encoding="utf-8")
     with pytest.raises(pgs.PostgresSchemaError, match="contiguous"):
         pgs.discover_migrations(tmp_path)
+
+
+def test_public_provision_postgres_schema_delegates_once_with_admin_dsn(monkeypatch) -> None:
+    import inspect
+
+    from modules.registry.api import provision_postgres_schema
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_provision(admin_dsn: str, **kwargs: object) -> None:
+        calls.append((admin_dsn, dict(kwargs)))
+
+    monkeypatch.setattr(
+        "modules.registry.postgres_schema.provision_registry_schema",
+        fake_provision,
+    )
+    assert list(inspect.signature(provision_postgres_schema).parameters) == ["admin_dsn"]
+    assert provision_postgres_schema("admin-dsn") is None
+    assert calls == [("admin-dsn", {})]
+
+    owner_exc = RuntimeError("registry provision failed")
+
+    def fail_provision(admin_dsn: str, **kwargs: object) -> None:
+        raise owner_exc
+
+    monkeypatch.setattr(
+        "modules.registry.postgres_schema.provision_registry_schema",
+        fail_provision,
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        provision_postgres_schema("admin-dsn")
+    assert exc_info.value is owner_exc
+
+
+def test_public_migrate_postgres_schema_returns_owner_result_and_propagates(monkeypatch) -> None:
+    import inspect
+
+    from modules.registry.api import migrate_postgres_schema
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_migrate(migrator_dsn: str, **kwargs: object) -> int:
+        calls.append((migrator_dsn, dict(kwargs)))
+        return 2
+
+    monkeypatch.setattr(
+        "modules.registry.postgres_schema.migrate_registry_schema",
+        fake_migrate,
+    )
+    sig = inspect.signature(migrate_postgres_schema)
+    assert list(sig.parameters) == ["migrator_dsn"]
+    assert "migrations_dir" not in sig.parameters
+    assert migrate_postgres_schema("migrator-dsn") == 2
+    assert calls == [("migrator-dsn", {})]
+
+    owner_exc = RuntimeError("registry migrate failed")
+
+    def fail_migrate(migrator_dsn: str, **kwargs: object) -> int:
+        raise owner_exc
+
+    monkeypatch.setattr(
+        "modules.registry.postgres_schema.migrate_registry_schema",
+        fail_migrate,
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        migrate_postgres_schema("migrator-dsn")
+    assert exc_info.value is owner_exc

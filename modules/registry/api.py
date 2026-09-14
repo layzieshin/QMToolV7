@@ -15,6 +15,28 @@ def ensure_postgres_schema_ready(container) -> int:
     return assert_runtime_schema_ready(str(dsn))
 
 
+def provision_postgres_schema(admin_dsn: str) -> None:
+    """Operator bootstrap: provision Registry PostgreSQL schema (Admin DSN).
+
+    Lazy-delegates to the existing ``postgres_schema`` owner. Does not migrate
+    or apply schema at productive runtime.
+    """
+    from .postgres_schema import provision_registry_schema
+
+    provision_registry_schema(admin_dsn)
+
+
+def migrate_postgres_schema(migrator_dsn: str) -> int:
+    """Operator bootstrap: migrate Registry PostgreSQL schema (Migrator DSN).
+
+    Lazy-delegates to the existing ``postgres_schema`` owner. Does not publish
+    internal ``migrations_dir``.
+    """
+    from .postgres_schema import migrate_registry_schema
+
+    return migrate_registry_schema(migrator_dsn)
+
+
 def import_sqlite_to_postgres(
     *,
     sqlite_path,

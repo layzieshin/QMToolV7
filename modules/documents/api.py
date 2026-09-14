@@ -60,6 +60,28 @@ def ensure_postgres_schema_ready(container) -> int:
     return assert_runtime_schema_ready(str(dsn))
 
 
+def provision_postgres_schema(admin_dsn: str) -> None:
+    """Operator bootstrap: provision Documents PostgreSQL schema (Admin DSN).
+
+    Lazy-delegates to the existing ``postgres_schema`` owner. Does not migrate,
+    seed, or apply schema at productive runtime.
+    """
+    from .postgres_schema import provision_documents_schema
+
+    provision_documents_schema(admin_dsn)
+
+
+def migrate_postgres_schema(migrator_dsn: str) -> int:
+    """Operator bootstrap: migrate Documents PostgreSQL schema (Migrator DSN).
+
+    Lazy-delegates to the existing ``postgres_schema`` owner. Does not publish
+    internal ``migrations_dir``.
+    """
+    from .postgres_schema import migrate_documents_schema
+
+    return migrate_documents_schema(migrator_dsn)
+
+
 # Transaction-scoped seed lock ("QTM_SEED"); distinct from migrate "QTM_DOCS".
 DOCUMENTS_PG_SEED_ADVISORY_LOCK_KEY = 0x5154_4D5F_5345_4544
 
@@ -156,6 +178,8 @@ __all__ = [
     "DocumentsFeatureUnavailableError",
     "PermissionDeniedError",
     "ValidationError",
+    "provision_postgres_schema",
+    "migrate_postgres_schema",
     "convert_docx_to_pdf",
     "docx_conversion_available",
     "prepare_docx_conversion_runtime",

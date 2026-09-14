@@ -87,6 +87,7 @@ __all__ = [
     "get_user_for_admin",
     "set_user_password_as_admin",
     "ensure_postgres_schema_ready",
+    "migrate_postgres_schema",
     "prepare_postgres_cutover",
     "is_effective_qmb",
     "normalize_base_role",
@@ -326,6 +327,18 @@ def ensure_postgres_schema_ready(container) -> int:
 
     dsn = container.get_port("usermanagement_postgres_dsn")
     return assert_runtime_schema_ready(str(dsn))
+
+
+def migrate_postgres_schema(migrator_dsn: str) -> int:
+    """Operator bootstrap: migrate Usermanagement PostgreSQL schema (Migrator DSN).
+
+    Lazy-delegates to the existing ``postgres_schema`` owner. Does not publish
+    internal ``migrations_dir``. Does not provision roles or auto-migrate at
+    productive runtime.
+    """
+    from .postgres_schema import migrate_usermanagement_schema
+
+    return migrate_usermanagement_schema(migrator_dsn)
 
 
 def prepare_postgres_cutover(

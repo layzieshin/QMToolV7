@@ -362,6 +362,48 @@ def test_documents_workflow_uses_business_document_id_in_creation_flow() -> None
     assert 'custom_fields={"document_code":' not in content
 
 
+def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
+    """J04 realprocess bootstrap must not import postgres_schema internals."""
+    rel = "tests/acceptance/j04_m0_acceptance_scenario.py"
+    tree = ast.parse(_read(rel))
+    allowed_api = {
+        "modules.documents.api",
+        "modules.registry.api",
+        "modules.signature.api",
+        "modules.usermanagement.api",
+    }
+    schema_modules = {
+        "modules.documents",
+        "modules.registry",
+        "modules.signature",
+        "modules.usermanagement",
+    }
+    seen: set[str] = set()
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module.endswith("postgres_schema") or any(
+                alias.name == "postgres_schema" for alias in node.names
+            ):
+                offenders.append(f"{rel}:{node.lineno} -> {module or 'postgres_schema'}")
+                continue
+            if module in allowed_api:
+                seen.add(module)
+            elif module in schema_modules:
+                for alias in node.names:
+                    if alias.name == "api":
+                        seen.add(f"{module}.api")
+                    else:
+                        offenders.append(f"{rel}:{node.lineno} -> {module}.{alias.name}")
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if "postgres_schema" in alias.name:
+                    offenders.append(f"{rel}:{node.lineno} -> {alias.name}")
+    assert offenders == []
+    assert seen == allowed_api
+
+
 def test_cli_uses_only_public_module_interfaces() -> None:
     content = _read("interfaces/cli/main.py")
     assert "modules.usermanagement.sqlite_repository" not in content

@@ -22,11 +22,10 @@ from zipfile import ZipFile
 
 import psycopg
 
-from modules.documents.api import seed_postgres_workflow_profiles
-from modules.documents import postgres_schema as documents_schema
-from modules.registry import postgres_schema as registry_schema
-from modules.signature import postgres_schema as signature_schema
-from modules.usermanagement import postgres_schema as usermanagement_schema
+from modules.documents import api as documents_api
+from modules.registry import api as registry_api
+from modules.signature import api as signature_api
+from modules.usermanagement import api as usermanagement_api
 from tests.acceptance.j04_m0_realprocess_harness import (
     HarnessBlockedError,
     HarnessStartupError,
@@ -524,14 +523,14 @@ def _step_preconditions(ctx: ScenarioContext) -> str:
 def _step_pg_bootstrap(ctx: ScenarioContext) -> str:
     ctx.pg_env = prepare_live_environment()
     _drop_extra_schemas(ctx.pg_env.admin_dsn)
-    usermanagement_schema.migrate_usermanagement_schema(ctx.pg_env.migrator_dsn)
-    documents_schema.provision_documents_schema(ctx.pg_env.admin_dsn)
-    documents_schema.migrate_documents_schema(ctx.pg_env.migrator_dsn)
-    registry_schema.provision_registry_schema(ctx.pg_env.admin_dsn)
-    registry_schema.migrate_registry_schema(ctx.pg_env.migrator_dsn)
-    signature_schema.provision_signature_schema(ctx.pg_env.admin_dsn)
-    signature_schema.migrate_signature_schema(ctx.pg_env.migrator_dsn)
-    seed_postgres_workflow_profiles(ctx.pg_env.runtime_dsn)
+    usermanagement_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    documents_api.provision_postgres_schema(ctx.pg_env.admin_dsn)
+    documents_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    registry_api.provision_postgres_schema(ctx.pg_env.admin_dsn)
+    registry_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    signature_api.provision_postgres_schema(ctx.pg_env.admin_dsn)
+    signature_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    documents_api.seed_postgres_workflow_profiles(ctx.pg_env.runtime_dsn)
     ctx.backend_extra_env = build_backend_extra_env(ctx.pg_env)
     return "isolated PG schemas migrated"
 

@@ -156,3 +156,40 @@ def test_discover_migrations_rejects_invalid_filenames(tmp_path: Path) -> None:
     (tmp_path / "1_bad.sql").write_text("SELECT 1;", encoding="utf-8")
     with pytest.raises(pgs.PostgresSchemaError, match="invalid migration filename"):
         pgs.discover_migrations(tmp_path)
+
+
+def test_public_migrate_postgres_schema_returns_owner_result_and_propagates(monkeypatch) -> None:
+    import inspect
+
+    from modules.usermanagement import api as usermanagement_api
+    from modules.usermanagement.api import migrate_postgres_schema
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_migrate(migrator_dsn: str, **kwargs: object) -> int:
+        calls.append((migrator_dsn, dict(kwargs)))
+        return 3
+
+    monkeypatch.setattr(
+        "modules.usermanagement.postgres_schema.migrate_usermanagement_schema",
+        fake_migrate,
+    )
+    sig = inspect.signature(migrate_postgres_schema)
+    assert list(sig.parameters) == ["migrator_dsn"]
+    assert "migrations_dir" not in sig.parameters
+    assert "migrate_postgres_schema" in usermanagement_api.__all__
+    assert migrate_postgres_schema("migrator-dsn") == 3
+    assert calls == [("migrator-dsn", {})]
+
+    owner_exc = RuntimeError("usermanagement migrate failed")
+
+    def fail_migrate(migrator_dsn: str, **kwargs: object) -> int:
+        raise owner_exc
+
+    monkeypatch.setattr(
+        "modules.usermanagement.postgres_schema.migrate_usermanagement_schema",
+        fail_migrate,
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        migrate_postgres_schema("migrator-dsn")
+    assert exc_info.value is owner_exc
