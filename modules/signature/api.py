@@ -19,6 +19,8 @@ from .transport_dto import (
 __all__ = [
     "SignatureApi",
     "ensure_postgres_schema_ready",
+    "provision_postgres_schema",
+    "migrate_postgres_schema",
     "import_sqlite_to_postgres",
     "SignatureError",
     "PasswordInvalidError", "PasswordRequiredError", "SignatureTemplateError",
@@ -39,6 +41,28 @@ def ensure_postgres_schema_ready(container) -> int:
 
     dsn = container.get_port("signature_postgres_dsn")
     return assert_runtime_schema_ready(str(dsn))
+
+
+def provision_postgres_schema(admin_dsn: str) -> None:
+    """Operator bootstrap: provision Signature PostgreSQL schema (Admin DSN).
+
+    Lazy-delegates to the existing ``postgres_schema`` owner. Does not migrate
+    or apply schema at productive runtime.
+    """
+    from .postgres_schema import provision_signature_schema
+
+    provision_signature_schema(admin_dsn)
+
+
+def migrate_postgres_schema(migrator_dsn: str) -> int:
+    """Operator bootstrap: migrate Signature PostgreSQL schema (Migrator DSN).
+
+    Lazy-delegates to the existing ``postgres_schema`` owner. Does not publish
+    internal ``migrations_dir``.
+    """
+    from .postgres_schema import migrate_signature_schema
+
+    return migrate_signature_schema(migrator_dsn)
 
 
 def import_sqlite_to_postgres(

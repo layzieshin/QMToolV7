@@ -60,6 +60,12 @@ Project GUI architecture:
 - Documents profile admin combines it with `is_effective_qmb`; ADMIN without effective QMB remains rejected.
 - Documents must not import `modules.usermanagement.contracts` and must not read private confirmation markers.
 
+### PostgreSQL operator bootstrap (public API)
+
+- `modules/usermanagement/api.py` exports `migrate_postgres_schema(migrator_dsn: str) -> int`.
+- Scope: operator/test bootstrap facade. Lazy-delegates to `postgres_schema.migrate_usermanagement_schema`.
+- Non-scope: no new SQL, no `migrations_dir` on the public surface, no runtime automigration, no role provision via this facade.
+
 | Key | Governance class | Notes |
 | --- | --- | --- |
 | `users_db_path` | operational | Storage location; change with backup/migration plan. |
@@ -122,6 +128,13 @@ Contract framing:
 - Business state ownership remains in documents only.
 - Write-owner rule: all business writes must end in `documents_service`; adapters must not bypass service invariants.
 - PyQt workflow adapter (`interfaces/pyqt/contributions/documents_workflow_view.py`) behandelt signaturpflichtige Uebergaenge und Jahresverlaengerung als harte Signaturschritte; ohne callable `signature_api.sign_with_fixed_position` darf kein erfolgreicher Abschluss signalisiert werden.
+
+### PostgreSQL operator bootstrap (public API)
+
+- `modules/documents/api.py` exports `provision_postgres_schema(admin_dsn: str) -> None` and `migrate_postgres_schema(migrator_dsn: str) -> int`.
+- Workflow-profile stock uses the existing operator API `seed_postgres_workflow_profiles(postgres_dsn: str)` on the Runtime DSN.
+- Scope: operator/test bootstrap facades. Lazy-delegate to `postgres_schema.provision_documents_schema` / `migrate_documents_schema`.
+- Non-scope: no new SQL, no `migrations_dir` on the public surface, no runtime automigration.
 
 ### Settings
 
@@ -260,6 +273,12 @@ Contract framing:
 - Signature assets are imported as PNG/GIF and normalized to encrypted PNG blobs.
 - User signature templates are persisted separately and can be used by standalone CLI signing flows.
 
+### PostgreSQL operator bootstrap (public API)
+
+- `modules/signature/api.py` exports `provision_postgres_schema(admin_dsn: str) -> None` and `migrate_postgres_schema(migrator_dsn: str) -> int`.
+- Scope: operator/test bootstrap facades. Lazy-delegate to `postgres_schema.provision_signature_schema` / `migrate_signature_schema`.
+- Non-scope: no new SQL, no `migrations_dir` on the public surface, no runtime automigration.
+
 ## registry
 
 ### Ports / capabilities
@@ -295,6 +314,12 @@ Contract framing:
 - `registry_api` is read-focused; projection writes are only exposed via `registry_projection_api` for the documents module.
 - `registry_projection_api` rejects non-documents sources (`source_module_id` guard).
 - Rejected projection attempts are logged and published as `domain.registry.projection.rejected.v1`.
+
+### PostgreSQL operator bootstrap (public API)
+
+- `modules/registry/api.py` exports `provision_postgres_schema(admin_dsn: str) -> None` and `migrate_postgres_schema(migrator_dsn: str) -> int`.
+- Scope: operator/test bootstrap facades. Lazy-delegate to `postgres_schema.provision_registry_schema` / `migrate_registry_schema`.
+- Non-scope: no new SQL, no `migrations_dir` on the public surface, no runtime automigration.
 
 ## settings/ui
 

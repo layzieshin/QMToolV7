@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -19,6 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from qm_platform.blob import is_host_running_marker_present
 
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 8000
@@ -126,6 +129,64 @@ def require_final_acceptance_opt_in() -> None:
 
 
 _READER_JOIN_TIMEOUT = 10.0  # seconds to wait for drain thread after process ends
+_BACKEND_GRACEFUL_STOP_TIMEOUT = 15.0
+_FALLBACK_KILL_TIMEOUT = 2.0
+_MARKER_GONE_WAIT_SECONDS = 2.0
+
+
+def backend_popen_creationflags() -> int:
+    """Windows backend children need their own process group for CTRL_BREAK."""
+    if sys.platform == "win32":
+        return subprocess.CREATE_NEW_PROCESS_GROUP
+    return 0
+
+
+def send_graceful_stop_signal(popen: subprocess.Popen[str]) -> str:
+    """Ask a graceful-stop child to take the ServiceHost.run_forever() interrupt path.
+
+    Windows: CTRL_BREAK_EVENT (the child was started with CREATE_NEW_PROCESS_GROUP).
+    POSIX: SIGINT.
+    """
+    if sys.platform == "win32":
+        popen.send_signal(signal.CTRL_BREAK_EVENT)
+        return "CTRL_BREAK_EVENT"
+    popen.send_signal(signal.SIGINT)
+    return "SIGINT"
+
+
+BACKEND_SIGBREAK_STARTUP_DIRNAME = "backend-sigbreak-startup"
+
+BACKEND_SIGBREAK_SITECUSTOMIZE = (
+    '"""Test-only: map Windows SIGBREAK to KeyboardInterrupt before -m src.backend."""\n'
+    "from __future__ import annotations\n"
+    "\n"
+    "import signal\n"
+    "\n"
+    "_sigbreak = getattr(signal, \"SIGBREAK\", None)\n"
+    "if _sigbreak is not None:\n"
+    "    try:\n"
+    "        signal.signal(signal.SIGBREAK, signal.default_int_handler)\n"
+    "    except Exception:\n"
+    "        raise SystemExit(\"sitecustomize: SIGBREAK handler registration failed\") from None\n"
+)
+
+
+def write_backend_sigbreak_startup(workspace: Path) -> Path:
+    """Write isolated sitecustomize.py under the harness workspace. No secrets."""
+    startup = Path(workspace) / BACKEND_SIGBREAK_STARTUP_DIRNAME
+    startup.mkdir(parents=True, exist_ok=True)
+    (startup / "sitecustomize.py").write_text(BACKEND_SIGBREAK_SITECUSTOMIZE, encoding="utf-8")
+    return startup
+
+
+def prepend_pythonpath(existing: str, prefix: Path) -> str:
+    """Put ``prefix`` first and keep remaining PYTHONPATH entries."""
+    prefix_s = str(prefix)
+    parts = [prefix_s]
+    for item in (existing or "").split(os.pathsep):
+        if item and item != prefix_s:
+            parts.append(item)
+    return os.pathsep.join(parts)
 
 
 class _BackendStdoutDrainer:
@@ -173,6 +234,7 @@ class ManagedProcess:
     pid: int
     popen: subprocess.Popen[str]
     label: str
+    supports_graceful_stop: bool = False
     _drainer: _BackendStdoutDrainer | None = field(default=None, repr=False)
     _log_path: Path | None = field(default=None, repr=False)
 
@@ -216,6 +278,7 @@ class J04M0RealProcessHarness:
         label: str,
         drainer: _BackendStdoutDrainer | None = None,
         log_path: Path | None = None,
+        supports_graceful_stop: bool = False,
     ) -> ManagedProcess:
         if popen.pid is None:
             raise HarnessStartupError(f"{label} subprocess did not receive a PID")
@@ -223,6 +286,7 @@ class J04M0RealProcessHarness:
             pid=int(popen.pid),
             popen=popen,
             label=label,
+            supports_graceful_stop=supports_graceful_stop,
             _drainer=drainer,
             _log_path=log_path,
         )
@@ -237,15 +301,21 @@ class J04M0RealProcessHarness:
         env.setdefault("PYTHONPATH", str(repo_root()))
         if extra_env:
             env.update(extra_env)
+        if sys.platform == "win32":
+            startup = write_backend_sigbreak_startup(self.workspace)
+            env["PYTHONPATH"] = prepend_pythonpath(env.get("PYTHONPATH", ""), startup)
         command = [python_executable(), "-m", BACKEND_MODULE]
-        popen = subprocess.Popen(
-            command,
-            cwd=str(repo_root()),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(repo_root()),
+            "env": env,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+        }
+        creationflags = backend_popen_creationflags()
+        if creationflags:
+            popen_kwargs["creationflags"] = creationflags
+        popen = subprocess.Popen(command, **popen_kwargs)
         assert self.log_dir is not None
         if popen.pid is None:
             raise HarnessStartupError("backend subprocess did not receive a PID")
@@ -256,6 +326,7 @@ class J04M0RealProcessHarness:
             label="backend",
             drainer=drainer,
             log_path=log_path,
+            supports_graceful_stop=True,
         )
 
     def wait_for_health(self, *, timeout_seconds: float = 30.0) -> dict[str, Any]:
@@ -346,26 +417,108 @@ class J04M0RealProcessHarness:
             path = self.log_dir / log_name
             path.write_text(output, encoding="utf-8")
 
-    def stop_process(self, label: str, *, grace_seconds: float = 5.0) -> None:
-        """Terminate and detach a single managed process by label."""
+    def _terminate_or_kill(self, popen: subprocess.Popen[str], *, grace_seconds: float) -> None:
+        if popen.poll() is not None:
+            return
+        popen.terminate()
+        try:
+            popen.wait(timeout=grace_seconds)
+        except subprocess.TimeoutExpired:
+            popen.kill()
+            popen.wait(timeout=_FALLBACK_KILL_TIMEOUT)
+
+    def _wait_until_marker_gone(self) -> bool:
+        """Observe marker absence only. Never unlink or rmdir the marker."""
+        if self.backend_home is None:
+            return True
+        deadline = time.monotonic() + _MARKER_GONE_WAIT_SECONDS
+        while True:
+            if not is_host_running_marker_present(app_home=self.backend_home):
+                return True
+            if time.monotonic() >= deadline:
+                return not is_host_running_marker_present(app_home=self.backend_home)
+            time.sleep(0.05)
+
+    def _stop_graceful_backend(
+        self,
+        managed: ManagedProcess,
+        *,
+        grace_seconds: float,
+        fail_closed_on_fallback: bool,
+    ) -> None:
+        popen = managed.popen
+        fallback_used = False
+        signal_name = "none"
+        if popen.poll() is None:
+            signal_name = send_graceful_stop_signal(popen)
+            try:
+                popen.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                pass
+        if popen.poll() is None:
+            fallback_used = True
+            detail = (
+                f"backend graceful stop fallback to terminate/kill after {signal_name} "
+                f"pid={managed.pid}"
+            )
+            self.write_log("backend-graceful-stop-fallback.log", detail)
+            self._terminate_or_kill(popen, grace_seconds=_FALLBACK_KILL_TIMEOUT)
+        self._drain_and_log(managed)
+        if not fail_closed_on_fallback:
+            return
+        if fallback_used:
+            raise HarnessError(
+                "backend graceful stop fallback to terminate/kill; "
+                f"refusing restart pid={managed.pid}"
+            )
+        if popen.poll() is None:
+            raise HarnessError(
+                f"backend child still running after graceful stop; refusing restart pid={managed.pid}"
+            )
+        if not self._wait_until_marker_gone():
+            raise HarnessError(
+                "backend host running marker still present after graceful stop; "
+                "refusing restart over stale marker"
+            )
+
+    def _stop_terminate_tracked(
+        self,
+        managed: ManagedProcess,
+        *,
+        grace_seconds: float,
+    ) -> None:
+        self._terminate_or_kill(managed.popen, grace_seconds=grace_seconds)
+        self._drain_and_log(managed)
+
+    def stop_process(self, label: str, *, grace_seconds: float | None = None) -> None:
+        """Stop and detach a single managed process by label.
+
+        Backend children started via ``start_backend`` use the graceful interrupt
+        path. A restart must not treat terminate/kill fallback as success.
+        """
         remaining: list[ManagedProcess] = []
         errors: list[HarnessError] = []
         for managed in self._processes:
-            if managed.label == label:
-                popen = managed.popen
-                if popen.poll() is None:
-                    popen.terminate()
-                    try:
-                        popen.wait(timeout=grace_seconds)
-                    except subprocess.TimeoutExpired:
-                        popen.kill()
-                        popen.wait(timeout=2.0)
-                try:
-                    self._drain_and_log(managed)
-                except HarnessError as exc:
-                    errors.append(exc)
-            else:
+            if managed.label != label:
                 remaining.append(managed)
+                continue
+            try:
+                if managed.supports_graceful_stop:
+                    timeout = (
+                        _BACKEND_GRACEFUL_STOP_TIMEOUT
+                        if grace_seconds is None
+                        else grace_seconds
+                    )
+                    self._stop_graceful_backend(
+                        managed,
+                        grace_seconds=timeout,
+                        fail_closed_on_fallback=True,
+                    )
+                else:
+                    timeout = 5.0 if grace_seconds is None else grace_seconds
+                    self._stop_terminate_tracked(managed, grace_seconds=timeout)
+            except HarnessError as exc:
+                errors.append(exc)
         self._processes = remaining
         if errors:
             raise errors[0]
@@ -373,24 +526,15 @@ class J04M0RealProcessHarness:
     def cleanup(self, *, grace_seconds: float = 5.0) -> None:
         errors: list[HarnessError] = []
         for managed in reversed(self._processes):
-            popen = managed.popen
-            if popen.poll() is not None:
-                continue
-            popen.terminate()
-        deadline = time.monotonic() + grace_seconds
-        for managed in self._processes:
-            popen = managed.popen
-            if popen.poll() is not None:
-                continue
-            remaining_t = max(0.0, deadline - time.monotonic())
             try:
-                popen.wait(timeout=remaining_t)
-            except subprocess.TimeoutExpired:
-                popen.kill()
-                popen.wait(timeout=2.0)
-        for managed in self._processes:
-            try:
-                self._drain_and_log(managed)
+                if managed.supports_graceful_stop:
+                    self._stop_graceful_backend(
+                        managed,
+                        grace_seconds=max(grace_seconds, _BACKEND_GRACEFUL_STOP_TIMEOUT),
+                        fail_closed_on_fallback=False,
+                    )
+                else:
+                    self._stop_terminate_tracked(managed, grace_seconds=grace_seconds)
             except HarnessError as exc:
                 errors.append(exc)
         self._processes.clear()

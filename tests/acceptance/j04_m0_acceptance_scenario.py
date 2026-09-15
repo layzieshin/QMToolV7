@@ -20,7 +20,10 @@ from io import BytesIO
 from typing import Any, Callable
 from zipfile import ZipFile
 
-from modules.usermanagement import postgres_schema as pgs
+from modules.documents import api as documents_api
+from modules.registry import api as registry_api
+from modules.signature import api as signature_api
+from modules.usermanagement import api as usermanagement_api
 from tests.acceptance.j04_m0_realprocess_harness import (
     HarnessBlockedError,
     HarnessStartupError,
@@ -507,9 +510,16 @@ def _step_preconditions(ctx: ScenarioContext) -> str:
 
 def _step_pg_bootstrap(ctx: ScenarioContext) -> str:
     ctx.pg_env = prepare_live_environment()
-    pgs.migrate_usermanagement_schema(ctx.pg_env.migrator_dsn)
+    usermanagement_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    documents_api.provision_postgres_schema(ctx.pg_env.admin_dsn)
+    documents_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    registry_api.provision_postgres_schema(ctx.pg_env.admin_dsn)
+    registry_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    signature_api.provision_postgres_schema(ctx.pg_env.admin_dsn)
+    signature_api.migrate_postgres_schema(ctx.pg_env.migrator_dsn)
+    documents_api.seed_postgres_workflow_profiles(ctx.pg_env.runtime_dsn)
     ctx.backend_extra_env = build_backend_extra_env(ctx.pg_env)
-    return "isolated PG schema migrated"
+    return "isolated PG schemas migrated"
 
 
 def _step_backend_start(ctx: ScenarioContext) -> str:

@@ -95,3 +95,75 @@ def test_discover_migrations_rejects_duplicate_names(tmp_path: Path) -> None:
     (tmp_path / "0002_initial.sql").write_text("SELECT 1;", encoding="utf-8")
     with pytest.raises(pgs.PostgresSchemaError, match="names must be unique"):
         pgs.discover_migrations(tmp_path)
+
+
+def test_public_provision_postgres_schema_delegates_once_with_admin_dsn(monkeypatch) -> None:
+    import inspect
+
+    from modules.signature.api import provision_postgres_schema
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_provision(admin_dsn: str, **kwargs: object) -> None:
+        calls.append((admin_dsn, dict(kwargs)))
+
+    monkeypatch.setattr(
+        "modules.signature.postgres_schema.provision_signature_schema",
+        fake_provision,
+    )
+    assert list(inspect.signature(provision_postgres_schema).parameters) == ["admin_dsn"]
+    from modules.signature import api as signature_api
+
+    assert "provision_postgres_schema" in signature_api.__all__
+    assert provision_postgres_schema("admin-dsn") is None
+    assert calls == [("admin-dsn", {})]
+
+    owner_exc = RuntimeError("signature provision failed")
+
+    def fail_provision(admin_dsn: str, **kwargs: object) -> None:
+        raise owner_exc
+
+    monkeypatch.setattr(
+        "modules.signature.postgres_schema.provision_signature_schema",
+        fail_provision,
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        provision_postgres_schema("admin-dsn")
+    assert exc_info.value is owner_exc
+
+
+def test_public_migrate_postgres_schema_returns_owner_result_and_propagates(monkeypatch) -> None:
+    import inspect
+
+    from modules.signature import api as signature_api
+    from modules.signature.api import migrate_postgres_schema
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_migrate(migrator_dsn: str, **kwargs: object) -> int:
+        calls.append((migrator_dsn, dict(kwargs)))
+        return 3
+
+    monkeypatch.setattr(
+        "modules.signature.postgres_schema.migrate_signature_schema",
+        fake_migrate,
+    )
+    sig = inspect.signature(migrate_postgres_schema)
+    assert list(sig.parameters) == ["migrator_dsn"]
+    assert "migrations_dir" not in sig.parameters
+    assert "migrate_postgres_schema" in signature_api.__all__
+    assert migrate_postgres_schema("migrator-dsn") == 3
+    assert calls == [("migrator-dsn", {})]
+
+    owner_exc = RuntimeError("signature migrate failed")
+
+    def fail_migrate(migrator_dsn: str, **kwargs: object) -> int:
+        raise owner_exc
+
+    monkeypatch.setattr(
+        "modules.signature.postgres_schema.migrate_signature_schema",
+        fail_migrate,
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        migrate_postgres_schema("migrator-dsn")
+    assert exc_info.value is owner_exc
