@@ -11,7 +11,6 @@ import ipaddress
 import json
 import os
 import shutil
-import signal
 import socket
 import ssl
 import subprocess
@@ -22,25 +21,29 @@ import urllib.request
 from pathlib import Path
 from typing import Any, TextIO
 
-import psycopg
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from modules.documents import postgres_schema as documents_schema
-from modules.documents.api import seed_postgres_workflow_profiles
-from modules.registry import postgres_schema as registry_schema
-from modules.signature import postgres_schema as signature_schema
-from modules.usermanagement import postgres_schema as usermanagement_schema
-from qm_platform.blob.backup_orchestrator import remove_host_running_marker_if_owned
+from modules.documents import api as documents_api
+from modules.registry import api as registry_api
+from modules.signature import api as signature_api
+from modules.usermanagement import api as usermanagement_api
+from qm_platform.blob import is_host_running_marker_present
 from src.backend import bootstrap as backend_bootstrap
 from src.backend import service_host as service_host_mod
 from src.backend.service_host import probe_health
-from tests.acceptance.j04_m0_realprocess_harness import redact_log_text
+from tests.acceptance.j04_m0_realprocess_harness import (
+    backend_popen_creationflags,
+    prepend_pythonpath,
+    redact_log_text,
+    send_graceful_stop_signal,
+    write_backend_sigbreak_startup,
+)
 from tests.postgres_destructive_guard import RESET_OPT_IN_VALUE, TEST_RESET_ENV
-from tests.postgres_live_support import LivePostgresEnv
+from tests.postgres_live_support import LivePostgresEnv, cleanup_live_environment
 
 pytestmark = pytest.mark.postgres
 
@@ -190,70 +193,73 @@ def _stop_owned_process(proc: subprocess.Popen[str] | None) -> None:
         proc.kill()
 
 
-def _host_marker_path(home: Path) -> Path:
-    return home / "storage" / "platform" / "host-running.pid"
+_BACKEND_GRACEFUL_STOP_TIMEOUT = 15.0
+_MARKER_GONE_WAIT_SECONDS = 2.0
 
 
-def _read_owned_marker_token(home: Path) -> str:
-    """Read the single host-running token created in the isolated INT00 home."""
-    marker = _host_marker_path(home)
-    if not marker.is_dir():
+def _assert_host_marker_present(home: Path) -> None:
+    if not is_host_running_marker_present(app_home=home):
         pytest.fail("production ServiceHost did not create a host-running marker")
-    children = [path for path in marker.iterdir() if path.is_file()]
-    if len(children) != 1:
-        pytest.fail("isolated INT00 home has an unexpected host-running marker layout")
-    token = children[0].read_text(encoding="ascii").strip()
-    if ":" not in token:
-        pytest.fail("host-running marker token is malformed")
-    return token
+
+
+def _wait_until_host_marker_gone(home: Path) -> bool:
+    """Observe marker absence only. Never unlink, rmdir, or repair the marker."""
+    deadline = time.monotonic() + _MARKER_GONE_WAIT_SECONDS
+    while True:
+        if not is_host_running_marker_present(app_home=home):
+            return True
+        if time.monotonic() >= deadline:
+            return not is_host_running_marker_present(app_home=home)
+        time.sleep(0.05)
 
 
 def _start_backend_process(*, env: dict[str, str], log_handle: TextIO) -> subprocess.Popen[str]:
-    creationflags = 0
-    if sys.platform == "win32":
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "src.backend"],
-        cwd=str(REPO_ROOT),
-        env=env,
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-        text=True,
-        creationflags=creationflags,
-    )
+    popen_kwargs: dict[str, Any] = {
+        "cwd": str(REPO_ROOT),
+        "env": env,
+        "stdout": log_handle,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+    }
+    creationflags = backend_popen_creationflags()
+    if creationflags:
+        popen_kwargs["creationflags"] = creationflags
+    proc = subprocess.Popen([sys.executable, "-m", "src.backend"], **popen_kwargs)
     if proc.pid is None:
         pytest.fail("production ServiceHost subprocess did not receive a PID")
     return proc
 
 
-def _stop_backend_process(
-    proc: subprocess.Popen[str] | None,
-    *,
-    home: Path,
-    owned_token: str | None,
-    timeout: float = 20.0,
-) -> None:
-    if proc is not None:
-        if proc.poll() is None:
-            if sys.platform == "win32" and proc.pid is not None:
-                try:
-                    os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
-                except OSError:
-                    pass
-                try:
-                    proc.wait(timeout=min(5.0, timeout))
-                except subprocess.TimeoutExpired:
-                    _stop_owned_process(proc)
-            else:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    _stop_owned_process(proc)
-        if proc.poll() is None:
+def _stop_backend_for_restart(proc: subprocess.Popen[str] | None, *, home: Path) -> None:
+    """Fail-closed graceful stop for the INT00 handshake restart.
+
+    Terminate/kill fallback must not count as a successful restart. The
+    productive host marker must disappear through ServiceHost itself.
+    """
+    fallback_used = False
+    signal_name = "none"
+    if proc is not None and proc.poll() is None:
+        signal_name = send_graceful_stop_signal(proc)
+        try:
+            proc.wait(timeout=_BACKEND_GRACEFUL_STOP_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            fallback_used = True
             _stop_owned_process(proc)
-    if owned_token:
-        remove_host_running_marker_if_owned(owned_token, app_home=home)
+    if proc is not None and proc.poll() is None:
+        fallback_used = True
+        _stop_owned_process(proc)
+    if fallback_used:
+        pytest.fail(
+            f"backend graceful stop fallback to terminate/kill after {signal_name}; "
+            "refusing restart"
+        )
+    if proc is not None and proc.poll() is None:
+        pytest.fail("backend child still running after graceful stop; refusing restart")
+    if not _wait_until_host_marker_gone(home):
+        pytest.fail(
+            "backend host running marker still present after graceful stop; "
+            "refusing restart over stale marker"
+        )
 
 
 def _wait_https_health(host: str, port: int, *, timeout: float = 45.0) -> None:
@@ -278,24 +284,14 @@ def _wait_https_health(host: str, port: int, *, timeout: float = 45.0) -> None:
 
 
 def _provision_postgres(live: LivePostgresEnv) -> None:
-    usermanagement_schema.migrate_usermanagement_schema(live.migrator_dsn)
-    documents_schema.provision_documents_schema(live.admin_dsn)
-    documents_schema.migrate_documents_schema(live.migrator_dsn)
-    registry_schema.provision_registry_schema(live.admin_dsn)
-    registry_schema.migrate_registry_schema(live.migrator_dsn)
-    signature_schema.provision_signature_schema(live.admin_dsn)
-    signature_schema.migrate_signature_schema(live.migrator_dsn)
-    seed_postgres_workflow_profiles(live.runtime_dsn)
-
-
-def _drop_extra_schemas(admin_dsn: str) -> None:
-    with psycopg.connect(admin_dsn, autocommit=True) as conn:
-        for name in ("documents", "registry", "signature"):
-            conn.execute(
-                psycopg.sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
-                    psycopg.sql.Identifier(name)
-                )
-            )
+    usermanagement_api.migrate_postgres_schema(live.migrator_dsn)
+    documents_api.provision_postgres_schema(live.admin_dsn)
+    documents_api.migrate_postgres_schema(live.migrator_dsn)
+    registry_api.provision_postgres_schema(live.admin_dsn)
+    registry_api.migrate_postgres_schema(live.migrator_dsn)
+    signature_api.provision_postgres_schema(live.admin_dsn)
+    signature_api.migrate_postgres_schema(live.migrator_dsn)
+    documents_api.seed_postgres_workflow_profiles(live.runtime_dsn)
 
 
 def _copy_tracked_license(home: Path) -> None:
@@ -397,10 +393,15 @@ def test_int00_joint_browser_postgres_https_restart(
     backend_env["PYTHONPATH"] = os.pathsep.join(
         part for part in (str(REPO_ROOT), existing_pythonpath) if part
     )
+    if sys.platform == "win32":
+        startup = write_backend_sigbreak_startup(evidence)
+        backend_env["PYTHONPATH"] = prepend_pythonpath(
+            backend_env.get("PYTHONPATH", ""),
+            startup,
+        )
 
     playwright: subprocess.Popen[str] | None = None
     backend: subprocess.Popen[str] | None = None
-    owned_token: str | None = None
     stdout_handle: TextIO | None = None
     stderr_handle: TextIO | None = None
     backend_log_handle: TextIO | None = None
@@ -411,7 +412,7 @@ def test_int00_joint_browser_postgres_https_restart(
         backend_log_handle = backend_log_path.open("w", encoding="utf-8")
         backend = _start_backend_process(env=backend_env, log_handle=backend_log_handle)
         _wait_https_health(bind_host, bind_port)
-        owned_token = _read_owned_marker_token(home)
+        _assert_host_marker_present(home)
         _complete_bootstrap_password_change(base_url)
 
         child_env = {
@@ -458,13 +459,13 @@ def test_int00_joint_browser_postgres_https_restart(
                 pytest.fail("timeout waiting for Playwright restart request")
             time.sleep(0.25)
 
-        _stop_backend_process(backend, home=home, owned_token=owned_token)
+        _stop_backend_for_restart(backend, home=home)
         backend = None
         _wait_port_free(bind_host, bind_port)
         _assert_port_free(bind_host, bind_port)
         backend = _start_backend_process(env=backend_env, log_handle=backend_log_handle)
         _wait_https_health(bind_host, bind_port)
-        owned_token = _read_owned_marker_token(home)
+        _assert_host_marker_present(home)
         restart_complete.write_text(
             json.dumps({"phase": "host-restarted", "port": bind_port}, indent=2) + "\n",
             encoding="utf-8",
@@ -478,7 +479,7 @@ def test_int00_joint_browser_postgres_https_restart(
             pytest.fail(f"INT00 Playwright joint spec failed with exit {playwright_rc}")
     finally:
         _stop_owned_process(playwright)
-        _stop_backend_process(backend, home=home, owned_token=owned_token, timeout=10.0)
+        _stop_owned_process(backend)
         if stdout_handle is not None:
             stdout_handle.close()
         if stderr_handle is not None:
@@ -505,7 +506,7 @@ def test_int00_joint_browser_postgres_https_restart(
                     original,
                     extra_secrets,
                 )
-        _drop_extra_schemas(live_postgres_env.admin_dsn)
+        cleanup_live_environment(admin_dsn=live_postgres_env.admin_dsn)
 
     assert FORBIDDEN_BACKEND not in sys.modules
     assert service_host_mod.build_backend_container is backend_bootstrap.build_backend_container

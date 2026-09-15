@@ -399,9 +399,8 @@ def test_backend_routes_do_not_delegate_mutations_to_background_tasks() -> None:
     assert offenders == []
 
 
-def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
-    """J04 realprocess bootstrap must not import postgres_schema internals."""
-    rel = "tests/acceptance/j04_m0_acceptance_scenario.py"
+def _assert_orchestrator_uses_only_public_module_apis(rel: str) -> None:
+    """Joint orchestrators must use public module APIs and must not drop schemas or markers."""
     source = _read(rel)
     tree = ast.parse(source)
     allowed_api = {
@@ -429,6 +428,11 @@ def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
             if (module or "").startswith("psycopg"):
                 offenders.append(f"{rel}:{node.lineno} -> {module}")
                 continue
+            if any(alias.name == "remove_host_running_marker_if_owned" for alias in node.names):
+                offenders.append(
+                    f"{rel}:{node.lineno} -> {module}.remove_host_running_marker_if_owned"
+                )
+                continue
             if module in allowed_api:
                 seen.add(module)
             elif module in schema_modules:
@@ -443,10 +447,22 @@ def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
                     offenders.append(f"{rel}:{node.lineno} -> {alias.name}")
                 if alias.name == "psycopg" or alias.name.startswith("psycopg."):
                     offenders.append(f"{rel}:{node.lineno} -> {alias.name}")
-    assert offenders == []
+                if "remove_host_running_marker_if_owned" in alias.name:
+                    offenders.append(f"{rel}:{node.lineno} -> {alias.name}")
+    assert offenders == [], offenders
     assert seen == allowed_api
     assert "DROP SCHEMA" not in source.upper()
     assert "psycopg.connect" not in source
+    assert "remove_host_running_marker_if_owned" not in source
+
+
+def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:
+    """J04 and INT00 orchestrators must not import postgres_schema internals."""
+    for rel in (
+        "tests/acceptance/j04_m0_acceptance_scenario.py",
+        "tests/acceptance/test_int00_joint_integration.py",
+    ):
+        _assert_orchestrator_uses_only_public_module_apis(rel)
 
 
 def test_cli_uses_only_public_module_interfaces() -> None:
