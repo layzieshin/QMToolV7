@@ -38,6 +38,7 @@ from src.backend.service_host import probe_health
 from tests.acceptance.j04_m0_realprocess_harness import (
     backend_popen_creationflags,
     prepend_pythonpath,
+    python_executable,
     redact_log_text,
     send_graceful_stop_signal,
     write_backend_sigbreak_startup,
@@ -193,7 +194,8 @@ def _stop_owned_process(proc: subprocess.Popen[str] | None) -> None:
         proc.kill()
 
 
-_BACKEND_GRACEFUL_STOP_TIMEOUT = 15.0
+_PRODUCTIVE_SERVICEHOST_STOP_SECONDS = 30.0
+_BACKEND_GRACEFUL_STOP_TIMEOUT = 40.0
 _MARKER_GONE_WAIT_SECONDS = 2.0
 
 
@@ -224,29 +226,69 @@ def _start_backend_process(*, env: dict[str, str], log_handle: TextIO) -> subpro
     creationflags = backend_popen_creationflags()
     if creationflags:
         popen_kwargs["creationflags"] = creationflags
-    proc = subprocess.Popen([sys.executable, "-m", "src.backend"], **popen_kwargs)
+    proc = subprocess.Popen([python_executable(), "-m", "src.backend"], **popen_kwargs)
     if proc.pid is None:
         pytest.fail("production ServiceHost subprocess did not receive a PID")
     return proc
 
 
-def _stop_backend_for_restart(proc: subprocess.Popen[str] | None, *, home: Path) -> None:
+def _write_graceful_stop_diagnosis(evidence: Path, payload: dict[str, Any]) -> None:
+    allowed = {
+        "signal",
+        "outer_wait_budget_seconds",
+        "productive_servicehost_stop_window_seconds",
+        "shutdown_duration_seconds",
+        "child_returncode",
+        "fallback_used",
+        "marker_present_after_exit",
+    }
+    body = {key: payload[key] for key in allowed}
+    path = evidence / "graceful-stop-diagnosis.json"
+    path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+
+
+def _stop_backend_for_restart(
+    proc: subprocess.Popen[str] | None,
+    *,
+    home: Path,
+    evidence: Path,
+) -> None:
     """Fail-closed graceful stop for the INT00 handshake restart.
 
-    Terminate/kill fallback must not count as a successful restart. The
-    productive host marker must disappear through ServiceHost itself.
+    Outer wait is 40s: productive ServiceHost.stop() uses 30s, plus 10s process
+    exit margin. Terminate/kill fallback must not count as a successful restart.
+    The productive host marker must disappear through ServiceHost itself.
     """
     fallback_used = False
     signal_name = "none"
+    started = time.monotonic()
     if proc is not None and proc.poll() is None:
         signal_name = send_graceful_stop_signal(proc)
         try:
             proc.wait(timeout=_BACKEND_GRACEFUL_STOP_TIMEOUT)
         except subprocess.TimeoutExpired:
             fallback_used = True
-            _stop_owned_process(proc)
-    if proc is not None and proc.poll() is None:
+    elapsed = round(time.monotonic() - started, 3)
+    returncode = None if proc is None else proc.poll()
+    if proc is not None and returncode is None:
         fallback_used = True
+    if returncode is not None:
+        marker_present = not _wait_until_host_marker_gone(home)
+    else:
+        marker_present = is_host_running_marker_present(app_home=home)
+    _write_graceful_stop_diagnosis(
+        evidence,
+        {
+            "signal": signal_name,
+            "outer_wait_budget_seconds": _BACKEND_GRACEFUL_STOP_TIMEOUT,
+            "productive_servicehost_stop_window_seconds": _PRODUCTIVE_SERVICEHOST_STOP_SECONDS,
+            "shutdown_duration_seconds": elapsed,
+            "child_returncode": returncode,
+            "fallback_used": fallback_used,
+            "marker_present_after_exit": marker_present,
+        },
+    )
+    if proc is not None and proc.poll() is None:
         _stop_owned_process(proc)
     if fallback_used:
         pytest.fail(
@@ -255,7 +297,11 @@ def _stop_backend_for_restart(proc: subprocess.Popen[str] | None, *, home: Path)
         )
     if proc is not None and proc.poll() is None:
         pytest.fail("backend child still running after graceful stop; refusing restart")
-    if not _wait_until_host_marker_gone(home):
+    if returncode != 0:
+        pytest.fail(
+            f"backend graceful stop returned {returncode}; refusing restart"
+        )
+    if marker_present:
         pytest.fail(
             "backend host running marker still present after graceful stop; "
             "refusing restart over stale marker"
@@ -459,7 +505,7 @@ def test_int00_joint_browser_postgres_https_restart(
                 pytest.fail("timeout waiting for Playwright restart request")
             time.sleep(0.25)
 
-        _stop_backend_for_restart(backend, home=home)
+        _stop_backend_for_restart(backend, home=home, evidence=evidence)
         backend = None
         _wait_port_free(bind_host, bind_port)
         _assert_port_free(bind_host, bind_port)
