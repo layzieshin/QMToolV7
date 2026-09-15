@@ -1,13 +1,17 @@
 """OPS00-A/B uninstalled backend service host lifecycle and production negatives."""
 from __future__ import annotations
 
+import asyncio
+import http.client
 import os
 import shutil
 import socket
 import threading
+import time
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 
 from qm_platform.events.event_bus import EventBus
 from qm_platform.logging.audit_logger import AuditLogger
@@ -108,6 +112,8 @@ def test_service_host_start_status_graceful_stop(
         assert status.bind_host == "127.0.0.1"
         assert status.bind_port > 0
         assert status.https_enabled is False
+        assert host._server is not None
+        assert host._server.config.timeout_graceful_shutdown == 20
         assert host.is_serving()
 
         payload = probe_health(status.bind_host, status.bind_port)
@@ -282,6 +288,161 @@ def test_production_valid_pem_serves_https_after_bootstrap(
         host.stop(timeout=15.0)
 
 
+def _configure_real_https_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    app: FastAPI,
+) -> tuple[ServiceHost, int, Path]:
+    cert_path, key_path = write_ephemeral_self_signed_pem(tmp_path)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        bind_port = int(sock.getsockname()[1])
+
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("QMTOOL_TLS_CERT_FILE", str(cert_path))
+    monkeypatch.setenv("QMTOOL_TLS_KEY_FILE", str(key_path))
+    monkeypatch.setenv("QMTOOL_BIND_HOST", "127.0.0.1")
+    monkeypatch.setenv("QMTOOL_BIND_PORT", str(bind_port))
+    monkeypatch.setattr(
+        "src.backend.service_host.build_backend_container",
+        lambda: _minimal_container(tmp_path),
+    )
+    monkeypatch.setattr("src.backend.service_host.create_app", lambda _container: app)
+    return ServiceHost(), bind_port, cert_path
+
+
+def _start_https_request(
+    *,
+    port: int,
+    cert_path: Path,
+    results: dict[str, object],
+) -> threading.Thread:
+    def _request() -> None:
+        connection = http.client.HTTPSConnection(
+            "127.0.0.1",
+            port,
+            context=ssl_context_trusting(cert_path),
+            timeout=5.0,
+        )
+        try:
+            connection.request("GET", "/hold")
+            response = connection.getresponse()
+            results["status"] = response.status
+            results["body"] = response.read()
+        except Exception as exc:  # noqa: BLE001 - the cancellation case closes the socket
+            results["error"] = type(exc).__name__
+        finally:
+            connection.close()
+
+    thread = threading.Thread(target=_request, name="ops00-https-request")
+    thread.start()
+    return thread
+
+
+def test_https_request_finishing_inside_grace_period_is_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    completed = threading.Event()
+    app = FastAPI()
+
+    @app.get("/hold")
+    async def _hold_until_released():
+        entered.set()
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        completed.set()
+        return {"status": "completed"}
+
+    monkeypatch.setattr("src.backend.service_host._UVICORN_GRACEFUL_SHUTDOWN_SECONDS", 0.5)
+    host, bind_port, cert_path = _configure_real_https_host(tmp_path, monkeypatch, app)
+    host.start(timeout=5.0)
+    results: dict[str, object] = {}
+    request_thread = _start_https_request(
+        port=bind_port,
+        cert_path=cert_path,
+        results=results,
+    )
+    assert entered.wait(timeout=3.0)
+
+    stop_errors: list[BaseException] = []
+
+    def _stop() -> None:
+        try:
+            host.stop(timeout=2.0)
+        except BaseException as exc:  # noqa: BLE001 - transferred to the test thread
+            stop_errors.append(exc)
+
+    stop_thread = threading.Thread(target=_stop, name="ops00-host-stop")
+    stop_thread.start()
+    time.sleep(0.05)
+    release.set()
+    stop_thread.join(timeout=3.0)
+    request_thread.join(timeout=3.0)
+
+    assert not stop_thread.is_alive()
+    assert not request_thread.is_alive()
+    assert stop_errors == []
+    assert completed.is_set()
+    assert results == {"status": 200, "body": b'{"status":"completed"}'}
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host_running_marker_path(tmp_path).exists()
+
+
+def test_https_blocked_request_is_cancelled_before_outer_stop_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered = threading.Event()
+    completed = threading.Event()
+    app = FastAPI()
+
+    @app.get("/hold")
+    async def _hold_until_cancelled():
+        entered.set()
+        await asyncio.Event().wait()
+        completed.set()
+        return {"status": "must-not-complete"}
+
+    monkeypatch.setattr("src.backend.service_host._UVICORN_GRACEFUL_SHUTDOWN_SECONDS", 0.2)
+    host, bind_port, cert_path = _configure_real_https_host(tmp_path, monkeypatch, app)
+    host.start(timeout=5.0)
+    first_server = host._server
+    assert first_server is not None
+    results: dict[str, object] = {}
+    request_thread = _start_https_request(
+        port=bind_port,
+        cert_path=cert_path,
+        results=results,
+    )
+    assert entered.wait(timeout=3.0)
+
+    started = time.monotonic()
+    host.stop(timeout=2.0)
+    elapsed = time.monotonic() - started
+    request_thread.join(timeout=3.0)
+
+    assert elapsed < 2.0
+    assert not request_thread.is_alive()
+    assert not completed.is_set()
+    assert first_server.force_exit is False
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host_running_marker_path(tmp_path).exists()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        assert sock.connect_ex(("127.0.0.1", bind_port)) != 0
+
+    host.start(timeout=5.0)
+    assert host.status().state == ServiceHostState.RUNNING
+    assert host_running_marker_path(tmp_path).is_dir()
+    second_server = host._server
+    assert second_server is not None
+    host.stop(timeout=2.0)
+    assert second_server.force_exit is False
+    assert host.status().state == ServiceHostState.STOPPED
+    assert not host_running_marker_path(tmp_path).exists()
+
+
 def test_service_host_loads_dotenv_before_home_lock_bind_and_tls(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -389,6 +550,8 @@ def test_stop_timeout_does_not_report_stopped_while_thread_alive(
     host = ServiceHost()
     host.start(timeout=15.0)
     assert host.status().state == ServiceHostState.RUNNING
+    marker = host_running_marker_path(tmp_path)
+    assert marker.is_dir()
 
     real_thread = host._thread
     server = host._server
@@ -399,6 +562,7 @@ def test_stop_timeout_does_not_report_stopped_while_thread_alive(
 
         assert host.status().state == ServiceHostState.STOPPING
         assert host.status().state != ServiceHostState.STOPPED
+        assert marker.is_dir()
     finally:
         host._thread = real_thread
         if server is not None:

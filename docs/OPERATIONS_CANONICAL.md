@@ -174,6 +174,18 @@ registry writes, firewall rules, or certificate-store imports.
 | Certificate paths | `{QMTOOL_HOME}/certs/` or explicit `QMTOOL_TLS_*` paths readable by the service account |
 | HTTPS endpoint | Same-origin `https://<host>:<port>/api/v1` with OPS00-B file-PEM TLS on the host (loopback contract evidence; not PILOT00 LAN/cert-store deployment) |
 
+The host gives uvicorn requests and background tasks up to **20 seconds** to
+finish during graceful shutdown. After that interval uvicorn cancels remaining
+work and runs its normal lifespan shutdown. `ServiceHost.stop()` retains its
+separate **30-second** serve-thread join budget; it removes its host-running
+marker only after that thread has safely ended. If the thread is still alive,
+the host remains `STOPPING`, raises instead of reporting a clean stop, and keeps
+the marker. The supervising service must retain at least the **60-second** stop
+budget above before an external kill. Requests completed within the uvicorn
+grace period keep their result; cancellation and transaction rollback after the
+limit remain governed by the existing request and persistence owners. This is
+not a blanket guarantee against data loss.
+
 The SQLite desktop commands below remain legacy tooling and are not a productive PostgreSQL
 backup, restore, update, export, or service-host path.
 

@@ -44,6 +44,7 @@ from src.backend.tls_config import load_tls_material, resolve_tls_paths
 _PRODUCTION_PROFILES = frozenset({"prod", "production"})
 _DEFAULT_BIND_HOST = "127.0.0.1"
 _DEFAULT_BIND_PORT = 8000
+_UVICORN_GRACEFUL_SHUTDOWN_SECONDS = 20
 
 _active_host_lock = threading.Lock()
 _active_host: ServiceHost | None = None
@@ -269,6 +270,7 @@ class ServiceHost:
                 lifespan="auto",
                 ssl_certfile=ssl_certfile,
                 ssl_keyfile=ssl_keyfile,
+                timeout_graceful_shutdown=_UVICORN_GRACEFUL_SHUTDOWN_SECONDS,
             )
             server = uvicorn.Server(config)
 
