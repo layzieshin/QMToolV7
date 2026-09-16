@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from fastapi import FastAPI, Request
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from qm_platform.events.event_bus import EventBus
 from qm_platform.logging.audit_logger import AuditLogger
@@ -73,6 +74,25 @@ def _tracked_test_app() -> FastAPI:
     app.router.route_class = StateChangingAPIRoute
     ensure_request_drain_tracker(app)
     return app
+
+
+class _RequestCancellationProbe:
+    """Pure-ASGI test probe for cancellation of one concrete request task."""
+
+    def __init__(self, app: ASGIApp, *, path: str, cancelled: threading.Event) -> None:
+        self._app = app
+        self._path = path
+        self._cancelled = cancelled
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("path") != self._path:
+            await self._app(scope, receive, send)
+            return
+        try:
+            await self._app(scope, receive, send)
+        except asyncio.CancelledError:
+            self._cancelled.set()
+            raise
 
 
 def _replace_marker_with_foreign(path: Path, payload: bytes) -> None:
@@ -465,7 +485,13 @@ def test_sync_mutation_worker_keeps_marker_until_actual_execution_finishes(
     entered = threading.Event()
     release = threading.Event()
     mutation_finished = threading.Event()
+    asgi_cancelled = threading.Event()
     app = _tracked_test_app()
+    app.add_middleware(
+        _RequestCancellationProbe,
+        path="/mutate",
+        cancelled=asgi_cancelled,
+    )
 
     @app.post("/mutate")
     def _mutate(request: Request) -> dict[str, str]:
@@ -507,8 +533,10 @@ def test_sync_mutation_worker_keeps_marker_until_actual_execution_finishes(
     assert tracker is not None
     assert tracker.phase is RequestDrainPhase.DRAINING
     assert tracker.active_count == 1
-    time.sleep(0.15)  # exceed the test-side uvicorn graceful-ASGI window
+    assert asgi_cancelled.wait(timeout=1.0), "uvicorn did not cancel the /mutate ASGI task"
 
+    assert not mutation_finished.is_set()
+    assert tracker.active_count == 1
     assert stop_thread.is_alive()
     assert host.status().state is ServiceHostState.STOPPING
     assert host_running_marker_path(tmp_path).is_dir()
