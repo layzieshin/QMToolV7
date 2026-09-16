@@ -10,8 +10,9 @@ from modules.usermanagement import api as um_api
 from modules.usermanagement.api import AuthenticatedUser, UserContext
 
 from src.backend.auth_dependencies import get_container, map_auth_error, require_admin_context, require_user_context_normal
+from src.backend.request_drain import StateChangingAPIRoute
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["users"], route_class=StateChangingAPIRoute)
 
 
 class CreateUserRequest(BaseModel):

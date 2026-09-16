@@ -42,8 +42,9 @@ from modules.documents.api import (
 from modules.usermanagement.api import UserContext
 
 from src.backend.auth_dependencies import get_container, require_user_context_normal
+from src.backend.request_drain import StateChangingAPIRoute
 
-router = APIRouter(prefix="/documents", tags=["documents"])
+router = APIRouter(prefix="/documents", tags=["documents"], route_class=StateChangingAPIRoute)
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 

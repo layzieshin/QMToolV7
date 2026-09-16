@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from qm_platform.events.event_bus import EventBus
 from qm_platform.logging.audit_logger import AuditLogger
@@ -19,6 +19,8 @@ from qm_platform.logging.logger_service import LoggerService
 from qm_platform.runtime.container import RuntimeContainer
 from qm_platform.settings.testing import build_settings_service_for_tests
 from qm_platform.blob.backup_orchestrator import (
+    BackupOrchestratorError,
+    create_backup,
     create_host_running_marker_exclusive,
     host_running_marker_path,
     remove_host_running_marker_if_owned,
@@ -26,6 +28,11 @@ from qm_platform.blob.backup_orchestrator import (
 )
 from src.backend.api import create_app
 from src.backend.bootstrap import BackendBootstrapError, build_backend_container
+from src.backend.request_drain import (
+    RequestDrainPhase,
+    StateChangingAPIRoute,
+    ensure_request_drain_tracker,
+)
 from src.backend.service_host import (
     ServiceHost,
     ServiceHostState,
@@ -59,6 +66,13 @@ def _marker_snapshot(path: Path) -> dict[str, bytes]:
         for child in path.iterdir()
         if child.is_file()
     }
+
+
+def _tracked_test_app() -> FastAPI:
+    app = FastAPI()
+    app.router.route_class = StateChangingAPIRoute
+    ensure_request_drain_tracker(app)
+    return app
 
 
 def _replace_marker_with_foreign(path: Path, payload: bytes) -> None:
@@ -317,6 +331,8 @@ def _start_https_request(
     port: int,
     cert_path: Path,
     results: dict[str, object],
+    method: str = "GET",
+    path: str = "/hold",
 ) -> threading.Thread:
     def _request() -> None:
         connection = http.client.HTTPSConnection(
@@ -326,7 +342,7 @@ def _start_https_request(
             timeout=5.0,
         )
         try:
-            connection.request("GET", "/hold")
+            connection.request(method, path)
             response = connection.getresponse()
             results["status"] = response.status
             results["body"] = response.read()
@@ -346,7 +362,7 @@ def test_https_request_finishing_inside_grace_period_is_preserved(
     entered = threading.Event()
     release = threading.Event()
     completed = threading.Event()
-    app = FastAPI()
+    app = _tracked_test_app()
 
     @app.get("/hold")
     async def _hold_until_released():
@@ -396,7 +412,7 @@ def test_https_blocked_request_is_cancelled_before_outer_stop_budget(
 ) -> None:
     entered = threading.Event()
     completed = threading.Event()
-    app = FastAPI()
+    app = _tracked_test_app()
 
     @app.get("/hold")
     async def _hold_until_cancelled():
@@ -440,6 +456,135 @@ def test_https_blocked_request_is_cancelled_before_outer_stop_budget(
     host.stop(timeout=2.0)
     assert second_server.force_exit is False
     assert host.status().state == ServiceHostState.STOPPED
+    assert not host_running_marker_path(tmp_path).exists()
+
+
+def test_sync_mutation_worker_keeps_marker_until_actual_execution_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    mutation_finished = threading.Event()
+    app = _tracked_test_app()
+
+    @app.post("/mutate")
+    def _mutate(request: Request) -> dict[str, str]:
+        entered.set()
+        assert release.wait(timeout=5.0)
+        mutation_finished.set()
+        return {"status": "written"}
+
+    monkeypatch.setattr("src.backend.service_host._UVICORN_GRACEFUL_SHUTDOWN_SECONDS", 0.05)
+    host, bind_port, cert_path = _configure_real_https_host(tmp_path, monkeypatch, app)
+    host.start(timeout=5.0)
+    results: dict[str, object] = {}
+    request_thread = _start_https_request(
+        port=bind_port,
+        cert_path=cert_path,
+        results=results,
+        method="POST",
+        path="/mutate",
+    )
+    assert entered.wait(timeout=3.0)
+
+    stop_errors: list[BaseException] = []
+
+    def _stop() -> None:
+        try:
+            host.stop(timeout=2.0)
+        except BaseException as exc:  # pragma: no cover - transferred below
+            stop_errors.append(exc)
+
+    stop_thread = threading.Thread(target=_stop, name="ops00-sync-mutation-stop")
+    stop_thread.start()
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        tracker = host._request_drain_tracker
+        if tracker is not None and tracker.phase is RequestDrainPhase.DRAINING:
+            break
+        time.sleep(0.01)
+    tracker = host._request_drain_tracker
+    assert tracker is not None
+    assert tracker.phase is RequestDrainPhase.DRAINING
+    assert tracker.active_count == 1
+    time.sleep(0.15)  # exceed the test-side uvicorn graceful-ASGI window
+
+    assert stop_thread.is_alive()
+    assert host.status().state is ServiceHostState.STOPPING
+    assert host_running_marker_path(tmp_path).is_dir()
+    with pytest.raises(BackupOrchestratorError, match="host running marker"):
+        create_backup(
+            source_dsn="postgresql://unused-source",
+            metadata_dsn="postgresql://unused-metadata",
+            app_home=tmp_path,
+        )
+
+    release.set()
+    stop_thread.join(timeout=3.0)
+    request_thread.join(timeout=3.0)
+    assert not stop_thread.is_alive()
+    assert not request_thread.is_alive()
+    assert stop_errors == []
+    assert mutation_finished.is_set()
+    assert tracker.active_count == 0
+    assert host.status().state is ServiceHostState.STOPPED
+    assert not host_running_marker_path(tmp_path).exists()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        assert sock.connect_ex(("127.0.0.1", bind_port)) != 0
+
+    host.start(timeout=5.0)
+    assert host.status().state is ServiceHostState.RUNNING
+    assert host_running_marker_path(tmp_path).is_dir()
+    host.stop(timeout=2.0)
+    assert host.status().state is ServiceHostState.STOPPED
+    assert not host_running_marker_path(tmp_path).exists()
+
+
+def test_sync_mutation_stop_timeout_is_fail_closed_and_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    app = _tracked_test_app()
+
+    @app.post("/mutate")
+    def _mutate(request: Request) -> dict[str, str]:
+        entered.set()
+        assert release.wait(timeout=5.0)
+        return {"status": "written"}
+
+    monkeypatch.setattr("src.backend.service_host._UVICORN_GRACEFUL_SHUTDOWN_SECONDS", 0.02)
+    host, bind_port, cert_path = _configure_real_https_host(tmp_path, monkeypatch, app)
+    host.start(timeout=5.0)
+    results: dict[str, object] = {}
+    request_thread = _start_https_request(
+        port=bind_port,
+        cert_path=cert_path,
+        results=results,
+        method="POST",
+        path="/mutate",
+    )
+    assert entered.wait(timeout=3.0)
+
+    with pytest.raises(RuntimeError, match="state-changing request"):
+        host.stop(timeout=0.1)
+    tracker = host._request_drain_tracker
+    assert tracker is not None
+    assert tracker.phase is RequestDrainPhase.DRAINING
+    assert tracker.active_count == 1
+    assert host.status().state is ServiceHostState.STOPPING
+    assert host_running_marker_path(tmp_path).is_dir()
+    with pytest.raises(RuntimeError, match="cannot start while state is stopping"):
+        host.start(timeout=0.1)
+    assert host.status().state is ServiceHostState.STOPPING
+    assert host_running_marker_path(tmp_path).is_dir()
+
+    release.set()
+    request_thread.join(timeout=3.0)
+    assert not request_thread.is_alive()
+    host.stop(timeout=2.0)
+    assert tracker.active_count == 0
+    assert host.status().state is ServiceHostState.STOPPED
     assert not host_running_marker_path(tmp_path).exists()
 
 
