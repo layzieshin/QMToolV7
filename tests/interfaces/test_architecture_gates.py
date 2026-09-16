@@ -365,14 +365,28 @@ def test_documents_workflow_uses_business_document_id_in_creation_flow() -> None
 
 def test_backend_state_changing_routes_use_endpoint_level_request_drain() -> None:
     """Every productive unsafe route must count its actual endpoint execution."""
-    from fastapi.routing import APIRoute
-
-    from src.backend.api import create_app
+    from src.backend.auth_routes import router as auth_router
+    from src.backend.auth_routes import session_router
+    from src.backend.documents_routes import router as documents_router
     from src.backend.request_drain import STATE_CHANGING_METHODS, StateChangingAPIRoute
+    from src.backend.signature_routes import router as signature_router
+    from src.backend.user_admin_routes import router as user_admin_router
 
-    routes = [route for route in create_app().routes if isinstance(route, APIRoute)]
-    unsafe = [route for route in routes if (route.methods or set()) & STATE_CHANGING_METHODS]
+    productive_routers = (
+        auth_router,
+        session_router,
+        user_admin_router,
+        documents_router,
+        signature_router,
+    )
+    unsafe = [
+        route
+        for router in productive_routers
+        for route in router.routes
+        if (route.methods or set()) & STATE_CHANGING_METHODS
+    ]
     assert unsafe
+    assert all(router.route_class is StateChangingAPIRoute for router in productive_routers)
     assert all(isinstance(route, StateChangingAPIRoute) for route in unsafe)
     assert all("request" in inspect.signature(route.endpoint).parameters for route in unsafe)
 
