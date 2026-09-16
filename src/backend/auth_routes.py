@@ -29,17 +29,20 @@ from src.backend.cookie_csrf import (
     set_csrf_cookie,
     set_session_cookie,
 )
+from src.backend.request_drain import StateChangingAPIRoute
 
 router = APIRouter(
     prefix="/auth",
     tags=["auth"],
     dependencies=[Depends(enforce_server_organization_context)],
+    route_class=StateChangingAPIRoute,
 )
 
 session_router = APIRouter(
     prefix="/session",
     tags=["session"],
     dependencies=[Depends(enforce_server_organization_context)],
+    route_class=StateChangingAPIRoute,
 )
 
 

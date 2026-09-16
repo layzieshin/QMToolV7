@@ -28,8 +28,9 @@ from modules.usermanagement.api import UserContext
 from modules.usermanagement import api as um_api
 
 from src.backend.auth_dependencies import get_container, require_user_context_normal
+from src.backend.request_drain import StateChangingAPIRoute
 
-router = APIRouter(prefix="/signature", tags=["signature"])
+router = APIRouter(prefix="/signature", tags=["signature"], route_class=StateChangingAPIRoute)
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 

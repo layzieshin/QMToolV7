@@ -22,6 +22,7 @@ from src.backend.bootstrap import BackendBootstrapError, resolve_usermanagement_
 from src.backend.cookie_csrf import SAFE_METHODS
 from src.backend.csrf_middleware import enforce_cookie_csrf
 from src.backend.documents_routes import router as documents_router
+from src.backend.request_drain import ensure_request_drain_tracker
 from src.backend.signature_routes import router as signature_router
 from src.backend.user_admin_routes import router as user_admin_router
 
@@ -459,6 +460,7 @@ def create_app(container=None) -> FastAPI:
         generate_unique_id_function=_stable_operation_id,
     )
     app.state.container = container
+    ensure_request_drain_tracker(app)
 
     @app.middleware("http")
     async def cookie_csrf_guard(request: Request, call_next: Callable) -> Response:

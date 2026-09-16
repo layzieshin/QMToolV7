@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import json
 from pathlib import Path
 
@@ -360,6 +361,42 @@ def test_documents_workflow_uses_business_document_id_in_creation_flow() -> None
     content = _read("interfaces/pyqt/contributions/documents_workflow_view.py")
     assert "technical_document_id" not in content
     assert 'custom_fields={"document_code":' not in content
+
+
+def test_backend_state_changing_routes_use_endpoint_level_request_drain() -> None:
+    """Every productive unsafe route must count its actual endpoint execution."""
+    from src.backend.auth_routes import router as auth_router
+    from src.backend.auth_routes import session_router
+    from src.backend.documents_routes import router as documents_router
+    from src.backend.request_drain import STATE_CHANGING_METHODS, StateChangingAPIRoute
+    from src.backend.signature_routes import router as signature_router
+    from src.backend.user_admin_routes import router as user_admin_router
+
+    productive_routers = (
+        auth_router,
+        session_router,
+        user_admin_router,
+        documents_router,
+        signature_router,
+    )
+    unsafe = [
+        route
+        for router in productive_routers
+        for route in router.routes
+        if (route.methods or set()) & STATE_CHANGING_METHODS
+    ]
+    assert unsafe
+    assert all(router.route_class is StateChangingAPIRoute for router in productive_routers)
+    assert all(isinstance(route, StateChangingAPIRoute) for route in unsafe)
+    assert all("request" in inspect.signature(route.endpoint).parameters for route in unsafe)
+
+
+def test_backend_routes_do_not_delegate_mutations_to_background_tasks() -> None:
+    offenders = []
+    for path in sorted((ROOT / "src" / "backend").glob("*.py")):
+        if "BackgroundTasks" in path.read_text(encoding="utf-8"):
+            offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []
 
 
 def test_j04_acceptance_orchestrator_uses_only_public_module_apis() -> None:

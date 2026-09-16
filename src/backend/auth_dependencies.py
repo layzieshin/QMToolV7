@@ -27,6 +27,7 @@ from modules.usermanagement.api import (
     SessionNotFoundError,
     UserContext,
 )
+from src.backend.request_drain import admitted_state_change
 
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _bearer = HTTPBearer(auto_error=False)
@@ -176,12 +177,13 @@ def require_user_context(
 ) -> UserContext:
     container = get_container(request)
     try:
-        return um_api.resolve_session(
-            container,
-            token,
-            request_id=request_id,
-            password_change_allowed=password_change_allowed,
-        )
+        with admitted_state_change(request):
+            return um_api.resolve_session(
+                container,
+                token,
+                request_id=request_id,
+                password_change_allowed=password_change_allowed,
+            )
     except _MAPPED_ERRORS as exc:
         raise map_auth_error(exc) from exc
 

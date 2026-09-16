@@ -39,11 +39,13 @@ from src.backend.bootstrap import (
     build_backend_container,
     load_backend_environment,
 )
+from src.backend.request_drain import RequestDrainTracker, ensure_request_drain_tracker
 from src.backend.tls_config import load_tls_material, resolve_tls_paths
 
 _PRODUCTION_PROFILES = frozenset({"prod", "production"})
 _DEFAULT_BIND_HOST = "127.0.0.1"
 _DEFAULT_BIND_PORT = 8000
+_UVICORN_GRACEFUL_SHUTDOWN_SECONDS = 20
 
 _active_host_lock = threading.Lock()
 _active_host: ServiceHost | None = None
@@ -197,6 +199,7 @@ class ServiceHost:
         self._https_enabled = False
         self._owns_host_running_marker = False
         self._host_running_marker_token: str | None = None
+        self._request_drain_tracker: RequestDrainTracker | None = None
 
     def status(self) -> ServiceHostStatus:
         with self._lock:
@@ -228,8 +231,10 @@ class ServiceHost:
 
         try:
             with self._lock:
-                if self._state in {ServiceHostState.STARTING, ServiceHostState.RUNNING}:
-                    raise RuntimeError("service host is already running or starting")
+                if self._state is not ServiceHostState.STOPPED:
+                    raise RuntimeError(
+                        f"service host cannot start while state is {self._state.value}"
+                    )
                 self._bind_host = resolve_bind_host()
                 self._bind_port = resolve_bind_port()
                 self._state = ServiceHostState.STARTING
@@ -255,6 +260,7 @@ class ServiceHost:
                     ssl_keyfile = tls_material.key_file
                 container = build_backend_container()
                 app = create_app(container)
+                request_drain_tracker = ensure_request_drain_tracker(app)
             except Exception:
                 with self._lock:
                     self._state = ServiceHostState.STOPPED
@@ -269,6 +275,7 @@ class ServiceHost:
                 lifespan="auto",
                 ssl_certfile=ssl_certfile,
                 ssl_keyfile=ssl_keyfile,
+                timeout_graceful_shutdown=_UVICORN_GRACEFUL_SHUTDOWN_SECONDS,
             )
             server = uvicorn.Server(config)
 
@@ -286,6 +293,7 @@ class ServiceHost:
             with self._lock:
                 self._server = server
                 self._thread = thread
+                self._request_drain_tracker = request_drain_tracker
                 self._https_enabled = ssl_certfile is not None and ssl_keyfile is not None
             thread.start()
 
@@ -319,22 +327,41 @@ class ServiceHost:
             self._stop_locked(timeout=timeout)
 
     def _stop_locked(self, *, timeout: float) -> None:
+        deadline = time.monotonic() + max(0.0, timeout)
         with self._lock:
             if self._state == ServiceHostState.STOPPED:
                 return
             self._state = ServiceHostState.STOPPING
             server = self._server
             thread = self._thread
+            request_drain_tracker = self._request_drain_tracker
 
+        if request_drain_tracker is None:
+            raise RuntimeError("service host request drain tracker is unavailable; refusing stop")
+
+        request_drain_tracker.begin_drain()
         if server is not None:
             server.should_exit = True
 
+        remaining = max(0.0, deadline - time.monotonic())
+        if not request_drain_tracker.wait_until_idle(timeout=remaining):
+            raise RuntimeError(
+                f"service host stop timed out after {timeout}s; "
+                f"{request_drain_tracker.active_count} state-changing request(s) still active"
+            )
+
         if thread is not None and thread.is_alive():
-            thread.join(timeout=timeout)
+            remaining = max(0.0, deadline - time.monotonic())
+            thread.join(timeout=remaining)
             if thread.is_alive():
                 raise RuntimeError(
                     f"service host stop timed out after {timeout}s; serve thread still alive"
                 )
+
+        if request_drain_tracker.active_count != 0:
+            raise RuntimeError(
+                "service host request drain became active after shutdown admission closed"
+            )
 
         with self._lock:
             owns_marker = self._owns_host_running_marker
@@ -348,6 +375,7 @@ class ServiceHost:
             self._https_enabled = False
             self._owns_host_running_marker = False
             self._host_running_marker_token = None
+            self._request_drain_tracker = None
         _clear_active_host(self)
 
     def run_forever(self) -> None:

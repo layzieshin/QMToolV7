@@ -174,6 +174,24 @@ registry writes, firewall rules, or certificate-store imports.
 | Certificate paths | `{QMTOOL_HOME}/certs/` or explicit `QMTOOL_TLS_*` paths readable by the service account |
 | HTTPS endpoint | Same-origin `https://<host>:<port>/api/v1` with OPS00-B file-PEM TLS on the host (loopback contract evidence; not PILOT00 LAN/cert-store deployment) |
 
+`ServiceHost.stop()` has one **30-second total budget** for request drain and
+serve-thread shutdown. It atomically closes admission for new POST/PUT/PATCH/DELETE
+endpoint executions and authenticated session touches, then asks uvicorn to stop.
+Uvicorn may cancel remaining ASGI tasks after **20 seconds**, but cancellation of
+an ASGI waiter does not necessarily terminate a synchronous handler already
+running in an AnyIO worker thread. The backend request-drain owner therefore keeps
+such endpoint execution counted until the actual sync function returns; async
+mutations remain counted until their coroutine exits.
+
+The host-running marker is removed only when the serve thread has ended and the
+tracked count is zero. If either condition exceeds the shared 30-second budget,
+the host remains `STOPPING`, raises instead of reporting a clean stop, rejects new
+state-changing work, and keeps the marker. A later stop retry may finalize after
+the outstanding execution ends. The supervising service must retain at least the
+**60-second** stop budget above before an external kill. This coordination closes
+the backup/update concurrency window; it is not a blanket guarantee against data
+loss or an external process kill.
+
 The SQLite desktop commands below remain legacy tooling and are not a productive PostgreSQL
 backup, restore, update, export, or service-host path.
 
