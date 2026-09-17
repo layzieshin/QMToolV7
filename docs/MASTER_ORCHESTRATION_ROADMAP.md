@@ -187,10 +187,14 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich INT00 als Joint
-Integration Gate. INT00 und WEB01 bleiben TODO und NOT RUN. INT00 benoetigt
-eine separate Freigabe und einen eigenen Worktree. Branch-/Worktree-Cleanup
-bleibt separat. WCON00 ist `PASS` und wurde via PR #43 per Squash nach `main` @
+Die naechste freizugebende Aktion ist ausschliesslich WEB01 als
+Documents/Signature-Webworkflow. INT00 ist `PASS` auf
+`runtime_test_candidate_sha` `8d2e4615b4e52a2113055e7e9113daa1570b78f3`.
+WEB01 bleibt TODO und NOT RUN bis zu separater Freigabe. WEB01 benoetigt
+eine separate Freigabe und einen eigenen Worktree. INT00 implementiert keine
+Vue-Produkt-Screens und startet WEB01 nicht. Branch-/Worktree-Cleanup
+bleibt separat und ist keine Voraussetzung fuer den fachlichen INT00-PASS.
+WCON00 ist `PASS` und wurde via PR #43 per Squash nach `main` @
 `fc61887f77c4e8e7d3442af8e7c5f5eb534f193e` gemergt. Vor dem Merge waren beide
 CI-Jobs SUCCESS (34518815271: quality-gates und postgres-usermanagement) und
 12/12 Review-Konversationen resolved. Eine dritte Codex-Runde bleibt
@@ -208,6 +212,10 @@ technischen Contracts geschlossen; es implementiert keine WEB01-Screens.
 `main` integriert via PR #40 @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef`;
 kanonische P0-UX und P1-Gap-Matrix liegen vor.
 **WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`).
+PR #49 schloss die ServiceHost-/HTTPS-Shutdown-Voraussetzung per Squash nach
+`main` @ `a388a5bfee02c4c94d8e9ef87a92aee2b4a3f2fe`. INT00-Final-Audit ist
+`HUMAN_AUTHORIZED_INDEPENDENT_CODEX_FINAL_AUDIT_PASS`; natives Terra/Sol
+wurde nicht ausgefuehrt und nicht attestiert.
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
 autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
