@@ -31,6 +31,7 @@ Technische Gates ersetzen keine menschliche Pilotfreigabe.
 | PostgreSQL foundation | PG00 Runner/Ownership/Org/Audit/Blob contracts | platform/migration gates (defined in PG00) |
 | Web foundation | WEB00 SPA shell, `/api/v1`, Cookie/CSRF | web/HTTP contract gates (see WEB00 section below) |
 | Web contract completion | WCON00 closes only UX00-classified WEB01 blockers | module/API/OpenAPI contract and negative boundary gates |
+| Joint integration | INT00 proves PG00/WEB00/PG01/UX00/OPS00/WCON00 together | distinct TestClient, Slot-2, J04, Chromium HTTPS, backup, and joint-candidate evidence |
 | DMS web slice | WEB01 Documents/Signature workflow | focused + broader web/API gates |
 | Operations | OPS00 service/HTTPS/backup/restore/export | restore drill, packaging/deployment when authorized |
 | Pilot | PILOT00/PILOT01 readiness + human smoke | security/restore/human approval — separate from automated green |
@@ -140,6 +141,28 @@ Current contract suites that normally form part of the focused selection include
   tests\backend\test_signature_http_api.py `
   tests\backend\test_openapi_contract.py -q
 ```
+
+### Joint integration gate (INT00 — after PG00/WEB00/PG01/UX00/OPS00/WCON00 PASS)
+
+INT00 is a joint evidence gate on one frozen candidate. These evidence levels are
+distinct; none of them may replace another:
+
+1. Isolated / TestClient tests (in-process HTTP and unit/contract suites).
+2. PostgreSQL Slot-2 live tests via `scripts/run_postgres_live_tests.py` only.
+3. J04 real-process acceptance with an actual backend OS-process restart.
+4. Real Chromium over file-PEM HTTPS / Same-Origin against production `ServiceHost`.
+5. Backup/restore evidence from the fresh OPS00 live matrix on that candidate.
+6. The joint INT00 Chromium + PostgreSQL + HTTPS restart proof on the same candidate.
+
+Historical or neighbouring greens are not a substitute for a candidate-bound INT00
+bundle. WEB00 browser smoke is not the INT00 joint proof. J04 Bearer/realprocess
+evidence is not the Chromium cookie-restart proof. Slot-2 live tests are not
+TestClient greens. Backup/restore is not restart persistence.
+
+Current INT00 runtime evidence: candidate
+`8d2e4615b4e52a2113055e7e9113daa1570b78f3`, root
+`build/ap-029-int00/run-20260916T182711117Z`, manifest SHA256
+`7DC69F61F864407E442ECB98DDC2794A7CAEF3F5F9FC07FDB4D50DD0764EA8EF`.
 
 ### DMS web slice (WEB01 — after WCON00 and INT00 PASS)
 
