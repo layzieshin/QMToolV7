@@ -26,4 +26,12 @@ export default {
     submit: "Anmelden",
     failed: "Anmeldung fehlgeschlagen",
   },
+  changePassword: {
+    title: "Passwort ändern",
+    hint: "Bitte setzen Sie ein neues Passwort, um fortzufahren.",
+    newPassword: "Neues Passwort",
+    submit: "Passwort speichern",
+    failed: "Passwortänderung fehlgeschlagen",
+    weakPassword: "Das Passwort ist zu schwach.",
+  },
 };

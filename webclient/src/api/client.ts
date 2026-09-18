@@ -108,6 +108,24 @@ export async function fetchMe(): Promise<MeResponse> {
   return expectJson<MeResponse>(response);
 }
 
+export async function changePasswordBrowser(newPassword: string): Promise<void> {
+  await bootstrapCsrf();
+  const response = await apiFetch("/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_password: newPassword }),
+    csrf: true,
+  });
+  if (response.status !== 204) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `change-password failed (${response.status})`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+}
+
 export async function logoutBrowser(): Promise<void> {
   const response = await apiFetch("/auth/logout", { method: "POST", csrf: true });
   if (response.status !== 204) {

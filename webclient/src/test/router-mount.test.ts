@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { createRouter, createMemoryHistory } from "vue-router";
+import { createMemoryHistory } from "vue-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Real Vuetify pulls per-component CSS; stub those side effects locally for jsdom.
@@ -26,22 +26,41 @@ vi.hoisted(() => {
 });
 
 import App from "../App.vue";
+import { ApiTransportError } from "../api/client";
 import { i18n } from "../i18n";
 import vuetify from "../plugins/vuetify";
+import { __resetAuthBootstrapForTest, createAppRouter } from "../router/index";
 import { routes } from "../router/routes";
 import { __resetAppShellStateForTest } from "../state/appShell";
+
+const meAuthenticated = {
+  user_id: "u1",
+  session_id: "s1",
+  request_id: "r1",
+  organization_id: "org",
+  username: "bob",
+  global_roles: ["USER"],
+  is_qmb: false,
+  authenticated_at: "2026-01-01T00:00:00Z",
+};
+
+const { fetchMe, probeHealth, loginBrowser, logoutBrowser, bootstrapCsrf } = vi.hoisted(() => ({
+  fetchMe: vi.fn(),
+  probeHealth: vi.fn(async () => true),
+  loginBrowser: vi.fn(async () => undefined),
+  logoutBrowser: vi.fn(async () => undefined),
+  bootstrapCsrf: vi.fn(async () => undefined),
+}));
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
     ...actual,
-    probeHealth: vi.fn(async () => true),
-    fetchMe: vi.fn(async () => {
-      throw new actual.ApiTransportError("unauthorized", 401, null);
-    }),
-    loginBrowser: vi.fn(async () => undefined),
-    logoutBrowser: vi.fn(async () => undefined),
-    bootstrapCsrf: vi.fn(async () => undefined),
+    probeHealth,
+    fetchMe,
+    loginBrowser,
+    logoutBrowser,
+    bootstrapCsrf,
   };
 });
 
@@ -74,10 +93,8 @@ function stubBrowserApis(): void {
 async function mountAppAt(path: string) {
   stubBrowserApis();
   __resetAppShellStateForTest();
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes,
-  });
+  __resetAuthBootstrapForTest();
+  const router = createAppRouter(createMemoryHistory());
   await router.push(path);
   await router.isReady();
 
@@ -94,21 +111,26 @@ async function mountAppAt(path: string) {
 describe("router mount", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    __resetAppShellStateForTest();
+    __resetAuthBootstrapForTest();
+    vi.clearAllMocks();
+    fetchMe.mockReset();
+    probeHealth.mockResolvedValue(true);
   });
 
   it("registers home and login routes in the production route table", () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes,
-    });
-    expect(router.getRoutes().some((route) => route.name === "home")).toBe(true);
-    expect(router.getRoutes().some((route) => route.name === "login")).toBe(true);
+    expect(routes[0]?.children?.some((route) => route.name === "home")).toBe(true);
+    expect(routes[0]?.children?.some((route) => route.name === "login")).toBe(true);
+    const home = routes[0]?.children?.find((route) => route.name === "home");
+    expect(home?.meta?.requiresAuth).toBe(true);
   });
 
-  it("renders LoginView through App, AppLayout, AppShell and VApp at /login", async () => {
-    const { wrapper } = await mountAppAt("/login");
+  it("renders LoginView through App, AppLayout, AppShell and VApp at /login under anonymous guard refresh", async () => {
+    fetchMe.mockRejectedValue(new ApiTransportError("unauthorized", 401, null));
+    const { wrapper, router } = await mountAppAt("/login");
 
     await vi.waitFor(() => {
+      expect(router.currentRoute.value.path).toBe("/login");
       expect(wrapper.find(".v-application").exists()).toBe(true);
       expect(wrapper.find("[data-testid=app-shell]").exists()).toBe(true);
       expect(wrapper.find("[data-testid=login-panel]").exists()).toBe(true);
@@ -120,10 +142,12 @@ describe("router mount", () => {
     expect(wrapper.findComponent({ name: "AppShell" }).exists()).toBe(true);
   });
 
-  it("renders the shell home route through App at /", async () => {
-    const { wrapper } = await mountAppAt("/");
+  it("renders the shell home route through App at / under authenticated guard refresh", async () => {
+    fetchMe.mockResolvedValue(meAuthenticated);
+    const { wrapper, router } = await mountAppAt("/");
 
     await vi.waitFor(() => {
+      expect(router.currentRoute.value.path).toBe("/");
       expect(wrapper.find(".v-application").exists()).toBe(true);
       expect(wrapper.find("[data-testid=app-shell]").exists()).toBe(true);
       expect(wrapper.find("[data-testid=shell-placeholder]").exists()).toBe(true);

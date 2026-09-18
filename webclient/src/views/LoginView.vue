@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRoute, useRouter } from "vue-router";
 
+import {
+  buildChangePasswordLocation,
+  readReturnUrlQuery,
+  sanitizeReturnUrl,
+} from "../composables/useReturnUrl";
 import { login, useAppShellState } from "../state/appShell";
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const shell = useAppShellState();
 
 const username = ref("");
@@ -17,7 +25,17 @@ async function onLogin(): Promise<void> {
   loginError.value = null;
   try {
     await login(username.value, password.value);
+    password.value = "";
+    const returnTarget = sanitizeReturnUrl(readReturnUrlQuery(route.query.returnUrl));
+    if (shell.auth.status === "authenticated") {
+      await router.replace(returnTarget);
+      return;
+    }
+    if (shell.auth.status === "password_change_required") {
+      await router.replace(buildChangePasswordLocation(returnTarget));
+    }
   } catch (error) {
+    password.value = "";
     loginError.value = error instanceof Error ? error.message : t("login.failed");
   }
 }
