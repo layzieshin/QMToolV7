@@ -1,8 +1,13 @@
+import type { components } from "./openapi";
 import type { ApiErrorResponse, LoginRequest, MeResponse } from "./types";
 
 const API_PREFIX = "/api/v1";
 const CSRF_COOKIE = "qmtool_csrf";
 const CSRF_HEADER = "X-CSRF-Token";
+
+export type ConnectionResponse = components["schemas"]["ConnectionResponse"];
+export type BootstrapResponse = components["schemas"]["BootstrapResponse"];
+export type ModuleBootstrapItem = components["schemas"]["ModuleBootstrapItem"];
 
 export class ApiTransportError extends Error {
   readonly status: number;
@@ -142,10 +147,20 @@ export async function logoutBrowser(): Promise<void> {
   }
 }
 
+export async function fetchConnection(): Promise<ConnectionResponse> {
+  const response = await apiFetch("/session/connection", { method: "GET" });
+  return expectJson<ConnectionResponse>(response);
+}
+
+export async function fetchBootstrap(): Promise<BootstrapResponse> {
+  const response = await apiFetch("/session/bootstrap", { method: "GET" });
+  return expectJson<BootstrapResponse>(response);
+}
+
 export async function probeHealth(): Promise<boolean> {
   try {
-    const response = await apiFetch("/session/connection", { method: "GET" });
-    return response.ok;
+    await fetchConnection();
+    return true;
   } catch {
     return false;
   }

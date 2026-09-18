@@ -2,6 +2,24 @@ export default {
   app: {
     title: "QMTool",
   },
+  dashboard: {
+    title: "Start",
+    hint: "Willkommen in QMTool. Wählen Sie ein Modul in der Navigation, sobald es verfügbar ist.",
+  },
+  connection: {
+    offline: "Verbindung unterbrochen",
+    reconnecting: "Wiederverbinden …",
+    restored: "Verbindung wiederhergestellt",
+    maintenance: "Wartungsmodus – Schreibzugriff gesperrt",
+    degraded: "Eingeschränkter Betrieb – Schreibzugriff gesperrt",
+    retry: "Erneut verbinden",
+  },
+  modules: {
+    navigationLabel: "Modulnavigation",
+    documents: {
+      label: "Dokumente",
+    },
+  },
   shell: {
     homeTitle: "Start",
     homeHint: "Die Produktnavigation wird in den nächsten Checkpoints ergänzt.",
