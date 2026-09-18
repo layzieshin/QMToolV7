@@ -59,6 +59,48 @@ def test_artifact_list_metadata_and_download_omit_storage_key(tmp_path: Path) ->
     assert int(content.headers.get("Content-Length", "0")) == len(content.content)
 
 
+def test_artifact_list_item_json_roundtrips_through_transport_model(tmp_path: Path) -> None:
+    from modules.documents.api import artifact_to_public_payload
+    from modules.usermanagement.api import resolve_session
+    from src.backend.documents_routes import DocumentArtifactModel
+
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-ART-RT")
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4 artifact-roundtrip-test\n%%EOF\n")
+
+    detail = client.get("/api/v1/documents/versions/DOC-ART-RT/1", headers=_auth(tokens["editor"]))
+    assert detail.status_code == 200, detail.text
+    etag = detail.json()["etag"]
+
+    uploaded = client.post(
+        "/api/v1/documents/versions/DOC-ART-RT/1/import-pdf",
+        headers=_mutation_headers(tokens["admin"], etag, extra={"Content-Type": "application/pdf"}),
+        content=pdf.read_bytes(),
+    )
+    assert uploaded.status_code == 200, uploaded.text
+
+    listed = client.get("/api/v1/documents/versions/DOC-ART-RT/1/artifacts", headers=_auth(tokens["editor"]))
+    assert listed.status_code == 200, listed.text
+    row = listed.json()[0]
+    roundtripped = DocumentArtifactModel.model_validate(row).model_dump(mode="json")
+    assert roundtripped == row
+
+    actor = resolve_session(container, tokens["editor"], request_id="artifact-roundtrip-editor")
+    artifacts = container.get_port("documents_artifacts_api").list_artifacts_for_actor(
+        "DOC-ART-RT",
+        1,
+        actor,
+    )
+    assert artifacts
+    owner_raw = artifact_to_public_payload(artifacts[0])
+    owner_typed = DocumentArtifactModel.model_validate(owner_raw).model_dump(mode="json")
+    assert set(owner_typed.keys()) == set(owner_raw.keys())
+    assert owner_typed == owner_raw
+    assert row == owner_typed
+
+
 def test_ensure_source_pdf_after_import_returns_downloadable_artifact(tmp_path: Path) -> None:
     container, users = _build_documents_backend_container(tmp_path)
     client = TestClient(create_app(container))

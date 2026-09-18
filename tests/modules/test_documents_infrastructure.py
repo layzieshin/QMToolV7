@@ -812,6 +812,56 @@ class DocumentsInfrastructureTest(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 comments_api.sync_docx_comments(state, actor_user_id="owner-1", actor_role=SystemRole.USER)
 
+    def test_workflow_comment_service_get_detail_carries_status_change_metadata(self) -> None:
+        from modules.documents.api import DocumentsCommentsApi
+        from modules.documents.contracts import WorkflowCommentContext, WorkflowCommentStatus
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service, _store = make_documents_service_with_profiles(
+                root / "documents.db",
+                signature_api=_FakeSignatureApi(),
+            )
+            comments_api = DocumentsCommentsApi(service)
+            state = service.create_document_version("DOC-CMT-DETAIL", 1, owner_user_id="owner-1")
+            state = service.assign_workflow_roles(
+                state, editors={"ed"}, reviewers={"rv"}, approvers={"ap"}
+            )
+            state = service.start_workflow(state, WorkflowProfile.long_release_path())
+            state = service.complete_editing(state, sign_request={"step": "edit_complete"})
+            record = comments_api.create_pdf_workflow_comment(
+                state,
+                context=WorkflowCommentContext.PDF_REVIEW,
+                actor_user_id="rv",
+                actor_role=SystemRole.USER,
+                page_number=1,
+                comment_text="detail metadata test",
+            )
+            before = service.get_workflow_comment_detail(
+                record.comment_id,
+                actor_user_id="rv",
+                actor_role=SystemRole.USER,
+            )
+            self.assertIsNone(before.status_changed_by)
+            self.assertIsNone(before.status_changed_at)
+            updated = comments_api.set_workflow_comment_status(
+                record.comment_id,
+                new_status=WorkflowCommentStatus.RESOLVED,
+                actor_user_id="rv",
+                actor_role=SystemRole.USER,
+                note="resolved in test",
+            )
+            detail = service.get_workflow_comment_detail(
+                record.comment_id,
+                actor_user_id="rv",
+                actor_role=SystemRole.USER,
+            )
+            self.assertEqual(detail.status_changed_by, "rv")
+            self.assertIsNotNone(detail.status_changed_at)
+            self.assertEqual(detail.status, WorkflowCommentStatus.RESOLVED)
+            self.assertEqual(updated.status_changed_by, detail.status_changed_by)
+            self.assertEqual(updated.status_changed_at, detail.status_changed_at)
+
     def _resolverless_artifact(
         self,
         storage_key: str,

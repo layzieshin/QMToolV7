@@ -192,11 +192,146 @@ def test_openapi_error_detail_and_available_actions_contract(monkeypatch) -> Non
         assert "requires_confirmation" in descriptor["properties"]
         assert "destructive" in descriptor["properties"]
         assert "severity" in descriptor["properties"]
+        state = model["properties"]["state"]
+        assert state.get("$ref") == "#/components/schemas/DocumentVersionStateModel"
     assert "/ready" in document["paths"]
     assert "/health" in document["paths"]
 
 
-def test_openapi_snapshot_is_reproducible(monkeypatch) -> None:
+def _schema_ref(schema: dict[str, object]) -> str | None:
+    ref = schema.get("$ref")
+    return str(ref) if isinstance(ref, str) else None
+
+
+def _array_item_ref(schema: dict[str, object]) -> str | None:
+    if schema.get("type") != "array":
+        return None
+    items = schema.get("items")
+    if not isinstance(items, dict):
+        return None
+    return _schema_ref(items)
+
+
+def _json_schema(document: dict[str, object], path: str, method: str, status: str = "200") -> dict[str, object]:
+    operation = document["paths"][path][method]
+    schema = operation["responses"][status]["content"]["application/json"]["schema"]
+    assert isinstance(schema, dict)
+    return schema
+
+
+def _resolve_schema(document: dict[str, object], schema: dict[str, object]) -> dict[str, object]:
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+        name = ref.rsplit("/", 1)[-1]
+        resolved = document["components"]["schemas"][name]
+        assert isinstance(resolved, dict)
+        return resolved
+    return schema
+
+
+def test_openapi_web01_product_response_schemas_are_concrete(monkeypatch) -> None:
+    monkeypatch.delenv("QMTOOL_RUNTIME_PROFILE", raising=False)
+    document = create_app().openapi()
+    schemas = document["components"]["schemas"]
+    paths = document["paths"]
+
+    home_tasks = paths["/api/v1/documents/home/tasks"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _array_item_ref(home_tasks) == "#/components/schemas/DocumentTaskItemModel"
+
+    home_reviews = paths["/api/v1/documents/home/review-actions"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _array_item_ref(home_reviews) == "#/components/schemas/ReviewActionItemModel"
+
+    home_recent = paths["/api/v1/documents/home/recent"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _array_item_ref(home_recent) == "#/components/schemas/RecentDocumentItemModel"
+
+    query_item = schemas["DocumentQueryItem"]
+    assert "document_id" in query_item["properties"]
+    assert "status" in query_item["properties"]
+    assert "title" in query_item["properties"]
+    assert query_item.get("additionalProperties") is not True
+    assert set(query_item["required"]) >= {"document_id", "version", "status", "title", "assignments"}
+
+    version_state = schemas["VersionStateResponse"]["properties"]["state"]
+    assert _schema_ref(version_state) == "#/components/schemas/DocumentVersionStateModel"
+    state_model = schemas["DocumentVersionStateModel"]
+    assert "document_id" in state_model["properties"]
+    assert state_model.get("additionalProperties") is not True
+    assert "workflow_profile" in state_model["properties"]
+    assert "assignments" in state_model["properties"]
+
+    artifacts = paths["/api/v1/documents/versions/{document_id}/{version}/artifacts"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _array_item_ref(artifacts) == "#/components/schemas/DocumentArtifactModel"
+
+    comments = paths["/api/v1/documents/versions/{document_id}/{version}/comments"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _array_item_ref(comments) == "#/components/schemas/WorkflowCommentListItemModel"
+
+    comment_detail = paths["/api/v1/documents/comments/{comment_id}"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _schema_ref(comment_detail) == "#/components/schemas/WorkflowCommentDetailModel"
+    detail_model = schemas["WorkflowCommentDetailModel"]
+    assert "status_changed_by" in detail_model["properties"]
+    assert "status_changed_at" in detail_model["properties"]
+
+    templates = paths["/api/v1/signature/templates/user"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _array_item_ref(templates) == "#/components/schemas/SignatureTemplateModel"
+
+    suggestion = paths["/api/v1/signature/templates/suggestion"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert _schema_ref(suggestion) == "#/components/schemas/SignatureTemplateModel"
+
+    task_item = schemas["DocumentTaskItemModel"]
+    assert set(task_item["required"]) >= {
+        "document_id",
+        "version",
+        "title",
+        "status",
+        "workflow_active",
+    }
+    review_item = schemas["ReviewActionItemModel"]
+    assert "action_required" in review_item["properties"]
+    recent_item = schemas["RecentDocumentItemModel"]
+    assert "last_event_at" in recent_item["properties"]
+
+    artifact = schemas["DocumentArtifactModel"]
+    assert set(artifact["required"]) >= {"artifact_id", "artifact_type", "mime_type", "sha256", "created_at"}
+
+    for comment_schema in (
+        "WorkflowCommentListItemModel",
+        "WorkflowCommentDetailModel",
+        "WorkflowCommentRecordModel",
+    ):
+        model = schemas[comment_schema]
+        assert model.get("additionalProperties") is not True
+        assert "comment_id" in model["properties"]
+
+    template = schemas["SignatureTemplateModel"]
+    assert template.get("additionalProperties") is not True
+    assert template["properties"]["placement"]["$ref"] == "#/components/schemas/SignaturePlacementModel"
+    assert template["properties"]["layout"]["$ref"] == "#/components/schemas/SignatureLayoutModel"
+
+    artifacts_list = _json_schema(
+        document,
+        "/api/v1/documents/versions/{document_id}/{version}/artifacts",
+        "get",
+    )
+    assert _resolve_schema(document, artifacts_list["items"])["title"] == "DocumentArtifactModel"
+
+    comments_list = _json_schema(
+        document,
+        "/api/v1/documents/versions/{document_id}/{version}/comments",
+        "get",
+    )
+    assert _resolve_schema(document, comments_list["items"])["title"] == "WorkflowCommentListItemModel"
+
+    user_templates = _json_schema(document, "/api/v1/signature/templates/user", "get")
+    assert _resolve_schema(document, user_templates["items"])["title"] == "SignatureTemplateModel"
+
+    suggestion_resolved = _resolve_schema(
+        document,
+        _json_schema(document, "/api/v1/signature/templates/suggestion", "get"),
+    )
+    assert suggestion_resolved["title"] == "SignatureTemplateModel"
+
+
+def test_openapi_snapshot_is_reproducible(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("QMTOOL_RUNTIME_PROFILE", raising=False)
     assert SNAPSHOT.is_file()
     expected = json.loads(SNAPSHOT.read_text(encoding="utf-8"))

@@ -1788,18 +1788,121 @@ export interface components {
             /** Workflow Profile Id */
             workflow_profile_id?: string | null;
         };
+        /** DocumentArtifactModel */
+        DocumentArtifactModel: {
+            /** Artifact Id */
+            artifact_id: string;
+            /** Artifact Type */
+            artifact_type: string;
+            /** Created At */
+            created_at: string;
+            /** Document Id */
+            document_id: string;
+            /** Is Current */
+            is_current: boolean;
+            /** Metadata */
+            metadata?: {
+                [key: string]: string;
+            };
+            /** Mime Type */
+            mime_type: string;
+            /** Original Filename */
+            original_filename: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Source Type */
+            source_type: string;
+            /** Version */
+            version: number;
+        };
         /** DocumentQueryItem */
         DocumentQueryItem: {
             /** Allowed Actions */
-            allowed_actions: components["schemas"]["ActionDescriptorModel"][];
+            allowed_actions?: components["schemas"]["ActionDescriptorModel"][];
+            /** Approval Completed At */
+            approval_completed_at?: string | null;
+            /** Approval Completed By */
+            approval_completed_by?: string | null;
+            /** Approved By */
+            approved_by: string[];
+            /** Archived At */
+            archived_at?: string | null;
+            /** Archived By */
+            archived_by?: string | null;
+            assignments: components["schemas"]["WorkflowAssignmentsModel"];
             /** Available Actions */
-            available_actions: string[];
+            available_actions?: string[];
+            /** Control Class */
+            control_class: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            };
+            /** Description */
+            description?: string | null;
+            /** Doc Type */
+            doc_type: string;
             /** Document Id */
             document_id: string;
+            /** Edit Signature Done */
+            edit_signature_done: boolean;
+            /** Edit Signed At */
+            edit_signed_at?: string | null;
+            /** Edit Signed By */
+            edit_signed_by?: string | null;
+            /** Extension Count */
+            extension_count: number;
+            /** Last Actor User Id */
+            last_actor_user_id?: string | null;
+            /** Last Event At */
+            last_event_at?: string | null;
+            /** Last Event Id */
+            last_event_id?: string | null;
+            /** Last Extended At */
+            last_extended_at?: string | null;
+            /** Last Extended By */
+            last_extended_by?: string | null;
+            /** Last Extension Reason */
+            last_extension_reason?: string | null;
+            /** Last Extension Review Outcome */
+            last_extension_review_outcome?: string | null;
+            /** Next Review At */
+            next_review_at?: string | null;
+            /** Owner User Id */
+            owner_user_id?: string | null;
+            /** Released At */
+            released_at?: string | null;
+            /** Review Completed At */
+            review_completed_at?: string | null;
+            /** Review Completed By */
+            review_completed_by?: string | null;
+            /** Reviewed By */
+            reviewed_by: string[];
+            /** Status */
+            status: string;
+            /** Superseded By Version */
+            superseded_by_version?: number | null;
+            /** Title */
+            title: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Valid From */
+            valid_from?: string | null;
+            /** Valid Until */
+            valid_until?: string | null;
             /** Version */
             version: number;
-        } & {
-            [key: string]: unknown;
+            /** Workflow Active */
+            workflow_active: boolean;
+            workflow_profile?: components["schemas"]["WorkflowProfileModel"] | null;
+            /** Workflow Profile Id */
+            workflow_profile_id: string;
         };
         /** DocumentQueryPageResponse */
         DocumentQueryPageResponse: {
@@ -1809,6 +1912,110 @@ export interface components {
             limit: number;
             /** Next Cursor */
             next_cursor?: string | null;
+        };
+        /** DocumentTaskItemModel */
+        DocumentTaskItemModel: {
+            /** Document Id */
+            document_id: string;
+            /** Last Actor User Id */
+            last_actor_user_id?: string | null;
+            /** Owner User Id */
+            owner_user_id?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
+            /** Workflow Active */
+            workflow_active: boolean;
+        };
+        /** DocumentVersionStateModel */
+        DocumentVersionStateModel: {
+            /** Allowed Actions */
+            allowed_actions?: components["schemas"]["ActionDescriptorModel"][];
+            /** Approval Completed At */
+            approval_completed_at?: string | null;
+            /** Approval Completed By */
+            approval_completed_by?: string | null;
+            /** Approved By */
+            approved_by: string[];
+            /** Archived At */
+            archived_at?: string | null;
+            /** Archived By */
+            archived_by?: string | null;
+            assignments: components["schemas"]["WorkflowAssignmentsModel"];
+            /** Available Actions */
+            available_actions?: string[];
+            /** Control Class */
+            control_class: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+            /** Custom Fields */
+            custom_fields?: {
+                [key: string]: unknown;
+            };
+            /** Description */
+            description?: string | null;
+            /** Doc Type */
+            doc_type: string;
+            /** Document Id */
+            document_id: string;
+            /** Edit Signature Done */
+            edit_signature_done: boolean;
+            /** Edit Signed At */
+            edit_signed_at?: string | null;
+            /** Edit Signed By */
+            edit_signed_by?: string | null;
+            /** Extension Count */
+            extension_count: number;
+            /** Last Actor User Id */
+            last_actor_user_id?: string | null;
+            /** Last Event At */
+            last_event_at?: string | null;
+            /** Last Event Id */
+            last_event_id?: string | null;
+            /** Last Extended At */
+            last_extended_at?: string | null;
+            /** Last Extended By */
+            last_extended_by?: string | null;
+            /** Last Extension Reason */
+            last_extension_reason?: string | null;
+            /** Last Extension Review Outcome */
+            last_extension_review_outcome?: string | null;
+            /** Next Review At */
+            next_review_at?: string | null;
+            /** Owner User Id */
+            owner_user_id?: string | null;
+            /** Released At */
+            released_at?: string | null;
+            /** Review Completed At */
+            review_completed_at?: string | null;
+            /** Review Completed By */
+            review_completed_by?: string | null;
+            /** Reviewed By */
+            reviewed_by: string[];
+            /** Status */
+            status: string;
+            /** Superseded By Version */
+            superseded_by_version?: number | null;
+            /** Title */
+            title: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Valid From */
+            valid_from?: string | null;
+            /** Valid Until */
+            valid_until?: string | null;
+            /** Version */
+            version: number;
+            /** Workflow Active */
+            workflow_active: boolean;
+            workflow_profile?: components["schemas"]["WorkflowProfileModel"] | null;
+            /** Workflow Profile Id */
+            workflow_profile_id: string;
         };
         /** EnsureSourcePdfResponse */
         EnsureSourcePdfResponse: {
@@ -1830,10 +2037,7 @@ export interface components {
             available_actions: string[];
             /** Etag */
             etag: string;
-            /** State */
-            state: {
-                [key: string]: unknown;
-            };
+            state: components["schemas"]["DocumentVersionStateModel"];
         };
         ErrorDetail: {
             /** @example evt-42 */
@@ -1906,10 +2110,7 @@ export interface components {
             etag: string;
             /** Is Maxed */
             is_maxed: boolean;
-            /** State */
-            state: {
-                [key: string]: unknown;
-            };
+            state: components["schemas"]["DocumentVersionStateModel"];
         };
         /** FinalizeReadBody */
         FinalizeReadBody: {
@@ -2052,6 +2253,21 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** RecentDocumentItemModel */
+        RecentDocumentItemModel: {
+            /** Document Id */
+            document_id: string;
+            /** Last Event At */
+            last_event_at?: string | null;
+            /** Owner User Id */
+            owner_user_id?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
+        };
         /** RejectBody */
         RejectBody: {
             /** Free Text */
@@ -2060,6 +2276,21 @@ export interface components {
             template_id?: string | null;
             /** Template Text */
             template_text?: string | null;
+        };
+        /** ReviewActionItemModel */
+        ReviewActionItemModel: {
+            /** Action Required */
+            action_required: string;
+            /** Document Id */
+            document_id: string;
+            /** Owner User Id */
+            owner_user_id?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
         };
         /** SetActiveBody */
         SetActiveBody: {
@@ -2084,6 +2315,83 @@ export interface components {
             reason?: string | null;
             /** Template Id */
             template_id?: string | null;
+        };
+        /** SignatureLayoutModel */
+        SignatureLayoutModel: {
+            /** Color Hex */
+            color_hex: string;
+            /** Date Above */
+            date_above: number;
+            /** Date Below */
+            date_below: number;
+            /** Date Font Size */
+            date_font_size: number;
+            /** Date Position */
+            date_position: string;
+            /** Date Rel X */
+            date_rel_x?: number | null;
+            /** Date Rel Y */
+            date_rel_y?: number | null;
+            /** Date Text */
+            date_text?: string | null;
+            /** Name Above */
+            name_above: number;
+            /** Name Below */
+            name_below: number;
+            /** Name Font Size */
+            name_font_size: number;
+            /** Name Position */
+            name_position: string;
+            /** Name Rel X */
+            name_rel_x?: number | null;
+            /** Name Rel Y */
+            name_rel_y?: number | null;
+            /** Name Text */
+            name_text?: string | null;
+            /** Show Date */
+            show_date: boolean;
+            /** Show Name */
+            show_name: boolean;
+            /** Show Signature */
+            show_signature: boolean;
+            /** Show Time */
+            show_time: boolean;
+            /** X Offset */
+            x_offset: number;
+        };
+        /** SignaturePlacementModel */
+        SignaturePlacementModel: {
+            /** Page Index */
+            page_index: number;
+            /** Target Width */
+            target_width: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** SignatureTemplateModel */
+        SignatureTemplateModel: {
+            /** Created At */
+            created_at: string;
+            /** Document Type */
+            document_type?: string | null;
+            /** Last Used At */
+            last_used_at?: string | null;
+            layout: components["schemas"]["SignatureLayoutModel"];
+            /** Name */
+            name: string;
+            /** Owner User Id */
+            owner_user_id: string;
+            placement: components["schemas"]["SignaturePlacementModel"];
+            /** Role Context */
+            role_context?: string | null;
+            /** Scope */
+            scope: string;
+            /** Signature Asset Id */
+            signature_asset_id?: string | null;
+            /** Template Id */
+            template_id: string;
         };
         /** StandaloneSignBody */
         StandaloneSignBody: {
@@ -2266,10 +2574,124 @@ export interface components {
             available_actions: string[];
             /** Etag */
             etag: string;
-            /** State */
-            state: {
-                [key: string]: unknown;
-            };
+            state: components["schemas"]["DocumentVersionStateModel"];
+        };
+        /** WorkflowAssignmentsModel */
+        WorkflowAssignmentsModel: {
+            /** Approvers */
+            approvers: string[];
+            /** Editors */
+            editors: string[];
+            /** Reviewers */
+            reviewers: string[];
+        };
+        /** WorkflowCommentDetailModel */
+        WorkflowCommentDetailModel: {
+            /** Author Display */
+            author_display?: string | null;
+            /** Comment Id */
+            comment_id: string;
+            /** Context */
+            context: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Document Id */
+            document_id: string;
+            /** Full Text */
+            full_text: string;
+            /** Page Number */
+            page_number?: number | null;
+            /** Ref No */
+            ref_no: string;
+            /** Source Kind */
+            source_kind: string;
+            /** Status */
+            status: string;
+            /** Status Changed At */
+            status_changed_at?: string | null;
+            /** Status Changed By */
+            status_changed_by?: string | null;
+            /** Status Note */
+            status_note?: string | null;
+            /** Version */
+            version: number;
+        };
+        /** WorkflowCommentListItemModel */
+        WorkflowCommentListItemModel: {
+            /** Anchor Json */
+            anchor_json?: string | null;
+            /** Author Display */
+            author_display?: string | null;
+            /** Comment Id */
+            comment_id: string;
+            /** Context */
+            context: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Document Id */
+            document_id: string;
+            /** Etag */
+            etag: string;
+            /** Page Number */
+            page_number?: number | null;
+            /** Preview Text */
+            preview_text: string;
+            /** Ref No */
+            ref_no: string;
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** WorkflowCommentRecordModel */
+        WorkflowCommentRecordModel: {
+            /** Comment Id */
+            comment_id: string;
+            /** Context */
+            context: string;
+            /** Document Id */
+            document_id: string;
+            /** Etag */
+            etag: string;
+            /** Page Number */
+            page_number?: number | null;
+            /** Preview Text */
+            preview_text: string;
+            /** Ref No */
+            ref_no: string;
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** WorkflowProfileModel */
+        WorkflowProfileModel: {
+            /** Allows Content Changes */
+            allows_content_changes: boolean;
+            /** Control Class */
+            control_class: string;
+            /** Four Eyes Required */
+            four_eyes_required: boolean;
+            /** Label */
+            label: string;
+            /** Phases */
+            phases: string[];
+            /** Profile Id */
+            profile_id: string;
+            /** Release Evidence Mode */
+            release_evidence_mode: string;
+            /** Requires Approvers */
+            requires_approvers: boolean;
+            /** Requires Editors */
+            requires_editors: boolean;
+            /** Requires Reviewers */
+            requires_reviewers: boolean;
+            /** Signature Required Transitions */
+            signature_required_transitions: string[];
         };
         /** WorkflowSignBody */
         WorkflowSignBody: {
@@ -3041,9 +3463,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DocumentArtifactModel"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -3585,9 +4005,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["WorkflowCommentDetailModel"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -3701,9 +4119,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["WorkflowCommentRecordModel"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -4047,7 +4463,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RecentDocumentItemModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -4153,7 +4569,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ReviewActionItemModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -4260,7 +4676,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DocumentTaskItemModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -5672,9 +6088,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["DocumentArtifactModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -6016,9 +6430,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["WorkflowCommentListItemModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -6133,9 +6545,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["WorkflowCommentRecordModel"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -6255,9 +6665,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["WorkflowCommentListItemModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -10413,9 +10821,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["SignatureTemplateModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -10525,9 +10931,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SignatureTemplateModel"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -10634,9 +11038,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SignatureTemplateModel"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -10740,9 +11142,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["SignatureTemplateModel"][];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -10850,9 +11250,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SignatureTemplateModel"];
                 };
             };
             /** @description Structured QMTool error response. */
@@ -10962,9 +11360,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SignatureTemplateModel"];
                 };
             };
             /** @description Structured QMTool error response. */

@@ -269,6 +269,19 @@ def test_template_suggestion_after_create(tmp_path: Path) -> None:
     assert body["document_type"] == "SOP"
     assert body["role_context"] == "approver"
     assert body["last_used_at"] is None
+    from modules.signature.api import template_to_payload
+    from src.backend.signature_routes import SignatureTemplateModel
+
+    roundtripped = SignatureTemplateModel.model_validate(body).model_dump(mode="json")
+    assert roundtripped == body
+
+    templates = container.get_port("signature_api").list_user_signature_templates("editor")
+    template = next(item for item in templates if item.template_id == body["template_id"])
+    owner_raw = template_to_payload(template)
+    owner_typed = SignatureTemplateModel.model_validate(owner_raw).model_dump(mode="json")
+    assert set(owner_typed.keys()) == set(owner_raw.keys())
+    assert owner_typed == owner_raw
+    assert body == owner_typed
 
     suggested = client.get(
         "/api/v1/signature/templates/suggestion",

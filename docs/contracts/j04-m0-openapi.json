@@ -396,25 +396,53 @@
         "title": "CreateVersionBody",
         "type": "object"
       },
-      "DocumentQueryItem": {
-        "additionalProperties": true,
+      "DocumentArtifactModel": {
         "properties": {
-          "allowed_actions": {
-            "items": {
-              "$ref": "#/components/schemas/ActionDescriptorModel"
-            },
-            "title": "Allowed Actions",
-            "type": "array"
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
           },
-          "available_actions": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Available Actions",
-            "type": "array"
+          "artifact_type": {
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
           },
           "document_id": {
             "title": "Document Id",
+            "type": "string"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "source_type": {
+            "title": "Source Type",
             "type": "string"
           },
           "version": {
@@ -423,10 +451,399 @@
           }
         },
         "required": [
+          "artifact_id",
           "document_id",
           "version",
-          "available_actions",
-          "allowed_actions"
+          "artifact_type",
+          "source_type",
+          "original_filename",
+          "mime_type",
+          "sha256",
+          "size_bytes",
+          "is_current",
+          "created_at"
+        ],
+        "title": "DocumentArtifactModel",
+        "type": "object"
+      },
+      "DocumentQueryItem": {
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionDescriptorModel"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "approval_completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Completed At"
+          },
+          "approval_completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Completed By"
+          },
+          "approved_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved By",
+            "type": "array"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "archived_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived By"
+          },
+          "assignments": {
+            "$ref": "#/components/schemas/WorkflowAssignmentsModel"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          },
+          "control_class": {
+            "title": "Control Class",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "title": "Custom Fields",
+            "type": "object"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "edit_signature_done": {
+            "title": "Edit Signature Done",
+            "type": "boolean"
+          },
+          "edit_signed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Signed At"
+          },
+          "edit_signed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Signed By"
+          },
+          "extension_count": {
+            "title": "Extension Count",
+            "type": "integer"
+          },
+          "last_actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Actor User Id"
+          },
+          "last_event_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event At"
+          },
+          "last_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event Id"
+          },
+          "last_extended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extended At"
+          },
+          "last_extended_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extended By"
+          },
+          "last_extension_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extension Reason"
+          },
+          "last_extension_review_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extension Review Outcome"
+          },
+          "next_review_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Review At"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "review_completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Completed At"
+          },
+          "review_completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Completed By"
+          },
+          "reviewed_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reviewed By",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "superseded_by_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By Version"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workflow_active": {
+            "title": "Workflow Active",
+            "type": "boolean"
+          },
+          "workflow_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowProfileModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow_profile_id": {
+            "title": "Workflow Profile Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "version",
+          "title",
+          "doc_type",
+          "control_class",
+          "workflow_profile_id",
+          "status",
+          "workflow_active",
+          "assignments",
+          "reviewed_by",
+          "approved_by",
+          "edit_signature_done",
+          "extension_count"
         ],
         "title": "DocumentQueryItem",
         "type": "object"
@@ -461,6 +878,443 @@
           "limit"
         ],
         "title": "DocumentQueryPageResponse",
+        "type": "object"
+      },
+      "DocumentTaskItemModel": {
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "last_actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Actor User Id"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workflow_active": {
+            "title": "Workflow Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "document_id",
+          "version",
+          "title",
+          "status",
+          "workflow_active"
+        ],
+        "title": "DocumentTaskItemModel",
+        "type": "object"
+      },
+      "DocumentVersionStateModel": {
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionDescriptorModel"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "approval_completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Completed At"
+          },
+          "approval_completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Completed By"
+          },
+          "approved_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approved By",
+            "type": "array"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "archived_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived By"
+          },
+          "assignments": {
+            "$ref": "#/components/schemas/WorkflowAssignmentsModel"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          },
+          "control_class": {
+            "title": "Control Class",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "custom_fields": {
+            "additionalProperties": true,
+            "title": "Custom Fields",
+            "type": "object"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "doc_type": {
+            "title": "Doc Type",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "edit_signature_done": {
+            "title": "Edit Signature Done",
+            "type": "boolean"
+          },
+          "edit_signed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Signed At"
+          },
+          "edit_signed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Signed By"
+          },
+          "extension_count": {
+            "title": "Extension Count",
+            "type": "integer"
+          },
+          "last_actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Actor User Id"
+          },
+          "last_event_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event At"
+          },
+          "last_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event Id"
+          },
+          "last_extended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extended At"
+          },
+          "last_extended_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extended By"
+          },
+          "last_extension_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extension Reason"
+          },
+          "last_extension_review_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Extension Review Outcome"
+          },
+          "next_review_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Review At"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released At"
+          },
+          "review_completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Completed At"
+          },
+          "review_completed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Completed By"
+          },
+          "reviewed_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reviewed By",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "superseded_by_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By Version"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workflow_active": {
+            "title": "Workflow Active",
+            "type": "boolean"
+          },
+          "workflow_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowProfileModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow_profile_id": {
+            "title": "Workflow Profile Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "version",
+          "title",
+          "doc_type",
+          "control_class",
+          "workflow_profile_id",
+          "status",
+          "workflow_active",
+          "assignments",
+          "reviewed_by",
+          "approved_by",
+          "edit_signature_done",
+          "extension_count"
+        ],
+        "title": "DocumentVersionStateModel",
         "type": "object"
       },
       "EnsureSourcePdfResponse": {
@@ -536,9 +1390,7 @@
             "type": "string"
           },
           "state": {
-            "additionalProperties": true,
-            "title": "State",
-            "type": "object"
+            "$ref": "#/components/schemas/DocumentVersionStateModel"
           }
         },
         "required": [
@@ -732,9 +1584,7 @@
             "type": "boolean"
           },
           "state": {
-            "additionalProperties": true,
-            "title": "State",
-            "type": "object"
+            "$ref": "#/components/schemas/DocumentVersionStateModel"
           }
         },
         "required": [
@@ -1182,6 +2032,56 @@
         "title": "ReadDocumentBody",
         "type": "object"
       },
+      "RecentDocumentItemModel": {
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "last_event_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event At"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_id",
+          "version",
+          "title",
+          "status"
+        ],
+        "title": "RecentDocumentItemModel",
+        "type": "object"
+      },
       "RejectBody": {
         "properties": {
           "free_text": {
@@ -1219,6 +2119,50 @@
           }
         },
         "title": "RejectBody",
+        "type": "object"
+      },
+      "ReviewActionItemModel": {
+        "properties": {
+          "action_required": {
+            "title": "Action Required",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_id",
+          "version",
+          "title",
+          "status",
+          "action_required"
+        ],
+        "title": "ReviewActionItemModel",
         "type": "object"
       },
       "SetActiveBody": {
@@ -1297,6 +2241,263 @@
           "layout"
         ],
         "title": "SignIntentBody",
+        "type": "object"
+      },
+      "SignatureLayoutModel": {
+        "properties": {
+          "color_hex": {
+            "title": "Color Hex",
+            "type": "string"
+          },
+          "date_above": {
+            "title": "Date Above",
+            "type": "number"
+          },
+          "date_below": {
+            "title": "Date Below",
+            "type": "number"
+          },
+          "date_font_size": {
+            "title": "Date Font Size",
+            "type": "integer"
+          },
+          "date_position": {
+            "title": "Date Position",
+            "type": "string"
+          },
+          "date_rel_x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Rel X"
+          },
+          "date_rel_y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Rel Y"
+          },
+          "date_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Text"
+          },
+          "name_above": {
+            "title": "Name Above",
+            "type": "number"
+          },
+          "name_below": {
+            "title": "Name Below",
+            "type": "number"
+          },
+          "name_font_size": {
+            "title": "Name Font Size",
+            "type": "integer"
+          },
+          "name_position": {
+            "title": "Name Position",
+            "type": "string"
+          },
+          "name_rel_x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Rel X"
+          },
+          "name_rel_y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Rel Y"
+          },
+          "name_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Text"
+          },
+          "show_date": {
+            "title": "Show Date",
+            "type": "boolean"
+          },
+          "show_name": {
+            "title": "Show Name",
+            "type": "boolean"
+          },
+          "show_signature": {
+            "title": "Show Signature",
+            "type": "boolean"
+          },
+          "show_time": {
+            "title": "Show Time",
+            "type": "boolean"
+          },
+          "x_offset": {
+            "title": "X Offset",
+            "type": "number"
+          }
+        },
+        "required": [
+          "show_signature",
+          "show_name",
+          "show_date",
+          "show_time",
+          "name_position",
+          "date_position",
+          "name_font_size",
+          "date_font_size",
+          "color_hex",
+          "name_above",
+          "name_below",
+          "date_above",
+          "date_below",
+          "x_offset"
+        ],
+        "title": "SignatureLayoutModel",
+        "type": "object"
+      },
+      "SignaturePlacementModel": {
+        "properties": {
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "target_width": {
+            "title": "Target Width",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "page_index",
+          "x",
+          "y",
+          "target_width"
+        ],
+        "title": "SignaturePlacementModel",
+        "type": "object"
+      },
+      "SignatureTemplateModel": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Type"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/SignatureLayoutModel"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/SignaturePlacementModel"
+          },
+          "role_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Context"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "signature_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Asset Id"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "owner_user_id",
+          "name",
+          "placement",
+          "layout",
+          "created_at",
+          "scope"
+        ],
+        "title": "SignatureTemplateModel",
         "type": "object"
       },
       "StandaloneSignBody": {
@@ -1795,9 +2996,7 @@
             "type": "string"
           },
           "state": {
-            "additionalProperties": true,
-            "title": "State",
-            "type": "object"
+            "$ref": "#/components/schemas/DocumentVersionStateModel"
           }
         },
         "required": [
@@ -1807,6 +3006,382 @@
           "etag"
         ],
         "title": "VersionStateResponse",
+        "type": "object"
+      },
+      "WorkflowAssignmentsModel": {
+        "properties": {
+          "approvers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Approvers",
+            "type": "array"
+          },
+          "editors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Editors",
+            "type": "array"
+          },
+          "reviewers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reviewers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "editors",
+          "reviewers",
+          "approvers"
+        ],
+        "title": "WorkflowAssignmentsModel",
+        "type": "object"
+      },
+      "WorkflowCommentDetailModel": {
+        "properties": {
+          "author_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Display"
+          },
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "context": {
+            "title": "Context",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "full_text": {
+            "title": "Full Text",
+            "type": "string"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "ref_no": {
+            "title": "Ref No",
+            "type": "string"
+          },
+          "source_kind": {
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "status_changed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed At"
+          },
+          "status_changed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Changed By"
+          },
+          "status_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comment_id",
+          "ref_no",
+          "document_id",
+          "version",
+          "context",
+          "full_text",
+          "status",
+          "source_kind"
+        ],
+        "title": "WorkflowCommentDetailModel",
+        "type": "object"
+      },
+      "WorkflowCommentListItemModel": {
+        "properties": {
+          "anchor_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor Json"
+          },
+          "author_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Display"
+          },
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "context": {
+            "title": "Context",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "preview_text": {
+            "title": "Preview Text",
+            "type": "string"
+          },
+          "ref_no": {
+            "title": "Ref No",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comment_id",
+          "ref_no",
+          "document_id",
+          "version",
+          "context",
+          "preview_text",
+          "status",
+          "updated_at",
+          "etag"
+        ],
+        "title": "WorkflowCommentListItemModel",
+        "type": "object"
+      },
+      "WorkflowCommentRecordModel": {
+        "properties": {
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "context": {
+            "title": "Context",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "preview_text": {
+            "title": "Preview Text",
+            "type": "string"
+          },
+          "ref_no": {
+            "title": "Ref No",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comment_id",
+          "ref_no",
+          "document_id",
+          "version",
+          "context",
+          "status",
+          "preview_text",
+          "updated_at",
+          "etag"
+        ],
+        "title": "WorkflowCommentRecordModel",
+        "type": "object"
+      },
+      "WorkflowProfileModel": {
+        "properties": {
+          "allows_content_changes": {
+            "title": "Allows Content Changes",
+            "type": "boolean"
+          },
+          "control_class": {
+            "title": "Control Class",
+            "type": "string"
+          },
+          "four_eyes_required": {
+            "title": "Four Eyes Required",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "phases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "release_evidence_mode": {
+            "title": "Release Evidence Mode",
+            "type": "string"
+          },
+          "requires_approvers": {
+            "title": "Requires Approvers",
+            "type": "boolean"
+          },
+          "requires_editors": {
+            "title": "Requires Editors",
+            "type": "boolean"
+          },
+          "requires_reviewers": {
+            "title": "Requires Reviewers",
+            "type": "boolean"
+          },
+          "signature_required_transitions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Signature Required Transitions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "profile_id",
+          "label",
+          "phases",
+          "four_eyes_required",
+          "control_class",
+          "signature_required_transitions",
+          "requires_editors",
+          "requires_reviewers",
+          "requires_approvers",
+          "allows_content_changes",
+          "release_evidence_mode"
+        ],
+        "title": "WorkflowProfileModel",
         "type": "object"
       },
       "WorkflowSignBody": {
@@ -2952,9 +4527,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Api V1 Documents Artifacts By Artifact Id",
-                  "type": "object"
+                  "$ref": "#/components/schemas/DocumentArtifactModel"
                 }
               }
             },
@@ -3764,9 +5337,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Api V1 Documents Comments By Comment Id",
-                  "type": "object"
+                  "$ref": "#/components/schemas/WorkflowCommentDetailModel"
                 }
               }
             },
@@ -3941,9 +5512,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Post Api V1 Documents Comments By Comment Id Status",
-                  "type": "object"
+                  "$ref": "#/components/schemas/WorkflowCommentRecordModel"
                 }
               }
             },
@@ -4452,7 +6021,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecentDocumentItemModel"
+                  },
+                  "title": "Response Get Api V1 Documents Home Recent",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -4605,7 +6180,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReviewActionItemModel"
+                  },
+                  "title": "Response Get Api V1 Documents Home Review Actions",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -4774,7 +6355,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentTaskItemModel"
+                  },
+                  "title": "Response Get Api V1 Documents Home Tasks",
+                  "type": "array"
+                }
               }
             },
             "description": "Successful Response"
@@ -6830,8 +8417,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/DocumentArtifactModel"
                   },
                   "title": "Response Get Api V1 Documents Versions By Document Id By Version Artifacts",
                   "type": "array"
@@ -7365,8 +8951,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/WorkflowCommentListItemModel"
                   },
                   "title": "Response Get Api V1 Documents Versions By Document Id By Version Comments",
                   "type": "array"
@@ -7551,9 +9136,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Post Api V1 Documents Versions By Document Id By Version Comments",
-                  "type": "object"
+                  "$ref": "#/components/schemas/WorkflowCommentRecordModel"
                 }
               }
             },
@@ -7747,8 +9330,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/WorkflowCommentListItemModel"
                   },
                   "title": "Response Post Api V1 Documents Versions By Document Id By Version Comments Sync Docx",
                   "type": "array"
@@ -14144,8 +15726,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/SignatureTemplateModel"
                   },
                   "title": "Response Get Api V1 Signature Templates Global",
                   "type": "array"
@@ -14306,9 +15887,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Post Api V1 Signature Templates Global By Template Id Copy",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SignatureTemplateModel"
                 }
               }
             },
@@ -14480,9 +16059,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Api V1 Signature Templates Suggestion",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SignatureTemplateModel"
                 }
               }
             },
@@ -14622,8 +16199,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/SignatureTemplateModel"
                   },
                   "title": "Response Get Api V1 Signature Templates User",
                   "type": "array"
@@ -14773,9 +16349,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Post Api V1 Signature Templates User",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SignatureTemplateModel"
                 }
               }
             },
@@ -15074,9 +16648,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Put Api V1 Signature Templates By Template Id",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SignatureTemplateModel"
                 }
               }
             },
