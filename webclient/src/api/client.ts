@@ -25,7 +25,7 @@ function readCookie(name: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function parseErrorBody(text: string): ApiErrorResponse | null {
+export function parseApiErrorBody(text: string): ApiErrorResponse | null {
   if (!text) {
     return null;
   }
@@ -34,6 +34,10 @@ function parseErrorBody(text: string): ApiErrorResponse | null {
   } catch {
     return null;
   }
+}
+
+function parseErrorBody(text: string): ApiErrorResponse | null {
+  return parseApiErrorBody(text);
 }
 
 async function apiFetch(
@@ -149,6 +153,14 @@ export async function probeHealth(): Promise<boolean> {
 
 export function apiBasePrefix(): string {
   return API_PREFIX;
+}
+
+/** CSRF-protected mutation transport; caller supplies a validated relative path. */
+export async function mutationFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  return apiFetch(path, { ...init, csrf: true });
 }
 
 /** Test hook: ensure fetch adapter never sets Authorization. */

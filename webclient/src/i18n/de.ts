@@ -34,4 +34,14 @@ export default {
     failed: "Passwortänderung fehlgeschlagen",
     weakPassword: "Das Passwort ist zu schwach.",
   },
+  api: {
+    errors: {
+      unauthorized: "Sitzung abgelaufen oder nicht angemeldet.",
+      forbidden: "Diese Aktion ist nicht erlaubt.",
+      notFound: "Die angeforderte Ressource wurde nicht gefunden.",
+      conflict: "Der Datensatz wurde zwischenzeitlich geändert.",
+      preconditionRequired: "Ein erforderlicher Vorbedingungs-Header fehlt.",
+      transport: "Die Anfrage konnte nicht ausgeführt werden.",
+    },
+  },
 };
