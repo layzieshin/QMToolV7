@@ -1,8 +1,10 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import { routes } from "./routes";
+
 const router = createRouter({
   history: createWebHistory(),
-  routes: [{ path: "/:pathMatch(.*)*", name: "shell", component: () => import("../App.vue") }],
+  routes,
 });
 
 export default router;

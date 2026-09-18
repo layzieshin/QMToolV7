@@ -1,0 +1,12 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background-color: #f5f5f5;
+}
+
+.app-shell__main {
+  min-height: 12rem;
+}
