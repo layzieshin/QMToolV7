@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiTransportError, apiBasePrefix } from "../api/client";
+import { apiBasePrefix } from "../api/client";
 import type { MutationBody } from "../api/mutationClient";
 import {
   MutationClientError,
