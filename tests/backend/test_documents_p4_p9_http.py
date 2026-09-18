@@ -297,3 +297,40 @@ def test_http_docx_comment_sync_in_review_is_idempotent(tmp_path: Path, monkeypa
     )
     assert hidden.status_code == 404, hidden.text
     assert "current_state" not in hidden.text
+
+
+def test_workflow_comment_detail_exposes_status_change_metadata_over_http(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-CMT-DETAIL-HTTP")
+    edited = client.post(
+        "/api/v1/documents/versions/DOC-CMT-DETAIL-HTTP/1/workflow/editing-complete",
+        headers=_mutation_headers(tokens["editor"], tokens["state_response"]),
+    )
+    assert edited.status_code == 200, edited.text
+    created = client.post(
+        "/api/v1/documents/versions/DOC-CMT-DETAIL-HTTP/1/comments",
+        headers=_mutation_headers(tokens["reviewer"], edited),
+        json={"context": "PDF_REVIEW", "page_number": 1, "comment_text": "detail http test"},
+    )
+    assert created.status_code == 200, created.text
+    created_body = created.json()
+    comment_id = created_body["comment_id"]
+    etag = created_body["etag"]
+    resolved = client.post(
+        f"/api/v1/documents/comments/{comment_id}/status",
+        headers={**_auth(tokens["reviewer"]), "If-Match": etag},
+        json={"new_status": "RESOLVED", "note": "reviewer resolved"},
+    )
+    assert resolved.status_code == 200, resolved.text
+    resolved_body = resolved.json()
+    detail = client.get(
+        f"/api/v1/documents/comments/{comment_id}",
+        headers=_auth(tokens["reviewer"]),
+    )
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["status_changed_by"] == "reviewer"
+    assert body["status_changed_at"] == resolved_body["updated_at"]
+    assert body["status"] == "RESOLVED"
+    assert body["status_note"] == "reviewer resolved"

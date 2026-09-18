@@ -70,6 +70,50 @@ class CopyGlobalBody(BaseModel):
     name: str | None = None
 
 
+class SignaturePlacementModel(BaseModel):
+    page_index: int
+    x: float
+    y: float
+    target_width: float
+
+
+class SignatureLayoutModel(BaseModel):
+    show_signature: bool
+    show_name: bool
+    show_date: bool
+    show_time: bool
+    name_text: str | None = None
+    date_text: str | None = None
+    name_position: str
+    date_position: str
+    name_font_size: int
+    date_font_size: int
+    color_hex: str
+    name_above: float
+    name_below: float
+    date_above: float
+    date_below: float
+    x_offset: float
+    name_rel_x: float | None = None
+    name_rel_y: float | None = None
+    date_rel_x: float | None = None
+    date_rel_y: float | None = None
+
+
+class SignatureTemplateModel(BaseModel):
+    template_id: str
+    owner_user_id: str
+    name: str
+    placement: SignaturePlacementModel
+    layout: SignatureLayoutModel
+    signature_asset_id: str | None = None
+    created_at: str
+    scope: str
+    document_type: str | None = None
+    role_context: str | None = None
+    last_used_at: str | None = None
+
+
 class StandaloneSignBody(BaseModel):
     upload_handle: str = Field(min_length=1)
     placement: dict[str, Any]
@@ -83,6 +127,10 @@ class StandaloneSignBody(BaseModel):
 
 def _signature_api(request: Request):
     return get_container(request).get_port("signature_api")
+
+
+def _template_model(template) -> SignatureTemplateModel:
+    return SignatureTemplateModel.model_validate(template_to_payload(template))
 
 
 def _map_signature_error(exc: Exception) -> HTTPException:
@@ -199,22 +247,22 @@ def verify_password(
     return {"ok": True}
 
 
-@router.get("/templates/user")
+@router.get("/templates/user", response_model=list[SignatureTemplateModel])
 def list_user_templates(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> list[dict[str, Any]]:
+) -> list[SignatureTemplateModel]:
     api = _signature_api(request)
-    return [template_to_payload(row) for row in api.list_user_signature_templates(actor.user_id)]
+    return [_template_model(row) for row in api.list_user_signature_templates(actor.user_id)]
 
 
-@router.get("/templates/suggestion")
+@router.get("/templates/suggestion", response_model=SignatureTemplateModel)
 def suggest_template(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     document_type: str | None = None,
     role_context: str | None = None,
-) -> dict[str, Any]:
+) -> SignatureTemplateModel:
     api = _signature_api(request)
     suggested = api.suggest_template_for_actor(
         actor,
@@ -223,24 +271,24 @@ def suggest_template(
     )
     if suggested is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "no matching template"})
-    return template_to_payload(suggested)
+    return _template_model(suggested)
 
 
-@router.get("/templates/global")
+@router.get("/templates/global", response_model=list[SignatureTemplateModel])
 def list_global_templates(
     request: Request,
     _actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> list[dict[str, Any]]:
+) -> list[SignatureTemplateModel]:
     api = _signature_api(request)
-    return [template_to_payload(row) for row in api.list_global_signature_templates()]
+    return [_template_model(row) for row in api.list_global_signature_templates()]
 
 
-@router.post("/templates/user")
+@router.post("/templates/user", response_model=SignatureTemplateModel)
 def create_user_template(
     body: TemplateCreateBody,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> dict[str, Any]:
+) -> SignatureTemplateModel:
     api = _signature_api(request)
     try:
         created = api.create_user_signature_template_for_actor(
@@ -255,16 +303,16 @@ def create_user_template(
         )
     except Exception as exc:
         raise _map_signature_error(exc) from exc
-    return template_to_payload(created)
+    return _template_model(created)
 
 
-@router.put("/templates/{template_id}")
+@router.put("/templates/{template_id}", response_model=SignatureTemplateModel)
 def update_template(
     template_id: str,
     body: TemplateUpdateBody,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> dict[str, Any]:
+) -> SignatureTemplateModel:
     api = _signature_api(request)
     try:
         updated = api.update_signature_template_for_actor(
@@ -281,7 +329,7 @@ def update_template(
         )
     except Exception as exc:
         raise _map_signature_error(exc) from exc
-    return template_to_payload(updated)
+    return _template_model(updated)
 
 
 @router.delete("/templates/{template_id}", status_code=204, response_class=Response)
@@ -298,19 +346,19 @@ def delete_template(
     return Response(status_code=204)
 
 
-@router.post("/templates/global/{template_id}/copy")
+@router.post("/templates/global/{template_id}/copy", response_model=SignatureTemplateModel)
 def copy_global_template(
     template_id: str,
     body: CopyGlobalBody,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> dict[str, Any]:
+) -> SignatureTemplateModel:
     api = _signature_api(request)
     try:
         copied = api.copy_global_template_for_actor(template_id, actor, name=body.name)
     except Exception as exc:
         raise _map_signature_error(exc) from exc
-    return template_to_payload(copied)
+    return _template_model(copied)
 
 
 @router.post("/assets/import")

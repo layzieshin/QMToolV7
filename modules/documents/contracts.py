@@ -411,6 +411,8 @@ class WorkflowCommentDetail:
     status: WorkflowCommentStatus
     status_note: str | None
     source_kind: WorkflowCommentSourceKind
+    status_changed_by: str | None = None
+    status_changed_at: datetime | None = None
 
 
 @dataclass(frozen=True)

@@ -982,3 +982,41 @@ def test_history_requires_auth_and_hides_unreadable(tmp_path: Path) -> None:
     observer = _login(client, "observer", "observerpass01")
     denied = client.get("/api/v1/documents/versions/DOC-HIST/1/history", headers=_auth(observer))
     assert denied.status_code == 404
+
+
+def test_version_state_response_json_roundtrips_through_transport_model(tmp_path: Path) -> None:
+    from modules.documents.api import document_version_state_to_payload
+    from modules.usermanagement.api import resolve_session
+    from src.backend.documents_routes import DocumentVersionStateModel, _state_payload
+
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-STATE-RT")
+    response = client.get(
+        "/api/v1/documents/versions/DOC-STATE-RT/1",
+        headers=_auth(tokens["reviewer"]),
+    )
+    assert response.status_code == 200, response.text
+    state_json = response.json()["state"]
+    roundtripped = DocumentVersionStateModel.model_validate(state_json).model_dump(mode="json")
+    assert roundtripped == state_json
+
+    actor = resolve_session(container, tokens["reviewer"], request_id="state-roundtrip-review")
+    state = container.get_port("documents_pool_api").get_document_version_for_actor("DOC-STATE-RT", 1, actor)
+    assert state is not None
+
+    owner_raw = document_version_state_to_payload(state)
+    owner_typed = DocumentVersionStateModel.model_validate(owner_raw).model_dump(mode="json")
+    assert set(owner_raw.keys()).issubset(set(owner_typed.keys()))
+    for key, value in owner_raw.items():
+        assert owner_typed[key] == value
+    owner_extra_keys = set(owner_typed.keys()) - set(owner_raw.keys())
+    assert owner_extra_keys <= {"available_actions", "allowed_actions"}
+    for key in owner_extra_keys:
+        assert owner_typed[key] == []
+
+    adapter_raw, _actions, _allowed = _state_payload(state, actor)
+    adapter_typed = DocumentVersionStateModel.model_validate(adapter_raw).model_dump(mode="json")
+    assert set(adapter_typed.keys()) == set(adapter_raw.keys())
+    assert adapter_typed == adapter_raw
+    assert state_json == adapter_typed

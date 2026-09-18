@@ -64,6 +64,8 @@ class WorkflowCommentService:
             status=record.status,
             status_note=record.status_note,
             source_kind=record.source_kind,
+            status_changed_by=record.status_changed_by,
+            status_changed_at=record.status_changed_at,
         )
 
     def create_pdf_comment(

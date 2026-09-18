@@ -16,6 +16,7 @@ from modules.documents.api import (
     ArtifactType,
     ControlClass,
     DocumentConflictError,
+    DocumentTaskItem,
     HeaderConflictError,
     CommentConflictError,
     DocumentStatus,
@@ -23,7 +24,9 @@ from modules.documents.api import (
     DocumentWorkflowError,
     DocumentsFeatureUnavailableError,
     PermissionDeniedError,
+    RecentDocumentItem,
     RejectionReason,
+    ReviewActionItem,
     ValidationError,
     docx_conversion_available,
     ValidityExtensionOutcome,
@@ -59,20 +62,169 @@ class ActionDescriptorModel(BaseModel):
     severity: str
 
 
+class WorkflowAssignmentsModel(BaseModel):
+    editors: list[str]
+    reviewers: list[str]
+    approvers: list[str]
+
+
+class WorkflowProfileModel(BaseModel):
+    profile_id: str
+    label: str
+    phases: list[str]
+    four_eyes_required: bool
+    control_class: str
+    signature_required_transitions: list[str]
+    requires_editors: bool
+    requires_reviewers: bool
+    requires_approvers: bool
+    allows_content_changes: bool
+    release_evidence_mode: str
+
+
+class DocumentVersionStateModel(BaseModel):
+    document_id: str
+    version: int
+    title: str
+    description: str | None = None
+    doc_type: str
+    control_class: str
+    workflow_profile_id: str
+    owner_user_id: str | None = None
+    status: str
+    workflow_active: bool
+    workflow_profile: WorkflowProfileModel | None = None
+    assignments: WorkflowAssignmentsModel
+    reviewed_by: list[str]
+    approved_by: list[str]
+    edit_signature_done: bool
+    edit_signed_at: str | None = None
+    edit_signed_by: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+    next_review_at: str | None = None
+    review_completed_at: str | None = None
+    review_completed_by: str | None = None
+    approval_completed_at: str | None = None
+    approval_completed_by: str | None = None
+    released_at: str | None = None
+    archived_at: str | None = None
+    archived_by: str | None = None
+    superseded_by_version: int | None = None
+    extension_count: int
+    last_extended_at: str | None = None
+    last_extended_by: str | None = None
+    last_extension_reason: str | None = None
+    last_extension_review_outcome: str | None = None
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
+    last_event_id: str | None = None
+    last_event_at: str | None = None
+    last_actor_user_id: str | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+    updated_at: str | None = None
+    available_actions: list[str] = Field(default_factory=list)
+    allowed_actions: list[ActionDescriptorModel] = Field(default_factory=list)
+
+
+class DocumentQueryItem(DocumentVersionStateModel):
+    model_config = ConfigDict(title="DocumentQueryItem")
+
+
 class VersionStateResponse(BaseModel):
-    state: dict[str, Any]
+    state: DocumentVersionStateModel
     available_actions: list[str]
     allowed_actions: list[ActionDescriptorModel]
     etag: str
 
 
-class DocumentQueryItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
+class DocumentTaskItemModel(BaseModel):
     document_id: str
     version: int
-    available_actions: list[str]
-    allowed_actions: list[ActionDescriptorModel]
+    title: str
+    status: str
+    owner_user_id: str | None = None
+    workflow_active: bool
+    last_actor_user_id: str | None = None
+
+
+class ReviewActionItemModel(BaseModel):
+    document_id: str
+    version: int
+    title: str
+    status: str
+    action_required: str
+    owner_user_id: str | None = None
+
+
+class RecentDocumentItemModel(BaseModel):
+    document_id: str
+    version: int
+    title: str
+    status: str
+    owner_user_id: str | None = None
+    last_event_at: str | None = None
+
+
+class DocumentArtifactModel(BaseModel):
+    artifact_id: str
+    document_id: str
+    version: int
+    artifact_type: str
+    source_type: str
+    original_filename: str
+    mime_type: str
+    sha256: str
+    size_bytes: int
+    is_current: bool
+    metadata: dict[str, str] = Field(default_factory=dict)
+    created_at: str
+
+
+class WorkflowCommentListItemModel(BaseModel):
+    comment_id: str
+    ref_no: str
+    document_id: str
+    version: int
+    context: str
+    page_number: int | None = None
+    anchor_json: str | None = None
+    author_display: str | None = None
+    created_at: str | None = None
+    preview_text: str
+    status: str
+    updated_at: str
+    etag: str
+
+
+class WorkflowCommentDetailModel(BaseModel):
+    comment_id: str
+    ref_no: str
+    document_id: str
+    version: int
+    context: str
+    page_number: int | None = None
+    author_display: str | None = None
+    created_at: str | None = None
+    full_text: str
+    status: str
+    status_note: str | None = None
+    source_kind: str
+    status_changed_by: str | None = None
+    status_changed_at: str | None = None
+
+
+class WorkflowCommentRecordModel(BaseModel):
+    comment_id: str
+    ref_no: str
+    document_id: str
+    version: int
+    context: str
+    status: str
+    page_number: int | None = None
+    preview_text: str
+    updated_at: str
+    etag: str
 
 
 class DocumentQueryPageResponse(BaseModel):
@@ -211,7 +363,7 @@ class NewVersionAfterArchiveBody(BaseModel):
 
 
 class ExtendAnnualResponse(BaseModel):
-    state: dict[str, Any]
+    state: DocumentVersionStateModel
     available_actions: list[str]
     allowed_actions: list[ActionDescriptorModel]
     etag: str
@@ -219,11 +371,65 @@ class ExtendAnnualResponse(BaseModel):
 
 
 class EnsureSourcePdfResponse(BaseModel):
-    state: dict[str, Any]
+    state: DocumentVersionStateModel
     available_actions: list[str]
     allowed_actions: list[ActionDescriptorModel]
     etag: str
     artifact_id: str | None = None
+
+
+def _document_version_state_model(payload: dict[str, Any]) -> DocumentVersionStateModel:
+    return DocumentVersionStateModel.model_validate(payload)
+
+
+def _task_item_model(row: DocumentTaskItem) -> DocumentTaskItemModel:
+    return DocumentTaskItemModel(
+        document_id=row.document_id,
+        version=row.version,
+        title=row.title,
+        status=row.status.value,
+        owner_user_id=row.owner_user_id,
+        workflow_active=row.workflow_active,
+        last_actor_user_id=row.last_actor_user_id,
+    )
+
+
+def _review_action_item_model(row: ReviewActionItem) -> ReviewActionItemModel:
+    return ReviewActionItemModel(
+        document_id=row.document_id,
+        version=row.version,
+        title=row.title,
+        status=row.status.value,
+        action_required=row.action_required,
+        owner_user_id=row.owner_user_id,
+    )
+
+
+def _recent_document_item_model(row: RecentDocumentItem) -> RecentDocumentItemModel:
+    return RecentDocumentItemModel(
+        document_id=row.document_id,
+        version=row.version,
+        title=row.title,
+        status=row.status.value,
+        owner_user_id=row.owner_user_id,
+        last_event_at=row.last_event_at.isoformat() if row.last_event_at is not None else None,
+    )
+
+
+def _artifact_model(artifact) -> DocumentArtifactModel:
+    return DocumentArtifactModel.model_validate(artifact_to_public_payload(artifact))
+
+
+def _comment_list_item_model(row: WorkflowCommentListItem) -> WorkflowCommentListItemModel:
+    return WorkflowCommentListItemModel.model_validate(_comment_list_item_payload(row))
+
+
+def _comment_detail_model(row: WorkflowCommentDetail) -> WorkflowCommentDetailModel:
+    return WorkflowCommentDetailModel.model_validate(_comment_detail_payload(row))
+
+
+def _comment_record_model(row: WorkflowCommentRecord) -> WorkflowCommentRecordModel:
+    return WorkflowCommentRecordModel.model_validate(_comment_record_payload(row))
 
 
 def _optional_sign_request(request: Request, state, transition: str, body: WorkflowSignBody | None, actor: UserContext):
@@ -564,9 +770,9 @@ def _state_response(state, actor: UserContext, response: Response | None = None)
     if response is not None:
         response.headers["ETag"] = etag
     return VersionStateResponse(
-        state=payload,
+        state=_document_version_state_model(payload),
         available_actions=actions,
-        allowed_actions=allowed_actions,
+        allowed_actions=[ActionDescriptorModel.model_validate(item) for item in allowed_actions],
         etag=etag,
     )
 
@@ -626,7 +832,7 @@ def _parse_query_status(raw: str | None) -> DocumentStatus | None:
         ) from exc
 
 
-@router.get("/query")
+@router.get("/query", response_model=DocumentQueryPageResponse)
 def query_documents(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
@@ -658,7 +864,7 @@ def query_documents(
     )
 
 
-@router.get("/versions/{document_id}/{version}/history")
+@router.get("/versions/{document_id}/{version}/history", response_model=list[VersionHistoryEvent])
 def list_version_history(
     document_id: str,
     version: int,
@@ -696,32 +902,32 @@ def get_version(
     return _state_response(state, actor, response)
 
 
-@router.get("/versions/{document_id}/{version}/artifacts")
+@router.get("/versions/{document_id}/{version}/artifacts", response_model=list[DocumentArtifactModel])
 def list_artifacts(
     document_id: str,
     version: int,
     request: Request,
     _actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> list[dict[str, object]]:
+) -> list[DocumentArtifactModel]:
     state = _pool_api(request).get_document_version_for_actor(document_id, version, _actor)
     if state is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "document version not found"})
     return [
-        artifact_to_public_payload(artifact)
+        _artifact_model(artifact)
         for artifact in _artifacts_api(request).list_artifacts_for_actor(document_id, version, _actor)
     ]
 
 
-@router.get("/artifacts/{artifact_id}")
+@router.get("/artifacts/{artifact_id}", response_model=DocumentArtifactModel)
 def get_artifact(
     artifact_id: str,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> dict[str, object]:
+) -> DocumentArtifactModel:
     artifact = _artifacts_api(request).get_artifact_by_id_for_actor(artifact_id, actor)
     if artifact is None:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "artifact not found"})
-    return artifact_to_public_payload(artifact)
+    return _artifact_model(artifact)
 
 
 def _artifact_preview_response(request: Request, artifact_id: str, actor: UserContext):
@@ -785,35 +991,38 @@ def get_header(
     return _header_payload(header)
 
 
-@router.get("/home/tasks")
+@router.get("/home/tasks", response_model=list[DocumentTaskItemModel])
 def list_home_tasks(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     scope: str | None = None,
     user_id: str | None = None,
-):
+) -> list[DocumentTaskItemModel]:
     del user_id
-    return _pool_api(request).list_tasks_for_actor(actor, scope=scope)
+    rows = _pool_api(request).list_tasks_for_actor(actor, scope=scope)
+    return [_task_item_model(row) for row in rows]
 
 
-@router.get("/home/review-actions")
+@router.get("/home/review-actions", response_model=list[ReviewActionItemModel])
 def list_home_review_actions(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     user_id: str | None = None,
-):
+) -> list[ReviewActionItemModel]:
     del user_id
-    return _pool_api(request).list_review_actions_for_actor(actor)
+    rows = _pool_api(request).list_review_actions_for_actor(actor)
+    return [_review_action_item_model(row) for row in rows]
 
 
-@router.get("/home/recent")
+@router.get("/home/recent", response_model=list[RecentDocumentItemModel])
 def list_home_recent(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     user_id: str | None = None,
-):
+) -> list[RecentDocumentItemModel]:
     del user_id
-    return _pool_api(request).list_recent_documents_for_actor(actor)
+    rows = _pool_api(request).list_recent_documents_for_actor(actor)
+    return [_recent_document_item_model(row) for row in rows]
 
 
 @router.get("/released")
@@ -1293,9 +1502,9 @@ def ensure_source_pdf_for_signing_route(
     etag = _etag_for_state(updated)
     response.headers["ETag"] = etag
     return EnsureSourcePdfResponse(
-        state=state_dict,
+        state=_document_version_state_model(state_dict),
         available_actions=actions,
-        allowed_actions=allowed_actions,
+        allowed_actions=[ActionDescriptorModel.model_validate(item) for item in allowed_actions],
         etag=etag,
         artifact_id=artifact_id,
     )
@@ -1416,14 +1625,14 @@ def patch_version_metadata(
     return _state_response(updated, actor, response)
 
 
-@router.get("/versions/{document_id}/{version}/comments")
+@router.get("/versions/{document_id}/{version}/comments", response_model=list[WorkflowCommentListItemModel])
 def list_workflow_comments(
     document_id: str,
     version: int,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     context: str = WorkflowCommentContext.PDF_REVIEW.value,
-) -> list[dict[str, object]]:
+) -> list[WorkflowCommentListItemModel]:
     state = _load_state(request, document_id, version, actor)
     user_id, role = actor_user_and_role(actor)
     try:
@@ -1440,32 +1649,32 @@ def list_workflow_comments(
         )
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    return [_comment_list_item_payload(row) for row in rows]
+    return [_comment_list_item_model(row) for row in rows]
 
 
-@router.get("/comments/{comment_id}")
+@router.get("/comments/{comment_id}", response_model=WorkflowCommentDetailModel)
 def get_workflow_comment_detail(
     comment_id: str,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
-) -> dict[str, object]:
+) -> WorkflowCommentDetailModel:
     user_id, role = actor_user_and_role(actor)
     api = _comments_api(request)
     try:
         detail = api.get_workflow_comment_detail(comment_id, actor_user_id=user_id, actor_role=role)
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    return _comment_detail_payload(detail)
+    return _comment_detail_model(detail)
 
 
-@router.post("/versions/{document_id}/{version}/comments/sync-docx")
+@router.post("/versions/{document_id}/{version}/comments/sync-docx", response_model=list[WorkflowCommentListItemModel])
 def sync_docx_comments(
     document_id: str,
     version: int,
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
-) -> list[dict[str, object]]:
+) -> list[WorkflowCommentListItemModel]:
     state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
@@ -1476,10 +1685,10 @@ def sync_docx_comments(
         )
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    return [_comment_list_item_payload(row) for row in rows]
+    return [_comment_list_item_model(row) for row in rows]
 
 
-@router.post("/versions/{document_id}/{version}/comments")
+@router.post("/versions/{document_id}/{version}/comments", response_model=WorkflowCommentRecordModel)
 def create_pdf_workflow_comment(
     document_id: str,
     version: int,
@@ -1487,7 +1696,7 @@ def create_pdf_workflow_comment(
     request: Request,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
-) -> dict[str, object]:
+) -> WorkflowCommentRecordModel:
     state = _load_state(request, document_id, version, actor)
     expected = _required_if_match(if_match)
     user_id, role = actor_user_and_role(actor)
@@ -1509,10 +1718,10 @@ def create_pdf_workflow_comment(
         )
     except Exception as exc:
         raise _map_documents_error(exc) from exc
-    return _comment_record_payload(record)
+    return _comment_record_model(record)
 
 
-@router.post("/comments/{comment_id}/status")
+@router.post("/comments/{comment_id}/status", response_model=WorkflowCommentRecordModel)
 def set_workflow_comment_status(
     comment_id: str,
     body: CommentStatusBody,
@@ -1520,7 +1729,7 @@ def set_workflow_comment_status(
     response: Response,
     actor: Annotated[UserContext, Depends(require_user_context_normal)],
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
-) -> dict[str, object]:
+) -> WorkflowCommentRecordModel:
     expected = _required_if_match(if_match)
     if expected is None:
         raise HTTPException(
@@ -1545,7 +1754,7 @@ def set_workflow_comment_status(
     except Exception as exc:
         raise _map_documents_error(exc) from exc
     response.headers["ETag"] = record.updated_at.isoformat()
-    return _comment_record_payload(record)
+    return _comment_record_model(record)
 
 
 @router.post("/versions/{document_id}/{version}/lifecycle/archive", response_model=VersionStateResponse)
@@ -1616,9 +1825,9 @@ def extend_annual_validity_route(
     etag = _etag_for_state(updated)
     response.headers["ETag"] = etag
     return ExtendAnnualResponse(
-        state=payload,
+        state=_document_version_state_model(payload),
         available_actions=actions,
-        allowed_actions=allowed_actions,
+        allowed_actions=[ActionDescriptorModel.model_validate(item) for item in allowed_actions],
         etag=etag,
         is_maxed=is_maxed,
     )

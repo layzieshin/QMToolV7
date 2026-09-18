@@ -378,3 +378,83 @@ def test_http_comments_port_forwards_expected_updated_at(monkeypatch) -> None:
         note="done",
         if_match="2026-08-07T12:00:00+00:00",
     )
+
+
+def test_http_comments_port_comment_detail_preserves_status_change_metadata(monkeypatch) -> None:
+    changed_at = "2026-08-07T12:05:00+00:00"
+    mock_client = MagicMock()
+    mock_client.get_workflow_comment_detail.return_value = {
+        "comment_id": "c1",
+        "ref_no": "C-1",
+        "document_id": "DOC-1",
+        "version": 1,
+        "context": "PDF_REVIEW",
+        "page_number": 1,
+        "author_display": "reviewer",
+        "created_at": "2026-08-07T12:00:00+00:00",
+        "full_text": "note",
+        "status": "RESOLVED",
+        "status_note": "done",
+        "source_kind": "PDF_APP",
+        "status_changed_by": "reviewer",
+        "status_changed_at": changed_at,
+    }
+    monkeypatch.setattr(
+        "interfaces.clients.documents_http_ports.DocumentsHttpClient.for_runtime",
+        lambda: mock_client,
+    )
+    detail = HttpDocumentsCommentsApi().get_workflow_comment_detail("c1")
+    assert detail.status_changed_by == "reviewer"
+    assert detail.status_changed_at == datetime.fromisoformat(changed_at)
+
+
+def test_http_comments_port_comment_detail_missing_status_change_metadata_stays_none(monkeypatch) -> None:
+    mock_client = MagicMock()
+    mock_client.get_workflow_comment_detail.return_value = {
+        "comment_id": "c1",
+        "ref_no": "C-1",
+        "document_id": "DOC-1",
+        "version": 1,
+        "context": "PDF_REVIEW",
+        "page_number": 1,
+        "author_display": "reviewer",
+        "created_at": "2026-08-07T12:00:00+00:00",
+        "full_text": "note",
+        "status": "ACTIVE",
+        "status_note": None,
+        "source_kind": "PDF_APP",
+        "status_changed_by": None,
+        "status_changed_at": None,
+    }
+    monkeypatch.setattr(
+        "interfaces.clients.documents_http_ports.DocumentsHttpClient.for_runtime",
+        lambda: mock_client,
+    )
+    detail = HttpDocumentsCommentsApi().get_workflow_comment_detail("c1")
+    assert detail.status_changed_by is None
+    assert detail.status_changed_at is None
+
+
+def test_http_comments_port_comment_detail_omitted_status_change_keys_stays_none(monkeypatch) -> None:
+    mock_client = MagicMock()
+    mock_client.get_workflow_comment_detail.return_value = {
+        "comment_id": "c1",
+        "ref_no": "C-1",
+        "document_id": "DOC-1",
+        "version": 1,
+        "context": "PDF_REVIEW",
+        "page_number": 1,
+        "author_display": "reviewer",
+        "created_at": "2026-08-07T12:00:00+00:00",
+        "full_text": "note",
+        "status": "ACTIVE",
+        "status_note": None,
+        "source_kind": "PDF_APP",
+    }
+    monkeypatch.setattr(
+        "interfaces.clients.documents_http_ports.DocumentsHttpClient.for_runtime",
+        lambda: mock_client,
+    )
+    detail = HttpDocumentsCommentsApi().get_workflow_comment_detail("c1")
+    assert detail.status_changed_by is None
+    assert detail.status_changed_at is None

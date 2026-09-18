@@ -66,6 +66,10 @@ def _comment_detail(row: dict[str, object]) -> WorkflowCommentDetail:
         status=WorkflowCommentStatus(str(row["status"])),
         status_note=str(row["status_note"]) if row.get("status_note") is not None else None,
         source_kind=WorkflowCommentSourceKind(str(row["source_kind"])),
+        status_changed_by=str(row["status_changed_by"]) if row.get("status_changed_by") is not None else None,
+        status_changed_at=(
+            datetime.fromisoformat(str(row["status_changed_at"])) if row.get("status_changed_at") else None
+        ),
     )
 
 
