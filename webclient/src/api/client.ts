@@ -10,6 +10,12 @@ export type BootstrapResponse = components["schemas"]["BootstrapResponse"];
 export type ModuleBootstrapItem = components["schemas"]["ModuleBootstrapItem"];
 export type DocumentQueryItem = components["schemas"]["DocumentQueryItem"];
 export type DocumentQueryPageResponse = components["schemas"]["DocumentQueryPageResponse"];
+export type VersionStateResponse = components["schemas"]["VersionStateResponse"];
+export type DocumentVersionStateModel = components["schemas"]["DocumentVersionStateModel"];
+export type UserDirectoryItem = components["schemas"]["UserDirectoryItem"];
+export type CreateVersionBody = components["schemas"]["CreateVersionBody"];
+export type AssignRolesBody = components["schemas"]["AssignRolesBody"];
+export type DocumentsCapabilities = Record<string, boolean>;
 
 export type DocumentsQueryRequest = {
   q?: string;
@@ -165,6 +171,31 @@ export async function fetchConnection(): Promise<ConnectionResponse> {
 export async function fetchBootstrap(): Promise<BootstrapResponse> {
   const response = await apiFetch("/session/bootstrap", { method: "GET" });
   return expectJson<BootstrapResponse>(response);
+}
+
+function encodeDocumentPathSegment(value: string | number): string {
+  return encodeURIComponent(String(value));
+}
+
+export async function fetchDocumentVersion(
+  documentId: string,
+  version: number,
+): Promise<VersionStateResponse> {
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}`,
+    { method: "GET" },
+  );
+  return expectJson<VersionStateResponse>(response);
+}
+
+export async function fetchUsersDirectory(): Promise<UserDirectoryItem[]> {
+  const response = await apiFetch("/users/directory", { method: "GET" });
+  return expectJson<UserDirectoryItem[]>(response);
+}
+
+export async function fetchDocumentsCapabilities(): Promise<DocumentsCapabilities> {
+  const response = await apiFetch("/documents/capabilities", { method: "GET" });
+  return expectJson<DocumentsCapabilities>(response);
 }
 
 export async function fetchDocumentsQuery(

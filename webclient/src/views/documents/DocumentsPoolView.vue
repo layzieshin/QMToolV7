@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
+
+import { fetchDocumentsCapabilities } from "../../api/client";
 
 import DocumentsDetailPanel from "../../components/documents/DocumentsDetailPanel.vue";
 import DocumentsFilterBar from "../../components/documents/DocumentsFilterBar.vue";
@@ -20,10 +23,37 @@ defineOptions({
 });
 
 const { t } = useI18n();
+const router = useRouter();
 const { query, applyFilters, applySort, goNextPage } = useDocumentsQuerySync();
 const { items, nextCursor, loading, error, reload } = useDocumentsList(query);
 
 const selectedRow = ref<DocumentRowIdentity | null>(null);
+const canCreate = ref(false);
+const capabilitiesGeneration = { current: 0 };
+let capabilitiesMounted = false;
+
+onMounted(() => {
+  capabilitiesMounted = true;
+  const generation = ++capabilitiesGeneration.current;
+  void fetchDocumentsCapabilities()
+    .then((caps) => {
+      if (!capabilitiesMounted || generation !== capabilitiesGeneration.current) {
+        return;
+      }
+      canCreate.value = Boolean(caps.can_create_new_documents);
+    })
+    .catch(() => {
+      if (!capabilitiesMounted || generation !== capabilitiesGeneration.current) {
+        return;
+      }
+      canCreate.value = false;
+    });
+});
+
+onUnmounted(() => {
+  capabilitiesMounted = false;
+  capabilitiesGeneration.current += 1;
+});
 
 const selectedItem = computed(() =>
   items.value.find(
@@ -73,6 +103,21 @@ function onSelect(row: DocumentRowIdentity): void {
   selectedRow.value = row;
 }
 
+function openImport(): void {
+  void router.push({ name: "document-import" });
+}
+
+function openSelectedDetail(): void {
+  if (!selectedRow.value) {
+    return;
+  }
+  void router.push({
+    name: "document-detail",
+    params: { docId: selectedRow.value.documentId },
+    query: { version: String(selectedRow.value.version) },
+  });
+}
+
 async function onApplyFilters(payload: {
   q?: string;
   status?: DocumentsStatusFilter | "";
@@ -97,7 +142,27 @@ async function onNextPage(): Promise<void> {
 
 <template>
   <section class="documents-pool-view" data-testid="documents-pool-view">
-    <h2>{{ t("documents.pool.title") }}</h2>
+    <div class="documents-pool-header">
+      <h2>{{ t("documents.pool.title") }}</h2>
+      <div class="documents-pool-actions">
+        <v-btn
+          v-if="canCreate"
+          color="primary"
+          data-testid="documents-pool-import"
+          @click="openImport"
+        >
+          {{ t("documents.pool.importAction") }}
+        </v-btn>
+        <v-btn
+          v-if="selectedRow"
+          variant="tonal"
+          data-testid="documents-pool-open-detail"
+          @click="openSelectedDetail"
+        >
+          {{ t("documents.pool.openDetail") }}
+        </v-btn>
+      </div>
+    </div>
 
     <DocumentsFilterBar
       :q="query.q"
@@ -158,8 +223,21 @@ async function onNextPage(): Promise<void> {
 </template>
 
 <style scoped>
-.documents-pool-view h2 {
-  margin-top: 0;
+.documents-pool-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.documents-pool-header h2 {
+  margin: 0;
+}
+
+.documents-pool-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .documents-pool-layout {

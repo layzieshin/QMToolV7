@@ -34,14 +34,34 @@ import { routes } from "../../router/routes";
 import DocumentsPoolView from "../../views/documents/DocumentsPoolView.vue";
 
 const fetchDocumentsQueryMock = vi.hoisted(() => vi.fn());
+const fetchDocumentsCapabilitiesMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/client")>();
   return {
     ...actual,
     fetchDocumentsQuery: fetchDocumentsQueryMock,
+    fetchDocumentsCapabilities: fetchDocumentsCapabilitiesMock,
   };
 });
+
+function stubBrowserApis(): void {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
+}
 
 function page(items: DocumentQueryItem[], nextCursor: string | null = null): DocumentQueryPageResponse {
   return { items, limit: 50, next_cursor: nextCursor };
@@ -92,8 +112,11 @@ async function mountPool(initialPath = "/documents") {
 
 describe("DocumentsPoolView", () => {
   beforeEach(() => {
+    stubBrowserApis();
     fetchDocumentsQueryMock.mockReset();
+    fetchDocumentsCapabilitiesMock.mockReset();
     fetchDocumentsQueryMock.mockResolvedValue(page([item()]));
+    fetchDocumentsCapabilitiesMock.mockResolvedValue({ can_create_new_documents: false });
   });
 
   afterEach(() => {
@@ -260,6 +283,60 @@ describe("DocumentsPoolView", () => {
         cursor: "cursor-2",
       },
     });
+  });
+
+  it("shows import action only when server capability allows create", async () => {
+    fetchDocumentsCapabilitiesMock.mockResolvedValueOnce({ can_create_new_documents: true });
+    const allowed = await mountPool();
+    expect(allowed.wrapper.find("[data-testid=documents-pool-import]").exists()).toBe(true);
+
+    fetchDocumentsCapabilitiesMock.mockResolvedValueOnce({ can_create_new_documents: false });
+    const denied = await mountPool();
+    expect(denied.wrapper.find("[data-testid=documents-pool-import]").exists()).toBe(false);
+
+    fetchDocumentsCapabilitiesMock.mockRejectedValueOnce(new Error("caps failed"));
+    const failed = await mountPool();
+    expect(failed.wrapper.find("[data-testid=documents-pool-import]").exists()).toBe(false);
+  });
+
+  it("routes import action to document-import", async () => {
+    fetchDocumentsCapabilitiesMock.mockResolvedValueOnce({ can_create_new_documents: true });
+    const { wrapper, router } = await mountPool();
+    const pushSpy = vi.spyOn(router, "push");
+    await wrapper.get("[data-testid=documents-pool-import]").trigger("click");
+    await flushPromises();
+    expect(pushSpy).toHaveBeenCalledWith({ name: "document-import" });
+  });
+
+  it("navigates selected detail with docId param and version query", async () => {
+    fetchDocumentsQueryMock.mockResolvedValueOnce(
+      page([item({ document_id: "DOC/SLASH", version: 4, title: "Slash Doc" })]),
+    );
+    const { wrapper, router } = await mountPool();
+    await wrapper.find("[data-testid=documents-table-row]").trigger("click");
+    const pushSpy = vi.spyOn(router, "push");
+    await wrapper.get("[data-testid=documents-pool-open-detail]").trigger("click");
+    await flushPromises();
+    expect(pushSpy).toHaveBeenCalledWith({
+      name: "document-detail",
+      params: { docId: "DOC/SLASH" },
+      query: { version: "4" },
+    });
+  });
+
+  it("does not apply late capabilities result after unmount", async () => {
+    let resolveCaps: (value: { can_create_new_documents: boolean }) => void = () => undefined;
+    const pending = new Promise<{ can_create_new_documents: boolean }>((resolve) => {
+      resolveCaps = resolve;
+    });
+    fetchDocumentsCapabilitiesMock.mockImplementationOnce(() => pending);
+
+    const { wrapper } = await mountPool();
+    expect(wrapper.find("[data-testid=documents-pool-import]").exists()).toBe(false);
+    wrapper.unmount();
+    resolveCaps({ can_create_new_documents: true });
+    await flushPromises();
+    expect(fetchDocumentsCapabilitiesMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not call global fetch directly for documents query", async () => {
