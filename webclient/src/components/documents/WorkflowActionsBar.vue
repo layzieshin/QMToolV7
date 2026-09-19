@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 
 import { createHandlerRegistry, dispatchAction } from "../../actions/actionDispatcher";
 import { resolveActionLabel, type ActionDescriptor } from "../../actions/actionTypes";
@@ -25,6 +26,14 @@ const WORKFLOW_BAR_CODES = new Set([
   "abort",
 ]);
 
+const SIGNATURE_ROUTE_CODES = new Set(["complete_editing", "review_accept", "approval_accept"]);
+
+const SIGNATURE_TRANSITION_BY_ACTION: Record<string, string> = {
+  complete_editing: "IN_PROGRESS->IN_REVIEW",
+  review_accept: "IN_REVIEW->IN_APPROVAL",
+  approval_accept: "IN_APPROVAL->APPROVED",
+};
+
 const SUPPORTED_HANDLER_CODES = new Set(WORKFLOW_BAR_CODES);
 
 const props = defineProps<{
@@ -39,6 +48,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const router = useRouter();
 
 const mutating = ref(false);
 const alertMessage = ref<string | null>(null);
@@ -112,6 +122,34 @@ function buildMutationBody(code: string, reason?: string): MutationBody | undefi
   return undefined;
 }
 
+function requiresSignatureWorkspace(descriptor: ActionDescriptor): boolean {
+  if (!descriptor.enabled || !SIGNATURE_ROUTE_CODES.has(descriptor.code)) {
+    return false;
+  }
+  const transition = SIGNATURE_TRANSITION_BY_ACTION[descriptor.code];
+  if (!transition) {
+    return false;
+  }
+  const profile = props.detail.state.workflow_profile;
+  if (!profile?.signature_required_transitions) {
+    return false;
+  }
+  return profile.signature_required_transitions.includes(transition);
+}
+
+function routeToSignatureWorkspace(descriptor: ActionDescriptor, reason?: string): void {
+  const query: Record<string, string> = {
+    version: String(props.version),
+    action: descriptor.code,
+  };
+  void router.push({
+    name: "document-signature",
+    params: { docId: props.documentId },
+    query,
+    state: reason?.trim() ? { workflowReason: reason.trim() } : {},
+  });
+}
+
 function mapMutationError(error: unknown): string {
   if (error instanceof MutationClientError) {
     return t(mutationErrorI18nKey(error.kind));
@@ -178,12 +216,23 @@ async function executeWorkflowMutation(
   }
 }
 
+function handleWorkflowAction(ctx: {
+  descriptor: ActionDescriptor;
+  reason?: string;
+}): Promise<void> | void {
+  if (requiresSignatureWorkspace(ctx.descriptor)) {
+    routeToSignatureWorkspace(ctx.descriptor, ctx.reason);
+    return;
+  }
+  return executeWorkflowMutation(ctx.descriptor, ctx.reason);
+}
+
 const handlers = createHandlerRegistry({
   start: (ctx) => executeWorkflowMutation(ctx.descriptor, ctx.reason),
-  complete_editing: (ctx) => executeWorkflowMutation(ctx.descriptor, ctx.reason),
-  review_accept: (ctx) => executeWorkflowMutation(ctx.descriptor, ctx.reason),
+  complete_editing: (ctx) => handleWorkflowAction(ctx),
+  review_accept: (ctx) => handleWorkflowAction(ctx),
   review_reject: (ctx) => executeWorkflowMutation(ctx.descriptor, ctx.reason),
-  approval_accept: (ctx) => executeWorkflowMutation(ctx.descriptor, ctx.reason),
+  approval_accept: (ctx) => handleWorkflowAction(ctx),
   approval_reject: (ctx) => executeWorkflowMutation(ctx.descriptor, ctx.reason),
   abort: (ctx) => executeWorkflowMutation(ctx.descriptor, ctx.reason),
 });

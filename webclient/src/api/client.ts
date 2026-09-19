@@ -20,9 +20,13 @@ export type WorkflowCommentListItemModel = components["schemas"]["WorkflowCommen
 export type WorkflowCommentDetailModel = components["schemas"]["WorkflowCommentDetailModel"];
 export type WorkflowCommentRecordModel = components["schemas"]["WorkflowCommentRecordModel"];
 export type CreatePdfCommentBody = components["schemas"]["CreatePdfCommentBody"];
+export type SignatureTemplateModel = components["schemas"]["SignatureTemplateModel"];
+export type EnsureSourcePdfResponse = components["schemas"]["EnsureSourcePdfResponse"];
+export type WorkflowProfileModel = components["schemas"]["WorkflowProfileModel"];
 export type DocumentsCapabilities = Record<string, boolean>;
 
 const PDF_MIME = "application/pdf";
+const SIGNATURE_IMAGE_MIME = "image/png";
 
 export type DocumentsQueryRequest = {
   q?: string;
@@ -253,6 +257,76 @@ export async function fetchWorkflowCommentDetail(
 /** MIME constant for PDF preview validation in composables. */
 export function pdfPreviewMimeType(): string {
   return PDF_MIME;
+}
+
+export function signatureImageMimeType(): string {
+  return SIGNATURE_IMAGE_MIME;
+}
+
+export async function fetchActiveSignatureAssetId(): Promise<string | null> {
+  const response = await apiFetch("/signature/assets/active/id", { method: "GET" });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  const payload = await expectJson<{ asset_id?: string | null }>(response);
+  const assetId = payload.asset_id?.trim();
+  return assetId || null;
+}
+
+export async function fetchActiveSignatureAssetContent(): Promise<Blob | null> {
+  const response = await apiFetch("/signature/assets/active/content", { method: "GET" });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  return response.blob();
+}
+
+export async function fetchSignatureTemplatesGlobal(): Promise<SignatureTemplateModel[]> {
+  const response = await apiFetch("/signature/templates/global", { method: "GET" });
+  return expectJson<SignatureTemplateModel[]>(response);
+}
+
+export async function fetchSignatureTemplatesUser(): Promise<SignatureTemplateModel[]> {
+  const response = await apiFetch("/signature/templates/user", { method: "GET" });
+  return expectJson<SignatureTemplateModel[]>(response);
+}
+
+export async function fetchSignatureTemplateSuggestion(
+  documentType: string,
+  roleContext: string,
+): Promise<SignatureTemplateModel | null> {
+  const search = new URLSearchParams({
+    document_type: documentType,
+    role_context: roleContext,
+  });
+  const response = await apiFetch(`/signature/templates/suggestion?${search.toString()}`, {
+    method: "GET",
+  });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  return expectJson<SignatureTemplateModel>(response);
 }
 
 export async function fetchDocumentsCapabilities(): Promise<DocumentsCapabilities> {

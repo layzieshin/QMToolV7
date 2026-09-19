@@ -5,6 +5,7 @@ import ChangePasswordView from "../views/ChangePasswordView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DocumentDetailView from "../views/documents/DocumentDetailView.vue";
 import DocumentViewerView from "../views/documents/DocumentViewerView.vue";
+import SignatureWorkspaceView from "../views/signature/SignatureWorkspaceView.vue";
 import DocumentImportView from "../views/documents/DocumentImportView.vue";
 import DocumentsPoolView from "../views/documents/DocumentsPoolView.vue";
 import LoginView from "../views/LoginView.vue";
@@ -37,6 +38,12 @@ export const routes: RouteRecordRaw[] = [
         name: "document-viewer",
         meta: { requiresAuth: true },
         component: DocumentViewerView,
+      },
+      {
+        path: "documents/:docId/signature",
+        name: "document-signature",
+        meta: { requiresAuth: true },
+        component: SignatureWorkspaceView,
       },
       {
         path: "documents/:docId",

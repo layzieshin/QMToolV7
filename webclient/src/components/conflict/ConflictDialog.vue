@@ -69,6 +69,7 @@ function onViewLocalInput(): void {
           <p v-if="preservedReason" data-testid="conflict-local-reason">
             <strong>{{ t("conflict.localInputReason") }}:</strong> {{ preservedReason }}
           </p>
+          <slot name="local-input-details" />
         </section>
       </v-card-text>
       <v-card-actions>

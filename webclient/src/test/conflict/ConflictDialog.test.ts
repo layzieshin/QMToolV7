@@ -106,6 +106,7 @@ describe("ConflictDialog", () => {
     modelValue = true,
     loading = false,
     extraProps: Record<string, unknown> = {},
+    slots: Record<string, string> = {},
   ): VueWrapper {
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -119,6 +120,7 @@ describe("ConflictDialog", () => {
         preservedReason: null,
         ...extraProps,
       },
+      slots,
       attachTo: host,
       global: {
         plugins: [i18n, vuetify],
@@ -187,6 +189,21 @@ describe("ConflictDialog", () => {
     wrapper = mountDialog(true, true);
     expect(queryBody("conflict-view-local").hasAttribute("disabled")).toBe(true);
     expect(queryBody("conflict-cancel").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("does not render local-input-details slot when local input is hidden", () => {
+    wrapper = mountDialog(true, false, { showingLocalInput: false }, {
+      "local-input-details": '<p data-testid="slot-content">Details</p>',
+    });
+    expect(document.body.querySelector('[data-testid="slot-content"]')).toBeFalsy();
+  });
+
+  it("renders local-input-details slot inside the dialog when local input is shown", () => {
+    wrapper = mountDialog(true, false, { showingLocalInput: true }, {
+      "local-input-details": '<p data-testid="slot-content">Details</p>',
+    });
+    expect(queryBody("slot-content").textContent).toContain("Details");
+    expect(queryBody("conflict-local-input").contains(queryBody("slot-content"))).toBe(true);
   });
 });
 

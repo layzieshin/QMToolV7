@@ -35,6 +35,17 @@ import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
 
 const mutateMock = vi.hoisted(() => vi.fn());
+const routerPushMock = vi.hoisted(() => vi.fn());
+
+vi.mock("vue-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("vue-router")>();
+  return {
+    ...actual,
+    useRouter: () => ({
+      push: routerPushMock,
+    }),
+  };
+});
 
 vi.mock("../../api/mutationClient", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/mutationClient")>();
@@ -114,6 +125,7 @@ describe("WorkflowActionsBar", () => {
   beforeEach(() => {
     stubBrowserApis();
     mutateMock.mockReset();
+    routerPushMock.mockReset();
   });
 
   afterEach(() => {
@@ -312,5 +324,108 @@ describe("WorkflowActionsBar", () => {
       "approval/reject",
       "Freigabe verweigert",
     );
+  });
+
+  function signedDetail(actionCode: "complete_editing" | "review_accept" | "approval_accept") {
+    const transitions: Record<string, string> = {
+      complete_editing: "IN_PROGRESS->IN_REVIEW",
+      review_accept: "IN_REVIEW->IN_APPROVAL",
+      approval_accept: "IN_APPROVAL->APPROVED",
+    };
+    return detail({
+      allowed_actions: [
+        action({
+          code: actionCode,
+          label_key: `documents.action.${actionCode}`,
+          severity: "info" as const,
+        }),
+      ],
+      state: {
+        ...detail().state,
+        workflow_profile: {
+          profile_id: "signed_profile",
+          signature_required_transitions: [transitions[actionCode]],
+          allows_content_changes: true,
+          control_class: "CONTROLLED",
+          four_eyes_required: false,
+          label: "Signed",
+          phases: [],
+          release_evidence_mode: "WORKFLOW",
+          requires_approvers: true,
+          requires_editors: true,
+          requires_reviewers: true,
+        },
+      },
+    } as unknown as Partial<VersionStateResponse>);
+  }
+
+  it("routes signature-required complete_editing to the signature workspace", async () => {
+    const { wrapper } = mountBar(signedDetail("complete_editing"));
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: "document-signature",
+      params: { docId: "DOC-1" },
+      query: { version: "1", action: "complete_editing" },
+      state: {},
+    });
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it("mutates complete_editing when signature is not required", async () => {
+    mutateMock.mockResolvedValueOnce(detail({ etag: "evt-2" }));
+    const { wrapper } = mountBar(
+      detail({
+        allowed_actions: [
+          action({
+            code: "complete_editing",
+            label_key: "documents.action.complete_editing",
+            severity: "info" as const,
+          }),
+        ],
+        state: {
+          ...detail().state,
+          workflow_profile: {
+            profile_id: "http_flow_profile",
+            signature_required_transitions: [],
+            allows_content_changes: true,
+            control_class: "CONTROLLED",
+            four_eyes_required: false,
+            label: "HTTP",
+            phases: [],
+            release_evidence_mode: "WORKFLOW",
+            requires_approvers: true,
+            requires_editors: true,
+            requires_reviewers: true,
+          },
+        },
+      } as unknown as Partial<VersionStateResponse>),
+    );
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+    expect(mutateMock).toHaveBeenCalled();
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it("does not route or mutate when the descriptor is disabled", async () => {
+    const signed = signedDetail("complete_editing");
+    const { wrapper } = mountBar(
+      detail({
+        allowed_actions: [
+          action({
+            code: "complete_editing",
+            label_key: "documents.action.complete_editing",
+            enabled: false,
+            disabled_reason: "blocked",
+            severity: "info" as const,
+          }),
+        ],
+        state: signed.state,
+      } as Partial<VersionStateResponse>),
+    );
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+    expect(mutateMock).not.toHaveBeenCalled();
+    expect(routerPushMock).not.toHaveBeenCalled();
   });
 });
