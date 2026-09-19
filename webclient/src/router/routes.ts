@@ -4,6 +4,7 @@ import AppLayout from "../layouts/AppLayout.vue";
 import ChangePasswordView from "../views/ChangePasswordView.vue";
 import DashboardView from "../views/DashboardView.vue";
 import DocumentDetailView from "../views/documents/DocumentDetailView.vue";
+import DocumentViewerView from "../views/documents/DocumentViewerView.vue";
 import DocumentImportView from "../views/documents/DocumentImportView.vue";
 import DocumentsPoolView from "../views/documents/DocumentsPoolView.vue";
 import LoginView from "../views/LoginView.vue";
@@ -30,6 +31,12 @@ export const routes: RouteRecordRaw[] = [
         name: "document-import",
         meta: { requiresAuth: true },
         component: DocumentImportView,
+      },
+      {
+        path: "documents/:docId/viewer",
+        name: "document-viewer",
+        meta: { requiresAuth: true },
+        component: DocumentViewerView,
       },
       {
         path: "documents/:docId",

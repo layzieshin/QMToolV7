@@ -47,6 +47,23 @@ const {
 
 const state = computed(() => detail.value?.state ?? null);
 
+const previewEnabled = computed(() =>
+  (detail.value?.allowed_actions ?? []).some(
+    (action) => action.code === "preview" && action.enabled,
+  ),
+);
+
+const viewerLink = computed(() => {
+  if (!previewEnabled.value || version.value === null) {
+    return null;
+  }
+  return {
+    name: "document-viewer" as const,
+    params: { docId: documentId.value },
+    query: { version: String(version.value) },
+  };
+});
+
 function mapLoadError(cause: ApiTransportError | Error | null): string {
   if (!cause) {
     return t("documents.detail.errors.connection");
@@ -121,6 +138,16 @@ function onWorkflowUpdated(payload: VersionStateResponse): void {
 
     <template v-else-if="detail && state">
       <DocumentHeader :state="state" />
+      <div v-if="viewerLink" class="document-detail-view__viewer-link">
+        <router-link
+          :to="viewerLink"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="document-detail-viewer-link"
+        >
+          {{ t("documents.viewer.openLink") }}
+        </router-link>
+      </div>
       <DocumentMetadataPanel :state="state" :directory="directory" />
       <WorkflowActionsBar
         v-if="version !== null"

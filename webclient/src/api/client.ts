@@ -15,7 +15,14 @@ export type DocumentVersionStateModel = components["schemas"]["DocumentVersionSt
 export type UserDirectoryItem = components["schemas"]["UserDirectoryItem"];
 export type CreateVersionBody = components["schemas"]["CreateVersionBody"];
 export type AssignRolesBody = components["schemas"]["AssignRolesBody"];
+export type DocumentArtifactModel = components["schemas"]["DocumentArtifactModel"];
+export type WorkflowCommentListItemModel = components["schemas"]["WorkflowCommentListItemModel"];
+export type WorkflowCommentDetailModel = components["schemas"]["WorkflowCommentDetailModel"];
+export type WorkflowCommentRecordModel = components["schemas"]["WorkflowCommentRecordModel"];
+export type CreatePdfCommentBody = components["schemas"]["CreatePdfCommentBody"];
 export type DocumentsCapabilities = Record<string, boolean>;
+
+const PDF_MIME = "application/pdf";
 
 export type DocumentsQueryRequest = {
   q?: string;
@@ -191,6 +198,61 @@ export async function fetchDocumentVersion(
 export async function fetchUsersDirectory(): Promise<UserDirectoryItem[]> {
   const response = await apiFetch("/users/directory", { method: "GET" });
   return expectJson<UserDirectoryItem[]>(response);
+}
+
+export async function fetchDocumentArtifacts(
+  documentId: string,
+  version: number,
+): Promise<DocumentArtifactModel[]> {
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}/artifacts`,
+    { method: "GET" },
+  );
+  return expectJson<DocumentArtifactModel[]>(response);
+}
+
+export async function fetchArtifactPreviewBlob(artifactId: string): Promise<Blob> {
+  const response = await apiFetch(
+    `/documents/artifacts/${encodeDocumentPathSegment(artifactId)}/preview`,
+    { method: "GET" },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  return response.blob();
+}
+
+export async function fetchWorkflowComments(
+  documentId: string,
+  version: number,
+  context = "PDF_REVIEW",
+): Promise<WorkflowCommentListItemModel[]> {
+  const search = new URLSearchParams({ context });
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}/comments?${search.toString()}`,
+    { method: "GET" },
+  );
+  return expectJson<WorkflowCommentListItemModel[]>(response);
+}
+
+export async function fetchWorkflowCommentDetail(
+  commentId: string,
+): Promise<WorkflowCommentDetailModel> {
+  const response = await apiFetch(
+    `/documents/comments/${encodeDocumentPathSegment(commentId)}`,
+    { method: "GET" },
+  );
+  return expectJson<WorkflowCommentDetailModel>(response);
+}
+
+/** MIME constant for PDF preview validation in composables. */
+export function pdfPreviewMimeType(): string {
+  return PDF_MIME;
 }
 
 export async function fetchDocumentsCapabilities(): Promise<DocumentsCapabilities> {
