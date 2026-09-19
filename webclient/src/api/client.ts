@@ -8,6 +8,16 @@ const CSRF_HEADER = "X-CSRF-Token";
 export type ConnectionResponse = components["schemas"]["ConnectionResponse"];
 export type BootstrapResponse = components["schemas"]["BootstrapResponse"];
 export type ModuleBootstrapItem = components["schemas"]["ModuleBootstrapItem"];
+export type DocumentQueryItem = components["schemas"]["DocumentQueryItem"];
+export type DocumentQueryPageResponse = components["schemas"]["DocumentQueryPageResponse"];
+
+export type DocumentsQueryRequest = {
+  q?: string;
+  status?: string;
+  sort: "updated_at" | "title" | "status";
+  order: "asc" | "desc";
+  cursor?: string;
+};
 
 export class ApiTransportError extends Error {
   readonly status: number;
@@ -155,6 +165,26 @@ export async function fetchConnection(): Promise<ConnectionResponse> {
 export async function fetchBootstrap(): Promise<BootstrapResponse> {
   const response = await apiFetch("/session/bootstrap", { method: "GET" });
   return expectJson<BootstrapResponse>(response);
+}
+
+export async function fetchDocumentsQuery(
+  params: DocumentsQueryRequest,
+): Promise<DocumentQueryPageResponse> {
+  const search = new URLSearchParams();
+  if (params.q) {
+    search.set("q", params.q);
+  }
+  if (params.status) {
+    search.set("status", params.status);
+  }
+  search.set("sort", params.sort);
+  search.set("order", params.order);
+  if (params.cursor) {
+    search.set("cursor", params.cursor);
+  }
+  const qs = search.toString();
+  const response = await apiFetch(`/documents/query?${qs}`, { method: "GET" });
+  return expectJson<DocumentQueryPageResponse>(response);
 }
 
 export async function probeHealth(): Promise<boolean> {

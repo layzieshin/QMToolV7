@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import ChangePasswordView from "../views/ChangePasswordView.vue";
 import DashboardView from "../views/DashboardView.vue";
+import DocumentsPoolView from "../views/documents/DocumentsPoolView.vue";
 import LoginView from "../views/LoginView.vue";
 
 export const routes: RouteRecordRaw[] = [
@@ -15,6 +16,12 @@ export const routes: RouteRecordRaw[] = [
         name: "home",
         meta: { requiresAuth: true },
         component: DashboardView,
+      },
+      {
+        path: "documents",
+        name: "documents",
+        meta: { requiresAuth: true },
+        component: DocumentsPoolView,
       },
       {
         path: "login",
