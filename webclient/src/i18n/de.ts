@@ -68,6 +68,18 @@ export default {
     unsupported: "Aktion wird hier nicht unterstützt",
     overflowMenu: "Weitere Aktionen",
   },
+  conflict: {
+    title: "Konflikt erkannt",
+    message:
+      "Der Datensatz wurde zwischenzeitlich geändert. Sie können den aktuellen Serverstand laden oder Ihre Eingabe ansehen.",
+    loadServerState: "Aktuellen Stand laden",
+    viewLocalInput: "Meine Eingabe ansehen",
+    localInputTitle: "Ihre Eingabe",
+    localInputAction: "Aktion",
+    localInputReason: "Begründung",
+    reloadError: "Der aktuelle Stand konnte nicht geladen werden.",
+    cancel: "Abbrechen",
+  },
   documents: {
     pool: {
       title: "Dokumente",
@@ -151,6 +163,19 @@ export default {
       APPROVED: "Freigegeben",
       ARCHIVED: "Archiviert",
       unknown: "Unbekannter Status",
+    },
+    workflow: {
+      title: "Workflow-Aktionen",
+      success: "Workflow-Aktion wurde ausgeführt.",
+      confirmTitle: "Aktion bestätigen",
+      confirmMessage: "Möchten Sie diese Aktion wirklich ausführen?",
+      confirmProceed: "Fortfahren",
+      reasonTitle: "Begründung erforderlich",
+      reasonLabel: "Begründung",
+      reasonSubmit: "Ausführen",
+      errors: {
+        missingProfile: "Für diese Aktion fehlt ein Workflow-Profil.",
+      },
     },
     action: {
       assign_roles: "Rollen zuweisen",

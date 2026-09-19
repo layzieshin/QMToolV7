@@ -1,5 +1,10 @@
-import { mutationFetch, parseApiErrorBody } from "./client";
-import { MutationValidationError, buildMutationClientError } from "./errors";
+import {
+  mutationFetch,
+  parseApiErrorBody,
+  type DocumentVersionStateModel,
+} from "./client";
+import { MutationValidationError, buildMutationClientError, extractErrorDetail } from "./errors";
+import type { MutationClientError } from "./errors";
 
 export type MutationMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -25,6 +30,44 @@ export interface MutationRequest {
   body?: MutationBody;
   /** Optional concurrency token; blank values are rejected before fetch. */
   ifMatch?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isDocumentVersionStateModel(value: unknown): value is DocumentVersionStateModel {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.document_id === "string" &&
+    typeof value.version === "number" &&
+    typeof value.status === "string"
+  );
+}
+
+/** Typed access to conflict payload `current_state` (bare version state, not `VersionStateResponse`). */
+export function mutationConflictCurrentState(
+  error: MutationClientError,
+): DocumentVersionStateModel | null {
+  const detail = extractErrorDetail(error.body);
+  const currentState = detail?.current_state;
+  if (!currentState || !isDocumentVersionStateModel(currentState)) {
+    return null;
+  }
+  return currentState;
+}
+
+/** Typed access to conflict payload `current_etag` (falls back to `MutationClientError.currentEtag`). */
+export function mutationConflictCurrentEtag(error: MutationClientError): string | null {
+  const fromError = error.currentEtag?.trim();
+  if (fromError) {
+    return fromError;
+  }
+  const detail = extractErrorDetail(error.body);
+  const etag = detail?.current_etag;
+  return typeof etag === "string" && etag.trim() ? etag.trim() : null;
 }
 
 function splitPathAndQuery(path: string): { pathname: string; query: string | undefined } {

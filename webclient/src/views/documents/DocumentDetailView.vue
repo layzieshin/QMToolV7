@@ -6,9 +6,12 @@ import { useRouter } from "vue-router";
 import { ApiTransportError, type VersionStateResponse } from "../../api/client";
 import { mutationErrorI18nKey } from "../../api/errors";
 import { MutationClientError } from "../../api/mutationClient";
+import ConflictDialog from "../../components/conflict/ConflictDialog.vue";
 import AssignmentsPanel from "../../components/documents/AssignmentsPanel.vue";
 import DocumentHeader from "../../components/documents/DocumentHeader.vue";
 import DocumentMetadataPanel from "../../components/documents/DocumentMetadataPanel.vue";
+import WorkflowActionsBar from "../../components/documents/WorkflowActionsBar.vue";
+import { useConflictRecovery } from "../../composables/useConflictRecovery";
 import { useDocumentDetail } from "../../composables/useDocumentDetail";
 
 defineOptions({
@@ -29,6 +32,18 @@ const {
   error,
   reload,
 } = useDocumentDetail();
+
+const {
+  conflictVisible,
+  conflictLoading,
+  reloadFailed,
+  showingLocalInput,
+  preservedContext,
+  openConflict,
+  loadServerState,
+  viewLocalInput,
+  cancelConflict,
+} = useConflictRecovery({ detail, reload });
 
 const state = computed(() => detail.value?.state ?? null);
 
@@ -73,6 +88,10 @@ function backToPool(): void {
 function onAssignmentsUpdated(payload: VersionStateResponse): void {
   detail.value = payload;
 }
+
+function onWorkflowUpdated(payload: VersionStateResponse): void {
+  detail.value = payload;
+}
 </script>
 
 <template>
@@ -103,6 +122,14 @@ function onAssignmentsUpdated(payload: VersionStateResponse): void {
     <template v-else-if="detail && state">
       <DocumentHeader :state="state" />
       <DocumentMetadataPanel :state="state" :directory="directory" />
+      <WorkflowActionsBar
+        v-if="version !== null"
+        :detail="detail"
+        :document-id="documentId"
+        :version="version"
+        @updated="onWorkflowUpdated"
+        @conflict="openConflict"
+      />
       <AssignmentsPanel
         :detail="detail"
         :directory="directory"
@@ -113,6 +140,19 @@ function onAssignmentsUpdated(payload: VersionStateResponse): void {
         @updated="onAssignmentsUpdated"
       />
     </template>
+
+    <ConflictDialog
+      v-if="conflictVisible"
+      v-model="conflictVisible"
+      :loading="conflictLoading"
+      :reload-failed="reloadFailed"
+      :showing-local-input="showingLocalInput"
+      :action-label="preservedContext?.actionLabel ?? null"
+      :preserved-reason="preservedContext?.reason ?? null"
+      @load-server-state="loadServerState"
+      @view-local-input="viewLocalInput"
+      @cancel="cancelConflict"
+    />
   </section>
 </template>
 
