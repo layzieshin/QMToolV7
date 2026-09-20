@@ -45,7 +45,7 @@ from .postgres_connection import runtime_connection
 from .postgres_session_repository import PostgresSessionRepository
 from .postgres_user_repository import PostgresUserRepository
 from .repository import UserRepository
-from .role_policies import normalize_base_role
+from .role_policies import can_administer_users, normalize_base_role
 from .session_ops import DEFAULT_SESSION_LIFETIME, SessionOps
 from .session_repository import SessionRepository
 from .session_store import SessionStore
@@ -64,7 +64,7 @@ def _is_admin_user(user: AuthenticatedUser) -> bool:
 def _require_admin_actor(actor: UserContext) -> None:
     if not actor.is_confirmed:
         raise InvalidSessionError("user context is not server-confirmed")
-    if "ADMIN" not in actor.global_roles:
+    if not can_administer_users(actor):
         raise AuthorizationError("admin role required")
 
 

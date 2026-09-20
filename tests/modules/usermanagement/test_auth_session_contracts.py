@@ -8,6 +8,7 @@ import pytest
 
 from modules.usermanagement.api import (
     AuthenticationError,
+    AuthorizationError,
     ExpiredSessionError,
     InactiveUserError,
     InvalidSessionError,
@@ -19,6 +20,7 @@ from modules.usermanagement.api import (
     SystemExecutionContext,
     UserContext,
     UsermanagementError,
+    can_administer_users,
 )
 from modules.usermanagement.contracts import (
     issue_system_execution_context,
@@ -183,6 +185,79 @@ def test_error_hierarchy_distinguishes_auth_session_and_inactive() -> None:
     assert not issubclass(AuthenticationError, SessionError)
 
 
+def test_can_administer_users_confirmed_admin_true() -> None:
+    ctx = issue_user_context(
+        user_id="admin-1",
+        session_id="s-admin",
+        request_id="r-admin",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
+        username="admin",
+        global_roles={"ADMIN"},
+        is_qmb=False,
+        authenticated_at=_utc(),
+    )
+    assert can_administer_users(ctx) is True
+
+
+def test_can_administer_users_confirmed_normal_user_false() -> None:
+    ctx = issue_user_context(
+        user_id="user-1",
+        session_id="s-user",
+        request_id="r-user",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
+        username="bob",
+        global_roles={"USER"},
+        is_qmb=False,
+        authenticated_at=_utc(),
+    )
+    assert can_administer_users(ctx) is False
+
+
+def test_can_administer_users_unconfirmed_admin_false() -> None:
+    forged = UserContext(
+        user_id="attacker",
+        session_id="forged-session",
+        request_id="forged-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
+        username="attacker",
+        global_roles=frozenset({"ADMIN"}),
+        is_qmb=True,
+        authenticated_at=_utc(),
+    )
+    assert forged.is_confirmed is False
+    assert can_administer_users(forged) is False
+
+
+def test_require_admin_actor_preserves_unconfirmed_invalid_session_error() -> None:
+    from modules.usermanagement.service import UserManagementService
+
+    forged = UserContext(
+        user_id="attacker",
+        session_id="forged-session",
+        request_id="forged-request",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
+        username="attacker",
+        global_roles=frozenset({"ADMIN"}),
+        is_qmb=True,
+        authenticated_at=_utc(),
+    )
+    service = UserManagementService()
+    with pytest.raises(InvalidSessionError, match="not server-confirmed"):
+        service.list_users_for_admin(forged)
+    confirmed_user = issue_user_context(
+        user_id="user-1",
+        session_id="s-user",
+        request_id="r-user",
+        organization_id=INSTALLATION_ORGANIZATION_ID,
+        username="bob",
+        global_roles={"USER"},
+        is_qmb=False,
+        authenticated_at=_utc(),
+    )
+    with pytest.raises(AuthorizationError, match="admin role required"):
+        service.list_users_for_admin(confirmed_user)
+
+
 def test_public_api_exports_do_not_require_internal_imports() -> None:
     import modules.usermanagement.api as api
 
@@ -199,6 +274,7 @@ def test_public_api_exports_do_not_require_internal_imports() -> None:
         "InvalidSessionError",
         "ExpiredSessionError",
         "RevokedSessionError",
+        "can_administer_users",
     ):
         assert name in api.__all__
         assert hasattr(api, name)

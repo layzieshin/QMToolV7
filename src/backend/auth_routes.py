@@ -16,7 +16,6 @@ from src.backend.auth_dependencies import (
     effective_request_id,
     enforce_server_organization_context,
     get_container,
-    has_admin_context,
     map_auth_error,
     require_user_context_normal,
     require_user_context_password_change,
@@ -125,7 +124,7 @@ def _module_capabilities(
         module_id == "usermanagement"
         and licensed
         and actor is not None
-        and has_admin_context(actor)
+        and um_api.can_administer_users(actor)
     ):
         capabilities.append("usermanagement.can_administer_users")
     if module_id != "documents" or not licensed or actor is None:

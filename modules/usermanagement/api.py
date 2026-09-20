@@ -27,7 +27,7 @@ from .contracts import (
     UserContext,
 )
 from .cutover_prep import CutoverPrepResult, prepare_postgres_cutover as _prepare_postgres_cutover
-from .role_policies import is_effective_qmb, normalize_base_role
+from .role_policies import can_administer_users, is_effective_qmb, normalize_base_role
 from .errors import (
     AuditUnavailableError,
     AuthenticationError,
@@ -89,6 +89,7 @@ __all__ = [
     "ensure_postgres_schema_ready",
     "migrate_postgres_schema",
     "prepare_postgres_cutover",
+    "can_administer_users",
     "is_effective_qmb",
     "normalize_base_role",
     "UserDirectoryEntry",

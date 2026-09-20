@@ -732,6 +732,17 @@ def test_product_adapters_use_public_module_imports_per_ast_node() -> None:
     assert offenders == [], offenders
 
 
+def test_backend_admin_capability_uses_usermanagement_public_api() -> None:
+    """Admin discoverability must not implement role policy in backend transport."""
+    for rel in ("src/backend/auth_dependencies.py", "src/backend/auth_routes.py"):
+        content = _read(rel)
+        assert "has_admin_context" not in content
+        assert "um_api.can_administer_users(" in content
+        assert '"ADMIN" in' not in content
+        assert '"ADMIN" not in' not in content
+        assert "role_policies" not in content
+
+
 def test_backend_auth_path_uses_public_resolve_session() -> None:
     """Backend auth resolve must call um_api.resolve_session; routes use public facades."""
     deps = _read("src/backend/auth_dependencies.py")
