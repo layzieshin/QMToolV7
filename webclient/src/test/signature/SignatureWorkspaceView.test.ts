@@ -176,6 +176,21 @@ function ensuredResponseFromDetail(detail: ReturnType<typeof baseDetail>) {
   };
 }
 
+function signedPdfArtifact(
+  artifactId: string,
+  options?: { isCurrent?: boolean; createdAt?: string },
+) {
+  return {
+    artifact_id: artifactId,
+    artifact_type: "SIGNED_PDF",
+    created_at: options?.createdAt ?? "2025-01-01T00:00:00Z",
+    document_id: "DOC-1",
+    is_current: options?.isCurrent ?? true,
+    mime_type: "application/pdf",
+    version: 1,
+  };
+}
+
 function conflictDraftPreviewText(): string {
   const dialog = document.body.querySelector('[data-testid="conflict-dialog"]');
   const preview = dialog?.querySelector('[data-testid="signature-draft-preview"]');
@@ -1311,11 +1326,31 @@ describe("SignatureWorkspaceView", () => {
   ] as const)("loads signature workspace for %s with correct workflow path", async (actionCode, workflowPath) => {
     const { detail } = baseDetailForSignatureAction(actionCode);
     fetchDocumentVersionMock.mockResolvedValueOnce(detail);
-    mutateMock.mockResolvedValueOnce(ensuredResponseFromDetail(detail));
+    if (actionCode === "complete_editing") {
+      mutateMock.mockResolvedValueOnce(ensuredResponseFromDetail(detail));
+    } else {
+      fetchDocumentArtifactsMock.mockResolvedValueOnce([signedPdfArtifact("artifact-signed")]);
+    }
     const { wrapper, host } = await mountWorkspace(
       `/documents/DOC-1/signature?version=1&action=${actionCode}`,
     );
     expect(wrapper.find('[data-testid="signature-workspace-grid"]').exists()).toBe(true);
+    if (actionCode === "complete_editing") {
+      expect(mutateMock).toHaveBeenCalledWith({
+        method: "POST",
+        path: "/documents/versions/DOC-1/1/workflow/ensure-source-pdf",
+        ifMatch: detail.etag,
+      });
+      expect(fetchArtifactPreviewBlobMock).toHaveBeenCalledWith("artifact-source");
+    } else {
+      expect(mutateMock).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: "/documents/versions/DOC-1/1/workflow/ensure-source-pdf",
+        }),
+      );
+      expect(fetchDocumentArtifactsMock).toHaveBeenCalledWith("DOC-1", 1);
+      expect(fetchArtifactPreviewBlobMock).toHaveBeenCalledWith("artifact-signed");
+    }
     mutateMock.mockImplementation(async (args: { path?: string }) => {
       if (args.path?.includes(workflowPath)) {
         return {
@@ -1341,6 +1376,93 @@ describe("SignatureWorkspaceView", () => {
         path: `/documents/versions/DOC-1/1${workflowPath}`,
       }),
     );
+    host.remove();
+  });
+
+  it("review_accept does not POST ensure-source-pdf and uses current SIGNED_PDF", async () => {
+    const { detail } = baseDetailForSignatureAction("review_accept");
+    fetchDocumentVersionMock.mockResolvedValueOnce(detail);
+    fetchDocumentArtifactsMock.mockResolvedValueOnce([
+      signedPdfArtifact("signed-current", { isCurrent: true, createdAt: "2025-01-02T00:00:00Z" }),
+      signedPdfArtifact("signed-older", { isCurrent: false, createdAt: "2025-01-03T00:00:00Z" }),
+    ]);
+    const { wrapper, host } = await mountWorkspace(
+      "/documents/DOC-1/signature?version=1&action=review_accept",
+    );
+    expect(mutateMock).not.toHaveBeenCalled();
+    expect(fetchArtifactPreviewBlobMock).toHaveBeenCalledWith("signed-current");
+    expect(wrapper.find('[data-testid="signature-workspace-grid"]').exists()).toBe(true);
+    host.remove();
+  });
+
+  it("approval_accept selects newest current SIGNED_PDF among equivalent candidates", async () => {
+    const { detail } = baseDetailForSignatureAction("approval_accept");
+    fetchDocumentVersionMock.mockResolvedValueOnce(detail);
+    fetchDocumentArtifactsMock.mockResolvedValueOnce([
+      signedPdfArtifact("signed-older-current", { isCurrent: true, createdAt: "2025-01-01T00:00:00Z" }),
+      signedPdfArtifact("signed-newer-current", { isCurrent: true, createdAt: "2025-01-03T00:00:00Z" }),
+    ]);
+    const { wrapper, host } = await mountWorkspace(
+      "/documents/DOC-1/signature?version=1&action=approval_accept",
+    );
+    expect(mutateMock).not.toHaveBeenCalled();
+    expect(fetchArtifactPreviewBlobMock).toHaveBeenCalledWith("signed-newer-current");
+    expect(wrapper.find('[data-testid="signature-workspace-grid"]').exists()).toBe(true);
+    host.remove();
+  });
+
+  it("review_accept falls back to newest SIGNED_PDF when none is current", async () => {
+    const { detail } = baseDetailForSignatureAction("review_accept");
+    fetchDocumentVersionMock.mockResolvedValueOnce(detail);
+    fetchDocumentArtifactsMock.mockResolvedValueOnce([
+      signedPdfArtifact("signed-older", { isCurrent: false, createdAt: "2025-01-01T00:00:00Z" }),
+      signedPdfArtifact("signed-newer", { isCurrent: false, createdAt: "2025-01-04T00:00:00Z" }),
+    ]);
+    const { wrapper, host } = await mountWorkspace(
+      "/documents/DOC-1/signature?version=1&action=review_accept",
+    );
+    expect(fetchArtifactPreviewBlobMock).toHaveBeenCalledWith("signed-newer");
+    expect(wrapper.find('[data-testid="signature-workspace-grid"]').exists()).toBe(true);
+    host.remove();
+  });
+
+  it("fails closed for review_accept when no SIGNED_PDF artifact exists", async () => {
+    const { detail } = baseDetailForSignatureAction("review_accept");
+    fetchDocumentVersionMock.mockResolvedValueOnce(detail);
+    fetchDocumentArtifactsMock.mockResolvedValueOnce([
+      {
+        artifact_id: "artifact-source",
+        artifact_type: "SOURCE_PDF",
+        created_at: "2025-01-01T00:00:00Z",
+        document_id: "DOC-1",
+        is_current: true,
+        mime_type: "application/pdf",
+        version: 1,
+      },
+    ]);
+    const { wrapper, host } = await mountWorkspace(
+      "/documents/DOC-1/signature?version=1&action=review_accept",
+    );
+    expect(mutateMock).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="signature-load-error"]').text()).toContain("Quell-PDF");
+    expect(fetchArtifactPreviewBlobMock).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="signature-workspace-grid"]').exists()).toBe(false);
+    host.remove();
+  });
+
+  it("fails closed for review_accept when preview is disabled", async () => {
+    const { detail } = baseDetailForSignatureAction("review_accept");
+    fetchDocumentVersionMock.mockResolvedValueOnce({
+      ...detail,
+      allowed_actions: [actionDescriptor("review_accept"), actionDescriptor("preview", false)],
+    });
+    fetchDocumentArtifactsMock.mockResolvedValueOnce([signedPdfArtifact("artifact-signed")]);
+    const { wrapper, host } = await mountWorkspace(
+      "/documents/DOC-1/signature?version=1&action=review_accept",
+    );
+    expect(wrapper.find('[data-testid="signature-load-error"]').text()).toContain("Vorschau");
+    expect(fetchArtifactPreviewBlobMock).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="signature-workspace-grid"]').exists()).toBe(false);
     host.remove();
   });
 

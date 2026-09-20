@@ -37,6 +37,7 @@ import { useConflictRecovery } from "../../composables/useConflictRecovery";
 import { normalizeBlobMimeType } from "../../composables/usePdfPreview";
 
 const SIGNATURE_ACTION_CODES = new Set(["complete_editing", "review_accept", "approval_accept"]);
+const SIGNED_PDF_ARTIFACT_TYPE = "SIGNED_PDF";
 
 const TRANSITION_BY_ACTION: Record<string, string> = {
   complete_editing: "IN_PROGRESS->IN_REVIEW",
@@ -388,6 +389,27 @@ function toAuthoritativeState(ensured: EnsureSourcePdfResponse): VersionStateRes
   };
 }
 
+function usesEnsureSourcePdf(action: string): boolean {
+  return action === "complete_editing";
+}
+
+function parseArtifactCreatedAt(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resolveSignedPdfArtifact(rows: DocumentArtifactModel[]): DocumentArtifactModel | null {
+  const signed = rows.filter((row) => row.artifact_type === SIGNED_PDF_ARTIFACT_TYPE);
+  if (!signed.length) {
+    return null;
+  }
+  const current = signed.filter((row) => row.is_current);
+  const pool = current.length > 0 ? current : signed;
+  return [...pool].sort(
+    (left, right) => parseArtifactCreatedAt(right.created_at) - parseArtifactCreatedAt(left.created_at),
+  )[0] ?? null;
+}
+
 function workflowPath(code: string): string {
   const docId = encodeURIComponent(documentId.value);
   const ver = encodeURIComponent(String(versionParse.value.valid ? versionParse.value.version : ""));
@@ -565,31 +587,54 @@ async function initializeWorkspace(): Promise<void> {
       return;
     }
 
-    const ensured = await ensureSourcePdf(initial);
-    if (!isOperationActive(loadToken)) {
-      return;
-    }
-    const authoritative = toAuthoritativeState(ensured);
     const code = actionCode.value;
     if (!code) {
       loadError.value = t("signature.workspace.errors.invalidRoute");
       return;
     }
-    if (!isActionEnabled(authoritative, code)) {
-      loadError.value = t("signature.workspace.errors.actionDisabled");
-      return;
-    }
-    if (!isSignatureRequiredForAction(authoritative, code)) {
-      loadError.value = t("signature.workspace.errors.signatureNotRequired");
-      return;
-    }
-    if (!isActionEnabled(authoritative, "preview")) {
-      loadError.value = t("signature.workspace.errors.previewUnavailable");
-      return;
+
+    let authoritative: VersionStateResponse;
+    let previewArtifactId: string | null = null;
+
+    if (usesEnsureSourcePdf(code)) {
+      const ensured = await ensureSourcePdf(initial);
+      if (!isOperationActive(loadToken)) {
+        return;
+      }
+      authoritative = toAuthoritativeState(ensured);
+      if (!isActionEnabled(authoritative, code)) {
+        loadError.value = t("signature.workspace.errors.actionDisabled");
+        return;
+      }
+      if (!isSignatureRequiredForAction(authoritative, code)) {
+        loadError.value = t("signature.workspace.errors.signatureNotRequired");
+        return;
+      }
+      if (!isActionEnabled(authoritative, "preview")) {
+        loadError.value = t("signature.workspace.errors.previewUnavailable");
+        return;
+      }
+      previewArtifactId = ensured.artifact_id ?? null;
+    } else {
+      authoritative = initial;
+      if (!isActionEnabled(authoritative, "preview")) {
+        loadError.value = t("signature.workspace.errors.previewUnavailable");
+        return;
+      }
+      const artifactRows = await fetchDocumentArtifacts(documentId.value, version);
+      if (!isOperationActive(loadToken)) {
+        return;
+      }
+      const signedArtifact = resolveSignedPdfArtifact(artifactRows);
+      if (!signedArtifact) {
+        loadError.value = t("signature.workspace.errors.noSourcePdf");
+        return;
+      }
+      previewArtifactId = signedArtifact.artifact_id;
     }
 
     detail.value = authoritative;
-    sourceArtifactId.value = ensured.artifact_id ?? null;
+    sourceArtifactId.value = previewArtifactId;
     if (!sourceArtifactId.value) {
       loadError.value = t("signature.workspace.errors.noSourcePdf");
       return;
