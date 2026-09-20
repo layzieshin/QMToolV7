@@ -16,6 +16,7 @@ from src.backend.auth_dependencies import (
     effective_request_id,
     enforce_server_organization_context,
     get_container,
+    has_admin_context,
     map_auth_error,
     require_user_context_normal,
     require_user_context_password_change,
@@ -120,6 +121,13 @@ def _module_capabilities(
     actor: UserContext | None = None,
 ) -> list[str]:
     capabilities = list(contract_capabilities)
+    if (
+        module_id == "usermanagement"
+        and licensed
+        and actor is not None
+        and has_admin_context(actor)
+    ):
+        capabilities.append("usermanagement.can_administer_users")
     if module_id != "documents" or not licensed or actor is None:
         return capabilities
     container = getattr(request.app.state, "container", None)

@@ -94,12 +94,81 @@ def test_bootstrap_after_login_lists_licensed_modules(licensed_client: TestClien
     assert "usermanagement" in modules
     assert modules["usermanagement"]["licensed"] is True
     assert modules["usermanagement"]["authorized"] is True
-    assert isinstance(modules["usermanagement"]["capabilities"], list)
+    assert modules["usermanagement"]["capabilities"] == [
+        "auth.authenticate",
+        "auth.session.read",
+    ]
 
     assert "documents" in modules
     assert modules["documents"]["licensed"] is True
     assert modules["documents"]["authorized"] is True
     assert isinstance(modules["documents"]["capabilities"], list)
+
+
+def test_bootstrap_admin_includes_user_administration_capability(
+    licensed_client: TestClient,
+) -> None:
+    login = licensed_client.post(
+        "/api/v1/auth/token",
+        json={"username": "admin", "password": "admin"},
+    )
+    assert login.status_code == 200
+    token = login.json()["token"]
+
+    response = licensed_client.get(
+        "/api/v1/session/bootstrap",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    modules = {item["id"]: item for item in response.json()["modules"]}
+    assert modules["usermanagement"]["licensed"] is True
+    assert modules["usermanagement"]["authorized"] is True
+    assert modules["usermanagement"]["capabilities"] == [
+        "auth.authenticate",
+        "auth.session.read",
+        "usermanagement.can_administer_users",
+    ]
+
+
+def test_bootstrap_password_change_required_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
+    monkeypatch.setenv("QMTOOL_LICENSE_MODE", "dev")
+    container = build_platform_ports(fail_closed_license=False)
+
+    repository = SQLiteUserRepository(tmp_path / "users.db")
+    repository.ensure_initial_admin("admin", "admin", role="Admin", must_change_password=True)
+    repository.create_user("bob", "bob-secret", "User")
+
+    service = UserManagementService(
+        event_bus=container.get_port("event_bus"),
+        repository=repository,
+        session_repository=InMemorySessionRepository(),
+    )
+    container.register_port("usermanagement_service", service)
+    container.register_port(
+        ACTIVE_BACKEND_MODULE_CONTRACTS_PORT,
+        (
+            create_usermanagement_module_contract(),
+            create_documents_module_contract(),
+        ),
+    )
+    client = TestClient(create_app(container))
+
+    login = client.post(
+        "/api/v1/auth/token",
+        json={"username": "admin", "password": "admin"},
+    )
+    assert login.status_code == 200
+
+    response = client.get(
+        "/api/v1/session/bootstrap",
+        headers={"Authorization": f"Bearer {login.json()['token']}"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["error"] == "password_change_required"
 
 
 def test_bootstrap_uses_license_tags_not_module_ids(

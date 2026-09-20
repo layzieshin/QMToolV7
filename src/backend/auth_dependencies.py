@@ -215,11 +215,16 @@ def require_user_context_password_change(
     )
 
 
+def has_admin_context(context: UserContext) -> bool:
+    """Return True when the confirmed session actor has Admin global role."""
+    return "ADMIN" in context.global_roles
+
+
 def require_admin_context(
     context: Annotated[UserContext, Depends(require_user_context_normal)],
 ) -> UserContext:
     """Backend-side Admin gate; service layer re-checks independently."""
-    if "ADMIN" not in context.global_roles:
+    if not has_admin_context(context):
         raise HTTPException(
             status_code=403,
             detail={"error": "forbidden", "message": "forbidden"},
