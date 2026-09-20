@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import math
 import os
 import re
+import stat
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import anyio
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from fastapi.routing import APIRoute
@@ -63,6 +68,128 @@ _PRODUCTION_PROFILES = {"prod", "production"}
 
 _API_V1 = "/api/v1"
 _WEBCLIENT_DIST_ENV = "QMTOOL_WEBCLIENT_DIST"
+
+_SPA_RESERVED_EXACT = frozenset({"/health", "/ready", "/openapi.json"})
+_SPA_RESERVED_PREFIXES = ("/api", "/assets", "/docs", "/redoc")
+_BACKEND_RESERVED_EXACT = _SPA_RESERVED_EXACT
+_BACKEND_RESERVED_PREFIXES = ("/api", "/docs", "/redoc")
+
+
+def _is_backend_reserved_path(url_path: str) -> bool:
+    if url_path in _BACKEND_RESERVED_EXACT:
+        return True
+    for prefix in _BACKEND_RESERVED_PREFIXES:
+        if url_path == prefix or url_path.startswith(f"{prefix}/"):
+            return True
+    return False
+
+
+def _request_header(scope: Scope, name: bytes) -> str | None:
+    for header_name, header_value in scope.get("headers", ()):
+        if header_name.lower() == name:
+            return header_value.decode("latin-1")
+    return None
+
+
+def _has_dot_path_segment(url_path: str) -> bool:
+    return any(segment in (".", "..") for segment in url_path.split("/"))
+
+
+def _static_lookup_url_path(path: str) -> str:
+    normalized = path.replace("\\", "/").lstrip("/\\")
+    if not normalized:
+        return "/"
+    return f"/{normalized}"
+
+
+def _accepts_html_navigation(accept: str) -> bool:
+    for range_item in accept.split(","):
+        range_item = range_item.strip()
+        if not range_item:
+            continue
+        parts = range_item.split(";")
+        media_type = parts[0].strip().lower()
+        if media_type != "text/html":
+            continue
+        quality = 1.0
+        for parameter in parts[1:]:
+            parameter = parameter.strip()
+            if not parameter.lower().startswith("q="):
+                continue
+            try:
+                quality = float(parameter[2:].strip())
+            except ValueError:
+                quality = 0.0
+                break
+            if not math.isfinite(quality) or quality <= 0.0 or quality > 1.0:
+                quality = 0.0
+                break
+        if 0.0 < quality <= 1.0:
+            return True
+    return False
+
+
+class _SpaFallbackStaticFiles(StaticFiles):
+    """Serve static dist files and fall back to index.html for HTML document navigations."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        url_path = scope.get("path") or ""
+        if _is_backend_reserved_path(url_path):
+            raise HTTPException(status_code=404)
+        if _has_dot_path_segment(url_path):
+            raise HTTPException(status_code=404)
+        if _is_backend_reserved_path(_static_lookup_url_path(path)):
+            raise HTTPException(status_code=404)
+
+        miss_response: Response | None = None
+        miss_exception: HTTPException | None = None
+        try:
+            response = await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            miss_exception = exc
+        else:
+            if response.status_code != 404:
+                return response
+            miss_response = response
+
+        if not self._should_spa_fallback(scope):
+            if miss_response is not None:
+                return miss_response
+            assert miss_exception is not None
+            raise miss_exception
+
+        full_path, stat_result = await anyio.to_thread.run_sync(self.lookup_path, "index.html")
+        if stat_result is None or not stat.S_ISREG(stat_result.st_mode):
+            if miss_response is not None:
+                return miss_response
+            assert miss_exception is not None
+            raise miss_exception
+        return self.file_response(full_path, stat_result, scope)
+
+    def _should_spa_fallback(self, scope: Scope) -> bool:
+        if scope["method"] not in ("GET", "HEAD"):
+            return False
+
+        url_path = scope.get("path") or ""
+        if url_path in _SPA_RESERVED_EXACT:
+            return False
+        for prefix in _SPA_RESERVED_PREFIXES:
+            if url_path == prefix or url_path.startswith(f"{prefix}/"):
+                return False
+        if _has_dot_path_segment(url_path):
+            return False
+
+        accept = _request_header(scope, b"accept")
+        if accept is None or not _accepts_html_navigation(accept):
+            return False
+
+        sec_fetch_dest = _request_header(scope, b"sec-fetch-dest")
+        if sec_fetch_dest and sec_fetch_dest != "document":
+            return False
+
+        return True
 
 
 def resolve_webclient_dist_dir() -> Path | None:
@@ -531,7 +658,7 @@ def create_app(container=None) -> FastAPI:
     if webclient_dist is not None:
         app.mount(
             "/",
-            StaticFiles(directory=str(webclient_dist), html=True),
+            _SpaFallbackStaticFiles(directory=str(webclient_dist), html=True),
             name="webclient-static",
         )
 
