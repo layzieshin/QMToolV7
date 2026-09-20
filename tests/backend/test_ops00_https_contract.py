@@ -442,6 +442,41 @@ def test_missing_asset_stays_404_without_spa_shell(
         host.stop(timeout=15.0)
 
 
+def test_encoded_dot_segment_api_alias_stays_json_404_without_static_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_dir = tmp_path / "webclient-fixture"
+    _write_webclient_fixture(
+        fixture_dir,
+        include_404_html=True,
+        include_api_collision=True,
+    )
+    host, ctx, base_url = _start_https_fixture_host(tmp_path, monkeypatch, fixture_dir=fixture_dir)
+    try:
+        status_code, body, headers = probe_request(
+            f"{base_url}/x/%2e%2e/api/v1/not-a-route",
+            headers={"Accept": "text/html"},
+            ssl_context=ctx,
+        )
+        assert status_code == 404
+        assert "application/json" in headers.get("content-type", "")
+        payload = json.loads(body.decode("utf-8"))
+        assert "detail" in payload
+        assert _FIXTURE_INDEX_HTML.encode("utf-8") not in body
+        assert _FIXTURE_404_HTML.encode("utf-8") not in body
+        assert _FIXTURE_API_COLLISION_BODY.encode("utf-8") not in body
+    finally:
+        host.stop(timeout=15.0)
+
+
+def test_static_lookup_url_path_treats_windows_separators_as_reserved_backend_paths() -> None:
+    from src.backend.api import _is_backend_reserved_path, _static_lookup_url_path
+
+    lookup_path = _static_lookup_url_path("api\\v1\\not-a-route")
+    assert lookup_path == "/api/v1/not-a-route"
+    assert _is_backend_reserved_path(lookup_path)
+
+
 def test_unknown_api_route_stays_json_404_without_spa_shell(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

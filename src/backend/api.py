@@ -95,6 +95,13 @@ def _has_dot_path_segment(url_path: str) -> bool:
     return any(segment in (".", "..") for segment in url_path.split("/"))
 
 
+def _static_lookup_url_path(path: str) -> str:
+    normalized = path.replace("\\", "/").lstrip("/\\")
+    if not normalized:
+        return "/"
+    return f"/{normalized}"
+
+
 def _accepts_html_navigation(accept: str) -> bool:
     for range_item in accept.split(","):
         range_item = range_item.strip()
@@ -128,6 +135,10 @@ class _SpaFallbackStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:
         url_path = scope.get("path") or ""
         if _is_backend_reserved_path(url_path):
+            raise HTTPException(status_code=404)
+        if _has_dot_path_segment(url_path):
+            raise HTTPException(status_code=404)
+        if _is_backend_reserved_path(_static_lookup_url_path(path)):
             raise HTTPException(status_code=404)
 
         miss_response: Response | None = None
