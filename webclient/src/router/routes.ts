@@ -8,6 +8,8 @@ import DocumentViewerView from "../views/documents/DocumentViewerView.vue";
 import SignatureWorkspaceView from "../views/signature/SignatureWorkspaceView.vue";
 import DocumentImportView from "../views/documents/DocumentImportView.vue";
 import DocumentsPoolView from "../views/documents/DocumentsPoolView.vue";
+import AdminUserDetailView from "../views/admin/AdminUserDetailView.vue";
+import AdminUsersView from "../views/admin/AdminUsersView.vue";
 import LoginView from "../views/LoginView.vue";
 
 export const routes: RouteRecordRaw[] = [
@@ -50,6 +52,18 @@ export const routes: RouteRecordRaw[] = [
         name: "document-detail",
         meta: { requiresAuth: true },
         component: DocumentDetailView,
+      },
+      {
+        path: "admin/users",
+        name: "admin-users",
+        meta: { requiresAuth: true },
+        component: AdminUsersView,
+      },
+      {
+        path: "admin/users/:username",
+        name: "admin-user-detail",
+        meta: { requiresAuth: true },
+        component: AdminUserDetailView,
       },
       {
         path: "login",

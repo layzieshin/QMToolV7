@@ -13,6 +13,7 @@ export type DocumentQueryPageResponse = components["schemas"]["DocumentQueryPage
 export type VersionStateResponse = components["schemas"]["VersionStateResponse"];
 export type DocumentVersionStateModel = components["schemas"]["DocumentVersionStateModel"];
 export type UserDirectoryItem = components["schemas"]["UserDirectoryItem"];
+export type UserAccessResponse = components["schemas"]["UserAccessResponse"];
 export type CreateVersionBody = components["schemas"]["CreateVersionBody"];
 export type AssignRolesBody = components["schemas"]["AssignRolesBody"];
 export type DocumentArtifactModel = components["schemas"]["DocumentArtifactModel"];
@@ -214,6 +215,26 @@ export async function fetchDocumentVersionHistory(
 export async function fetchUsersDirectory(): Promise<UserDirectoryItem[]> {
   const response = await apiFetch("/users/directory", { method: "GET" });
   return expectJson<UserDirectoryItem[]>(response);
+}
+
+function encodeUsernamePathSegment(username: string): string {
+  return encodeURIComponent(username);
+}
+
+export function encodeAdminUsernamePathSegment(username: string): string {
+  return encodeUsernamePathSegment(username);
+}
+
+export async function fetchAdminUsers(): Promise<UserAccessResponse[]> {
+  const response = await apiFetch("/users", { method: "GET" });
+  return expectJson<UserAccessResponse[]>(response);
+}
+
+export async function fetchAdminUser(username: string): Promise<UserAccessResponse> {
+  const response = await apiFetch(`/users/${encodeUsernamePathSegment(username)}`, {
+    method: "GET",
+  });
+  return expectJson<UserAccessResponse>(response);
 }
 
 export async function fetchDocumentArtifacts(

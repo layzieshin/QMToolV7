@@ -68,7 +68,9 @@ watch(
     <AppShell>
       <ConnectionBanner />
       <div class="app-layout__body">
-        <ModuleNavigation v-if="showModuleNavigation" />
+        <aside v-if="showModuleNavigation" class="app-layout__sidebar" aria-label="Navigation">
+          <ModuleNavigation />
+        </aside>
         <div class="app-layout__content">
           <router-view />
         </div>
@@ -81,9 +83,19 @@ watch(
 .app-layout__body {
   display: flex;
   gap: 1rem;
+  align-items: flex-start;
+}
+.app-layout__sidebar {
+  flex: 0 0 auto;
 }
 .app-layout__content {
   flex: 1;
   min-width: 0;
+}
+
+@media (max-width: 960px) {
+  .app-layout__body {
+    flex-direction: column;
+  }
 }
 </style>
