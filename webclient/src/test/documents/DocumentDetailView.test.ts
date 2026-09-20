@@ -1,4 +1,4 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,9 +30,14 @@ import { parseDetailRouteVersion } from "../../composables/useDocumentDetail";
 import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
 import { routes } from "../../router/routes";
+import {
+  __resetBootstrapStateForTest,
+  __setBootstrapBannerForTest,
+} from "../../state/bootstrap";
 import DocumentDetailView from "../../views/documents/DocumentDetailView.vue";
 
 const fetchDocumentVersionMock = vi.hoisted(() => vi.fn());
+const fetchDocumentVersionHistoryMock = vi.hoisted(() => vi.fn());
 const fetchUsersDirectoryMock = vi.hoisted(() => vi.fn());
 const mutateMock = vi.hoisted(() => vi.fn());
 
@@ -41,6 +46,7 @@ vi.mock("../../api/client", async (importOriginal) => {
   return {
     ...actual,
     fetchDocumentVersion: fetchDocumentVersionMock,
+    fetchDocumentVersionHistory: fetchDocumentVersionHistoryMock,
     fetchUsersDirectory: fetchUsersDirectoryMock,
   };
 });
@@ -121,6 +127,8 @@ function versionState(
   };
 }
 
+const mountedWrappers: VueWrapper[] = [];
+
 async function mountDetail(initialPath = "/documents/DOC-1?version=2") {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -134,7 +142,9 @@ async function mountDetail(initialPath = "/documents/DOC-1?version=2") {
       plugins: [router, vuetify, i18n],
     },
   });
+  mountedWrappers.push(wrapper);
   await flushPromises();
+  await router.isReady();
   return { wrapper, router };
 }
 
@@ -149,17 +159,25 @@ describe("parseDetailRouteVersion", () => {
 
 describe("DocumentDetailView", () => {
   beforeEach(() => {
+    __resetBootstrapStateForTest();
     stubBrowserApis();
     fetchDocumentVersionMock.mockReset();
+    fetchDocumentVersionHistoryMock.mockReset();
     fetchUsersDirectoryMock.mockReset();
     mutateMock.mockReset();
     fetchUsersDirectoryMock.mockResolvedValue([
       { user_id: "user-active", username: "Aktiver Benutzer", is_active: true, is_qmb: false, role: "editor" },
     ]);
     fetchDocumentVersionMock.mockResolvedValue(versionState());
+    fetchDocumentVersionHistoryMock.mockResolvedValue([]);
   });
 
   afterEach(() => {
+    for (const wrapper of mountedWrappers.splice(0)) {
+      wrapper.unmount();
+    }
+    document.body.innerHTML = "";
+    __resetBootstrapStateForTest();
     vi.clearAllMocks();
   });
 
@@ -174,8 +192,10 @@ describe("DocumentDetailView", () => {
     const router = createRouter({ history: createMemoryHistory(), routes });
     await router.push({ name: "document-detail", params: { docId: "   " }, query: { version: "2" } });
     await router.isReady();
-    mount(DocumentDetailView, { global: { plugins: [router, vuetify, i18n] } });
+    const wrapper = mount(DocumentDetailView, { global: { plugins: [router, vuetify, i18n] } });
+    mountedWrappers.push(wrapper);
     await flushPromises();
+    await router.isReady();
     expect(fetchDocumentVersionMock).not.toHaveBeenCalled();
     expect(fetchUsersDirectoryMock).not.toHaveBeenCalled();
   });
@@ -447,5 +467,158 @@ describe("DocumentDetailView", () => {
     expect(alert.exists()).toBe(true);
     expect(alert.text()).toContain(snippet);
     expect(alert.text()).not.toContain("fail");
+  });
+
+  it("uses exact GET transport path for version history without Authorization", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const actual = await vi.importActual<typeof import("../../api/client")>("../../api/client");
+      await actual.fetchDocumentVersionHistory("DOC-1", 2);
+      expect(fetchSpy).toHaveBeenCalled();
+      const firstCall = fetchSpy.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit?];
+      const url = String(firstCall[0]);
+      expect(url).toContain(`${apiBasePrefix()}/documents/versions/DOC-1/2/history`);
+      const init = firstCall[1];
+      expect(new Headers(init?.headers).has("Authorization")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows overview by default and switches to history tab with deep link", async () => {
+    const { wrapper, router } = await mountDetail("/documents/DOC-1?version=2&section=history");
+    await flushPromises();
+    expect(wrapper.find("[data-testid=document-detail-tab-overview]").exists()).toBe(true);
+    expect(wrapper.find("[data-testid=document-detail-history-panel]").exists()).toBe(true);
+    expect(wrapper.find("[data-testid=assignments-form]").exists()).toBe(false);
+    expect(fetchDocumentVersionHistoryMock).toHaveBeenCalledWith("DOC-1", 2);
+    expect(router.currentRoute.value.query).toEqual({ version: "2", section: "history" });
+  });
+
+  it("falls back invalid section to overview in route query", async () => {
+    const { wrapper, router } = await mountDetail("/documents/DOC-1?version=2&section=audit");
+    await vi.waitUntil(
+      () => router.currentRoute.value.query.section === undefined,
+      { timeout: 2000 },
+    );
+    await flushPromises();
+    expect(wrapper.find("[data-testid=document-detail-history-panel]").exists()).toBe(false);
+    expect(wrapper.find("[data-testid=assignments-form]").exists()).toBe(true);
+    expect(router.currentRoute.value.query).toEqual({ version: "2" });
+  });
+
+  it("reloads detail and history exactly once per real connection recovery", async () => {
+    const { wrapper, router } = await mountDetail("/documents/DOC-1?version=2&section=history");
+    await flushPromises();
+    fetchDocumentVersionMock.mockClear();
+    fetchDocumentVersionHistoryMock.mockClear();
+    const queryBefore = { ...router.currentRoute.value.query };
+    __setBootstrapBannerForTest("offline");
+    await flushPromises();
+    __setBootstrapBannerForTest("restored");
+    await flushPromises();
+    expect(fetchDocumentVersionMock).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentVersionMock).toHaveBeenCalledWith("DOC-1", 2);
+    expect(fetchDocumentVersionHistoryMock).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentVersionHistoryMock).toHaveBeenCalledWith("DOC-1", 2);
+    expect(router.currentRoute.value.query).toEqual(queryBefore);
+    expect(wrapper.find("[data-testid=document-detail-panel-history]").exists()).toBe(true);
+  });
+
+  it("does not reload detail or history when restored without prior offline or reconnecting", async () => {
+    const { router } = await mountDetail("/documents/DOC-1?version=2&section=history");
+    await flushPromises();
+    await router.isReady();
+    fetchDocumentVersionMock.mockClear();
+    fetchDocumentVersionHistoryMock.mockClear();
+    __setBootstrapBannerForTest("restored");
+    await flushPromises();
+    expect(fetchDocumentVersionMock).not.toHaveBeenCalled();
+    expect(fetchDocumentVersionHistoryMock).not.toHaveBeenCalled();
+  });
+
+  it("exposes accessible tablist, tabs, and tabpanels with linked ids", async () => {
+    const { wrapper } = await mountDetail("/documents/DOC-1?version=2");
+    const tablist = wrapper.get("[data-testid=document-detail-tabs]");
+    const overviewTab = wrapper.get("[data-testid=document-detail-tab-overview]");
+    const historyTab = wrapper.get("[data-testid=document-detail-tab-history]");
+
+    expect(tablist.attributes("role")).toBe("tablist");
+    expect(tablist.attributes("aria-label")).toBe("Dokumentbereiche");
+
+    expect(overviewTab.attributes("id")).toBe("document-detail-tab-overview");
+    expect(historyTab.attributes("id")).toBe("document-detail-tab-history");
+    expect(overviewTab.attributes("aria-controls")).toBe("document-detail-panel-overview");
+    expect(historyTab.attributes("aria-controls")).toBe("document-detail-panel-history");
+
+    expect(overviewTab.attributes("aria-selected")).toBe("true");
+    expect(historyTab.attributes("aria-selected")).toBe("false");
+    const overviewPanel = wrapper.get("#document-detail-panel-overview");
+    expect(overviewPanel.attributes("role")).toBe("tabpanel");
+    expect(overviewPanel.attributes("aria-labelledby")).toBe("document-detail-tab-overview");
+
+    await historyTab.trigger("click");
+    await flushPromises();
+    await vi.waitUntil(() => wrapper.find("#document-detail-panel-history").exists());
+    const historyTabActive = wrapper.get("[data-testid=document-detail-tab-history]");
+    const overviewTabAfterHistory = wrapper.get("[data-testid=document-detail-tab-overview]");
+    expect(historyTabActive.attributes("aria-selected")).toBe("true");
+    expect(overviewTabAfterHistory.attributes("aria-selected")).toBe("false");
+    const historyPanel = wrapper.get("#document-detail-panel-history");
+    expect(historyPanel.attributes("role")).toBe("tabpanel");
+    expect(historyPanel.attributes("aria-labelledby")).toBe("document-detail-tab-history");
+    expect(historyTab.attributes("aria-controls")).toBe("document-detail-panel-history");
+
+    await overviewTabAfterHistory.trigger("click");
+    await flushPromises();
+    await vi.waitUntil(() => wrapper.find("#document-detail-panel-overview").exists());
+    const overviewTabActive = wrapper.get("[data-testid=document-detail-tab-overview]");
+    const historyTabAfterOverview = wrapper.get("[data-testid=document-detail-tab-history]");
+    expect(overviewTabActive.attributes("aria-selected")).toBe("true");
+    expect(historyTabAfterOverview.attributes("aria-selected")).toBe("false");
+    expect(wrapper.get("#document-detail-panel-overview").attributes("aria-labelledby")).toBe(
+      "document-detail-tab-overview",
+    );
+  });
+
+  it("does not flash history from previous document after route change", async () => {
+    fetchDocumentVersionHistoryMock.mockImplementation(async (docId: string) => {
+      if (docId === "DOC-1") {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return [
+          {
+            occurred_at: "2026-01-15T10:30:00Z",
+            event_type: "comment_added",
+            actor_user_id: null,
+            summary: "Stale history",
+          },
+        ];
+      }
+      return [
+        {
+          occurred_at: "2026-01-16T10:30:00Z",
+          event_type: "comment_added",
+          actor_user_id: null,
+          summary: "Fresh history",
+        },
+      ];
+    });
+    const { wrapper, router } = await mountDetail("/documents/DOC-1?version=1&section=history");
+    await wrapper.get("[data-testid=document-detail-tab-history]").trigger("click");
+    await flushPromises();
+    await router.replace({ path: "/documents/DOC-2", query: { version: "1", section: "history" } });
+    fetchDocumentVersionMock.mockResolvedValueOnce(
+      versionState({ state: { document_id: "DOC-2", version: 1, title: "Doc 2" } }),
+    );
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("Stale history");
+    expect(wrapper.text()).toContain("Fresh history");
   });
 });

@@ -23,6 +23,7 @@ export type CreatePdfCommentBody = components["schemas"]["CreatePdfCommentBody"]
 export type SignatureTemplateModel = components["schemas"]["SignatureTemplateModel"];
 export type EnsureSourcePdfResponse = components["schemas"]["EnsureSourcePdfResponse"];
 export type WorkflowProfileModel = components["schemas"]["WorkflowProfileModel"];
+export type VersionHistoryEvent = components["schemas"]["VersionHistoryEvent"];
 export type DocumentsCapabilities = Record<string, boolean>;
 
 const PDF_MIME = "application/pdf";
@@ -197,6 +198,17 @@ export async function fetchDocumentVersion(
     { method: "GET" },
   );
   return expectJson<VersionStateResponse>(response);
+}
+
+export async function fetchDocumentVersionHistory(
+  documentId: string,
+  version: number,
+): Promise<VersionHistoryEvent[]> {
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}/history`,
+    { method: "GET" },
+  );
+  return expectJson<VersionHistoryEvent[]>(response);
 }
 
 export async function fetchUsersDirectory(): Promise<UserDirectoryItem[]> {

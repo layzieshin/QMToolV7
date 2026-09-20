@@ -10,8 +10,10 @@ import ConflictDialog from "../../components/conflict/ConflictDialog.vue";
 import AssignmentsPanel from "../../components/documents/AssignmentsPanel.vue";
 import DocumentHeader from "../../components/documents/DocumentHeader.vue";
 import DocumentMetadataPanel from "../../components/documents/DocumentMetadataPanel.vue";
+import HistoryPanel from "../../components/documents/HistoryPanel.vue";
 import WorkflowActionsBar from "../../components/documents/WorkflowActionsBar.vue";
 import { useConflictRecovery } from "../../composables/useConflictRecovery";
+import { useDeepLinkRestore } from "../../composables/useDeepLinkRestore";
 import { useDocumentDetail } from "../../composables/useDocumentDetail";
 
 defineOptions({
@@ -20,6 +22,7 @@ defineOptions({
 
 const { t } = useI18n();
 const router = useRouter();
+
 const {
   documentId,
   version,
@@ -32,6 +35,10 @@ const {
   error,
   reload,
 } = useDocumentDetail();
+
+const { section, setSection } = useDeepLinkRestore(async () => {
+  await reload();
+});
 
 const {
   conflictVisible,
@@ -63,6 +70,10 @@ const viewerLink = computed(() => {
     query: { version: String(version.value) },
   };
 });
+
+const showHistoryPanel = computed(
+  () => section.value === "history" && version.value !== null && Boolean(detail.value && state.value),
+);
 
 function mapLoadError(cause: ApiTransportError | Error | null): string {
   if (!cause) {
@@ -109,6 +120,14 @@ function onAssignmentsUpdated(payload: VersionStateResponse): void {
 function onWorkflowUpdated(payload: VersionStateResponse): void {
   detail.value = payload;
 }
+
+async function selectOverview(): Promise<void> {
+  await setSection("overview");
+}
+
+async function selectHistory(): Promise<void> {
+  await setSection("history");
+}
 </script>
 
 <template>
@@ -138,34 +157,89 @@ function onWorkflowUpdated(payload: VersionStateResponse): void {
 
     <template v-else-if="detail && state">
       <DocumentHeader :state="state" />
-      <div v-if="viewerLink" class="document-detail-view__viewer-link">
-        <router-link
-          :to="viewerLink"
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="document-detail-viewer-link"
+      <div
+        class="document-detail-view__tabs"
+        role="tablist"
+        :aria-label="t('documents.detail.tabs.ariaLabel')"
+        data-testid="document-detail-tabs"
+      >
+        <v-btn
+          id="document-detail-tab-overview"
+          role="tab"
+          :variant="section === 'overview' ? 'flat' : 'text'"
+          :color="section === 'overview' ? 'primary' : undefined"
+          :aria-selected="section === 'overview' ? 'true' : 'false'"
+          aria-controls="document-detail-panel-overview"
+          data-testid="document-detail-tab-overview"
+          @click="selectOverview"
         >
-          {{ t("documents.viewer.openLink") }}
-        </router-link>
+          {{ t("documents.detail.tabs.overview") }}
+        </v-btn>
+        <v-btn
+          id="document-detail-tab-history"
+          role="tab"
+          :variant="section === 'history' ? 'flat' : 'text'"
+          :color="section === 'history' ? 'primary' : undefined"
+          :aria-selected="section === 'history' ? 'true' : 'false'"
+          aria-controls="document-detail-panel-history"
+          data-testid="document-detail-tab-history"
+          @click="selectHistory"
+        >
+          {{ t("documents.detail.tabs.history") }}
+        </v-btn>
       </div>
-      <DocumentMetadataPanel :state="state" :directory="directory" />
-      <WorkflowActionsBar
-        v-if="version !== null"
-        :detail="detail"
-        :document-id="documentId"
-        :version="version"
-        @updated="onWorkflowUpdated"
-        @conflict="openConflict"
-      />
-      <AssignmentsPanel
-        :detail="detail"
-        :directory="directory"
-        :directory-loading="directoryLoading"
-        :directory-error="directoryError"
-        :document-id="documentId"
-        :version="version"
-        @updated="onAssignmentsUpdated"
-      />
+
+      <div
+        v-if="section === 'overview'"
+        id="document-detail-panel-overview"
+        role="tabpanel"
+        aria-labelledby="document-detail-tab-overview"
+        data-testid="document-detail-panel-overview"
+      >
+        <div v-if="viewerLink" class="document-detail-view__viewer-link">
+          <router-link
+            :to="viewerLink"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="document-detail-viewer-link"
+          >
+            {{ t("documents.viewer.openLink") }}
+          </router-link>
+        </div>
+        <DocumentMetadataPanel :state="state" :directory="directory" />
+        <WorkflowActionsBar
+          v-if="version !== null"
+          :detail="detail"
+          :document-id="documentId"
+          :version="version"
+          @updated="onWorkflowUpdated"
+          @conflict="openConflict"
+        />
+        <AssignmentsPanel
+          :detail="detail"
+          :directory="directory"
+          :directory-loading="directoryLoading"
+          :directory-error="directoryError"
+          :document-id="documentId"
+          :version="version"
+          @updated="onAssignmentsUpdated"
+        />
+      </div>
+
+      <div
+        v-else-if="showHistoryPanel"
+        id="document-detail-panel-history"
+        role="tabpanel"
+        aria-labelledby="document-detail-tab-history"
+        data-testid="document-detail-panel-history"
+      >
+        <HistoryPanel
+          :document-id="documentId"
+          :version="version!"
+          :directory="directory"
+          data-testid="document-detail-history-panel"
+        />
+      </div>
     </template>
 
     <ConflictDialog
@@ -188,5 +262,10 @@ function onWorkflowUpdated(payload: VersionStateResponse): void {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.document-detail-view__tabs {
+  display: flex;
+  gap: 0.5rem;
 }
 </style>
