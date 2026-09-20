@@ -120,6 +120,13 @@ def _module_capabilities(
     actor: UserContext | None = None,
 ) -> list[str]:
     capabilities = list(contract_capabilities)
+    if (
+        module_id == "usermanagement"
+        and licensed
+        and actor is not None
+        and um_api.can_administer_users(actor)
+    ):
+        capabilities.append("usermanagement.can_administer_users")
     if module_id != "documents" or not licensed or actor is None:
         return capabilities
     container = getattr(request.app.state, "container", None)

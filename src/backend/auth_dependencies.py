@@ -219,7 +219,7 @@ def require_admin_context(
     context: Annotated[UserContext, Depends(require_user_context_normal)],
 ) -> UserContext:
     """Backend-side Admin gate; service layer re-checks independently."""
-    if "ADMIN" not in context.global_roles:
+    if not um_api.can_administer_users(context):
         raise HTTPException(
             status_code=403,
             detail={"error": "forbidden", "message": "forbidden"},
