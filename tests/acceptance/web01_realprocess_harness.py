@@ -49,6 +49,7 @@ from tests.acceptance.j04_m0_realprocess_harness import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE_ROOT = REPO_ROOT / "build" / "ap-029-web01"
+PLAYWRIGHT_RAW_TEMP_ROOT = REPO_ROOT / "build" / "web01-playwright-raw"
 TRACKED_LICENSE = REPO_ROOT / "license" / "license.json"
 WORKFLOW_PROFILE_ID = "fast_path"
 PIS_DOCUMENT_ID = "DOC-WEB01-K1-PIS"
@@ -227,14 +228,19 @@ class _SubprocessOutputDrainer:
         except Exception as exc:  # noqa: BLE001
             with self._lock:
                 self._error = exc
+        finally:
+            self.close_pipe()
 
     def close_pipe(self) -> None:
         pipe = self._pipe
         self._pipe = None
         if pipe is None:
             return
+        close = getattr(pipe, "close", None)
+        if not callable(close):
+            return
         try:
-            pipe.close()
+            close()
         except OSError:
             pass
 
@@ -386,29 +392,43 @@ class Web01RealProcessHarness:
 
     def _finalize_playwright_logs(self) -> None:
         errors: list[Exception] = []
+        stdout_drainer = self._playwright_stdout_drainer
+        stderr_drainer = self._playwright_stderr_drainer
         for label, drainer in (
-            ("playwright stdout", self._playwright_stdout_drainer),
-            ("playwright stderr", self._playwright_stderr_drainer),
+            ("playwright stdout", stdout_drainer),
+            ("playwright stderr", stderr_drainer),
         ):
             error = self._finalize_output_drainer(drainer, label=label)
             if error is not None:
                 errors.append(error)
-        self._playwright_stdout_drainer = None
-        self._playwright_stderr_drainer = None
         if errors:
             raise Web01HarnessError("; ".join(str(item) for item in errors))
+        self._playwright_stdout_drainer = None
+        self._playwright_stderr_drainer = None
 
     def _allocate_playwright_report_temp_dir(self) -> Path:
-        candidate = self.workspace / "playwright-raw-temp" / uuid.uuid4().hex
-        candidate.mkdir(parents=True, exist_ok=False)
-        return candidate
+        root = playwright_raw_temp_root()
+        root.mkdir(parents=True, exist_ok=True)
+        candidate = root / uuid.uuid4().hex
+        candidate.mkdir(parents=False, exist_ok=False)
+        return require_playwright_raw_temp_dir(candidate)
 
     def _cleanup_playwright_raw_report_dir(self) -> None:
         raw_dir = self._playwright_raw_report_dir
-        self._playwright_raw_report_dir = None
         if raw_dir is None:
             return
-        shutil.rmtree(raw_dir, ignore_errors=True)
+        if raw_dir.exists():
+            try:
+                shutil.rmtree(raw_dir)
+            except OSError as exc:
+                raise Web01HarnessError(
+                    "failed to remove Playwright raw report directory; ownership retained for retry"
+                ) from exc
+            if raw_dir.exists():
+                raise Web01HarnessError(
+                    "failed to remove Playwright raw report directory; ownership retained for retry"
+                )
+        self._playwright_raw_report_dir = None
 
     def persist_playwright_json_to(
         self,
@@ -931,6 +951,18 @@ class Web01RealProcessHarness:
         spec: str,
         child_env: dict[str, str],
     ) -> None:
+        if self.playwright is not None and self.playwright.poll() is None:
+            raise Web01HarnessError(
+                "refusing Playwright start while a prior child process is still alive"
+            )
+        if self._playwright_raw_report_dir is not None:
+            raise Web01HarnessError(
+                "refusing Playwright start while raw report ownership is retained"
+            )
+        if self._playwright_stdout_drainer is not None or self._playwright_stderr_drainer is not None:
+            raise Web01HarnessError(
+                "refusing Playwright start while prior output reader ownership is retained"
+            )
         self._finalize_playwright_logs()
         self._cleanup_playwright_raw_report_dir()
         raw_report_dir = self._allocate_playwright_report_temp_dir()
@@ -964,43 +996,51 @@ class Web01RealProcessHarness:
             raise Web01HarnessError("Playwright was not started")
         proc = self.playwright
         failure: Web01HarnessError | None = None
-        preserve_reference = False
+        preserve_ownership = False
+        timeout_error: Web01HarnessError | None = None
         try:
-            try:
-                rc = proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                try:
-                    stop_owned_process(proc)
-                except Web01HarnessError:
-                    if proc.poll() is None:
-                        preserve_reference = True
-                        raise Web01HarnessError(
-                            "timeout waiting for Playwright to finish; forced stop failed "
-                            f"(pid={proc.pid}, poll={proc.poll()})"
-                        ) from None
-                    raise
-                if proc.poll() is None:
-                    preserve_reference = True
-                    raise Web01HarnessError(
-                        "timeout waiting for Playwright to finish; child still alive "
-                        f"(pid={proc.pid})"
-                    )
-                raise Web01HarnessError("timeout waiting for Playwright to finish") from None
+            rc = proc.wait(timeout=timeout)
             if rc != 0:
                 failure = Web01HarnessError(f"WEB01 Playwright spec failed with exit {rc}")
-        finally:
-            if not preserve_reference:
-                self.playwright = None
+        except subprocess.TimeoutExpired:
             try:
-                self._finalize_playwright_logs()
-            except Web01HarnessError as exc:
-                if not preserve_reference:
-                    self._cleanup_playwright_raw_report_dir()
-                raise exc
-            if failure is not None:
-                if not preserve_reference:
-                    self._cleanup_playwright_raw_report_dir()
-                raise failure
+                stop_owned_process(proc)
+            except Web01HarnessError:
+                if proc.poll() is None:
+                    preserve_ownership = True
+                    timeout_error = Web01HarnessError(
+                        "timeout waiting for Playwright to finish; forced stop failed "
+                        f"(pid={proc.pid}, poll={proc.poll()})"
+                    )
+                else:
+                    timeout_error = Web01HarnessError(
+                        "timeout waiting for Playwright to finish; forced stop failed"
+                    )
+            if timeout_error is None and proc.poll() is None:
+                preserve_ownership = True
+                timeout_error = Web01HarnessError(
+                    "timeout waiting for Playwright to finish; child still alive "
+                    f"(pid={proc.pid})"
+                )
+            if timeout_error is None:
+                timeout_error = Web01HarnessError("timeout waiting for Playwright to finish")
+        if preserve_ownership:
+            if timeout_error is not None:
+                raise timeout_error
+            return
+
+        self.playwright = None
+        try:
+            self._finalize_playwright_logs()
+        except Web01HarnessError:
+            self._cleanup_playwright_raw_report_dir()
+            raise
+        if timeout_error is not None:
+            self._cleanup_playwright_raw_report_dir()
+            raise timeout_error
+        if failure is not None:
+            self._cleanup_playwright_raw_report_dir()
+            raise failure
 
     def cleanup(
         self,
@@ -1008,19 +1048,34 @@ class Web01RealProcessHarness:
         diagnosis_filename: str = GRACEFUL_STOP_DIAGNOSIS_FILENAME,
     ) -> None:
         cleanup_errors: list[Exception] = []
-        try:
-            stop_owned_process(self.playwright)
-        except Exception as exc:  # noqa: BLE001
-            cleanup_errors.append(exc)
-        self.playwright = None
-        try:
-            self._finalize_playwright_logs()
-        except Exception as exc:  # noqa: BLE001
-            cleanup_errors.append(exc)
-        try:
-            self._cleanup_playwright_raw_report_dir()
-        except Exception as exc:  # noqa: BLE001
-            cleanup_errors.append(exc)
+        preserve_playwright_ownership = False
+        if self.playwright is not None:
+            proc = self.playwright
+            try:
+                stop_owned_process(proc)
+            except Exception as exc:  # noqa: BLE001
+                cleanup_errors.append(exc)
+                if proc.poll() is None:
+                    preserve_playwright_ownership = True
+            if not preserve_playwright_ownership:
+                self.playwright = None
+                try:
+                    self._finalize_playwright_logs()
+                except Exception as exc:  # noqa: BLE001
+                    cleanup_errors.append(exc)
+                try:
+                    self._cleanup_playwright_raw_report_dir()
+                except Exception as exc:  # noqa: BLE001
+                    cleanup_errors.append(exc)
+        else:
+            try:
+                self._finalize_playwright_logs()
+            except Exception as exc:  # noqa: BLE001
+                cleanup_errors.append(exc)
+            try:
+                self._cleanup_playwright_raw_report_dir()
+            except Exception as exc:  # noqa: BLE001
+                cleanup_errors.append(exc)
         if self.backend is not None:
             try:
                 stop_backend_graceful(
@@ -1078,6 +1133,31 @@ def repo_root() -> Path:
 
 def evidence_root() -> Path:
     return EVIDENCE_ROOT
+
+
+def playwright_raw_temp_root() -> Path:
+    return PLAYWRIGHT_RAW_TEMP_ROOT
+
+
+def require_playwright_raw_temp_dir(path: Path) -> Path:
+    resolved = Path(path).resolve()
+    evidence = evidence_root().resolve()
+    try:
+        resolved.relative_to(evidence)
+    except ValueError:
+        pass
+    else:
+        raise Web01HarnessBlockedError(
+            f"Playwright raw report temp must stay outside WEB01 evidence root; rejected {resolved}"
+        )
+    root = playwright_raw_temp_root().resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise Web01HarnessBlockedError(
+            f"Playwright raw report temp must resolve under {root}; rejected {resolved}"
+        ) from exc
+    return resolved
 
 
 def require_inside_web01_evidence(path: Path) -> Path:

@@ -38,7 +38,6 @@ from tests.acceptance.web01_realprocess_harness import (
     allocate_k1_visual_dir,
     allocate_k1_workspace,
     bearer_token,
-    copy_playwright_json_report,
     redact_log_text,
     verify_visual_screenshots,
 )
@@ -177,7 +176,7 @@ def test_web01_product_slice_pis_and_visual_evidence(
             time.sleep(0.25)
 
         harness.wait_playwright(timeout=720.0)
-        copy_playwright_json_report(workspace, visual_dir)
+        harness.persist_playwright_json_to(visual_dir)
         screenshots = verify_visual_screenshots(visual_dir)
         assert len(screenshots) == 16
         assert handshake_tracker.is_complete(HANDSHAKE_PIS_ROLES)

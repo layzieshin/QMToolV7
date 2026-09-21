@@ -47,6 +47,8 @@ from tests.acceptance.web01_realprocess_harness import (
     allocate_web01_workspace,
     copy_playwright_json_report,
     persist_redacted_playwright_json_report,
+    playwright_raw_temp_root,
+    require_playwright_raw_temp_dir,
     evidence_root,
     redact_json_text,
     redact_log_text_with_extras,
@@ -389,6 +391,22 @@ def test_harness_persist_playwright_json_to_removes_raw_temp_dir() -> None:
     assert not (workspace / PLAYWRIGHT_RAW_JSON_FILENAME).exists()
 
 
+def test_require_playwright_raw_temp_dir_rejects_evidence_paths() -> None:
+    workspace = allocate_k1_workspace()
+    with pytest.raises(Web01HarnessBlockedError):
+        require_playwright_raw_temp_dir(workspace / "playwright-raw")
+
+
+def test_allocate_playwright_report_temp_dir_stays_outside_evidence_root() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+    raw_dir = harness._allocate_playwright_report_temp_dir()
+    harness._playwright_raw_report_dir = raw_dir
+    assert "web01-playwright-raw" in raw_dir.parts
+    assert not raw_dir.resolve().is_relative_to(evidence_root().resolve())
+    harness._cleanup_playwright_raw_report_dir()
+
+
 def test_start_playwright_subprocess_uses_raw_temp_evidence_dir() -> None:
     workspace = allocate_k1_workspace()
     harness = Web01RealProcessHarness(workspace=workspace)
@@ -411,7 +429,8 @@ def test_start_playwright_subprocess_uses_raw_temp_evidence_dir() -> None:
     assert raw_dir.is_dir()
     call_env = popen_mock.call_args.kwargs["env"]
     assert call_env["WEB00_SMOKE_EVIDENCE_DIR"] == str(raw_dir)
-    assert "playwright-raw-temp" in Path(call_env["WEB00_SMOKE_EVIDENCE_DIR"]).parts
+    assert raw_dir.resolve().is_relative_to(playwright_raw_temp_root().resolve())
+    assert not raw_dir.resolve().is_relative_to(evidence_root().resolve())
     assert not (workspace / PLAYWRIGHT_RAW_JSON_FILENAME).exists()
     harness._cleanup_playwright_raw_report_dir()
 
@@ -446,11 +465,117 @@ def test_finalize_playwright_logs_reports_both_stream_failures() -> None:
         def is_alive(self) -> bool:
             return False
 
-    harness._playwright_stdout_drainer = _BrokenDrainer()  # type: ignore[assignment]
-    harness._playwright_stderr_drainer = _BrokenDrainer()  # type: ignore[assignment]
+    stdout_drainer = _BrokenDrainer()
+    stderr_drainer = _BrokenDrainer()
+    harness._playwright_stdout_drainer = stdout_drainer  # type: ignore[assignment]
+    harness._playwright_stderr_drainer = stderr_drainer  # type: ignore[assignment]
     with pytest.raises(Web01HarnessError, match="stdout") as exc:
         harness._finalize_playwright_logs()
     assert "stderr" in str(exc.value)
+    assert harness._playwright_stdout_drainer is stdout_drainer
+    assert harness._playwright_stderr_drainer is stderr_drainer
+
+
+def test_subprocess_output_drainer_closes_pipe_after_eof(tmp_path: Path) -> None:
+    log_path = tmp_path / "eof.log"
+    closed = {"value": False}
+
+    class _EofPipe:
+        def read(self, size: int) -> str:
+            return ""
+
+        def close(self) -> None:
+            closed["value"] = True
+
+    drainer = _SubprocessOutputDrainer(_EofPipe(), log_path, ())
+    drainer.join()
+    assert closed["value"] is True
+
+
+def test_cleanup_playwright_raw_report_dir_retains_reference_on_delete_failure() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+    raw_dir = harness._allocate_playwright_report_temp_dir()
+    harness._playwright_raw_report_dir = raw_dir
+    with patch(
+        "tests.acceptance.web01_realprocess_harness.shutil.rmtree",
+        side_effect=OSError("delete blocked"),
+    ):
+        with pytest.raises(Web01HarnessError, match="ownership retained"):
+            harness._cleanup_playwright_raw_report_dir()
+    assert harness._playwright_raw_report_dir is raw_dir
+    assert raw_dir.exists()
+    harness._playwright_raw_report_dir = None
+    harness._cleanup_playwright_raw_report_dir()
+
+
+def test_wait_playwright_stop_failure_retains_live_ownership() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+    raw_dir = harness._allocate_playwright_report_temp_dir()
+    harness._playwright_raw_report_dir = raw_dir
+    stdout_drainer = object()
+    stderr_drainer = object()
+    harness._playwright_stdout_drainer = stdout_drainer  # type: ignore[assignment]
+    harness._playwright_stderr_drainer = stderr_drainer  # type: ignore[assignment]
+
+    class _HungProcess:
+        pid = 5151
+
+        def poll(self) -> int | None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            raise subprocess.TimeoutExpired(cmd="playwright", timeout=timeout or 0)
+
+    hung = _HungProcess()
+    harness.playwright = hung  # type: ignore[assignment]
+    with patch(
+        "tests.acceptance.web01_realprocess_harness.stop_owned_process",
+        side_effect=Web01HarnessError("taskkill failed"),
+    ):
+        with pytest.raises(Web01HarnessError, match="forced stop failed"):
+            harness.wait_playwright(timeout=0.01)
+    assert harness.playwright is hung
+    assert harness._playwright_stdout_drainer is stdout_drainer
+    assert harness._playwright_stderr_drainer is stderr_drainer
+    assert harness._playwright_raw_report_dir is raw_dir
+    harness._playwright_raw_report_dir = None
+    harness._cleanup_playwright_raw_report_dir()
+
+
+def test_cleanup_retains_playwright_ownership_when_stop_fails() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+    raw_dir = harness._allocate_playwright_report_temp_dir()
+    harness._playwright_raw_report_dir = raw_dir
+    stdout_drainer = object()
+    stderr_drainer = object()
+    harness._playwright_stdout_drainer = stdout_drainer  # type: ignore[assignment]
+    harness._playwright_stderr_drainer = stderr_drainer  # type: ignore[assignment]
+
+    class _AliveProcess:
+        pid = 6060
+
+        def poll(self) -> int | None:
+            return None
+
+    alive = _AliveProcess()
+    harness.playwright = alive  # type: ignore[assignment]
+    with patch(
+        "tests.acceptance.web01_realprocess_harness.stop_owned_process",
+        side_effect=Web01HarnessError("taskkill failed"),
+    ), patch(
+        "tests.acceptance.web01_realprocess_harness.exit_maintenance",
+    ):
+        with pytest.raises(Web01HarnessError, match="taskkill failed"):
+            harness.cleanup()
+    assert harness.playwright is alive
+    assert harness._playwright_stdout_drainer is stdout_drainer
+    assert harness._playwright_stderr_drainer is stderr_drainer
+    assert harness._playwright_raw_report_dir is raw_dir
+    harness._playwright_raw_report_dir = None
+    harness._cleanup_playwright_raw_report_dir()
 
 
 def test_wait_playwright_failure_cleans_raw_report_dir() -> None:
@@ -826,6 +951,31 @@ def test_start_backend_default_runs_fixture_initialization() -> None:
     bootstrap_mock.assert_called_once_with(harness.base_url)
     qmb_mock.assert_called_once_with(harness.base_url)
     assert harness._fixture_initialized is True
+
+
+def test_product_slice_persists_redacted_playwright_json_via_harness() -> None:
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "tests"
+        / "acceptance"
+        / "test_web01_product_slice.py"
+    ).read_text(encoding="utf-8")
+    assert "harness.wait_playwright" in source
+    assert "harness.persist_playwright_json_to(visual_dir)" in source
+    assert "copy_playwright_json_report" not in source
+
+
+def test_conflict_realprocess_persists_redacted_playwright_json_via_harness() -> None:
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "tests"
+        / "acceptance"
+        / "test_web01_conflict_realprocess.py"
+    ).read_text(encoding="utf-8")
+    assert "harness.wait_playwright()" in source
+    assert "harness.persist_playwright_json_to(" in source
+    assert "PLAYWRIGHT_RAW_JSON_FILENAME" in source
+    assert "copy_playwright_json_report" not in source
 
 
 def test_start_backend_default_parameter_preserves_conflict_harness_call() -> None:

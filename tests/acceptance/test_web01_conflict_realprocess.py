@@ -14,6 +14,7 @@ from src.backend import service_host as service_host_mod
 from tests.acceptance.web01_realprocess_harness import (
     BOOTSTRAP_PASSWORD,
     LOGIN_PASSWORD,
+    PLAYWRIGHT_RAW_JSON_FILENAME,
     Web01HarnessBlockedError,
     Web01RealProcessHarness,
     allocate_web01_workspace,
@@ -81,10 +82,12 @@ def test_web01_conflict_live_browser_proof(
         harness.write_stale_mutation_complete()
         harness.wait_playwright()
 
-        json_report = workspace / "browser-smoke-playwright.json"
-        if not json_report.is_file():
-            alt = workspace / "test-results.json"
-            assert alt.is_file(), "Playwright JSON reporter output is missing"
+        json_report = harness.persist_playwright_json_to(
+            workspace,
+            output_filename=PLAYWRIGHT_RAW_JSON_FILENAME,
+        )
+        payload = json.loads(json_report.read_text(encoding="utf-8"))
+        assert isinstance(payload, dict)
     finally:
         harness.cleanup()
         for name in ("platform.log", "audit.log"):
