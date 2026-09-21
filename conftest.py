@@ -69,7 +69,8 @@ def pytest_configure(config) -> None:  # type: ignore[no-untyped-def]
         config.option.xmlpath = str(resolved_junit)
 
     args = tuple(str(arg) for arg in config.invocation_params.args)
-    if _has_explicit_basetemp(args):
+    existing_basetemp = getattr(config.option, "basetemp", None)
+    if _has_explicit_basetemp(args) or existing_basetemp:
         return
     basetemp = _unique_default_basetemp(repo_root)
     basetemp.parent.mkdir(parents=True, exist_ok=True)

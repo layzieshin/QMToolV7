@@ -110,17 +110,28 @@ if ($resolvedTarget) {
                     Add-HostFailure "GIT_INDEX_LOCKED" "The target worktree already has an index.lock; preserve it and stop competing writers."
                     throw "Git index is locked by another or interrupted writer."
                 }
+                $gitDirsToProbe = [System.Collections.Generic.List[string]]::new()
                 $adminRoot = Split-Path -Parent $indexPath
-                $gitProbe = Join-Path $adminRoot ("qmtool-write-probe-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
-                $stream = [System.IO.File]::Open(
-                    $gitProbe,
-                    [System.IO.FileMode]::CreateNew,
-                    [System.IO.FileAccess]::Write,
-                    [System.IO.FileShare]::None
-                )
-                $stream.Dispose()
-                Remove-Item -LiteralPath $gitProbe -Force
-                $gitProbe = $null
+                $gitDirsToProbe.Add($adminRoot)
+                $commonDir = (& git -C $resolvedTarget rev-parse --git-common-dir 2>$null).Trim()
+                if ($LASTEXITCODE -eq 0 -and $commonDir) {
+                    $commonDir = Resolve-GitPath $resolvedTarget $commonDir
+                    if (-not $gitDirsToProbe.Contains($commonDir)) {
+                        $gitDirsToProbe.Add($commonDir)
+                    }
+                }
+                foreach ($probeDir in $gitDirsToProbe) {
+                    $gitProbe = Join-Path $probeDir ("qmtool-write-probe-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
+                    $stream = [System.IO.File]::Open(
+                        $gitProbe,
+                        [System.IO.FileMode]::CreateNew,
+                        [System.IO.FileAccess]::Write,
+                        [System.IO.FileShare]::None
+                    )
+                    $stream.Dispose()
+                    Remove-Item -LiteralPath $gitProbe -Force
+                    $gitProbe = $null
+                }
                 Set-HostCheck "git_worktree_metadata_writable" $true
             }
             catch {
@@ -185,7 +196,7 @@ if ($RequireCursorCli) {
     $deadProxyNames = [System.Collections.Generic.List[string]]::new()
     foreach ($name in @("ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY")) {
         $value = [Environment]::GetEnvironmentVariable($name, "Process")
-        if ($value -and $value -match "(?i)^https?://(127\.0\.0\.1|localhost|\[::1\]):9/?$") {
+        if ($value -and $value -match "(?i)^(?:https?|socks5?)://(127\.0\.0\.1|localhost|\[::1\]):9/?$") {
             $deadProxyNames.Add($name)
         }
     }

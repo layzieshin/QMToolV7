@@ -89,6 +89,29 @@ def test_default_basetemp_is_short_unique_and_explicit_override_is_preserved() -
     assert first != second
 
 
+def test_direct_pytest_preserves_basetemp_from_pytest_addopts(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_addopts_basetemp.py"
+    custom_basetemp = tmp_path / "custom-basetemp"
+    custom_basetemp_posix = custom_basetemp.as_posix()
+    smoke.write_text(
+        "from pathlib import Path\n"
+        "def test_basetemp(pytestconfig):\n"
+        f"    assert Path(str(pytestconfig.option.basetemp)).resolve() == Path(r'{custom_basetemp}').resolve()\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["PYTEST_ADDOPTS"] = f"--basetemp={custom_basetemp_posix}"
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", str(smoke), "-q", "-p", "no:cacheprovider"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
 def test_direct_pytest_process_uses_unique_repository_local_default(tmp_path: Path) -> None:
     smoke = tmp_path / "test_direct_default.py"
     smoke.write_text(
@@ -131,9 +154,19 @@ def test_execution_host_preflight_accepts_python_temp_roundtrip() -> None:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell execution-host contract is Windows-only")
-def test_execution_host_preflight_rejects_disabled_cursor_proxy_without_repairing_it() -> None:
+@pytest.mark.parametrize(
+    ("proxy_name", "proxy_value"),
+    [
+        ("HTTP_PROXY", "http://127.0.0.1:9"),
+        ("ALL_PROXY", "socks5://127.0.0.1:9"),
+    ],
+)
+def test_execution_host_preflight_rejects_disabled_cursor_proxy_without_repairing_it(
+    proxy_name: str,
+    proxy_value: str,
+) -> None:
     env = dict(os.environ)
-    env["HTTP_PROXY"] = "http://127.0.0.1:9"
+    env[proxy_name] = proxy_value
     completed = _run_powershell(
         TOOLS / "assert-execution-host.ps1",
         "-TargetRoot",
@@ -147,6 +180,21 @@ def test_execution_host_preflight_rejects_disabled_cursor_proxy_without_repairin
     assert payload["status"] == "EXECUTION_HOST_REQUIRED"
     assert any(item["code"] == "CURSOR_NETWORK_BLOCKED" for item in payload["failures"])
     assert "127.0.0.1:9" not in completed.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell execution-host contract is Windows-only")
+def test_execution_host_preflight_accepts_git_metadata_write_probe() -> None:
+    completed = _run_powershell(
+        TOOLS / "assert-execution-host.ps1",
+        "-TargetRoot",
+        str(ROOT),
+        "-RequireGitWrite",
+        "-Json",
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    payload = json.loads(completed.stdout)
+    assert payload["status"] == "READY"
+    assert payload["checks"]["git_worktree_metadata_writable"] == "PASS"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell execution-host contract is Windows-only")
