@@ -107,6 +107,21 @@ def test_verify_password_and_asset_roundtrip(tmp_path: Path) -> None:
     assert verify.json()["ok"] is True
 
 
+def test_verify_password_invalid_returns_403_password_invalid(tmp_path: Path) -> None:
+    container, _users = _build_signature_backend(tmp_path)
+    client = TestClient(create_app(container))
+    editor = _login(client, "editor", "editorpass01")
+
+    verify = client.post(
+        "/api/v1/signature/verify-password",
+        headers=_auth(editor),
+        json={"password": "wrong-password"},
+    )
+    assert verify.status_code == 403, verify.text
+    detail = verify.json()["detail"]
+    assert detail["error"] == "password_invalid"
+
+
 def test_standalone_sign_upload_handle(tmp_path: Path) -> None:
     if importlib.util.find_spec("pypdf") is None or importlib.util.find_spec("reportlab") is None:
         pytest.skip("visual signing dependencies missing")

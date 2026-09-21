@@ -29,7 +29,11 @@ const messageKey = computed(() => {
 const alertRole = computed(() => (bootstrap.banner === "restored" ? "status" : "alert"));
 
 const showRetry = computed(
-  () => bootstrap.banner === "offline" || bootstrap.banner === "reconnecting",
+  () =>
+    bootstrap.banner === "offline" ||
+    bootstrap.banner === "reconnecting" ||
+    bootstrap.banner === "maintenance" ||
+    bootstrap.banner === "degraded",
 );
 
 async function onRetry(): Promise<void> {

@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-import type { DocumentArtifactModel, VersionStateResponse } from "../../api/client";
+import { artifactDownloadUrl, type DocumentArtifactModel, type VersionStateResponse } from "../../api/client";
 import PdfViewer from "./PdfViewer.vue";
 import { usePdfPreview } from "../../composables/usePdfPreview";
 
@@ -35,6 +35,12 @@ const previewEnabled = computed(() =>
   ),
 );
 
+const downloadEnabled = computed(() =>
+  (props.detail?.allowed_actions ?? []).some(
+    (action) => action.code === "download" && action.enabled,
+  ),
+);
+
 const authoritativeArtifacts = computed(() =>
   artifactsAuthoritative.value ? props.artifacts : [],
 );
@@ -44,6 +50,18 @@ const releasedArtifact = computed(() =>
     (artifact) => artifact.artifact_type === RELEASED_TYPE && artifact.is_current,
   ) ?? null,
 );
+
+const showDownload = computed(
+  () =>
+    artifactsAuthoritative.value &&
+    Boolean(releasedArtifact.value) &&
+    downloadEnabled.value,
+);
+
+const downloadHref = computed(() => {
+  const artifact = releasedArtifact.value;
+  return artifact ? artifactDownloadUrl(artifact.artifact_id) : null;
+});
 
 const signedArtifact = computed(() =>
   authoritativeArtifacts.value.find(
@@ -134,6 +152,14 @@ function artifactLabel(type: string): string {
       <li v-if="releasedArtifact" data-testid="released-artifact-entry">
         {{ artifactLabel(RELEASED_TYPE) }} — v{{ releasedArtifact.version }}
         <span class="released-artifact-panel__immutable">{{ t("signature.released.immutable") }}</span>
+        <a
+          v-if="showDownload && downloadHref"
+          :href="downloadHref"
+          class="released-artifact-panel__download"
+          data-testid="released-artifact-download"
+        >
+          {{ t("documents.action.download") }}
+        </a>
       </li>
     </ul>
 
@@ -175,5 +201,9 @@ function artifactLabel(type: string): string {
 .released-artifact-panel__immutable {
   font-size: 0.875rem;
   color: rgba(0, 0, 0, 0.6);
+}
+
+.released-artifact-panel__download {
+  margin-left: 0.5rem;
 }
 </style>

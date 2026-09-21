@@ -264,6 +264,35 @@ export async function fetchArtifactPreviewBlob(artifactId: string): Promise<Blob
   return response.blob();
 }
 
+/** Same-origin GET URL for controlled artifact download (cookie session; no credentials in URL). */
+export function artifactDownloadUrl(artifactId: string): string {
+  return `${API_PREFIX}/documents/artifacts/${encodeDocumentPathSegment(artifactId)}/download`;
+}
+
+export async function verifySignaturePassword(password: string): Promise<void> {
+  await bootstrapCsrf();
+  const response = await apiFetch("/signature/verify-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+    csrf: true,
+  });
+  const text = await response.text();
+  if (response.ok) {
+    if (text) {
+      const payload = JSON.parse(text) as { ok?: boolean };
+      if (payload.ok) {
+        return;
+      }
+    }
+  }
+  throw new ApiTransportError(
+    `HTTP ${response.status}`,
+    response.status,
+    parseErrorBody(text),
+  );
+}
+
 export async function fetchWorkflowComments(
   documentId: string,
   version: number,

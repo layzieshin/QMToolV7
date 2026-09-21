@@ -23,7 +23,7 @@ vi.hoisted(() => {
   register(pathToFileURL(loaderPath), pathToFileURL(join(process.cwd(), "package.json")));
 });
 
-import type { DocumentArtifactModel, VersionStateResponse } from "../../api/client";
+import { artifactDownloadUrl, type DocumentArtifactModel, type VersionStateResponse } from "../../api/client";
 import ReleasedArtifactPanel from "../../components/documents/ReleasedArtifactPanel.vue";
 import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
@@ -54,24 +54,34 @@ function artifact(type: string, id: string): DocumentArtifactModel {
   };
 }
 
-function detailWithPreview(enabled: boolean): VersionStateResponse {
+function actionDescriptor(code: string, enabled: boolean) {
+  return {
+    code,
+    enabled,
+    destructive: false,
+    label_key: `documents.action.${code}`,
+    requires_confirmation: false,
+    requires_reason: false,
+    severity: "info" as const,
+    disabled_reason: enabled ? null : "blocked",
+    signature_required: false,
+    assignment_kind: null,
+  };
+}
+
+function detailWithActions(
+  previewEnabled: boolean,
+  downloadEnabled = false,
+): VersionStateResponse {
+  const allowed = [actionDescriptor("preview", previewEnabled)];
+  if (downloadEnabled) {
+    allowed.push(actionDescriptor("download", true));
+  }
+  const available = allowed.filter((action) => action.enabled).map((action) => action.code);
   return {
     etag: "evt-1",
-    allowed_actions: [
-      {
-        code: "preview",
-        enabled,
-        destructive: false,
-        label_key: "documents.action.preview",
-        requires_confirmation: false,
-        requires_reason: false,
-        severity: "info",
-        disabled_reason: null,
-        signature_required: false,
-        assignment_kind: null,
-      },
-    ],
-    available_actions: enabled ? ["preview"] : [],
+    allowed_actions: allowed,
+    available_actions: available,
     state: {
       document_id: "DOC-1",
       version: 1,
@@ -80,6 +90,10 @@ function detailWithPreview(enabled: boolean): VersionStateResponse {
       assignments: { editors: [], reviewers: [], approvers: [] },
     },
   } as unknown as VersionStateResponse;
+}
+
+function detailWithPreview(enabled: boolean): VersionStateResponse {
+  return detailWithActions(enabled, false);
 }
 
 describe("ReleasedArtifactPanel", () => {
@@ -212,5 +226,74 @@ describe("ReleasedArtifactPanel", () => {
       expect(fetchArtifactPreviewBlobMock).not.toHaveBeenCalled();
     });
     expect(wrapper.find('[data-testid="released-preview-unavailable"]').exists()).toBe(true);
+  });
+
+  it("shows download only when RELEASED_PDF is authoritative and download action is enabled", () => {
+    const wrapper = mount(ReleasedArtifactPanel, {
+      props: {
+        detail: detailWithActions(true, true),
+        artifacts: [artifact("RELEASED_PDF", "released-1")],
+        signedSuccess: true,
+        artifactsUnknown: false,
+      },
+      global: { plugins: [i18n, vuetify] },
+    });
+    const link = wrapper.get('[data-testid="released-artifact-download"]');
+    expect(link.text()).toContain("Herunterladen");
+    expect(link.attributes("href")).toBe(artifactDownloadUrl("released-1"));
+  });
+
+  it("hides download when download action is disabled even with preview", () => {
+    const wrapper = mount(ReleasedArtifactPanel, {
+      props: {
+        detail: detailWithActions(true, false),
+        artifacts: [artifact("RELEASED_PDF", "released-1")],
+        signedSuccess: true,
+        artifactsUnknown: false,
+      },
+      global: { plugins: [i18n, vuetify] },
+    });
+    expect(wrapper.find('[data-testid="released-artifact-download"]').exists()).toBe(false);
+  });
+
+  it("hides download when artifacts are unknown or refresh failed", () => {
+    const detail = detailWithActions(true, true);
+    const unknownWrapper = mount(ReleasedArtifactPanel, {
+      props: {
+        detail,
+        artifacts: [artifact("RELEASED_PDF", "released-1")],
+        signedSuccess: true,
+        artifactsUnknown: true,
+      },
+      global: { plugins: [i18n, vuetify] },
+    });
+    expect(unknownWrapper.find('[data-testid="released-artifact-download"]').exists()).toBe(false);
+
+    const errorWrapper = mount(ReleasedArtifactPanel, {
+      props: {
+        detail,
+        artifacts: [artifact("RELEASED_PDF", "released-1")],
+        signedSuccess: true,
+        artifactsUnknown: true,
+        artifactRefreshError: "Artefakte konnten nicht geladen werden.",
+      },
+      global: { plugins: [i18n, vuetify] },
+    });
+    expect(errorWrapper.find('[data-testid="released-artifact-download"]').exists()).toBe(false);
+  });
+
+  it("encodes artifact ids in download URLs", () => {
+    const wrapper = mount(ReleasedArtifactPanel, {
+      props: {
+        detail: detailWithActions(true, true),
+        artifacts: [artifact("RELEASED_PDF", "release/id+special")],
+        signedSuccess: true,
+        artifactsUnknown: false,
+      },
+      global: { plugins: [i18n, vuetify] },
+    });
+    expect(wrapper.get('[data-testid="released-artifact-download"]').attributes("href")).toBe(
+      artifactDownloadUrl("release/id+special"),
+    );
   });
 });

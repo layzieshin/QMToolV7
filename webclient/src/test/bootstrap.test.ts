@@ -230,6 +230,33 @@ describe("bootstrap state and session API", () => {
     expect(useBootstrapState().banner).toBe("hidden");
   });
 
+  it("recovers from maintenance and degraded via explicit retry", async () => {
+    fetchMock.mockImplementationOnce(async () =>
+      jsonResponse(200, connectionOk({ maintenance: true, writes_allowed: false })),
+    );
+    await refreshConnection();
+    expect(useBootstrapState().banner).toBe("maintenance");
+    expect(useBootstrapState().writesAllowed).toBe(false);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, connectionOk()));
+    await retryConnection();
+    expect(useBootstrapState().online).toBe(true);
+    expect(useBootstrapState().writesAllowed).toBe(true);
+    expect(useBootstrapState().banner).toBe("hidden");
+
+    fetchMock.mockImplementationOnce(async () =>
+      jsonResponse(200, connectionOk({ status: "degraded", writes_allowed: false })),
+    );
+    await refreshConnection();
+    expect(useBootstrapState().banner).toBe("degraded");
+    expect(useBootstrapState().writesAllowed).toBe(false);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, connectionOk()));
+    await retryConnection();
+    expect(useBootstrapState().writesAllowed).toBe(true);
+    expect(useBootstrapState().banner).toBe("hidden");
+  });
+
   it("does not persist bootstrap data in web storage", async () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     fetchMock.mockImplementation(async ({ url }) => {

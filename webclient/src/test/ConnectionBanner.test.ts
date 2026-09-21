@@ -191,6 +191,31 @@ describe("ConnectionBanner", () => {
     expect(retryConnectionMock).toHaveBeenCalledTimes(1);
     expect(wrapper.get("[data-testid=connection-banner]").attributes("role")).toBe("alert");
   });
+
+  it("shows retry on maintenance and degraded banners", async () => {
+    for (const mode of ["maintenance", "degraded"] as const) {
+      __resetBootstrapStateForTest();
+      __setBootstrapBannerForTest(mode);
+      const wrapper = mountWithPlugins(ConnectionBanner);
+      await flushPromises();
+      expect(wrapper.find("[data-testid=connection-banner-retry]").exists()).toBe(true);
+      wrapper.unmount();
+    }
+  });
+
+  it("does not show retry on restored banner", async () => {
+    __setBootstrapBannerForTest("restored");
+    const wrapper = mountWithPlugins(ConnectionBanner);
+    await flushPromises();
+    expect(wrapper.find("[data-testid=connection-banner-retry]").exists()).toBe(false);
+  });
+
+  it("calls retry exactly once from maintenance banner", async () => {
+    __setBootstrapBannerForTest("maintenance");
+    const wrapper = mountWithPlugins(ConnectionBanner);
+    await wrapper.get("[data-testid=connection-banner-retry]").trigger("click");
+    expect(retryConnectionMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("ModuleNavigation", () => {

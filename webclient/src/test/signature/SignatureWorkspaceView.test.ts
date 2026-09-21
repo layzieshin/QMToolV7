@@ -51,6 +51,7 @@ const fetchActiveSignatureAssetContentMock = vi.hoisted(() => vi.fn());
 const fetchSignatureTemplatesUserMock = vi.hoisted(() => vi.fn());
 const fetchSignatureTemplatesGlobalMock = vi.hoisted(() => vi.fn());
 const fetchSignatureTemplateSuggestionMock = vi.hoisted(() => vi.fn());
+const verifySignaturePasswordMock = vi.hoisted(() => vi.fn());
 const mutateMock = vi.hoisted(() => vi.fn());
 const getDocumentMock = vi.hoisted(() => vi.fn());
 const destroyPdfTaskMock = vi.hoisted(() => vi.fn());
@@ -68,6 +69,7 @@ vi.mock("../../api/client", async (importOriginal) => {
     fetchSignatureTemplatesUser: fetchSignatureTemplatesUserMock,
     fetchSignatureTemplatesGlobal: fetchSignatureTemplatesGlobalMock,
     fetchSignatureTemplateSuggestion: fetchSignatureTemplateSuggestionMock,
+    verifySignaturePassword: verifySignaturePasswordMock,
   };
 });
 
@@ -717,8 +719,11 @@ describe("SignatureWorkspaceView", () => {
     fetchSignatureTemplatesUserMock.mockReset();
     fetchSignatureTemplatesGlobalMock.mockReset();
     fetchSignatureTemplateSuggestionMock.mockReset();
+    verifySignaturePasswordMock.mockReset();
     mutateMock.mockReset();
     setupPdfJsMocks();
+
+    verifySignaturePasswordMock.mockResolvedValue(undefined);
 
     fetchDocumentVersionMock.mockResolvedValue(baseDetail());
     mutateMock.mockResolvedValue({
@@ -999,6 +1004,7 @@ describe("SignatureWorkspaceView", () => {
     (document.body.querySelector('[data-testid="reauth-submit"]') as HTMLElement).click();
     await flushPromises();
 
+    expect(verifySignaturePasswordMock).toHaveBeenCalledWith("secret");
     expect(mutateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "POST",
@@ -1010,6 +1016,63 @@ describe("SignatureWorkspaceView", () => {
             }),
           }),
         }),
+      }),
+    );
+    host.remove();
+  });
+
+  it("verifies password before workflow mutation and blocks workflow on failed verification", async () => {
+    const { wrapper, host } = await mountWorkspace();
+    verifySignaturePasswordMock.mockRejectedValueOnce(
+      new ApiTransportError("HTTP 403", 403, {
+        detail: { error: "password_invalid", message: "password verification failed" },
+      }),
+    );
+
+    await wrapper.get('[data-testid="signature-sign-button"]').trigger("click");
+    await flushPromises();
+    const password = queryReauthPassword();
+    password.value = "wrong";
+    password.dispatchEvent(new Event("input"));
+    await flushPromises();
+    (document.body.querySelector('[data-testid="reauth-submit"]') as HTMLElement).click();
+    await flushPromises();
+
+    expect(verifySignaturePasswordMock).toHaveBeenCalledWith("wrong");
+    expect(mutateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/documents/versions/DOC-1/1/workflow/editing-complete",
+      }),
+    );
+    expect(document.body.querySelector('[data-testid="reauth-dialog"]')?.textContent).toContain(
+      "Das Passwort ist ungültig",
+    );
+    host.remove();
+  });
+
+  it("maps non-password 403 verification failures to forbidden", async () => {
+    const { wrapper, host } = await mountWorkspace();
+    verifySignaturePasswordMock.mockRejectedValueOnce(
+      new ApiTransportError("HTTP 403", 403, {
+        detail: { error: "forbidden", message: "not allowed" },
+      }),
+    );
+
+    await wrapper.get('[data-testid="signature-sign-button"]').trigger("click");
+    await flushPromises();
+    const password = queryReauthPassword();
+    password.value = "secret";
+    password.dispatchEvent(new Event("input"));
+    await flushPromises();
+    (document.body.querySelector('[data-testid="reauth-submit"]') as HTMLElement).click();
+    await flushPromises();
+
+    expect(document.body.querySelector('[data-testid="reauth-dialog"]')?.textContent).toContain(
+      "Diese Aktion ist nicht erlaubt",
+    );
+    expect(mutateMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/documents/versions/DOC-1/1/workflow/editing-complete",
       }),
     );
     host.remove();

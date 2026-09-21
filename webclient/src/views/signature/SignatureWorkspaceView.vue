@@ -13,6 +13,7 @@ import {
   fetchSignatureTemplateSuggestion,
   fetchSignatureTemplatesGlobal,
   fetchSignatureTemplatesUser,
+  verifySignaturePassword,
   pdfPreviewMimeType,
   signatureImageMimeType,
   type DocumentArtifactModel,
@@ -20,7 +21,7 @@ import {
   type SignatureTemplateModel,
   type VersionStateResponse,
 } from "../../api/client";
-import { mutationErrorI18nKey } from "../../api/errors";
+import { extractErrorDetail, mutationErrorI18nKey } from "../../api/errors";
 import {
   MutationClientError,
   MutationWritesBlockedError,
@@ -355,6 +356,32 @@ function mapLoadError(cause: unknown): string {
     return t(mutationErrorI18nKey(cause.kind));
   }
   return t("signature.workspace.errors.connection");
+}
+
+function mapReauthError(cause: unknown): string {
+  if (cause instanceof ApiTransportError) {
+    const detail = extractErrorDetail(cause.body);
+    if (cause.status === 403 && detail?.error === "password_invalid") {
+      return t("signature.reauth.invalidPassword");
+    }
+    switch (cause.status) {
+      case 401:
+        return t("api.errors.unauthorized");
+      case 403:
+        return t("api.errors.forbidden");
+      case 404:
+        return t("api.errors.notFound");
+      default:
+        return t("api.errors.transport");
+    }
+  }
+  if (cause instanceof MutationClientError) {
+    if (cause.kind === "forbidden" && cause.errorCode === "password_invalid") {
+      return t("signature.reauth.invalidPassword");
+    }
+    return t(mutationErrorI18nKey(cause.kind));
+  }
+  return t("api.errors.transport");
 }
 
 function findActionDescriptor(
@@ -837,6 +864,11 @@ async function submitSignature(password: string): Promise<void> {
   };
 
   try {
+    await verifySignaturePassword(trimmedPassword);
+    if (!isOperationActive(token)) {
+      return;
+    }
+
     const response = await mutate<VersionStateResponse>({
       method: "POST",
       path: workflowPath(code),
@@ -882,10 +914,7 @@ async function submitSignature(password: string): Promise<void> {
       });
       return;
     }
-    reauthError.value =
-      cause instanceof MutationClientError && cause.kind === "forbidden"
-        ? t("signature.reauth.invalidPassword")
-        : mapLoadError(cause);
+    reauthError.value = mapReauthError(cause);
   } finally {
     if (isOperationActive(token)) {
       reauthLoading.value = false;
