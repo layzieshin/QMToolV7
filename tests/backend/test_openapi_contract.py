@@ -196,8 +196,8 @@ def test_openapi_error_detail_and_available_actions_contract(monkeypatch) -> Non
         assert descriptor["properties"]["signature_required"]["type"] == "boolean"
         assert "assignment_kind" in descriptor["properties"]
         assignment_kind = descriptor["properties"]["assignment_kind"]
-        assert assignment_kind["type"] == "string"
-        assert assignment_kind["nullable"] is True
+        assert assignment_kind["anyOf"][0]["type"] == "string"
+        assert assignment_kind["anyOf"][1]["type"] == "null"
         assert "signature_required" in descriptor["required"]
         assert "assignment_kind" in descriptor["required"]
         state = model["properties"]["state"]

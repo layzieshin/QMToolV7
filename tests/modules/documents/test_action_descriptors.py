@@ -115,6 +115,31 @@ def test_descriptor_metadata_for_reject_archive_and_abort() -> None:
     assert start.severity == "info"
 
 
+def test_extend_validity_descriptor_reflects_signature_requirement() -> None:
+    state = replace(
+        _planned_state(document_id="DOC-DESC-EXTEND-SIG"),
+        status=DocumentStatus.APPROVED,
+        extension_count=0,
+    )
+    qmb_actor = _actor(user_id="qmb-1", role="User", is_qmb=True)
+    extend = next(
+        descriptor
+        for descriptor in action_descriptors_for_actor(state, qmb_actor)
+        if descriptor.code == "extend_validity"
+    )
+    assert extend.enabled is True
+    assert extend.signature_required is True
+
+    maxed_state = replace(state, extension_count=3)
+    extend_maxed = next(
+        descriptor
+        for descriptor in action_descriptors_for_actor(maxed_state, qmb_actor)
+        if descriptor.code == "extend_validity"
+    )
+    assert extend_maxed.enabled is True
+    assert extend_maxed.signature_required is False
+
+
 def _in_progress_state(
     *,
     document_id: str,

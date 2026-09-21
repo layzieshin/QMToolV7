@@ -1341,8 +1341,14 @@
             "items": {
               "properties": {
                 "assignment_kind": {
-                  "nullable": true,
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "code": {
                   "type": "string"
@@ -1551,8 +1557,14 @@
             "items": {
               "properties": {
                 "assignment_kind": {
-                  "nullable": true,
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "code": {
                   "type": "string"
@@ -2976,8 +2988,14 @@
             "items": {
               "properties": {
                 "assignment_kind": {
-                  "nullable": true,
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "code": {
                   "type": "string"

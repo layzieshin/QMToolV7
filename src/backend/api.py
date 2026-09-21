@@ -382,7 +382,12 @@ def _require_available_actions_on_state_responses(schema: dict[str, Any]) -> Non
             "destructive": {"type": "boolean"},
             "severity": {"type": "string", "enum": ["info", "warning", "danger"]},
             "signature_required": {"type": "boolean"},
-            "assignment_kind": {"type": "string", "nullable": True},
+            "assignment_kind": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"type": "null"},
+                ],
+            },
         },
     }
     for name in _DOCUMENTS_STATE_RESPONSE_SCHEMAS:

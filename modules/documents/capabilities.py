@@ -86,6 +86,16 @@ def _descriptor_metadata(action: str) -> dict[str, bool | Severity]:
     return {**_DEFAULT_DESCRIPTOR_METADATA, **_ACTION_DESCRIPTOR_METADATA.get(action, {})}
 
 
+def _descriptor_signature_required(
+    action: str,
+    state: DocumentVersionState,
+    decision,
+) -> bool:
+    if action == "extend_validity" and decision.allowed:
+        return state.extension_count < 3
+    return decision.signature_required
+
+
 def _artifact_access_enabled(
     state: DocumentVersionState,
     *,
@@ -142,7 +152,7 @@ def action_descriptors_for_actor(
                 requires_confirmation=bool(meta["requires_confirmation"]),
                 destructive=bool(meta["destructive"]),
                 severity=meta["severity"],  # type: ignore[arg-type]
-                signature_required=decision.signature_required,
+                signature_required=_descriptor_signature_required(action, state, decision),
                 assignment_kind=decision.assignment_kind,
             )
         )
