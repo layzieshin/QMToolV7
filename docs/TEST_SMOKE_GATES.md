@@ -166,8 +166,14 @@ Current INT00 runtime evidence: candidate
 
 ### DMS web slice (WEB01 — after WCON00 and INT00 PASS)
 
+WEB01 separates static/contract gates from Slot-2 live browser, visual, restart, maintenance,
+logout, and conflict evidence. Vitest/DOM checks cover bounded accessibility patterns only; axe
+or screenreader PASS is **not** claimed for WEB01.
+
+#### Static / non-live owners (WEB01-H preparation and full regression)
+
 ```powershell
-# Existing backend contracts used by the slice
+# Focused backend HTTP/OpenAPI contracts for the slice
 .\.venv\Scripts\python.exe -m pytest `
   tests\backend\test_auth_api.py `
   tests\backend\test_documents_http_api.py `
@@ -175,23 +181,70 @@ Current INT00 runtime evidence: candidate
   tests\backend\test_documents_concurrency_http.py `
   tests\backend\test_documents_artifacts_http.py `
   tests\backend\test_signature_http_api.py `
-  tests\backend\test_openapi_contract.py -q
+  tests\backend\test_openapi_contract.py -q -p no:cacheprovider
 
-# WEB01 components and production build
+# OpenAPI snapshot + TypeScript types zero-diff
+.\.venv\Scripts\python.exe scripts\export_openapi.py
 cd webclient
-npm ci
-npm test
-npm run build
+# Fresh clone/CI only; repeated local gates reuse the existing pinned node_modules cache.
+if (-not (Test-Path node_modules)) { npm ci }
+npm run generate:types
+git diff --exit-code ../docs/contracts/j04-m0-openapi.json src/api/openapi.d.ts
 
-# Controlled real-browser path; exact WEB01 E2E targets are owned by WEB01
-npm run test:e2e
+# WEB01 Vitest (DOM/a11y patterns only — no axe/screenreader gate)
+npm test
+
+# Production build (vue-tsc + Vite)
+npm run build
 cd ..
+
+# Package docs + architecture gates (full-regression slice)
+.\.venv\Scripts\python.exe -m pytest tests\docs\test_docs_consistency.py tests\interfaces\test_architecture_gates.py -q -p no:cacheprovider
+
+# Full non-live regression owner
+.\.venv\Scripts\python.exe -m pytest -m "not postgres and not j04_final_acceptance" -q -p no:cacheprovider
 ```
+
+Current full-regression evidence (`runtime_test_candidate_sha`
+`93eaf9854399dbd4afa509f3537570b199e74b44`):
+`build/ap-029-web01/full-regression-resume/20260921T170240Z/` — 1961 collected,
+1941 passed, 0 failed, 20 expected `not_in_m0` skips; Vitest 406; vue-tsc+Vite PASS;
+docs+architecture 120 passed;
+OpenAPI/types zero-diff; first_red null.
+
+#### Slot-2 live browser owners (never bare `pytest -m postgres`)
+
+WEB01-H — conflict proof (production ServiceHost + Chromium):
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_postgres_live_tests.py `
+  tests\acceptance\test_web01_conflict_realprocess.py `
+  --basetemp build\pytest-web01-h-<stamp>
+```
+
+WEB01-K1 — product slice, restart/maintenance/logout/conflict handshakes, 16-screen visual
+acceptance:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_postgres_live_tests.py `
+  tests\acceptance\test_web01_product_slice.py `
+  --basetemp build\pytest-web01-k1-<stamp>
+```
+
+Current K1 evidence: visual dir `build/ap-029-web01/visual/k1/20260921T165005868886Z/`;
+Playwright 1 PASS, 0 unexpected/flaky; five handshakes; 16/16 screenshots; independent Codex
+visual review `VISUAL_ACCEPTANCE_PASS`.
+`webclient/dist` must exist (`npm run build`) before WEB01-H/K1 live gates.
 
 WEB01 evidence must cover two actor sessions, server-provided actions, ETag conflict, comments,
 PDF preview versus controlled download, signature reauthentication, audit/history and restart.
 Legacy `tests/interfaces`/PyQt suites may remain regression signals but are not WEB01 onboarding,
 product acceptance or browser evidence.
+
+**Non-blocking follow-up:** UX-D37 remains partially outstanding for real human-readable comment
+author names because the server/HTTP contract does not yet provide them completely. The UI does
+not invent names and masks technical UUID/ID values as „Unbekannter Autor“. Owner: backend/HTTP
+contract follow-up; mandatory PILOT00 tracking — no WEB01 backend fix.
 
 ### Track B SRP prep/splits / module-platform
 - `.\.venv\Scripts\python.exe -m pytest tests/modules -q`

@@ -187,35 +187,30 @@ Historische oder zu klaerende Artefakte:
 - `docs/RELEASE_READINESS.md`: P2/History, P0 Operations/Test Gates gewinnen
 
 ## Naechste freigegebene Aktion
-Die naechste freizugebende Aktion ist ausschliesslich WEB01 als
-Documents/Signature-Webworkflow. INT00 ist `PASS` auf
-`runtime_test_candidate_sha` `8d2e4615b4e52a2113055e7e9113daa1570b78f3`.
-WEB01 bleibt TODO und NOT RUN bis zu separater Freigabe. WEB01 benoetigt
-eine separate Freigabe und einen eigenen Worktree. INT00 implementiert keine
-Vue-Produkt-Screens und startet WEB01 nicht. Branch-/Worktree-Cleanup
-bleibt separat und ist keine Voraussetzung fuer den fachlichen INT00-PASS.
-WCON00 ist `PASS` und wurde via PR #43 per Squash nach `main` @
-`fc61887f77c4e8e7d3442af8e7c5f5eb534f193e` gemergt. Vor dem Merge waren beide
-CI-Jobs SUCCESS (34518815271: quality-gates und postgres-usermanagement) und
-12/12 Review-Konversationen resolved. Eine dritte Codex-Runde bleibt
-unautorisiert.
-**OPS00 ist PASS** und wurde via PR #41 per Squash nach `main` @
-`98feef61dcfe0e40741c254da16feb9383a0d1b0` gemergt. Vor dem Merge waren beide
-CI-Jobs SUCCESS und 11/11 Review-Konversationen resolved. Die technische Evidence
-bleibt `build/ap-029-ops00/final-closeout-20260902/` (262 package-integration
-passed, 2 erwartete Live-Skips; Slot-2 9/9 PASS). External Review bleibt ehrlich
-`BOUNDED_COMPLETE` (2/2; kein Codex-PASS, keine dritte Codex-Runde).
-WCON00 hat ausschliesslich die in UX00 als WEB01-blockierend klassifizierten
-technischen Contracts geschlossen; es implementiert keine WEB01-Screens.
-**PG01** ist `PASS`; PR #39 wurde per Squash nach `main` @
-`58caddac224ab46ed63392fba92fc11b94e9ddf2` gemergt. **UX00 ist PASS** und auf
-`main` integriert via PR #40 @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef`;
-kanonische P0-UX und P1-Gap-Matrix liegen vor.
-**WEB00 PASS** (lokal `da9db323…` auf `feature/ap-029-web00`). **PG00 PASS** (gemergt `8a67f67`, PR #32). INV00 ist PASS (`90cefa4`).
-PR #49 schloss die ServiceHost-/HTTPS-Shutdown-Voraussetzung per Squash nach
-`main` @ `a388a5bfee02c4c94d8e9ef87a92aee2b4a3f2fe`. INT00-Final-Audit ist
-`HUMAN_AUTHORIZED_INDEPENDENT_CODEX_FINAL_AUDIT_PASS`; natives Terra/Sol
-wurde nicht ausgefuehrt und nicht attestiert.
+Die naechste freizugebende Aktion ist ausschliesslich PILOT00 als
+Pilot-Readiness-Paket (Security, Restore, Deployment, Betrieb, Human-Smoke).
+**WEB01 ist `PASS`** auf `runtime_test_candidate_sha`
+`93eaf9854399dbd4afa509f3537570b199e74b44` gegen Basis
+`f4dd2ba9aaac31f378dcf7fe991c551d19049f3e`. K1/Visual-Evidence:
+`build/ap-029-web01/visual/k1/20260921T165005868886Z/`; Full Regression:
+`build/ap-029-web01/full-regression-resume/20260921T170240Z/` (first_red null).
+Unabhaengige Codex-Audits `FINAL_PASS_ARCH` / `FINAL_PASS_EVIDENCE`. Native
+Terra/Luna/Sol wurde nicht ausgefuehrt und nicht attestiert. `docs_closeout_sha`
+ist der spaetere K2-Docs-Commit und kein Runtime-SHA. Kein WEB01-PR/Merge-SHA
+bis zu separater Autorisierung. **PILOT00 bleibt TODO und NOT RUN** bis zu
+separater Freigabe. PILOT00 startet nicht automatisch mit WEB01-PASS.
+Branch-/Worktree-Cleanup bleibt separat und ist keine Voraussetzung fuer den
+fachlichen WEB01-PASS. INT00 ist `PASS` auf
+`runtime_test_candidate_sha` `8d2e4615b4e52a2113055e7e9113daa1570b78f3` und
+implementierte keine Vue-Produkt-Screens. WCON00 ist `PASS` (PR #43 @
+`fc61887f77c4e8e7d3442af8e7c5f5eb534f193e`). **OPS00 ist PASS** (PR #41 @
+`98feef61dcfe0e40741c254da16feb9383a0d1b0`; Evidence
+`build/ap-029-ops00/final-closeout-20260902/`). **PG01** ist `PASS` (PR #39 @
+`58caddac224ab46ed63392fba92fc11b94e9ddf2`). **UX00 ist PASS** (PR #40 @
+`756160c6e388b43afe3ef985cbe3d34767e6b0ef`). **WEB00 PASS** (`da9db323…`).
+**PG00 PASS** (PR #32). PR #49 @ `a388a5bf…` schloss die ServiceHost-Voraussetzung.
+WEB01-Vorbedingungen auf `main`: PR #52 @ `786ed91`, PR #53 @ `eefaf40`, PR #54
+@ `56f31aa`, PR #55 @ `f4dd2ba`.
 M0-EV01 (verspäteter GOV01-R5-Reviewer `e5b22ec9-4fb5-4357-969b-b8df6552eee4`) ist
 reconciliert als non-authoritative / superseded PASS auf Fingerprint `3244c87f…`;
 autoritativ bleibt R5 `r5-20260821T133945364Z` / Agent `5e997705…`. Die Gate-Überlappung
