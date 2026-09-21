@@ -192,8 +192,22 @@ def test_openapi_error_detail_and_available_actions_contract(monkeypatch) -> Non
         assert "requires_confirmation" in descriptor["properties"]
         assert "destructive" in descriptor["properties"]
         assert "severity" in descriptor["properties"]
+        assert "signature_required" in descriptor["properties"]
+        assert descriptor["properties"]["signature_required"]["type"] == "boolean"
+        assert "assignment_kind" in descriptor["properties"]
+        assignment_kind = descriptor["properties"]["assignment_kind"]
+        assert assignment_kind["type"] == "string"
+        assert assignment_kind["nullable"] is True
+        assert "signature_required" in descriptor["required"]
+        assert "assignment_kind" in descriptor["required"]
         state = model["properties"]["state"]
         assert state.get("$ref") == "#/components/schemas/DocumentVersionStateModel"
+    action_descriptor_model = schemas["ActionDescriptorModel"]
+    assert "signature_required" in action_descriptor_model["required"]
+    assert "assignment_kind" in action_descriptor_model["required"]
+    assignment_kind_model = action_descriptor_model["properties"]["assignment_kind"]
+    assert assignment_kind_model["anyOf"][0]["type"] == "string"
+    assert assignment_kind_model["anyOf"][1]["type"] == "null"
     assert "/ready" in document["paths"]
     assert "/health" in document["paths"]
 

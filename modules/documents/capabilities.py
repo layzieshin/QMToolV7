@@ -31,6 +31,8 @@ class ActionDescriptor:
     requires_confirmation: bool
     destructive: bool
     severity: Severity
+    signature_required: bool
+    assignment_kind: str | None
 
 
 _ACTION_DESCRIPTOR_METADATA: dict[str, dict[str, bool | Severity]] = {
@@ -113,6 +115,8 @@ def _artifact_access_descriptors(
                 requires_confirmation=False,
                 destructive=False,
                 severity="info",
+                signature_required=False,
+                assignment_kind=None,
             )
         )
     return descriptors
@@ -138,6 +142,8 @@ def action_descriptors_for_actor(
                 requires_confirmation=bool(meta["requires_confirmation"]),
                 destructive=bool(meta["destructive"]),
                 severity=meta["severity"],  # type: ignore[arg-type]
+                signature_required=decision.signature_required,
+                assignment_kind=decision.assignment_kind,
             )
         )
     descriptors.extend(_artifact_access_descriptors(state, user_id=user_id, role=role))

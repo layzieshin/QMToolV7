@@ -3,6 +3,17 @@
     "schemas": {
       "ActionDescriptorModel": {
         "properties": {
+          "assignment_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Kind"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -41,6 +52,10 @@
           "severity": {
             "title": "Severity",
             "type": "string"
+          },
+          "signature_required": {
+            "title": "Signature Required",
+            "type": "boolean"
           }
         },
         "required": [
@@ -50,7 +65,9 @@
           "requires_reason",
           "requires_confirmation",
           "destructive",
-          "severity"
+          "severity",
+          "signature_required",
+          "assignment_kind"
         ],
         "title": "ActionDescriptorModel",
         "type": "object"
@@ -1323,6 +1340,10 @@
             "description": "Server-computed action descriptors for the confirmed actor.",
             "items": {
               "properties": {
+                "assignment_kind": {
+                  "nullable": true,
+                  "type": "string"
+                },
                 "code": {
                   "type": "string"
                 },
@@ -1352,6 +1373,9 @@
                     "danger"
                   ],
                   "type": "string"
+                },
+                "signature_required": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -1361,7 +1385,9 @@
                 "requires_reason",
                 "requires_confirmation",
                 "destructive",
-                "severity"
+                "severity",
+                "signature_required",
+                "assignment_kind"
               ],
               "type": "object"
             },
@@ -1524,6 +1550,10 @@
             "description": "Server-computed action descriptors for the confirmed actor.",
             "items": {
               "properties": {
+                "assignment_kind": {
+                  "nullable": true,
+                  "type": "string"
+                },
                 "code": {
                   "type": "string"
                 },
@@ -1553,6 +1583,9 @@
                     "danger"
                   ],
                   "type": "string"
+                },
+                "signature_required": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -1562,7 +1595,9 @@
                 "requires_reason",
                 "requires_confirmation",
                 "destructive",
-                "severity"
+                "severity",
+                "signature_required",
+                "assignment_kind"
               ],
               "type": "object"
             },
@@ -2940,6 +2975,10 @@
             "description": "Server-computed action descriptors for the confirmed actor.",
             "items": {
               "properties": {
+                "assignment_kind": {
+                  "nullable": true,
+                  "type": "string"
+                },
                 "code": {
                   "type": "string"
                 },
@@ -2969,6 +3008,9 @@
                     "danger"
                   ],
                   "type": "string"
+                },
+                "signature_required": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -2978,7 +3020,9 @@
                 "requires_reason",
                 "requires_confirmation",
                 "destructive",
-                "severity"
+                "severity",
+                "signature_required",
+                "assignment_kind"
               ],
               "type": "object"
             },

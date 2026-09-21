@@ -729,6 +729,92 @@ def test_pool_list_by_status(tmp_path: Path) -> None:
     assert any(row["document_id"] == "DOC-POOL-1" and row["status"] == "IN_PROGRESS" for row in rows)
 
 
+def test_allowed_actions_include_workflow_metadata(tmp_path: Path) -> None:
+    container, users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    tokens = _create_assign_start(client, users, doc_id="DOC-ACTION-META")
+    response = client.get(
+        "/api/v1/documents/versions/DOC-ACTION-META/1",
+        headers=_auth(tokens["editor"]),
+    )
+    assert response.status_code == 200, response.text
+    allowed_actions = response.json()["allowed_actions"]
+    assert allowed_actions
+    by_code = {item["code"]: item for item in allowed_actions}
+    for item in allowed_actions:
+        assert "signature_required" in item
+        assert isinstance(item["signature_required"], bool)
+        assert "assignment_kind" in item
+        assert item["assignment_kind"] is None or isinstance(item["assignment_kind"], str)
+
+    complete_editing = by_code["complete_editing"]
+    assert complete_editing["enabled"] is True
+    assert complete_editing["signature_required"] is False
+    assert complete_editing["assignment_kind"] == "editor"
+
+    assign_roles = by_code["assign_roles"]
+    assert assign_roles["assignment_kind"] == "workflow_roles"
+    assert assign_roles["signature_required"] is False
+
+    for code in ("preview", "download"):
+        artifact = by_code[code]
+        assert artifact["signature_required"] is False
+        assert artifact["assignment_kind"] is None
+
+    reviewer_response = client.get(
+        "/api/v1/documents/versions/DOC-ACTION-META/1",
+        headers=_auth(tokens["reviewer"]),
+    )
+    assert reviewer_response.status_code == 200, reviewer_response.text
+    reviewer_complete = next(
+        item
+        for item in reviewer_response.json()["allowed_actions"]
+        if item["code"] == "complete_editing"
+    )
+    assert reviewer_complete["enabled"] is False
+    assert reviewer_complete["disabled_reason"]
+    assert reviewer_complete["signature_required"] is False
+    assert reviewer_complete["assignment_kind"] == "editor"
+
+
+def test_allowed_actions_signature_required_on_long_release_profile(tmp_path: Path) -> None:
+    container, _users = _build_documents_backend_container(tmp_path)
+    client = TestClient(create_app(container))
+    admin = _login(client, "admin", "adminpass01")
+    created = client.post(
+        "/api/v1/documents/versions/create",
+        headers=_auth(admin),
+        json={
+            "document_id": "DOC-ACTION-META-SIGNED",
+            "version": 1,
+            "workflow_profile_id": "long_release",
+        },
+    )
+    assert created.status_code == 200, created.text
+    assigned = client.post(
+        "/api/v1/documents/versions/DOC-ACTION-META-SIGNED/1/workflow/assign-roles",
+        headers=_mutation_headers(admin, created),
+        json={"editors": ["editor"], "reviewers": ["reviewer"], "approvers": ["approver"]},
+    )
+    assert assigned.status_code == 200, assigned.text
+    started = client.post(
+        "/api/v1/documents/versions/DOC-ACTION-META-SIGNED/1/workflow/start",
+        headers=_mutation_headers(admin, assigned),
+        json={"profile_id": "long_release"},
+    )
+    assert started.status_code == 200, started.text
+    editor = _login(client, "editor", "editorpass01")
+    response = client.get(
+        "/api/v1/documents/versions/DOC-ACTION-META-SIGNED/1",
+        headers=_auth(editor),
+    )
+    assert response.status_code == 200, response.text
+    by_code = {item["code"]: item for item in response.json()["allowed_actions"]}
+    complete_editing = by_code["complete_editing"]
+    assert complete_editing["signature_required"] is True
+    assert complete_editing["assignment_kind"] == "editor"
+
+
 def test_version_read_after_restart(tmp_path: Path) -> None:
     """Restart readback of the same backend-owned documents.db (same-process TestClients)."""
     container, users = _build_documents_backend_container(tmp_path)

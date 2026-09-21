@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
@@ -13,6 +14,11 @@ from modules.documents.contracts import DocumentStatus, SystemRole, WorkflowProf
 from modules.usermanagement.contracts import issue_user_context
 from qm_platform.organization.server_context import INSTALLATION_ORGANIZATION_ID
 from tests.database_helpers import make_documents_service_with_profiles
+
+
+class _FakeSignatureApi:
+    def sign_with_fixed_position(self, request: object) -> object:
+        return request
 
 
 def _actor(*, user_id: str, role: str, is_qmb: bool = False):
@@ -107,6 +113,147 @@ def test_descriptor_metadata_for_reject_archive_and_abort() -> None:
     assert start.requires_confirmation is False
     assert start.destructive is False
     assert start.severity == "info"
+
+
+def _in_progress_state(
+    *,
+    document_id: str,
+    profile: WorkflowProfile,
+    editor_id: str = "editor-1",
+) -> object:
+    service, _profiles = make_documents_service_with_profiles(
+        Path(tempfile.mkdtemp(prefix="qmtool-docs-desc-meta-")) / "documents.db"
+    )
+    state = service.create_document_version(document_id, 1, owner_user_id="owner-1")
+    state = service.assign_workflow_roles(
+        state,
+        editors={editor_id},
+        reviewers={"reviewer-1"},
+        approvers={"approver-1"},
+    )
+    return service.start_workflow(
+        state,
+        profile,
+        actor_user_id="owner-1",
+        actor_role=SystemRole.USER,
+    )
+
+
+def test_workflow_action_metadata_from_server_decision() -> None:
+    state = _in_progress_state(
+        document_id="DOC-META-SIGNED",
+        profile=WorkflowProfile.long_release_path(),
+    )
+    editor_actor = _actor(user_id="editor-1", role="User")
+    observer_actor = _actor(user_id="observer-1", role="User")
+    editor_by_code = {
+        descriptor.code: descriptor
+        for descriptor in action_descriptors_for_actor(state, editor_actor)
+    }
+    observer_by_code = {
+        descriptor.code: descriptor
+        for descriptor in action_descriptors_for_actor(state, observer_actor)
+    }
+
+    complete_editing = editor_by_code["complete_editing"]
+    assert complete_editing.enabled is True
+    assert complete_editing.signature_required is True
+    assert complete_editing.assignment_kind == "editor"
+
+    observer_complete = observer_by_code["complete_editing"]
+    assert observer_complete.enabled is False
+    assert observer_complete.disabled_reason
+    assert observer_complete.signature_required is True
+    assert observer_complete.assignment_kind == "editor"
+
+    assign_roles = editor_by_code["assign_roles"]
+    assert assign_roles.assignment_kind == "workflow_roles"
+    assert assign_roles.signature_required is False
+
+    for code in ("preview", "download"):
+        artifact = editor_by_code[code]
+        assert artifact.signature_required is False
+        assert artifact.assignment_kind is None
+
+
+def test_workflow_action_metadata_without_signature_requirement() -> None:
+    state = _in_progress_state(
+        document_id="DOC-META-NO-SIG",
+        profile=WorkflowProfile.long_release_path(),
+    )
+    state = replace(
+        state,
+        workflow_profile=replace(
+            WorkflowProfile.long_release_path(),
+            signature_required_transitions=(),
+        ),
+    )
+    editor_actor = _actor(user_id="editor-1", role="User")
+    by_code = {
+        descriptor.code: descriptor
+        for descriptor in action_descriptors_for_actor(state, editor_actor)
+    }
+    complete_editing = by_code["complete_editing"]
+    assert complete_editing.enabled is True
+    assert complete_editing.signature_required is False
+    assert complete_editing.assignment_kind == "editor"
+
+
+def test_review_and_approval_action_metadata_follow_server_decision() -> None:
+    service, _profiles = make_documents_service_with_profiles(
+        Path(tempfile.mkdtemp(prefix="qmtool-docs-desc-review-")) / "documents.db",
+        signature_api=_FakeSignatureApi(),
+    )
+    state = service.create_document_version("DOC-META-REVIEW", 1, owner_user_id="owner-1")
+    state = service.assign_workflow_roles(
+        state,
+        editors={"editor-1"},
+        reviewers={"reviewer-1"},
+        approvers={"approver-1"},
+    )
+    profile = WorkflowProfile.long_release_path()
+    state = service.start_workflow(
+        state,
+        profile,
+        actor_user_id="owner-1",
+        actor_role=SystemRole.USER,
+    )
+    state = service.complete_editing(
+        state,
+        sign_request={"step": "edit_complete"},
+        actor_user_id="editor-1",
+        actor_role=SystemRole.USER,
+    )
+    reviewer_actor = _actor(user_id="reviewer-1", role="User")
+    review_by_code = {
+        descriptor.code: descriptor
+        for descriptor in action_descriptors_for_actor(state, reviewer_actor)
+    }
+    review_accept = review_by_code["review_accept"]
+    assert review_accept.enabled is True
+    assert review_accept.signature_required is True
+    assert review_accept.assignment_kind == "reviewer"
+    review_reject = review_by_code["review_reject"]
+    assert review_reject.signature_required is False
+    assert review_reject.assignment_kind == "reviewer"
+
+    state = service.accept_review(
+        state,
+        "reviewer-1",
+        sign_request={"step": "review_accept"},
+    )
+    approver_actor = _actor(user_id="approver-1", role="User")
+    approval_by_code = {
+        descriptor.code: descriptor
+        for descriptor in action_descriptors_for_actor(state, approver_actor)
+    }
+    approval_accept = approval_by_code["approval_accept"]
+    assert approval_accept.enabled is True
+    assert approval_accept.signature_required is True
+    assert approval_accept.assignment_kind == "approver"
+    approval_reject = approval_by_code["approval_reject"]
+    assert approval_reject.signature_required is False
+    assert approval_reject.assignment_kind == "approver"
 
 
 def test_active_workflow_owner_sees_abort_enabled_with_reason_on_observer() -> None:
