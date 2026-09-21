@@ -206,11 +206,10 @@ cd ..
 ```
 
 Current full-regression evidence (`runtime_test_candidate_sha`
-`93eaf9854399dbd4afa509f3537570b199e74b44`):
-`build/ap-029-web01/full-regression-resume/20260921T170240Z/` — 1961 collected,
-1941 passed, 0 failed, 20 expected `not_in_m0` skips; Vitest 406; vue-tsc+Vite PASS;
-docs+architecture 120 passed;
-OpenAPI/types zero-diff; first_red null.
+`772298fe61a3ec18c8d1cf07f25497b2dee3dc64`):
+`build/ap-029-web01/review-closeout/20260921T211527Z/` — 1962 collected,
+1942 passed, 0 failed, 20 expected `not_in_m0` skips; Vitest 416; vue-tsc+Vite PASS;
+docs+architecture 120 passed; OpenAPI/types zero-diff; first_red null.
 
 #### Slot-2 live browser owners (never bare `pytest -m postgres`)
 
@@ -231,7 +230,7 @@ acceptance:
   --basetemp build\pytest-web01-k1-<stamp>
 ```
 
-Current K1 evidence: visual dir `build/ap-029-web01/visual/k1/20260921T165005868886Z/`;
+Current K1 evidence: visual dir `build/ap-029-web01/visual/k1/20260921T191052601232Z/`;
 Playwright 1 PASS, 0 unexpected/flaky; five handshakes; 16/16 screenshots; independent Codex
 visual review `VISUAL_ACCEPTANCE_PASS`.
 `webclient/dist` must exist (`npm run build`) before WEB01-H/K1 live gates.

@@ -16,6 +16,9 @@ Auth-/Connection-State, schmaler `/api/v1`-Fetch-Adapter).
 
 Stand WEB01 (Produkt-UI): Der freigegebene Documents/Signature-DMS-Webslice ist in
 `webclient/` implementiert und gegen `docs/WEBCLIENT_UX_SPECIFICATION.md` abgenommen.
+Der Review-Closeout ist an `runtime_test_candidate_sha`
+`772298fe61a3ec18c8d1cf07f25497b2dee3dc64` in PR #56 gebunden; der PR ist noch
+nicht gemergt und PILOT00 bleibt separat freizugeben.
 Deferred-Themen aus Spec/Matrix (z. B. Notifications, Global Search, generische Jobs,
 zentrale Locks oder produktiver Druck) sind **nicht** als geliefert ausgewiesen. Es darf
 keine nicht vorhandene Webfunktion als bereits geliefert dargestellt werden.
