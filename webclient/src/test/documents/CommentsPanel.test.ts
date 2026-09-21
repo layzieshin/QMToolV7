@@ -330,6 +330,29 @@ describe("CommentsPanel", () => {
     expect(wrapper.get("[data-testid=comment-detail-full-text]").text()).toBe("Volltext");
   });
 
+  it.each([
+    ["Anna", "Anna"],
+    [null, "Unbekannter Autor"],
+    ["", "Unbekannter Autor"],
+    ["   ", "Unbekannter Autor"],
+    ["550e8400-e29b-41d4-a716-446655440000", "Unbekannter Autor"],
+    ["a1b2c3d4e5f6478990abcdef12345678", "Unbekannter Autor"],
+  ])("localizes author_display %p without leaking technical ids", async (authorDisplay, expected) => {
+    fetchWorkflowCommentsMock.mockResolvedValueOnce([
+      { ...listItem(), author_display: authorDisplay },
+    ]);
+    const wrapper = mountPanel();
+    await flushPromises();
+    const author = wrapper.get(".comment-list__author").text();
+    expect(author).toBe(expected);
+    if (authorDisplay === "Anna") {
+      expect(author).toContain("Anna");
+    } else {
+      expect(author).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/i);
+      expect(author).not.toMatch(/^[0-9a-f]{32}$/i);
+    }
+  });
+
   it("does not show raw status codes in list", async () => {
     const wrapper = mountPanel();
     await flushPromises();

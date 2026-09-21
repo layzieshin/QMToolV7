@@ -30,6 +30,34 @@ function ownerLabel(userId: string | null | undefined): string {
   return t("documents.detail.assignments.unavailableUser");
 }
 
+function localizeDocType(docType: string | null | undefined): string {
+  const trimmed = docType?.trim();
+  if (!trimmed) {
+    return t("documents.detail.docType.unknown");
+  }
+  const key = `documents.detail.docType.${trimmed}`;
+  const translated = t(key);
+  return translated === key ? t("documents.detail.docType.unknown") : translated;
+}
+
+function localizeControlClass(controlClass: string | null | undefined): string {
+  const trimmed = controlClass?.trim();
+  if (!trimmed) {
+    return t("documents.detail.controlClass.unknown");
+  }
+  const key = `documents.detail.controlClass.${trimmed}`;
+  const translated = t(key);
+  return translated === key ? t("documents.detail.controlClass.unknown") : translated;
+}
+
+function workflowProfileLabel(): string {
+  const label = props.state?.workflow_profile?.label?.trim();
+  if (!label) {
+    return t("documents.detail.workflowProfile.unavailable");
+  }
+  return label;
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) {
     return "—";
@@ -53,11 +81,11 @@ function formatDate(value: string | null | undefined): string {
     </p>
     <dl v-else data-testid="document-metadata-summary">
       <dt>{{ t("documents.detail.metadataDocType") }}</dt>
-      <dd data-testid="document-metadata-doc-type">{{ state.doc_type }}</dd>
+      <dd data-testid="document-metadata-doc-type">{{ localizeDocType(state.doc_type) }}</dd>
       <dt>{{ t("documents.detail.metadataControlClass") }}</dt>
-      <dd>{{ state.control_class }}</dd>
+      <dd data-testid="document-metadata-control-class">{{ localizeControlClass(state.control_class) }}</dd>
       <dt>{{ t("documents.detail.metadataWorkflowProfile") }}</dt>
-      <dd>{{ state.workflow_profile_id }}</dd>
+      <dd data-testid="document-metadata-workflow-profile">{{ workflowProfileLabel() }}</dd>
       <dt>{{ t("documents.detail.metadataOwner") }}</dt>
       <dd data-testid="document-metadata-owner">{{ ownerLabel(state.owner_user_id) }}</dd>
       <dt>{{ t("documents.detail.metadataUpdated") }}</dt>

@@ -495,6 +495,90 @@ describe("DocumentDetailView", () => {
     expect(wrapper.find("[data-testid=assignments-editors]").exists()).toBe(true);
   });
 
+  it("localizes metadata doc type, control class, and workflow profile label without raw codes", async () => {
+    fetchDocumentVersionMock.mockResolvedValueOnce(
+      versionState({
+        state: {
+          doc_type: "OTHER",
+          control_class: "CONTROLLED_SHORT",
+          workflow_profile_id: "fast_path",
+          workflow_profile: {
+            profile_id: "fast_path",
+            label: "Fast path",
+            control_class: "CONTROLLED_SHORT",
+            phases: [],
+            four_eyes_required: false,
+            allows_content_changes: true,
+            release_evidence_mode: "WORKFLOW",
+            requires_editors: true,
+            requires_reviewers: false,
+            requires_approvers: true,
+          },
+        },
+      }),
+    );
+    const { wrapper } = await mountDetail();
+    const panel = wrapper.get("[data-testid=document-metadata-summary]");
+    expect(panel.get("[data-testid=document-metadata-doc-type]").text()).toBe("Sonstiges Dokument");
+    expect(panel.get("[data-testid=document-metadata-control-class]").text()).toBe(
+      "Vereinfacht gelenktes Dokument",
+    );
+    expect(panel.get("[data-testid=document-metadata-workflow-profile]").text()).toBe("Fast path");
+    expect(wrapper.text()).not.toContain("OTHER");
+    expect(wrapper.text()).not.toContain("CONTROLLED_SHORT");
+    expect(wrapper.text()).not.toContain("fast_path");
+  });
+
+  it("uses localized fallbacks for unknown doc type and control class", async () => {
+    fetchDocumentVersionMock.mockResolvedValueOnce(
+      versionState({
+        state: {
+          doc_type: "CUSTOM_DOC",
+          control_class: "CUSTOM_CLASS",
+          workflow_profile_id: "hidden_profile",
+          workflow_profile: {
+            profile_id: "hidden_profile",
+            label: "Sichtbares Profil",
+            control_class: "CONTROLLED",
+            phases: [],
+            four_eyes_required: false,
+            allows_content_changes: true,
+            release_evidence_mode: "WORKFLOW",
+            requires_editors: true,
+            requires_reviewers: false,
+            requires_approvers: true,
+          },
+        },
+      }),
+    );
+    const { wrapper } = await mountDetail();
+    const panel = wrapper.get("[data-testid=document-metadata-summary]");
+    expect(panel.get("[data-testid=document-metadata-doc-type]").text()).toBe("Unbekannter Dokumenttyp");
+    expect(panel.get("[data-testid=document-metadata-control-class]").text()).toBe(
+      "Unbekannte Kontrollklasse",
+    );
+    expect(panel.get("[data-testid=document-metadata-workflow-profile]").text()).toBe("Sichtbares Profil");
+    expect(wrapper.text()).not.toContain("CUSTOM_DOC");
+    expect(wrapper.text()).not.toContain("CUSTOM_CLASS");
+    expect(wrapper.text()).not.toContain("hidden_profile");
+  });
+
+  it("shows workflow profile fallback when label is missing and never shows profile id", async () => {
+    fetchDocumentVersionMock.mockResolvedValueOnce(
+      versionState({
+        state: {
+          workflow_profile_id: "fast_path",
+          workflow_profile: null,
+        },
+      }),
+    );
+    const { wrapper } = await mountDetail();
+    expect(wrapper.get("[data-testid=document-metadata-workflow-profile]").text()).toBe(
+      "Workflow-Profil nicht verfügbar",
+    );
+    expect(wrapper.text()).not.toContain("fast_path");
+  });
+
   it("does not show raw status tokens in the header", async () => {
     fetchDocumentVersionMock.mockResolvedValueOnce(
       versionState({ state: { status: "CUSTOM_STATE" } }),

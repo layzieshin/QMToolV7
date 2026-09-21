@@ -60,6 +60,21 @@ function localizeStatus(status: string): string {
   return translated === key ? t("documents.viewer.comments.status.unknown") : translated;
 }
 
+const UUID_WITH_DASHES =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HEX_32_ID = /^[0-9a-f]{32}$/i;
+
+function formatAuthorDisplay(authorDisplay: string | null | undefined): string {
+  if (authorDisplay === null || authorDisplay === undefined) {
+    return t("documents.viewer.comments.unknownAuthor");
+  }
+  const trimmed = authorDisplay.trim();
+  if (!trimmed || UUID_WITH_DASHES.test(trimmed) || HEX_32_ID.test(trimmed)) {
+    return t("documents.viewer.comments.unknownAuthor");
+  }
+  return trimmed;
+}
+
 function localizeSourceKind(sourceKind: string | null | undefined): string {
   if (!sourceKind) {
     return t("documents.viewer.comments.sourceKind.unknown");
@@ -163,7 +178,7 @@ onUnmounted(() => {
         @click="toggleExpanded(item.comment_id)"
       >
         <span class="comment-list__author">
-          {{ item.author_display ?? t("documents.viewer.comments.unknownAuthor") }}
+          {{ formatAuthorDisplay(item.author_display) }}
         </span>
         <span class="comment-list__meta" data-testid="comment-list-meta">
           {{ formatTimestamp(item.created_at ?? item.updated_at) }}
