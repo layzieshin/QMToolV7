@@ -147,6 +147,15 @@ describe("ConflictDialog", () => {
     expect(document.body.textContent).toContain("Meine Eingabe ansehen");
   });
 
+  it("uses responsive right-aligned wrap layout and keeps all conflict actions", () => {
+    wrapper = mountDialog();
+    const actions = queryBody("conflict-dialog-actions");
+    expect(actions.classList.contains("conflict-dialog-actions")).toBe(true);
+    expect(queryBody("conflict-cancel").textContent).toContain("Abbrechen");
+    expect(queryBody("conflict-view-local").textContent).toContain("Meine Eingabe ansehen");
+    expect(queryBody("conflict-load-server").textContent).toContain("Aktuellen Stand laden");
+  });
+
   it("emits loadServerState when primary action is clicked", async () => {
     wrapper = mountDialog();
     await queryBody("conflict-load-server").click();

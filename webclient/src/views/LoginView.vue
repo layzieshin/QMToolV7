@@ -76,6 +76,7 @@ async function onLogin(): Promise<void> {
 form {
   display: grid;
   gap: 0.75rem;
+  width: 100%;
   max-width: 24rem;
 }
 </style>

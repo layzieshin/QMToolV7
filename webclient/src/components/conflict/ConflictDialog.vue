@@ -72,8 +72,7 @@ function onViewLocalInput(): void {
           <slot name="local-input-details" />
         </section>
       </v-card-text>
-      <v-card-actions>
-        <v-spacer />
+      <v-card-actions class="conflict-dialog-actions" data-testid="conflict-dialog-actions">
         <v-btn
           variant="text"
           data-testid="conflict-cancel"
@@ -113,5 +112,12 @@ function onViewLocalInput(): void {
 
 .conflict-local-input h4 {
   margin: 0 0 0.5rem;
+}
+
+.conflict-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 </style>
