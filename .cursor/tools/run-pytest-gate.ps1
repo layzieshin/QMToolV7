@@ -61,17 +61,26 @@ function Assert-NoReparsePointsInBuildPathChain {
         throw "Build path must not contain a junction or reparse point: $normalizedBuildRoot"
     }
 
+    if (Test-ReparsePointPath -Path $TargetPath) {
+        throw "Target path must not be a junction or reparse point: $TargetPath"
+    }
+
     $targetDirectory = Split-Path -Parent $TargetPath
     if (-not $targetDirectory) {
-        if (Test-ReparsePointPath -Path $TargetPath) {
-            throw "Target path must not be a junction or reparse point: $TargetPath"
-        }
         return
     }
 
     $normalizedTargetDirectory = [System.IO.Path]::GetFullPath($targetDirectory)
     $buildPrefix = $normalizedBuildRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $normalizedTargetDirectory.StartsWith($buildPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $underBuild = (
+        $normalizedTargetDirectory.Equals($normalizedBuildRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $normalizedTargetDirectory.StartsWith($buildPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+    )
+    if (-not $underBuild) {
+        return
+    }
+
+    if ($normalizedTargetDirectory.Equals($normalizedBuildRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
         return
     }
 
@@ -89,9 +98,6 @@ function Assert-NoReparsePointsInBuildPathChain {
         }
     }
 
-    if (Test-ReparsePointPath -Path $TargetPath) {
-        throw "Target path must not be a junction or reparse point: $TargetPath"
-    }
 }
 
 function Assert-AllowedJUnitPath {
@@ -147,6 +153,7 @@ $resolvedJUnitPath = ""
 if ($JUnitPath) {
     $resolvedJUnitPath = Resolve-RepositoryJUnitPath -RepoRoot $repoRoot -CandidatePath $JUnitPath
     Assert-AllowedJUnitPath -RepoRoot $repoRoot -ResolvedJUnitPath $resolvedJUnitPath
+    Assert-NoReparsePointsInBuildPathChain -BuildRoot $buildRoot -TargetPath $resolvedJUnitPath
 }
 
 $preflight = Join-Path $PSScriptRoot "assert-execution-host.ps1"
