@@ -94,6 +94,21 @@ describe("ReauthDialog", () => {
     expect(queryInput().value).toBe("");
   });
 
+  it("does not emit when product writes are blocked", async () => {
+    const { wrapper } = mountDialog(true);
+    await wrapper.setProps({ productWritesAllowed: false });
+    await flushPromises();
+    const input = queryInput();
+    input.value = "secret-pass";
+    input.dispatchEvent(new Event("input"));
+    await flushPromises();
+    const submit = document.body.querySelector('[data-testid="reauth-submit"]') as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    clickTestId("reauth-submit");
+    await flushPromises();
+    expect(wrapper.emitted("submit")).toBeUndefined();
+  });
+
   it("does not emit empty or whitespace-only passwords", async () => {
     const { wrapper } = mountDialog(true);
     await flushPromises();

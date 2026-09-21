@@ -31,6 +31,7 @@ import type { DocumentsQueryState } from "../../composables/useDocumentsQuerySyn
 import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
 import { routes } from "../../router/routes";
+import { __setBootstrapWritesAllowedForTest } from "../../state/bootstrap";
 import DocumentsPoolView from "../../views/documents/DocumentsPoolView.vue";
 
 const fetchDocumentsQueryMock = vi.hoisted(() => vi.fn());
@@ -112,6 +113,7 @@ async function mountPool(initialPath = "/documents") {
 
 describe("DocumentsPoolView", () => {
   beforeEach(() => {
+    __setBootstrapWritesAllowedForTest(true);
     stubBrowserApis();
     fetchDocumentsQueryMock.mockReset();
     fetchDocumentsCapabilitiesMock.mockReset();
@@ -297,6 +299,18 @@ describe("DocumentsPoolView", () => {
     fetchDocumentsCapabilitiesMock.mockRejectedValueOnce(new Error("caps failed"));
     const failed = await mountPool();
     expect(failed.wrapper.find("[data-testid=documents-pool-import]").exists()).toBe(false);
+  });
+
+  it("disables import and blocks navigation when product writes are unavailable", async () => {
+    fetchDocumentsCapabilitiesMock.mockResolvedValueOnce({ can_create_new_documents: true });
+    __setBootstrapWritesAllowedForTest(false);
+    const { wrapper, router } = await mountPool();
+    const importButton = wrapper.get("[data-testid=documents-pool-import]");
+    expect(importButton.attributes("disabled")).toBeDefined();
+    const pushSpy = vi.spyOn(router, "push");
+    await importButton.trigger("click");
+    await flushPromises();
+    expect(pushSpy).not.toHaveBeenCalled();
   });
 
   it("routes import action to document-import", async () => {

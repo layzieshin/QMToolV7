@@ -84,7 +84,7 @@ function onSelect(descriptor: ActionDescriptor): void {
         :key="action.code"
         :title="itemLabel(action)"
         :subtitle="action.enabled ? undefined : action.disabled_reason || t('actions.disabled')"
-        :disabled="!isActionInteractive(action, isSupported(action.code))"
+        :disabled="!isActionInteractive(action, isSupported(action.code), productWritesAllowed)"
         :aria-label="itemTitle(action)"
         :base-color="itemColor(action)"
         @click="onSelect(action)"

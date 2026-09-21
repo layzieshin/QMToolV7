@@ -2,11 +2,17 @@
 import { computed, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
-const props = defineProps<{
-  modelValue: boolean;
-  loading?: boolean;
-  errorMessage?: string | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    loading?: boolean;
+    errorMessage?: string | null;
+    productWritesAllowed?: boolean;
+  }>(),
+  {
+    productWritesAllowed: true,
+  },
+);
 
 const emit = defineEmits<{
   "update:modelValue": [open: boolean];
@@ -17,7 +23,9 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const password = ref("");
 
-const canSubmit = computed(() => password.value.trim().length > 0);
+const canSubmit = computed(
+  () => props.productWritesAllowed && password.value.trim().length > 0,
+);
 
 function clearPassword(): void {
   password.value = "";
@@ -66,7 +74,7 @@ function onCancel(): void {
 
 function onSubmit(): void {
   const trimmed = password.value.trim();
-  if (!trimmed || props.loading) {
+  if (!trimmed || props.loading || !props.productWritesAllowed) {
     return;
   }
   emit("submit", trimmed);

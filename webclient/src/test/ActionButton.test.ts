@@ -52,10 +52,14 @@ function mountActionButton(props: { descriptor: ActionDescriptor; supported: boo
   });
 }
 
-function mountOverflowMenu(props: {
-  actions: ActionDescriptor[];
-  supportedCodes: readonly string[];
-}) {
+function mountOverflowMenu(
+  props: {
+    actions: ActionDescriptor[];
+    supportedCodes: readonly string[];
+    productWritesAllowed?: boolean;
+    productWritesBlockedMessage?: string;
+  },
+) {
   return mount(ActionOverflowMenu, {
     props,
     global: {
@@ -257,6 +261,31 @@ describe("ActionOverflowMenu", () => {
     const emitted = wrapper.emitted("action");
     expect(emitted).toHaveLength(1);
     expect(emitted?.[0]?.[0]).toMatchObject({ code: "archive", destructive: true });
+  });
+
+  it("disables destructive overflow actions when product writes are blocked", async () => {
+    const wrapper = mountOverflowMenu({
+      actions: [
+        descriptor({
+          code: "archive",
+          label_key: "documents.action.archive",
+          destructive: true,
+          severity: "danger",
+        }),
+      ],
+      supportedCodes: ["archive"],
+      productWritesAllowed: false,
+      productWritesBlockedMessage: "Writes blocked",
+    });
+
+    await buttonElement(wrapper).click();
+    await flushPromises();
+
+    const item = document.body.querySelector(".v-list-item") as HTMLElement;
+    expect(item.className).toMatch(/v-list-item--disabled/);
+    await item.click();
+    await flushPromises();
+    expect(wrapper.emitted("action")).toBeUndefined();
   });
 
   it("does not emit for disabled or unsupported destructive actions", async () => {

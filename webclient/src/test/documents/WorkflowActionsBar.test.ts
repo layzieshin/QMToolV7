@@ -431,6 +431,65 @@ describe("WorkflowActionsBar", () => {
     expect(routerPushMock).not.toHaveBeenCalled();
   });
 
+  it("disables confirm dialog submit when writes become unavailable", async () => {
+    mutateMock.mockResolvedValueOnce(detail({ etag: "evt-2" }));
+    const { wrapper } = mountBar(
+      detail({
+        allowed_actions: [
+          action({
+            code: "abort",
+            label_key: "documents.action.abort",
+            destructive: true,
+            requires_confirmation: true,
+            severity: "danger" as const,
+          }),
+        ],
+      } as Partial<VersionStateResponse>),
+    );
+    await wrapper.get('button[aria-label="Weitere Aktionen"]').trigger("click");
+    await flushPromises();
+    const archiveItem = Array.from(document.body.querySelectorAll(".v-list-item")).find((item) =>
+      item.textContent?.includes("Workflow abbrechen"),
+    ) as HTMLElement;
+    await archiveItem.click();
+    await flushPromises();
+    __setBootstrapWritesAllowedForTest(false);
+    await flushPromises();
+    const proceed = document.body.querySelector(
+      '[data-testid="workflow-confirm-dialog"] button:last-child',
+    ) as HTMLButtonElement;
+    expect(proceed.disabled).toBe(true);
+    await proceed.click();
+    await flushPromises();
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it("disables reason dialog submit when writes become unavailable", async () => {
+    const { wrapper } = mountBar(
+      detail({
+        allowed_actions: [
+          action({
+            code: "review_reject",
+            label_key: "documents.action.review_reject",
+            requires_reason: true,
+            severity: "warning" as const,
+          }),
+        ],
+      } as Partial<VersionStateResponse>),
+    );
+    await wrapper.get("button").trigger("click");
+    await flushPromises();
+    __setBootstrapWritesAllowedForTest(false);
+    await flushPromises();
+    const submit = document.body.querySelector(
+      '[data-testid="workflow-reason-dialog"] button:last-child',
+    ) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await submit.click();
+    await flushPromises();
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
   it("disables workflow actions and blocks mutate when product writes are unavailable", async () => {
     __setBootstrapWritesAllowedForTest(false);
     const { wrapper } = mountBar(detail());

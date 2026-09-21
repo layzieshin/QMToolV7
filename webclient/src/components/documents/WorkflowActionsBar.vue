@@ -278,6 +278,9 @@ function onAction(descriptor: ActionDescriptor): void {
 }
 
 function onConfirm(): void {
+  if (!writesAllowed.value) {
+    return;
+  }
   const descriptor = pendingDescriptor.value;
   confirmOpen.value = false;
   if (!descriptor) {
@@ -292,6 +295,9 @@ function onCancelConfirm(): void {
 }
 
 function onSubmitReason(): void {
+  if (!writesAllowed.value) {
+    return;
+  }
   const descriptor = pendingDescriptor.value;
   if (!descriptor) {
     return;
@@ -357,7 +363,7 @@ function onCancelReason(): void {
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="onCancelConfirm">{{ t("conflict.cancel") }}</v-btn>
-          <v-btn color="primary" variant="flat" @click="onConfirm">
+          <v-btn color="primary" variant="flat" :disabled="!writesAllowed" @click="onConfirm">
             {{ t("documents.workflow.confirmProceed") }}
           </v-btn>
         </v-card-actions>
@@ -378,7 +384,7 @@ function onCancelReason(): void {
         <v-card-actions>
           <v-spacer />
           <v-btn variant="text" @click="onCancelReason">{{ t("conflict.cancel") }}</v-btn>
-          <v-btn color="primary" variant="flat" @click="onSubmitReason">
+          <v-btn color="primary" variant="flat" :disabled="!writesAllowed" @click="onSubmitReason">
             {{ t("documents.workflow.reasonSubmit") }}
           </v-btn>
         </v-card-actions>

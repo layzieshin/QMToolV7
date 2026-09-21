@@ -127,6 +127,8 @@ const artifactRefreshError = ref<string | null>(null);
 const reauthOpen = ref(false);
 const reauthLoading = ref(false);
 const reauthError = ref<string | null>(null);
+const pendingEnsureSourceRetry = ref(false);
+const ensureSourceRetryUsed = ref(false);
 const mutating = ref(false);
 const alertMessage = ref<string | null>(null);
 const conflictDraftSnapshot = ref<SignatureDraftSnapshot | null>(null);
@@ -603,7 +605,21 @@ async function initializeWorkspace(): Promise<void> {
     let previewArtifactId: string | null = null;
 
     if (usesEnsureSourcePdf(code)) {
-      const ensured = await ensureSourcePdf(initial);
+      let ensured: EnsureSourcePdfResponse;
+      try {
+        ensured = await ensureSourcePdf(initial);
+      } catch (cause) {
+        if (!isOperationActive(loadToken)) {
+          return;
+        }
+        if (cause instanceof MutationWritesBlockedError) {
+          pendingEnsureSourceRetry.value = true;
+          loadError.value = blockedMessage.value;
+          return;
+        }
+        throw cause;
+      }
+      pendingEnsureSourceRetry.value = false;
       if (!isOperationActive(loadToken)) {
         return;
       }
@@ -688,12 +704,30 @@ async function initializeWorkspace(): Promise<void> {
 watch(
   () => [documentId.value, versionParse.value.valid, versionParse.value.valid ? versionParse.value.version : null, actionCode.value] as const,
   () => {
+    pendingEnsureSourceRetry.value = false;
+    ensureSourceRetryUsed.value = false;
     clearConflictForRouteChange();
     invalidateWorkspaceOperations();
     void initializeWorkspace();
   },
   { immediate: true },
 );
+
+watch(writesAllowed, (allowed, wasAllowed) => {
+  if (
+    allowed &&
+    wasAllowed === false &&
+    pendingEnsureSourceRetry.value &&
+    !ensureSourceRetryUsed.value &&
+    routeValid.value &&
+    versionParse.value.valid &&
+    actionCode.value
+  ) {
+    ensureSourceRetryUsed.value = true;
+    pendingEnsureSourceRetry.value = false;
+    void initializeWorkspace();
+  }
+});
 
 watch(
   () => layout.value.show_date,
@@ -1077,6 +1111,7 @@ onUnmounted(() => {
       v-model="reauthOpen"
       :loading="reauthLoading"
       :error-message="reauthError"
+      :product-writes-allowed="writesAllowed"
       @submit="submitSignature"
       @cancel="onReauthCancel"
     />

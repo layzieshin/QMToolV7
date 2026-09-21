@@ -10,6 +10,7 @@ import DocumentsFilterBar from "../../components/documents/DocumentsFilterBar.vu
 import DocumentsTable, {
   type DocumentRowIdentity,
 } from "../../components/documents/DocumentsTable.vue";
+import { useProductWriteAvailability } from "../../composables/useProductWriteAvailability";
 import { useDocumentsList } from "../../composables/useDocumentsList";
 import {
   type DocumentsOrder,
@@ -24,6 +25,7 @@ defineOptions({
 
 const { t } = useI18n();
 const router = useRouter();
+const { writesAllowed, blockedMessage } = useProductWriteAvailability();
 const { query, applyFilters, applySort, goNextPage } = useDocumentsQuerySync();
 const { items, nextCursor, loading, error, reload } = useDocumentsList(query);
 
@@ -73,6 +75,8 @@ const showFilteredEmpty = computed(
   () => !loading.value && !error.value && items.value.length === 0 && isFiltered.value,
 );
 
+const importAllowed = computed(() => canCreate.value && writesAllowed.value);
+
 watch(
   () => ({
     items: items.value,
@@ -104,6 +108,9 @@ function onSelect(row: DocumentRowIdentity): void {
 }
 
 function openImport(): void {
+  if (!importAllowed.value) {
+    return;
+  }
   void router.push({ name: "document-import" });
 }
 
@@ -149,6 +156,8 @@ async function onNextPage(): Promise<void> {
           v-if="canCreate"
           color="primary"
           data-testid="documents-pool-import"
+          :disabled="!writesAllowed"
+          :title="writesAllowed ? undefined : blockedMessage"
           @click="openImport"
         >
           {{ t("documents.pool.importAction") }}

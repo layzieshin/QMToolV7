@@ -37,7 +37,7 @@ import SignaturePlacementCanvas, {
 } from "../../components/signature/SignaturePlacementCanvas.vue";
 import { ApiTransportError } from "../../api/client";
 import SignatureWorkspaceView from "../../views/signature/SignatureWorkspaceView.vue";
-import { MutationClientError } from "../../api/mutationClient";
+import { MutationClientError, MutationWritesBlockedError } from "../../api/mutationClient";
 import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
 import { routes } from "../../router/routes";
@@ -780,6 +780,40 @@ describe("SignatureWorkspaceView", () => {
     expect(document.body.querySelector('[data-testid="signature-load-error"]')?.textContent).toContain(
       "ungültig",
     );
+    host.remove();
+  });
+
+  it("retries ensure-source init exactly once when writes become available again", async () => {
+    __setBootstrapWritesAllowedForTest(false);
+    mutateMock.mockRejectedValueOnce(new MutationWritesBlockedError("writes blocked"));
+    const { host } = await mountWorkspace();
+    expect(document.body.querySelector('[data-testid="signature-load-error"]')).toBeTruthy();
+    expect(mutateMock).toHaveBeenCalledTimes(1);
+
+    mutateMock.mockResolvedValueOnce({
+      etag: "evt-2",
+      artifact_id: "artifact-source",
+      allowed_actions: baseDetail().allowed_actions,
+      available_actions: baseDetail().available_actions,
+      state: baseDetail().state,
+    });
+    __setBootstrapWritesAllowedForTest(true);
+    await flushPromises();
+    await flushPromises();
+
+    expect(mutateMock).toHaveBeenCalledTimes(2);
+    expect(document.body.querySelector('[data-testid="signature-placement-canvas"]')).toBeTruthy();
+    host.remove();
+  });
+
+  it("does not retry ensure-source when the initial load fails for other reasons", async () => {
+    mutateMock.mockRejectedValueOnce(new Error("network down"));
+    const { host } = await mountWorkspace();
+    expect(document.body.querySelector('[data-testid="signature-load-error"]')).toBeTruthy();
+    __setBootstrapWritesAllowedForTest(false);
+    __setBootstrapWritesAllowedForTest(true);
+    await flushPromises();
+    expect(mutateMock).toHaveBeenCalledTimes(1);
     host.remove();
   });
 
