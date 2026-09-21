@@ -21,6 +21,26 @@ A clean local `main` that is only behind its exact `origin/main` upstream may us
 worktree/index and zero-ahead ancestry; every other pull, divergence, extra flag, `git -C` or inline
 directory change remains blocked.
 
+## Execution host and temporary paths
+
+Before the first package edit, `.cursor/tools/assert-execution-host.ps1` verifies the exact opened
+registered worktree, attached branch, optional central Git-metadata write access, and a real Python
+child temp roundtrip. When another coordinator must start Cursor CLI, it additionally checks that
+the Cursor session store is writable and that the process is not routed through a disabled local
+proxy. `EXECUTION_HOST_REQUIRED` stops before edits, reviews, or retries; automation never clears
+proxy/sandbox controls or moves an already checked-out branch between worktrees.
+
+`.cursor/tools/invoke-cursor-agent.ps1` is the only supported nested CLI launcher. It performs that
+preflight and runs Cursor synchronously in the specified target, preserving the prompt as one
+argument so no detached writer or split command-line option remains. Normally the already opened
+Cursor workspace executes `/execute-work-package` directly and needs no nested CLI.
+
+Ordinary Python work-package gates use `.cursor/tools/run-pytest-gate.ps1`. It allocates unique,
+short repository-local process-temp and basetemp paths and owns optional JUnit output. Direct
+pytest remains supported; `conftest.py` assigns a unique `build/pt/<pid>-<token>` default unless a
+caller deliberately supplies `--basetemp`. Guarded PostgreSQL/J04 runners keep their stricter fresh
+basetemp contract.
+
 ## State and evidence
 
 - Local resume state: `.cursor/runtime/workflow-state.json` (ignored)
