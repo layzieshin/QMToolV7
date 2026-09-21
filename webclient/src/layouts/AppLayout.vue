@@ -96,6 +96,11 @@ watch(
 @media (max-width: 960px) {
   .app-layout__body {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-layout__content {
+    width: 100%;
   }
 }
 </style>
