@@ -37,11 +37,16 @@ function isAssignRolesEnabled(actions: ActionDescriptor[] | undefined): boolean 
   );
 }
 
+function isAssignRolesEditable(actions: ActionDescriptor[] | undefined): boolean {
+  const descriptor = actions?.find((action) => action.code === "assign_roles" && action.enabled);
+  return Boolean(descriptor && descriptor.assignment_kind === "workflow_roles");
+}
+
 const canEdit = computed(() => {
   if (!props.detail || props.directoryLoading || props.directoryError || !writesAllowed.value) {
     return false;
   }
-  return isAssignRolesEnabled(props.detail.allowed_actions);
+  return isAssignRolesEditable(props.detail.allowed_actions);
 });
 
 const directoryById = computed(() => {

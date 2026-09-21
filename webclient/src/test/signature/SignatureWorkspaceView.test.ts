@@ -120,7 +120,18 @@ function suggestedTemplate() {
   };
 }
 
-function actionDescriptor(code: string, enabled = true) {
+const ASSIGNMENT_KIND_BY_ACTION: Record<string, string> = {
+  complete_editing: "editor",
+  review_accept: "reviewer",
+  approval_accept: "approver",
+};
+
+function actionDescriptor(
+  code: string,
+  enabled = true,
+  options: { signatureRequired?: boolean; assignmentKind?: string | null } = {},
+) {
+  const signatureAction = Object.hasOwn(ASSIGNMENT_KIND_BY_ACTION, code);
   return {
     code,
     enabled,
@@ -130,17 +141,18 @@ function actionDescriptor(code: string, enabled = true) {
     requires_reason: false,
     severity: "info" as const,
     disabled_reason: enabled ? null : "blocked",
+    signature_required:
+      options.signatureRequired ?? (signatureAction && enabled),
+    assignment_kind:
+      options.assignmentKind !== undefined
+        ? options.assignmentKind
+        : (ASSIGNMENT_KIND_BY_ACTION[code] ?? null),
   };
 }
 
 function baseDetailForSignatureAction(
   actionCode: "complete_editing" | "review_accept" | "approval_accept",
 ): { detail: ReturnType<typeof baseDetail>; workflowPath: string } {
-  const transitions: Record<string, string> = {
-    complete_editing: "IN_PROGRESS->IN_REVIEW",
-    review_accept: "IN_REVIEW->IN_APPROVAL",
-    approval_accept: "IN_APPROVAL->APPROVED",
-  };
   const statuses: Record<string, string> = {
     complete_editing: "IN_PROGRESS",
     review_accept: "IN_REVIEW",
@@ -158,10 +170,6 @@ function baseDetailForSignatureAction(
     state: {
       ...baseDetail().state,
       status: statuses[actionCode],
-      workflow_profile: {
-        ...baseDetail().state.workflow_profile,
-        signature_required_transitions: [transitions[actionCode]],
-      },
     },
   };
   return { detail: detail as ReturnType<typeof baseDetail>, workflowPath: workflowPaths[actionCode] };
@@ -211,6 +219,8 @@ function baseDetail() {
         requires_reason: false,
         severity: "info",
         disabled_reason: null,
+        signature_required: true,
+        assignment_kind: "editor",
       },
       {
         code: "preview",
@@ -221,6 +231,8 @@ function baseDetail() {
         requires_reason: false,
         severity: "info",
         disabled_reason: null,
+        signature_required: false,
+        assignment_kind: null,
       },
     ],
     available_actions: ["complete_editing", "preview"],
@@ -1502,15 +1514,18 @@ describe("SignatureWorkspaceView", () => {
     host.remove();
   });
 
-  it("rejects a signature route when the workflow transition does not require a signature", async () => {
+  it("rejects a signature route when the action descriptor does not require a signature", async () => {
     const detail = {
       ...baseDetail(),
-      allowed_actions: [actionDescriptor("complete_editing"), actionDescriptor("preview")],
+      allowed_actions: [
+        actionDescriptor("complete_editing", true, { signatureRequired: false, assignmentKind: "editor" }),
+        actionDescriptor("preview"),
+      ],
       state: {
         ...baseDetail().state,
         workflow_profile: {
           ...baseDetail().state.workflow_profile,
-          signature_required_transitions: ["IN_REVIEW->IN_APPROVAL"],
+          signature_required_transitions: ["IN_PROGRESS->IN_REVIEW"],
         },
       },
     };
@@ -1554,13 +1569,10 @@ describe("SignatureWorkspaceView", () => {
     fetchDocumentVersionMock.mockResolvedValueOnce(initial);
     mutateMock.mockResolvedValueOnce({
       ...ensuredResponseFromDetail(initial),
-      state: {
-        ...initial.state,
-        workflow_profile: {
-          ...initial.state.workflow_profile,
-          signature_required_transitions: [],
-        },
-      },
+      allowed_actions: [
+        actionDescriptor("complete_editing", true, { signatureRequired: false, assignmentKind: "editor" }),
+        actionDescriptor("preview"),
+      ],
     });
     const { wrapper, host } = await mountWorkspace();
     expect(wrapper.find('[data-testid="signature-load-error"]').text()).toContain("keine Signatur");

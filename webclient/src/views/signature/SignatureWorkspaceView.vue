@@ -34,24 +34,13 @@ import ReauthDialog from "../../components/signature/ReauthDialog.vue";
 import SignaturePlacementCanvas, {
   type CanonicalPlacement,
 } from "../../components/signature/SignaturePlacementCanvas.vue";
+import type { ActionDescriptor } from "../../actions/actionTypes";
 import { parseDetailRouteVersion } from "../../composables/useDocumentDetail";
 import { useConflictRecovery } from "../../composables/useConflictRecovery";
 import { normalizeBlobMimeType } from "../../composables/usePdfPreview";
 
 const SIGNATURE_ACTION_CODES = new Set(["complete_editing", "review_accept", "approval_accept"]);
 const SIGNED_PDF_ARTIFACT_TYPE = "SIGNED_PDF";
-
-const TRANSITION_BY_ACTION: Record<string, string> = {
-  complete_editing: "IN_PROGRESS->IN_REVIEW",
-  review_accept: "IN_REVIEW->IN_APPROVAL",
-  approval_accept: "IN_APPROVAL->APPROVED",
-};
-
-const ROLE_CONTEXT_BY_ACTION: Record<string, string> = {
-  complete_editing: "editor",
-  review_accept: "reviewer",
-  approval_accept: "approver",
-};
 
 const DEFAULT_PLACEMENT: CanonicalPlacement = {
   page_index: 0,
@@ -162,10 +151,6 @@ const workflowReason = computed(() => {
   }
   return null;
 });
-
-const roleContext = computed(() =>
-  actionCode.value ? ROLE_CONTEXT_BY_ACTION[actionCode.value] ?? null : null,
-);
 
 const routeValid = computed(
   () => Boolean(documentId.value) && versionParse.value.valid && Boolean(actionCode.value),
@@ -372,20 +357,23 @@ function mapLoadError(cause: unknown): string {
   return t("signature.workspace.errors.connection");
 }
 
-function isSignatureRequiredForAction(state: VersionStateResponse, code: string): boolean {
-  const transition = TRANSITION_BY_ACTION[code];
-  if (!transition) {
-    return false;
-  }
-  const profile = state.state.workflow_profile;
-  if (!profile?.signature_required_transitions) {
-    return false;
-  }
-  return profile.signature_required_transitions.includes(transition);
+function findActionDescriptor(
+  state: VersionStateResponse,
+  code: string,
+): ActionDescriptor | undefined {
+  return (state.allowed_actions ?? []).find((action) => action.code === code);
+}
+
+function isSignatureRequiredDescriptor(descriptor: ActionDescriptor | undefined): boolean {
+  return Boolean(descriptor?.enabled && descriptor.signature_required);
+}
+
+function assignmentKindForAction(state: VersionStateResponse, code: string): string | null {
+  return findActionDescriptor(state, code)?.assignment_kind ?? null;
 }
 
 function isActionEnabled(state: VersionStateResponse, code: string): boolean {
-  return (state.allowed_actions ?? []).some((action) => action.code === code && action.enabled);
+  return Boolean(findActionDescriptor(state, code)?.enabled);
 }
 
 function toAuthoritativeState(ensured: EnsureSourcePdfResponse): VersionStateResponse {
@@ -492,7 +480,8 @@ async function loadActiveSignatureAsset(token: OperationToken): Promise<void> {
 
 async function loadTemplates(state: VersionStateResponse, token: OperationToken): Promise<void> {
   const docType = state.state.doc_type;
-  const role = roleContext.value;
+  const code = actionCode.value;
+  const role = code ? assignmentKindForAction(state, code) : null;
   if (!docType || !role) {
     return;
   }
@@ -586,11 +575,12 @@ async function initializeWorkspace(): Promise<void> {
       return;
     }
 
-    if (!isActionEnabled(initial, actionCode.value)) {
-      loadError.value = t("signature.workspace.errors.actionDisabled");
-      return;
-    }
-    if (!isSignatureRequiredForAction(initial, actionCode.value)) {
+    const initialDescriptor = findActionDescriptor(initial, actionCode.value);
+    if (!isSignatureRequiredDescriptor(initialDescriptor)) {
+      if (!initialDescriptor?.enabled) {
+        loadError.value = t("signature.workspace.errors.actionDisabled");
+        return;
+      }
       loadError.value = t("signature.workspace.errors.signatureNotRequired");
       return;
     }
@@ -624,11 +614,12 @@ async function initializeWorkspace(): Promise<void> {
         return;
       }
       authoritative = toAuthoritativeState(ensured);
-      if (!isActionEnabled(authoritative, code)) {
-        loadError.value = t("signature.workspace.errors.actionDisabled");
-        return;
-      }
-      if (!isSignatureRequiredForAction(authoritative, code)) {
+      const authoritativeDescriptor = findActionDescriptor(authoritative, code);
+      if (!isSignatureRequiredDescriptor(authoritativeDescriptor)) {
+        if (!authoritativeDescriptor?.enabled) {
+          loadError.value = t("signature.workspace.errors.actionDisabled");
+          return;
+        }
         loadError.value = t("signature.workspace.errors.signatureNotRequired");
         return;
       }
@@ -760,7 +751,8 @@ function onReauthCancel(): void {
 
 async function savePersonalTemplate(): Promise<void> {
   const state = detail.value;
-  const role = roleContext.value;
+  const code = actionCode.value;
+  const role = state && code ? assignmentKindForAction(state, code) : null;
   if (!state || !role || mutating.value || !writesAllowed.value) {
     return;
   }

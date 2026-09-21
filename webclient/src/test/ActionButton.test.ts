@@ -39,6 +39,8 @@ function descriptor(overrides: Partial<ActionDescriptor> = {}): ActionDescriptor
     requires_confirmation: false,
     requires_reason: false,
     disabled_reason: null,
+    signature_required: false,
+    assignment_kind: null,
     ...overrides,
   };
 }

@@ -84,6 +84,8 @@ function action(overrides: Partial<ActionDescriptor> = {}): ActionDescriptor {
     requires_confirmation: false,
     requires_reason: false,
     disabled_reason: null,
+    signature_required: false,
+    assignment_kind: null,
     ...overrides,
   } as ActionDescriptor;
 }
@@ -329,10 +331,10 @@ describe("WorkflowActionsBar", () => {
   });
 
   function signedDetail(actionCode: "complete_editing" | "review_accept" | "approval_accept") {
-    const transitions: Record<string, string> = {
-      complete_editing: "IN_PROGRESS->IN_REVIEW",
-      review_accept: "IN_REVIEW->IN_APPROVAL",
-      approval_accept: "IN_APPROVAL->APPROVED",
+    const assignmentKinds: Record<typeof actionCode, string> = {
+      complete_editing: "editor",
+      review_accept: "reviewer",
+      approval_accept: "approver",
     };
     return detail({
       allowed_actions: [
@@ -340,13 +342,15 @@ describe("WorkflowActionsBar", () => {
           code: actionCode,
           label_key: `documents.action.${actionCode}`,
           severity: "info" as const,
+          signature_required: true,
+          assignment_kind: assignmentKinds[actionCode],
         }),
       ],
       state: {
         ...detail().state,
         workflow_profile: {
           profile_id: "signed_profile",
-          signature_required_transitions: [transitions[actionCode]],
+          signature_required_transitions: [],
           allows_content_changes: true,
           control_class: "CONTROLLED",
           four_eyes_required: false,
@@ -383,13 +387,15 @@ describe("WorkflowActionsBar", () => {
             code: "complete_editing",
             label_key: "documents.action.complete_editing",
             severity: "info" as const,
+            signature_required: false,
+            assignment_kind: "editor",
           }),
         ],
         state: {
           ...detail().state,
           workflow_profile: {
             profile_id: "http_flow_profile",
-            signature_required_transitions: [],
+            signature_required_transitions: ["IN_PROGRESS->IN_REVIEW"],
             allows_content_changes: true,
             control_class: "CONTROLLED",
             four_eyes_required: false,
@@ -420,6 +426,8 @@ describe("WorkflowActionsBar", () => {
             enabled: false,
             disabled_reason: "blocked",
             severity: "info" as const,
+            signature_required: true,
+            assignment_kind: "editor",
           }),
         ],
         state: signed.state,

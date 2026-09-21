@@ -332,6 +332,8 @@ function commentsDescriptor(enabled = true): ActionDescriptor {
     requires_confirmation: false,
     requires_reason: false,
     severity: "info" as const,
+    signature_required: false,
+    assignment_kind: null,
   };
 }
 
@@ -344,6 +346,8 @@ function previewDescriptor(enabled = true): ActionDescriptor {
     requires_confirmation: false,
     requires_reason: false,
     severity: "info" as const,
+    signature_required: false,
+    assignment_kind: null,
   };
 }
 

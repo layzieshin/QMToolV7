@@ -67,6 +67,8 @@ function detailWithPreview(enabled: boolean): VersionStateResponse {
         requires_reason: false,
         severity: "info",
         disabled_reason: null,
+        signature_required: false,
+        assignment_kind: null,
       },
     ],
     available_actions: enabled ? ["preview"] : [],

@@ -85,6 +85,8 @@ function commentsDescriptor(enabled = true): ActionDescriptor {
     requires_confirmation: false,
     requires_reason: false,
     severity: "info",
+    signature_required: false,
+    assignment_kind: null,
   } as ActionDescriptor;
 }
 

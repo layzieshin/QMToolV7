@@ -87,6 +87,8 @@ function assignRolesDescriptor(enabled = true): ActionDescriptor {
     requires_confirmation: false,
     requires_reason: false,
     severity: "normal",
+    signature_required: false,
+    assignment_kind: "workflow_roles",
   };
 }
 

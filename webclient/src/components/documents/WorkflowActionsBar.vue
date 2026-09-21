@@ -28,14 +28,6 @@ const WORKFLOW_BAR_CODES = new Set([
   "abort",
 ]);
 
-const SIGNATURE_ROUTE_CODES = new Set(["complete_editing", "review_accept", "approval_accept"]);
-
-const SIGNATURE_TRANSITION_BY_ACTION: Record<string, string> = {
-  complete_editing: "IN_PROGRESS->IN_REVIEW",
-  review_accept: "IN_REVIEW->IN_APPROVAL",
-  approval_accept: "IN_APPROVAL->APPROVED",
-};
-
 const SUPPORTED_HANDLER_CODES = new Set(WORKFLOW_BAR_CODES);
 
 const props = defineProps<{
@@ -126,18 +118,7 @@ function buildMutationBody(code: string, reason?: string): MutationBody | undefi
 }
 
 function requiresSignatureWorkspace(descriptor: ActionDescriptor): boolean {
-  if (!descriptor.enabled || !SIGNATURE_ROUTE_CODES.has(descriptor.code)) {
-    return false;
-  }
-  const transition = SIGNATURE_TRANSITION_BY_ACTION[descriptor.code];
-  if (!transition) {
-    return false;
-  }
-  const profile = props.detail.state.workflow_profile;
-  if (!profile?.signature_required_transitions) {
-    return false;
-  }
-  return profile.signature_required_transitions.includes(transition);
+  return descriptor.enabled && descriptor.signature_required;
 }
 
 function routeToSignatureWorkspace(descriptor: ActionDescriptor, reason?: string): void {
