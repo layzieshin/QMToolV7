@@ -32,6 +32,7 @@ import vuetify from "../../plugins/vuetify";
 import { routes } from "../../router/routes";
 import {
   __resetBootstrapStateForTest,
+  __setBootstrapWritesAllowedForTest,
   __setBootstrapBannerForTest,
 } from "../../state/bootstrap";
 import DocumentDetailView from "../../views/documents/DocumentDetailView.vue";
@@ -160,6 +161,7 @@ describe("parseDetailRouteVersion", () => {
 describe("DocumentDetailView", () => {
   beforeEach(() => {
     __resetBootstrapStateForTest();
+    __setBootstrapWritesAllowedForTest(true);
     stubBrowserApis();
     fetchDocumentVersionMock.mockReset();
     fetchDocumentVersionHistoryMock.mockReset();

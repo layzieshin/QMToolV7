@@ -23,9 +23,11 @@ import {
 import { mutationErrorI18nKey } from "../../api/errors";
 import {
   MutationClientError,
+  MutationWritesBlockedError,
   mutate,
   type MutationBody,
 } from "../../api/mutationClient";
+import { useProductWriteAvailability } from "../../composables/useProductWriteAvailability";
 import ConflictDialog from "../../components/conflict/ConflictDialog.vue";
 import ReleasedArtifactPanel from "../../components/documents/ReleasedArtifactPanel.vue";
 import ReauthDialog from "../../components/signature/ReauthDialog.vue";
@@ -95,6 +97,7 @@ defineOptions({
 });
 
 const { t } = useI18n();
+const { writesAllowed, blockedMessage } = useProductWriteAvailability();
 const route = useRoute();
 const router = useRouter();
 
@@ -346,6 +349,9 @@ function onViewLocalDraft(): void {
 }
 
 function mapLoadError(cause: unknown): string {
+  if (cause instanceof MutationWritesBlockedError) {
+    return blockedMessage.value;
+  }
   if (cause instanceof ApiTransportError) {
     switch (cause.status) {
       case 401:
@@ -706,7 +712,7 @@ function effectiveLayoutPayload(): Record<string, unknown> {
 }
 
 function openReauth(): void {
-  if (missingSignatureAsset.value || mutating.value) {
+  if (missingSignatureAsset.value || mutating.value || !writesAllowed.value) {
     return;
   }
   reauthError.value = null;
@@ -721,7 +727,7 @@ function onReauthCancel(): void {
 async function savePersonalTemplate(): Promise<void> {
   const state = detail.value;
   const role = roleContext.value;
-  if (!state || !role || mutating.value) {
+  if (!state || !role || mutating.value || !writesAllowed.value) {
     return;
   }
   const token = beginOperation("templateSave");
@@ -776,7 +782,14 @@ async function submitSignature(password: string): Promise<void> {
   }
   const state = detail.value;
   const code = actionCode.value;
-  if (!state || !code || reauthLoading.value || mutating.value || missingSignatureAsset.value) {
+  if (
+    !state ||
+    !code ||
+    reauthLoading.value ||
+    mutating.value ||
+    missingSignatureAsset.value ||
+    !writesAllowed.value
+  ) {
     return;
   }
 
@@ -945,6 +958,14 @@ onUnmounted(() => {
       <aside class="signature-workspace__sidebar" data-testid="signature-workspace-sidebar">
         <p v-if="alertMessage" role="status">{{ alertMessage }}</p>
 
+        <p
+          v-if="!writesAllowed"
+          role="status"
+          data-testid="signature-writes-blocked"
+        >
+          {{ blockedMessage }}
+        </p>
+
         <div class="signature-workspace__layout-controls" data-testid="signature-layout-controls">
           <v-switch v-model="layout.show_signature" :label="t('signature.workspace.showSignature')" hide-details />
           <v-switch v-model="layout.show_name" :label="t('signature.workspace.showName')" hide-details />
@@ -1009,14 +1030,19 @@ onUnmounted(() => {
               <v-list-item v-bind="itemProps" :subtitle="templateScopeLabel(item.raw.scope)" />
             </template>
           </v-select>
-          <v-btn variant="outlined" :disabled="mutating" data-testid="save-personal-template" @click="savePersonalTemplate">
+          <v-btn
+            variant="outlined"
+            :disabled="mutating || !writesAllowed"
+            data-testid="save-personal-template"
+            @click="savePersonalTemplate"
+          >
             {{ t("signature.workspace.saveTemplate") }}
           </v-btn>
         </div>
 
         <v-btn
           color="primary"
-          :disabled="mutating || missingSignatureAsset"
+          :disabled="mutating || missingSignatureAsset || !writesAllowed"
           data-testid="signature-sign-button"
           @click="openReauth"
         >

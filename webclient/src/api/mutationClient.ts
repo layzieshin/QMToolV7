@@ -3,8 +3,14 @@ import {
   parseApiErrorBody,
   type DocumentVersionStateModel,
 } from "./client";
-import { MutationValidationError, buildMutationClientError, extractErrorDetail } from "./errors";
+import {
+  MutationValidationError,
+  MutationWritesBlockedError,
+  buildMutationClientError,
+  extractErrorDetail,
+} from "./errors";
 import type { MutationClientError } from "./errors";
+import { getProductWritesAllowedSnapshot } from "../state/bootstrap";
 
 export type MutationMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -206,6 +212,9 @@ export async function mutate<TResponse = unknown>(
   request: MutationRequest,
 ): Promise<TResponse | undefined> {
   validateMutationPath(request.path);
+  if (!getProductWritesAllowedSnapshot()) {
+    throw new MutationWritesBlockedError();
+  }
   const init = buildMutationInit(request.body, request.ifMatch);
 
   const response = await mutationFetch(request.path, {
@@ -226,6 +235,7 @@ export async function mutate<TResponse = unknown>(
 export {
   MutationClientError,
   MutationValidationError,
+  MutationWritesBlockedError,
   buildMutationClientError,
   classifyMutationStatus,
   extractErrorDetail,

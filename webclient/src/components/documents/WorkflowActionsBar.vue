@@ -9,10 +9,12 @@ import type { VersionStateResponse } from "../../api/client";
 import { mutationErrorI18nKey } from "../../api/errors";
 import {
   MutationClientError,
+  MutationWritesBlockedError,
   mutate,
   type MutationBody,
 } from "../../api/mutationClient";
 import type { ConflictRecoveryContext } from "../../composables/useConflictRecovery";
+import { useProductWriteAvailability } from "../../composables/useProductWriteAvailability";
 import ActionButton from "../ActionButton.vue";
 import ActionOverflowMenu from "../ActionOverflowMenu.vue";
 
@@ -49,6 +51,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const router = useRouter();
+const { writesAllowed, blockedMessage } = useProductWriteAvailability();
 
 const mutating = ref(false);
 const alertMessage = ref<string | null>(null);
@@ -151,6 +154,9 @@ function routeToSignatureWorkspace(descriptor: ActionDescriptor, reason?: string
 }
 
 function mapMutationError(error: unknown): string {
+  if (error instanceof MutationWritesBlockedError) {
+    return blockedMessage.value;
+  }
   if (error instanceof MutationClientError) {
     return t(mutationErrorI18nKey(error.kind));
   }
@@ -161,7 +167,7 @@ async function executeWorkflowMutation(
   descriptor: ActionDescriptor,
   reason?: string,
 ): Promise<void> {
-  if (mutating.value) {
+  if (mutating.value || !writesAllowed.value) {
     return;
   }
   const generation = ++mutationGeneration.current;
@@ -241,7 +247,7 @@ async function runDispatch(
   descriptor: ActionDescriptor,
   options: { confirmed?: boolean; reason?: string } = {},
 ): Promise<void> {
-  if (mutating.value) {
+  if (mutating.value || !writesAllowed.value) {
     return;
   }
   const result = await dispatchAction({
@@ -308,6 +314,14 @@ function onCancelReason(): void {
     <h3>{{ t("documents.workflow.title") }}</h3>
 
     <p
+      v-if="!writesAllowed"
+      role="status"
+      data-testid="workflow-writes-blocked"
+    >
+      {{ blockedMessage }}
+    </p>
+
+    <p
       v-if="alertMessage"
       :role="alertLive === 'assertive' ? 'alert' : 'status'"
       :aria-live="alertLive"
@@ -322,12 +336,16 @@ function onCancelReason(): void {
         :key="action.code"
         :descriptor="action"
         :supported="supportedCodes.includes(action.code)"
+        :product-writes-allowed="writesAllowed"
+        :product-writes-blocked-message="blockedMessage"
         :data-testid="`workflow-action-${action.code}`"
         @action="onAction"
       />
       <ActionOverflowMenu
         :actions="overflowActions"
         :supported-codes="supportedCodes"
+        :product-writes-allowed="writesAllowed"
+        :product-writes-blocked-message="blockedMessage"
         @action="onAction"
       />
     </div>

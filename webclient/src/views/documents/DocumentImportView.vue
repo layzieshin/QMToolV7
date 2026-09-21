@@ -4,8 +4,9 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
 import { ApiTransportError, type CreateVersionBody, type VersionStateResponse } from "../../api/client";
-import { MutationClientError, mutate } from "../../api/mutationClient";
+import { MutationClientError, MutationWritesBlockedError, mutate } from "../../api/mutationClient";
 import { mutationErrorI18nKey } from "../../api/errors";
+import { useProductWriteAvailability } from "../../composables/useProductWriteAvailability";
 
 defineOptions({
   name: "DocumentImportView",
@@ -27,6 +28,7 @@ type UploadRetryRecord = {
 
 const { t } = useI18n();
 const router = useRouter();
+const { writesAllowed, blockedMessage } = useProductWriteAvailability();
 
 const documentId = ref("");
 const version = ref("1");
@@ -45,6 +47,9 @@ function resetAlert(): void {
 }
 
 function mapError(error: unknown): string {
+  if (error instanceof MutationWritesBlockedError) {
+    return blockedMessage.value;
+  }
   if (error instanceof MutationClientError) {
     if (error.fieldErrors.length > 0) {
       return t("documents.detail.errors.validation");
@@ -185,7 +190,7 @@ function onFileChange(event: Event): void {
 }
 
 async function submitImport(): Promise<void> {
-  if (submitting.value) {
+  if (submitting.value || !writesAllowed.value) {
     return;
   }
   resetAlert();
@@ -262,12 +267,20 @@ function backToPool(): void {
     <h2>{{ t("documents.import.title") }}</h2>
     <p>{{ awaitingUploadRetry ? t("documents.import.retryHint") : t("documents.import.hint") }}</p>
 
+    <p
+      v-if="!writesAllowed"
+      role="status"
+      data-testid="document-import-writes-blocked"
+    >
+      {{ blockedMessage }}
+    </p>
+
     <form data-testid="document-import-form" @submit.prevent="submitImport">
       <v-text-field
         v-model="documentId"
         :label="t('documents.import.documentId')"
         data-testid="document-import-document-id"
-        :disabled="awaitingUploadRetry"
+        :disabled="awaitingUploadRetry || !writesAllowed"
         required
       />
       <v-text-field
@@ -275,14 +288,14 @@ function backToPool(): void {
         :label="t('documents.import.version')"
         inputmode="numeric"
         data-testid="document-import-version"
-        :disabled="awaitingUploadRetry"
+        :disabled="awaitingUploadRetry || !writesAllowed"
         required
       />
       <v-text-field
         v-model="title"
         :label="t('documents.import.titleField')"
         data-testid="document-import-title"
-        :disabled="awaitingUploadRetry"
+        :disabled="awaitingUploadRetry || !writesAllowed"
       />
       <label for="document-import-file">{{ t("documents.import.file") }}</label>
       <input
@@ -290,7 +303,7 @@ function backToPool(): void {
         type="file"
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         data-testid="document-import-file"
-        :disabled="awaitingUploadRetry"
+        :disabled="awaitingUploadRetry || !writesAllowed"
         @change="onFileChange"
       />
       <v-btn
@@ -298,7 +311,7 @@ function backToPool(): void {
         color="primary"
         class="submit-btn"
         :loading="submitting"
-        :disabled="submitting"
+        :disabled="submitting || !writesAllowed"
         data-testid="document-import-submit"
       >
         {{ awaitingUploadRetry ? t("documents.import.retryUpload") : t("documents.import.submit") }}

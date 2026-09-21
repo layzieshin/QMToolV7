@@ -41,6 +41,7 @@ import { MutationClientError } from "../../api/mutationClient";
 import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
 import { routes } from "../../router/routes";
+import { __setBootstrapWritesAllowedForTest } from "../../state/bootstrap";
 
 const fetchDocumentVersionMock = vi.hoisted(() => vi.fn());
 const fetchDocumentArtifactsMock = vi.hoisted(() => vi.fn());
@@ -685,6 +686,7 @@ describe("SignaturePlacementCanvas", () => {
 
 describe("SignatureWorkspaceView", () => {
   beforeEach(() => {
+    __setBootstrapWritesAllowedForTest(true);
     stubCanvasContext();
     stubPointerCapture();
     vi.stubGlobal(

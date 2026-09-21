@@ -4,11 +4,13 @@ import { apiBasePrefix } from "../api/client";
 import type { MutationBody } from "../api/mutationClient";
 import {
   MutationClientError,
+  MutationWritesBlockedError,
   buildMutationClientError,
   extractErrorDetail,
   mutationErrorI18nKey,
   mutate,
 } from "../api/mutationClient";
+import { __setBootstrapWritesAllowedForTest } from "../state/bootstrap";
 
 type FetchCall = {
   url: string;
@@ -52,6 +54,7 @@ describe("mutationClient", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    __setBootstrapWritesAllowedForTest(true);
     document.cookie = "qmtool_csrf=test-csrf-token";
     fetchMock = captureFetch(() => empty204Response());
     vi.stubGlobal("fetch", fetchMock);
@@ -60,6 +63,7 @@ describe("mutationClient", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     document.cookie = "qmtool_csrf=; Max-Age=0";
+    __setBootstrapWritesAllowedForTest(false);
   });
 
   it("uses same-origin /api/v1 URL with credentials include and no Authorization", async () => {
@@ -312,9 +316,39 @@ describe("mutationClient", () => {
     ).toBe(false);
     setItem.mockRestore();
   });
+
+  it("fails before fetch when product writes are blocked", async () => {
+    __setBootstrapWritesAllowedForTest(false);
+
+    await expect(
+      mutate({ method: "POST", path: "/documents/versions/create", body: { json: { ok: true } } }),
+    ).rejects.toBeInstanceOf(MutationWritesBlockedError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows mutate after product writes recover", async () => {
+    __setBootstrapWritesAllowedForTest(false);
+    await expect(
+      mutate({ method: "POST", path: "/documents/versions/create", body: { json: { ok: true } } }),
+    ).rejects.toBeInstanceOf(MutationWritesBlockedError);
+
+    __setBootstrapWritesAllowedForTest(true);
+    await mutate({ method: "POST", path: "/documents/versions/create", body: { json: { ok: true } } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("mutation error normalization", () => {
+  beforeEach(() => {
+    __setBootstrapWritesAllowedForTest(true);
+    document.cookie = "qmtool_csrf=test-csrf-token";
+  });
+
+  afterEach(() => {
+    document.cookie = "qmtool_csrf=; Max-Age=0";
+    __setBootstrapWritesAllowedForTest(false);
+  });
+
   it("classifies 401/403/404/409/428 with code, message and field_errors", () => {
     const cases = [
       {

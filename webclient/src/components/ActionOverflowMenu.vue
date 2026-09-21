@@ -10,10 +10,18 @@ import {
   resolveActionLabel,
 } from "../actions/actionTypes";
 
-const props = defineProps<{
-  actions: ActionDescriptor[];
-  supportedCodes: readonly string[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    actions: ActionDescriptor[];
+    supportedCodes: readonly string[];
+    productWritesAllowed?: boolean;
+    productWritesBlockedMessage?: string;
+  }>(),
+  {
+    productWritesAllowed: true,
+    productWritesBlockedMessage: undefined,
+  },
+);
 
 const emit = defineEmits<{
   action: [descriptor: ActionDescriptor];
@@ -39,6 +47,8 @@ function itemTitle(descriptor: ActionDescriptor): string {
     t,
     itemLabel(descriptor),
     isSupported(descriptor.code),
+    props.productWritesAllowed,
+    props.productWritesBlockedMessage,
   );
 }
 
@@ -50,7 +60,7 @@ function itemColor(descriptor: ActionDescriptor): string | undefined {
 }
 
 function onSelect(descriptor: ActionDescriptor): void {
-  if (!isActionInteractive(descriptor, isSupported(descriptor.code))) {
+  if (!isActionInteractive(descriptor, isSupported(descriptor.code), props.productWritesAllowed)) {
     return;
   }
   emit("action", descriptor);

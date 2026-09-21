@@ -12,9 +12,11 @@ import {
 import { mutationErrorI18nKey } from "../../api/errors";
 import {
   MutationClientError,
+  MutationWritesBlockedError,
   mutate,
 } from "../../api/mutationClient";
 import type { ConflictRecoveryContext } from "../../composables/useConflictRecovery";
+import { useProductWriteAvailability } from "../../composables/useProductWriteAvailability";
 import CommentList from "./CommentList.vue";
 
 const props = defineProps<{
@@ -31,6 +33,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const { writesAllowed, blockedMessage } = useProductWriteAvailability();
 
 const comments = ref<WorkflowCommentListItemModel[]>([]);
 const commentsLoading = ref(false);
@@ -49,8 +52,16 @@ const commentsEnabled = computed(() =>
   ),
 );
 
-const showCreateForm = computed(
+const commentsCreateEligible = computed(
   () => commentsEnabled.value && props.hasPdf && props.currentPage >= 1,
+);
+
+const showCreateForm = computed(
+  () => commentsCreateEligible.value && writesAllowed.value,
+);
+
+const commentsWritesBlocked = computed(
+  () => commentsCreateEligible.value && !writesAllowed.value,
 );
 
 watch(
@@ -110,7 +121,7 @@ function mapLoadError(cause: ApiTransportError | Error | null): string {
 }
 
 async function submitComment(): Promise<void> {
-  if (!showCreateForm.value || submitting.value) {
+  if (!showCreateForm.value || submitting.value || !writesAllowed.value) {
     return;
   }
   const trimmed = commentText.value.trim();
@@ -154,6 +165,10 @@ async function submitComment(): Promise<void> {
     }
   } catch (cause) {
     if (generation !== submitGeneration.current) {
+      return;
+    }
+    if (cause instanceof MutationWritesBlockedError) {
+      submitError.value = blockedMessage.value;
       return;
     }
     if (cause instanceof MutationClientError) {
@@ -214,6 +229,14 @@ defineExpose({
     </div>
 
     <CommentList v-else :items="comments" />
+
+    <p
+      v-if="commentsWritesBlocked"
+      role="status"
+      data-testid="comments-writes-blocked"
+    >
+      {{ blockedMessage }}
+    </p>
 
     <form
       v-if="showCreateForm"

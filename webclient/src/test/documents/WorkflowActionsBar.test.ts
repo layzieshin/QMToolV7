@@ -33,6 +33,7 @@ import {
 import WorkflowActionsBar from "../../components/documents/WorkflowActionsBar.vue";
 import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
+import { __setBootstrapWritesAllowedForTest } from "../../state/bootstrap";
 
 const mutateMock = vi.hoisted(() => vi.fn());
 const routerPushMock = vi.hoisted(() => vi.fn());
@@ -123,6 +124,7 @@ function mountBar(detailValue: VersionStateResponse) {
 
 describe("WorkflowActionsBar", () => {
   beforeEach(() => {
+    __setBootstrapWritesAllowedForTest(true);
     stubBrowserApis();
     mutateMock.mockReset();
     routerPushMock.mockReset();
@@ -427,5 +429,17 @@ describe("WorkflowActionsBar", () => {
     await flushPromises();
     expect(mutateMock).not.toHaveBeenCalled();
     expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it("disables workflow actions and blocks mutate when product writes are unavailable", async () => {
+    __setBootstrapWritesAllowedForTest(false);
+    const { wrapper } = mountBar(detail());
+    await flushPromises();
+    expect(wrapper.find("[data-testid=workflow-writes-blocked]").exists()).toBe(true);
+    const button = wrapper.get("button");
+    expect(button.attributes("disabled")).toBeDefined();
+    await button.trigger("click");
+    await flushPromises();
+    expect(mutateMock).not.toHaveBeenCalled();
   });
 });

@@ -8,6 +8,13 @@ export type MutationErrorKind =
   | "precondition_required"
   | "transport";
 
+export class MutationWritesBlockedError extends Error {
+  constructor(message = "product writes blocked") {
+    super(message);
+    this.name = "MutationWritesBlockedError";
+  }
+}
+
 export class MutationValidationError extends Error {
   readonly code: "invalid_path" | "invalid_if_match" | "invalid_body";
 

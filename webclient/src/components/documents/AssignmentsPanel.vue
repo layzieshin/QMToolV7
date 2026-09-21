@@ -4,8 +4,9 @@ import { useI18n } from "vue-i18n";
 
 import type { ActionDescriptor } from "../../actions/actionTypes";
 import type { UserDirectoryItem, VersionStateResponse } from "../../api/client";
-import { MutationClientError, mutate } from "../../api/mutationClient";
+import { MutationClientError, MutationWritesBlockedError, mutate } from "../../api/mutationClient";
 import { mutationErrorI18nKey } from "../../api/errors";
+import { useProductWriteAvailability } from "../../composables/useProductWriteAvailability";
 
 const props = defineProps<{
   detail: VersionStateResponse | null;
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const { writesAllowed, blockedMessage } = useProductWriteAvailability();
 
 const editors = ref<string[]>([]);
 const reviewers = ref<string[]>([]);
@@ -36,7 +38,7 @@ function isAssignRolesEnabled(actions: ActionDescriptor[] | undefined): boolean 
 }
 
 const canEdit = computed(() => {
-  if (!props.detail || props.directoryLoading || props.directoryError) {
+  if (!props.detail || props.directoryLoading || props.directoryError || !writesAllowed.value) {
     return false;
   }
   return isAssignRolesEnabled(props.detail.allowed_actions);
@@ -101,6 +103,9 @@ function assignedLabels(ids: string[]): string[] {
 }
 
 function mapSubmitError(error: unknown): string {
+  if (error instanceof MutationWritesBlockedError) {
+    return blockedMessage.value;
+  }
   if (error instanceof MutationClientError) {
     if (error.kind === "conflict" || error.kind === "precondition_required") {
       return t("documents.detail.assignments.conflictDeferred");
@@ -111,7 +116,7 @@ function mapSubmitError(error: unknown): string {
 }
 
 async function submitAssignments(): Promise<void> {
-  if (!props.detail || !props.version || submitting.value || !canEdit.value) {
+  if (!props.detail || !props.version || submitting.value || !canEdit.value || !writesAllowed.value) {
     return;
   }
   submitting.value = true;
@@ -166,6 +171,14 @@ async function submitAssignments(): Promise<void> {
     </p>
 
     <template v-if="detail">
+      <p
+        v-if="!writesAllowed && isAssignRolesEnabled(detail.allowed_actions)"
+        role="status"
+        data-testid="assignments-writes-blocked"
+      >
+        {{ blockedMessage }}
+      </p>
+
       <dl v-if="!canEdit" data-testid="assignments-readonly">
         <dt>{{ t("documents.detail.assignmentsEditors") }}</dt>
         <dd data-testid="assignments-editors-readonly">

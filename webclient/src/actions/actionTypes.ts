@@ -56,7 +56,12 @@ export function resolveActionAccessibleTitle(
   t: TranslateFn,
   label: string,
   supported: boolean,
+  productWritesAllowed = true,
+  productWritesBlockedMessage?: string,
 ): string {
+  if (!productWritesAllowed) {
+    return productWritesBlockedMessage?.trim() || t("connection.degraded");
+  }
   if (!descriptor.enabled) {
     return descriptor.disabled_reason?.trim() || t("actions.disabled");
   }
@@ -76,6 +81,10 @@ export function actionButtonColor(descriptor: ActionDescriptor): string {
   return "primary";
 }
 
-export function isActionInteractive(descriptor: ActionDescriptor, supported: boolean): boolean {
-  return descriptor.enabled && supported;
+export function isActionInteractive(
+  descriptor: ActionDescriptor,
+  supported: boolean,
+  productWritesAllowed = true,
+): boolean {
+  return productWritesAllowed && descriptor.enabled && supported;
 }

@@ -29,6 +29,7 @@ import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
 import { routes } from "../../router/routes";
 import DocumentImportView from "../../views/documents/DocumentImportView.vue";
+import { __setBootstrapWritesAllowedForTest } from "../../state/bootstrap";
 
 const mutateMock = vi.hoisted(() => vi.fn());
 
@@ -117,6 +118,7 @@ async function fillImportForm(
 
 describe("DocumentImportView", () => {
   beforeEach(() => {
+    __setBootstrapWritesAllowedForTest(true);
     stubBrowserApis();
     mutateMock.mockReset();
   });
@@ -318,5 +320,17 @@ describe("DocumentImportView", () => {
     expect(alert.text()).toContain(snippet);
     expect(alert.text()).not.toContain("fail");
     expect(wrapper.get("[data-testid=document-import-submit]").text()).toContain("Upload erneut");
+  });
+
+  it("disables import submit and blocks mutate when product writes are unavailable", async () => {
+    __setBootstrapWritesAllowedForTest(false);
+    const pdf = new File(["%PDF"], "doc.pdf", { type: "application/pdf" });
+    const { wrapper } = await mountImport();
+    await fillImportForm(wrapper, { documentId: "DOC-NEW", version: "1", file: pdf });
+    await submitImportForm(wrapper);
+    await flushPromises();
+    expect(wrapper.find("[data-testid=document-import-writes-blocked]").exists()).toBe(true);
+    expect(wrapper.get("[data-testid=document-import-submit]").attributes("disabled")).toBeDefined();
+    expect(mutateMock).not.toHaveBeenCalled();
   });
 });

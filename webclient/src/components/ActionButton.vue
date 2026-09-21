@@ -10,10 +10,18 @@ import {
   resolveActionLabel,
 } from "../actions/actionTypes";
 
-const props = defineProps<{
-  descriptor: ActionDescriptor;
-  supported: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    descriptor: ActionDescriptor;
+    supported: boolean;
+    productWritesAllowed?: boolean;
+    productWritesBlockedMessage?: string;
+  }>(),
+  {
+    productWritesAllowed: true,
+    productWritesBlockedMessage: undefined,
+  },
+);
 
 const emit = defineEmits<{
   action: [descriptor: ActionDescriptor];
@@ -26,10 +34,19 @@ const label = computed(() =>
 );
 
 const accessibleTitle = computed(() =>
-  resolveActionAccessibleTitle(props.descriptor, t, label.value, props.supported),
+  resolveActionAccessibleTitle(
+    props.descriptor,
+    t,
+    label.value,
+    props.supported,
+    props.productWritesAllowed,
+    props.productWritesBlockedMessage,
+  ),
 );
 
-const interactive = computed(() => isActionInteractive(props.descriptor, props.supported));
+const interactive = computed(() =>
+  isActionInteractive(props.descriptor, props.supported, props.productWritesAllowed),
+);
 
 const color = computed(() => actionButtonColor(props.descriptor));
 

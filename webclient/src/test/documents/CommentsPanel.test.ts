@@ -33,6 +33,7 @@ import {
 import CommentsPanel from "../../components/documents/CommentsPanel.vue";
 import { i18n } from "../../i18n";
 import vuetify from "../../plugins/vuetify";
+import { __setBootstrapWritesAllowedForTest } from "../../state/bootstrap";
 
 const fetchWorkflowCommentsMock = vi.hoisted(() => vi.fn());
 const fetchWorkflowCommentDetailMock = vi.hoisted(() => vi.fn());
@@ -171,6 +172,7 @@ function mountPanelWithParent() {
 
 describe("CommentsPanel", () => {
   beforeEach(() => {
+    __setBootstrapWritesAllowedForTest(true);
     stubBrowserApis();
     fetchWorkflowCommentsMock.mockReset();
     fetchWorkflowCommentDetailMock.mockReset();
@@ -399,6 +401,15 @@ describe("CommentsPanel", () => {
     resolveSlow([listItem("late")]);
     await flushPromises();
     expect(fetchWorkflowCommentsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides create form and blocks mutate when product writes are unavailable", async () => {
+    __setBootstrapWritesAllowedForTest(false);
+    const wrapper = mountPanel();
+    await flushPromises();
+    expect(wrapper.find("[data-testid=comments-writes-blocked]").exists()).toBe(true);
+    expect(wrapper.find("[data-testid=comments-create-form]").exists()).toBe(false);
+    expect(mutateMock).not.toHaveBeenCalled();
   });
 });
 

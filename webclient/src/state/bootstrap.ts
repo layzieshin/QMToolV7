@@ -202,6 +202,11 @@ export function useBootstrapState() {
   return readonly(state);
 }
 
+/** Fail-closed snapshot for mutation transport; not reactive. */
+export function getProductWritesAllowedSnapshot(): boolean {
+  return state.writesAllowed;
+}
+
 export async function refreshConnection(
   options: { automatic?: boolean; lifecycleEpoch?: number } = {},
 ): Promise<void> {
@@ -356,4 +361,8 @@ export function __setBootstrapBannerForTest(
 
 export function __setBootstrapModulesForTest(modules: ModuleBootstrapItem[]): void {
   state.modules = modules;
+}
+
+export function __setBootstrapWritesAllowedForTest(writesAllowed: boolean): void {
+  state.writesAllowed = writesAllowed;
 }
