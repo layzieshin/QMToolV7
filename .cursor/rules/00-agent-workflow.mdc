@@ -30,6 +30,19 @@ Use Windows/PowerShell, Python 3.14 and the workspace `.venv` exactly as documen
 For destructive PostgreSQL tests, the complete Slot 2 procedure in `AGENTS.md` is mandatory; never
 use the Runtime/Lab target or invoke bare `pytest -m postgres`.
 
+Before an autonomous package makes its first edit, run
+`.cursor/tools/assert-execution-host.ps1` for the opened target root with `-RequireGitWrite` and,
+when tests are in scope, `-RequirePythonTemp`. A coordinator that launches a nested Cursor CLI must
+use `.cursor/tools/invoke-cursor-agent.ps1`; never detach it with `Start-Process`, split a prompt
+through an argument string, clear proxy variables, or retry after `EXECUTION_HOST_REQUIRED`.
+That status means the task must run in the already opened trusted Cursor host, before edits or model
+review work consume budget.
+
+For non-PostgreSQL work-package gates, prefer `.cursor/tools/run-pytest-gate.ps1`. It owns a short,
+unique process temp and `--basetemp`; callers must not supply either a second `--basetemp` or a
+second `--junitxml`. Direct pytest remains supported and receives a unique repository-local default
+from `conftest.py`. Explicit fresh J04 basetemps remain owned by the guarded PostgreSQL runner.
+
 ## Phase 0: Scope classification
 
 Before acting, classify the task by its primary scope:

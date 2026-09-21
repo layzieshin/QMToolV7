@@ -22,6 +22,13 @@ same checkpoint.
 
 ## Start or resume
 
+0. Before reading or initializing runtime state, run
+   `.cursor/tools/assert-execution-host.ps1` against the exact opened target root. Require Git
+   metadata write access and Python temp access for implementation
+   packages. If it returns `EXECUTION_HOST_REQUIRED`, do not edit, start reviewers, detach/relaunch
+   Cursor, clear proxy variables, or move a branch between worktrees. Re-open the registered target
+   in the trusted Cursor host and resume there. Use `.cursor/tools/run-pytest-gate.ps1` for
+   ordinary Python gates; the guarded PostgreSQL runner continues to own live/J04 invocation.
 1. Locate the approved package in the existing flat `docs/AP-*` structure. Requirements and
    architecture must already be decision-complete; otherwise use `/maintain-roadmap`.
 2. Require one non-base work branch/worktree for exactly this package. Preserve foreign changes.

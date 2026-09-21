@@ -63,10 +63,21 @@ and supplemented by `.cursor/rules/02-autonomous-work-package.mdc`.
 - Python: `3.14.x` (`pyproject.toml` `requires-python = ">=3.14,<3.15"`).
 - Use the workspace venv explicitly: `.\.venv\Scripts\python.exe`.
 - Tests: `.\.venv\Scripts\python.exe -m pytest`.
-  Pytest uses `build/pytest-basetemp` by default via `pytest.ini`; a `WinError 5`
-  under global Windows `%TEMP%` is an environment problem, not a product failure.
+  Direct pytest processes receive a short unique basetemp under `build/pt/`. Autonomous
+  work-package gates should use `.cursor/tools/run-pytest-gate.ps1`, which also owns a unique
+  process `TEMP`/`TMP`, basetemp and optional JUnit path. Do not run concurrent gates against the
+  same explicit basetemp. A `WinError 5` in temp/basetemp is an execution-host problem, not a
+  product failure.
 - No configured linter/typechecker (no ruff/flake8/mypy/pre-commit) — do not invent lint/typecheck steps.
 - Do not invent npm/Vite commands until WEB00 lands them in-repo.
+
+Before the first edit of an autonomous package, run
+`.cursor/tools/assert-execution-host.ps1 -TargetRoot <root> -RequireGitWrite -RequirePythonTemp`.
+It verifies the registered worktree, attached branch, central Git metadata and Python child temp
+roundtrip. Nested Cursor CLI launches must use `.cursor/tools/invoke-cursor-agent.ps1`; it fails
+before edits when proxy/session-store restrictions make that host unsuitable and never clears those
+security controls. Open the target in the trusted Cursor host instead of moving a branch between
+worktrees.
 
 ## Destructive PostgreSQL live tests (Slot 2)
 
