@@ -1,11 +1,13 @@
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")]
     [string]$GateId,
 
+    [Parameter()]
     [string]$PythonPath = ".venv\Scripts\python.exe",
 
+    [Parameter()]
     [string]$JUnitPath = "",
 
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -13,6 +15,57 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Test-DisallowedJUnitAlias {
+    param([string]$Argument)
+
+    return (
+        $Argument -eq "--junitxml" -or
+        $Argument -like "--junitxml=*" -or
+        $Argument -eq "--junit-xml" -or
+        $Argument -like "--junit-xml=*"
+    )
+}
+
+function Resolve-RepositoryJUnitPath {
+    param(
+        [string]$RepoRoot,
+        [string]$CandidatePath
+    )
+
+    $resolvedPath = $CandidatePath
+    if (-not [System.IO.Path]::IsPathRooted($resolvedPath)) {
+        $resolvedPath = Join-Path $RepoRoot $resolvedPath
+    }
+    return [System.IO.Path]::GetFullPath($resolvedPath)
+}
+
+function Assert-AllowedJUnitPath {
+    param(
+        [string]$RepoRoot,
+        [string]$ResolvedJUnitPath
+    )
+
+    if (-not $ResolvedJUnitPath.EndsWith(".xml", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "JUnitPath must use a .xml file extension: $ResolvedJUnitPath"
+    }
+
+    $repoRootPrefix = $RepoRoot.TrimEnd('\', '/')
+    if (-not $ResolvedJUnitPath.StartsWith($repoRootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "JUnitPath must resolve inside the repository: $ResolvedJUnitPath"
+    }
+    $relativePath = $ResolvedJUnitPath.Substring($repoRootPrefix.Length).TrimStart('\', '/').Replace('\', '/')
+    $trackedMatch = (& git -C $RepoRoot ls-files -- $relativePath 2>$null | Select-Object -First 1)
+    if ($trackedMatch) {
+        throw "JUnitPath must not target a tracked repository path: $relativePath"
+    }
+
+    $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "build"))
+    $buildPrefix = $buildRoot + [System.IO.Path]::DirectorySeparatorChar
+    if (-not ($ResolvedJUnitPath.StartsWith($buildPrefix, [System.StringComparison]::OrdinalIgnoreCase))) {
+        throw "JUnitPath must resolve under the repository build directory: $ResolvedJUnitPath"
+    }
+}
 
 $repoRoot = (& git rev-parse --show-toplevel 2>$null).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $repoRoot) {
@@ -30,9 +83,15 @@ foreach ($argument in @($PytestArgs)) {
     if ($argument -eq "--basetemp" -or $argument -like "--basetemp=*") {
         throw "The gate wrapper owns --basetemp; remove it from PytestArgs."
     }
-    if ($argument -eq "--junitxml" -or $argument -like "--junitxml=*") {
-        throw "Use -JUnitPath instead of passing --junitxml through PytestArgs."
+    if (Test-DisallowedJUnitAlias $argument) {
+        throw "Use -JUnitPath instead of passing JUnit aliases through PytestArgs."
     }
+}
+
+$resolvedJUnitPath = ""
+if ($JUnitPath) {
+    $resolvedJUnitPath = Resolve-RepositoryJUnitPath -RepoRoot $repoRoot -CandidatePath $JUnitPath
+    Assert-AllowedJUnitPath -RepoRoot $repoRoot -ResolvedJUnitPath $resolvedJUnitPath
 }
 
 $preflight = Join-Path $PSScriptRoot "assert-execution-host.ps1"
@@ -56,16 +115,12 @@ $pytestCommand = @("-m", "pytest") + @($PytestArgs) + @(
     "--basetemp", $baseTemp
 )
 
-if ($JUnitPath) {
-    if (-not [System.IO.Path]::IsPathRooted($JUnitPath)) {
-        $JUnitPath = Join-Path $repoRoot $JUnitPath
-    }
-    $JUnitPath = [System.IO.Path]::GetFullPath($JUnitPath)
-    $junitDirectory = Split-Path -Parent $JUnitPath
+if ($resolvedJUnitPath) {
+    $junitDirectory = Split-Path -Parent $resolvedJUnitPath
     if ($junitDirectory) {
         New-Item -ItemType Directory -Path $junitDirectory -Force | Out-Null
     }
-    $pytestCommand += @("--junitxml", $JUnitPath)
+    $pytestCommand += @("--junitxml", $resolvedJUnitPath)
 }
 
 $previousTemp = $env:TEMP

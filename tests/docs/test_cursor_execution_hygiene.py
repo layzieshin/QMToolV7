@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from uuid import uuid4
 
 import pytest
 
@@ -14,6 +15,12 @@ from conftest import _has_explicit_basetemp, _unique_default_basetemp
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / ".cursor" / "tools"
 POWERSHELL = "powershell.exe"
+TRACKED_HYGIENE_TEST = ROOT / "tests" / "docs" / "test_cursor_execution_hygiene.py"
+
+
+def _unique_build_junit(name: str) -> Path:
+    token = uuid4().hex[:8]
+    return ROOT / "build" / "pt" / f"{name}-{token}.xml"
 
 
 def _run_powershell(script: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -152,7 +159,7 @@ def test_execution_host_preflight_rejects_existing_git_index_lock(tmp_path: Path
 def test_pytest_gate_wrapper_uses_unique_owned_paths(tmp_path: Path) -> None:
     smoke = tmp_path / "test_wrapper_smoke.py"
     smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
-    junit = tmp_path / "wrapper.xml"
+    junit = _unique_build_junit("wrapper-smoke")
     completed = _run_powershell(
         TOOLS / "run-pytest-gate.ps1",
         "-GateId",
@@ -167,6 +174,187 @@ def test_pytest_gate_wrapper_uses_unique_owned_paths(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr or completed.stdout
     assert "QMTOOL_PYTEST_BASETEMP=" in completed.stdout
     assert "QMTOOL_PYTEST_PROCESS_TEMP=" in completed.stdout
+    assert junit.is_file()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_wrapper_rejects_junit_path_outside_build(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_wrapper_smoke.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    junit = ROOT / f"outside-build-{uuid4().hex[:8]}.xml"
+    completed = _run_powershell(
+        TOOLS / "run-pytest-gate.ps1",
+        "-GateId",
+        "hygiene",
+        "-PythonPath",
+        sys.executable,
+        "-JUnitPath",
+        str(junit),
+        str(smoke),
+        "-q",
+    )
+    assert completed.returncode != 0
+    assert "build directory" in (completed.stderr or completed.stdout)
+    assert not junit.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_wrapper_rejects_non_xml_and_tracked_junit_targets(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_wrapper_smoke.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    non_xml = _unique_build_junit("wrapper-nonxml").with_suffix(".txt")
+    tracked = TRACKED_HYGIENE_TEST
+
+    non_xml_result = _run_powershell(
+        TOOLS / "run-pytest-gate.ps1",
+        "-GateId",
+        "hygiene",
+        "-PythonPath",
+        sys.executable,
+        "-JUnitPath",
+        str(non_xml),
+        str(smoke),
+        "-q",
+    )
+    assert non_xml_result.returncode != 0
+    assert ".xml" in (non_xml_result.stderr or non_xml_result.stdout)
+    assert not non_xml.exists()
+
+    tracked_bytes = tracked.read_bytes()
+    tracked_result = _run_powershell(
+        TOOLS / "run-pytest-gate.ps1",
+        "-GateId",
+        "hygiene",
+        "-PythonPath",
+        sys.executable,
+        "-JUnitPath",
+        str(tracked),
+        str(smoke),
+        "-q",
+    )
+    assert tracked_result.returncode != 0
+    assert ".xml" in (tracked_result.stderr or tracked_result.stdout)
+    assert tracked.read_bytes() == tracked_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+@pytest.mark.parametrize(
+    ("extra_arg",),
+    [
+        ("--junitxml",),
+        ("--junitxml=build/pt/forbidden.xml",),
+        ("--junit-xml",),
+        ("--junit-xml=build/pt/forbidden.xml",),
+    ],
+)
+def test_pytest_gate_wrapper_rejects_junit_aliases_in_pytest_args(
+    tmp_path: Path, extra_arg: str
+) -> None:
+    smoke = tmp_path / "test_wrapper_smoke.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    completed = _run_powershell(
+        TOOLS / "run-pytest-gate.ps1",
+        "-GateId",
+        "hygiene",
+        "-PythonPath",
+        sys.executable,
+        str(smoke),
+        extra_arg,
+        "-q",
+    )
+    assert completed.returncode != 0
+    assert "JUnitPath" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_wrapper_parameters_are_named_only(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_wrapper_smoke.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    junit = _unique_build_junit("wrapper-named-only")
+
+    missing_gate_id = _run_powershell(
+        TOOLS / "run-pytest-gate.ps1",
+        "hygiene",
+        "-PythonPath",
+        sys.executable,
+        "-JUnitPath",
+        str(junit),
+        str(smoke),
+        "-q",
+    )
+    assert missing_gate_id.returncode != 0
+
+    completed = _run_powershell(
+        TOOLS / "run-pytest-gate.ps1",
+        "-GateId",
+        "hygiene",
+        "-PythonPath",
+        sys.executable,
+        "-JUnitPath",
+        str(junit),
+        str(smoke),
+        "-q",
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    assert junit.is_file()
+
+
+def test_direct_pytest_rejects_junitxml_on_tracked_test_file(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_direct_junit_guard.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    tracked = TRACKED_HYGIENE_TEST
+    original = tracked.read_bytes()
+    env = dict(os.environ)
+    env.pop("PYTEST_ADDOPTS", None)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(smoke),
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "--junitxml",
+            str(tracked),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode != 0
+    combined = completed.stderr or completed.stdout
+    assert "tracked repository path" in combined or ".xml extension" in combined
+    assert tracked.read_bytes() == original
+
+
+def test_direct_pytest_accepts_build_junit_target(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_direct_junit_ok.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    junit = _unique_build_junit("direct-junit")
+    env = dict(os.environ)
+    env.pop("PYTEST_ADDOPTS", None)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            str(smoke),
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "--junit-xml",
+            str(junit),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
     assert junit.is_file()
 
 
