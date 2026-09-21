@@ -841,6 +841,126 @@ describe("SignatureWorkspaceView", () => {
     host.remove();
   });
 
+  it("uses assignment_kind from ensure-source-pdf response for suggestion and template save, not the initial descriptor value", async () => {
+    const initialKind = "initial_stub_role";
+    const authoritativeKind = "authoritative_server_role_q7";
+    const initial = {
+      ...baseDetail(),
+      allowed_actions: [
+        actionDescriptor("complete_editing", true, {
+          signatureRequired: true,
+          assignmentKind: initialKind,
+        }),
+        actionDescriptor("preview"),
+      ],
+    };
+    fetchDocumentVersionMock.mockResolvedValueOnce(initial);
+    mutateMock.mockResolvedValueOnce({
+      etag: "evt-2",
+      artifact_id: "artifact-source",
+      allowed_actions: [
+        actionDescriptor("complete_editing", true, {
+          signatureRequired: true,
+          assignmentKind: authoritativeKind,
+        }),
+        actionDescriptor("preview"),
+      ],
+      available_actions: initial.available_actions,
+      state: initial.state,
+    });
+    const suggestedForAuthoritative = {
+      ...suggestedTemplate(),
+      template_id: "tpl-authoritative",
+      name: "Authoritative Suggestion",
+      role_context: authoritativeKind,
+    };
+    fetchSignatureTemplateSuggestionMock.mockImplementation(async (_docType, roleContext) => {
+      if (roleContext === authoritativeKind) {
+        return suggestedForAuthoritative;
+      }
+      return null;
+    });
+
+    const { wrapper, host } = await mountWorkspace();
+    expect(fetchSignatureTemplateSuggestionMock).toHaveBeenCalledWith("SOP", authoritativeKind);
+    expect(fetchSignatureTemplateSuggestionMock).not.toHaveBeenCalledWith("SOP", initialKind);
+    expect(wrapper.get('[data-testid="signature-suggestion"]').text()).toContain("Authoritative Suggestion");
+
+    mutateMock.mockImplementation(async (args: { path?: string }) => {
+      if (args.path === "/signature/templates/user") {
+        return baseDetail();
+      }
+      throw new Error(`unexpected mutate path: ${args.path}`);
+    });
+    await wrapper.get('[data-testid="save-personal-template"]').trigger("click");
+    await flushPromises();
+
+    expect(mutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/signature/templates/user",
+        body: expect.objectContaining({
+          json: expect.objectContaining({
+            role_context: authoritativeKind,
+          }),
+        }),
+      }),
+    );
+    const templateSaveCalls = mutateMock.mock.calls.filter(
+      (call) => (call[0] as { path?: string }).path === "/signature/templates/user",
+    );
+    for (const call of templateSaveCalls) {
+      const body = (call[0] as { body?: { json?: { role_context?: string } } }).body;
+      expect(body?.json?.role_context).not.toBe(initialKind);
+    }
+    host.remove();
+  });
+
+  it("allows core signature workspace when assignment_kind is null but skips template suggestion reads and role-scoped template save", async () => {
+    const initial = {
+      ...baseDetail(),
+      allowed_actions: [
+        actionDescriptor("complete_editing", true, {
+          signatureRequired: true,
+          assignmentKind: null,
+        }),
+        actionDescriptor("preview"),
+      ],
+    };
+    fetchDocumentVersionMock.mockResolvedValueOnce(initial);
+    mutateMock.mockResolvedValueOnce({
+      etag: "evt-2",
+      artifact_id: "artifact-source",
+      allowed_actions: [
+        actionDescriptor("complete_editing", true, {
+          signatureRequired: true,
+          assignmentKind: null,
+        }),
+        actionDescriptor("preview"),
+      ],
+      available_actions: initial.available_actions,
+      state: initial.state,
+    });
+
+    const { wrapper, host } = await mountWorkspace();
+    expect(wrapper.find('[data-testid="signature-workspace-grid"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="signature-placement-canvas"]').exists()).toBe(true);
+    expect(fetchSignatureTemplateSuggestionMock).not.toHaveBeenCalled();
+    expect(fetchSignatureTemplatesUserMock).not.toHaveBeenCalled();
+    expect(fetchSignatureTemplatesGlobalMock).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-testid="signature-suggestion"]').exists()).toBe(false);
+
+    const templateSaveCallsBefore = mutateMock.mock.calls.filter(
+      (call) => (call[0] as { path?: string }).path === "/signature/templates/user",
+    ).length;
+    await wrapper.get('[data-testid="save-personal-template"]').trigger("click");
+    await flushPromises();
+    const templateSaveCallsAfter = mutateMock.mock.calls.filter(
+      (call) => (call[0] as { path?: string }).path === "/signature/templates/user",
+    ).length;
+    expect(templateSaveCallsAfter).toBe(templateSaveCallsBefore);
+    host.remove();
+  });
+
   it("forces show_time off when show_date is disabled", async () => {
     const { wrapper, host } = await mountWorkspace();
     const dateSwitch = wrapper

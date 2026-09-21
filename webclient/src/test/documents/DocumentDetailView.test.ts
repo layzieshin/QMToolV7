@@ -340,6 +340,55 @@ describe("DocumentDetailView", () => {
     expect(enabledMount.wrapper.find("[data-testid=assignments-form]").exists()).toBe(true);
   });
 
+  it("keeps assignments read-only when assign_roles is enabled but assignment_kind is null", async () => {
+    fetchDocumentVersionMock.mockResolvedValueOnce(
+      versionState({
+        allowed_actions: [
+          {
+            ...assignRolesDescriptor(true),
+            assignment_kind: null,
+          },
+        ],
+      }),
+    );
+    const { wrapper } = await mountDetail();
+    expect(wrapper.find("[data-testid=assignments-readonly]").exists()).toBe(true);
+    expect(wrapper.find("[data-testid=assignments-form]").exists()).toBe(false);
+    mutateMock.mockClear();
+    await wrapper.get("[data-testid=assignments-readonly]").trigger("click");
+    await flushPromises();
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps assignments read-only when assign_roles is enabled with unknown assignment_kind", async () => {
+    fetchDocumentVersionMock.mockResolvedValueOnce(
+      versionState({
+        allowed_actions: [
+          {
+            ...assignRolesDescriptor(true),
+            assignment_kind: "custom_server_kind",
+          },
+        ],
+      }),
+    );
+    const { wrapper } = await mountDetail();
+    expect(wrapper.find("[data-testid=assignments-readonly]").exists()).toBe(true);
+    expect(wrapper.find("[data-testid=assignments-form]").exists()).toBe(false);
+    mutateMock.mockClear();
+    expect(mutateMock).not.toHaveBeenCalled();
+  });
+
+  it("allows assignment edits when assign_roles is enabled with workflow_roles assignment_kind", async () => {
+    fetchDocumentVersionMock.mockResolvedValueOnce(
+      versionState({
+        allowed_actions: [assignRolesDescriptor(true)],
+      }),
+    );
+    const { wrapper } = await mountDetail();
+    expect(wrapper.find("[data-testid=assignments-form]").exists()).toBe(true);
+    expect(wrapper.find("[data-testid=assignments-readonly]").exists()).toBe(false);
+  });
+
   it("keeps assignments read-only when directory load fails but detail remains visible", async () => {
     fetchUsersDirectoryMock.mockRejectedValueOnce(new Error("directory down"));
     fetchDocumentVersionMock.mockResolvedValueOnce(versionState());
