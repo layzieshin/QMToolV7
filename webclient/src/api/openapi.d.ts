@@ -1626,6 +1626,8 @@ export interface components {
     schemas: {
         /** ActionDescriptorModel */
         ActionDescriptorModel: {
+            /** Assignment Kind */
+            assignment_kind: string | null;
             /** Code */
             code: string;
             /** Destructive */
@@ -1642,6 +1644,8 @@ export interface components {
             requires_reason: boolean;
             /** Severity */
             severity: string;
+            /** Signature Required */
+            signature_required: boolean;
         };
         /** AssignRolesBody */
         AssignRolesBody: {
@@ -2021,6 +2025,7 @@ export interface components {
         EnsureSourcePdfResponse: {
             /** @description Server-computed action descriptors for the confirmed actor. */
             allowed_actions: {
+                assignment_kind: string | null;
                 code: string;
                 destructive: boolean;
                 disabled_reason?: string | null;
@@ -2030,6 +2035,7 @@ export interface components {
                 requires_reason: boolean;
                 /** @enum {string} */
                 severity: "info" | "warning" | "danger";
+                signature_required: boolean;
             }[];
             /** Artifact Id */
             artifact_id?: string | null;
@@ -2094,6 +2100,7 @@ export interface components {
         ExtendAnnualResponse: {
             /** @description Server-computed action descriptors for the confirmed actor. */
             allowed_actions: {
+                assignment_kind: string | null;
                 code: string;
                 destructive: boolean;
                 disabled_reason?: string | null;
@@ -2103,6 +2110,7 @@ export interface components {
                 requires_reason: boolean;
                 /** @enum {string} */
                 severity: "info" | "warning" | "danger";
+                signature_required: boolean;
             }[];
             /** @description Server-computed available_actions for the confirmed actor. */
             available_actions: string[];
@@ -2560,6 +2568,7 @@ export interface components {
         VersionStateResponse: {
             /** @description Server-computed action descriptors for the confirmed actor. */
             allowed_actions: {
+                assignment_kind: string | null;
                 code: string;
                 destructive: boolean;
                 disabled_reason?: string | null;
@@ -2569,6 +2578,7 @@ export interface components {
                 requires_reason: boolean;
                 /** @enum {string} */
                 severity: "info" | "warning" | "danger";
+                signature_required: boolean;
             }[];
             /** @description Server-computed available_actions for the confirmed actor. */
             available_actions: string[];

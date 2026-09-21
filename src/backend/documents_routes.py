@@ -60,6 +60,8 @@ class ActionDescriptorModel(BaseModel):
     requires_confirmation: bool
     destructive: bool
     severity: str
+    signature_required: bool
+    assignment_kind: str | None
 
 
 class WorkflowAssignmentsModel(BaseModel):
@@ -749,6 +751,8 @@ def _serialize_action_descriptors(descriptors) -> list[dict[str, object]]:
             "requires_confirmation": descriptor.requires_confirmation,
             "destructive": descriptor.destructive,
             "severity": descriptor.severity,
+            "signature_required": descriptor.signature_required,
+            "assignment_kind": descriptor.assignment_kind,
         }
         for descriptor in sorted(descriptors, key=lambda item: item.code)
     ]
