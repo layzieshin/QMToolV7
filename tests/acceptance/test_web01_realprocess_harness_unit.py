@@ -5,6 +5,7 @@ import inspect
 import json
 import socket
 import subprocess
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -31,6 +32,7 @@ from tests.acceptance.web01_realprocess_harness import (
     MANDATORY_SCREENSHOT_DIMENSIONS,
     PIS_DOCUMENT_ID,
     PLAYWRIGHT_JSON_FILENAME,
+    PLAYWRIGHT_RAW_JSON_FILENAME,
     RESTART_COMPLETE_FILENAME,
     RESTART_GRACEFUL_STOP_DIAGNOSIS_FILENAME,
     RESTART_REQUEST_FILENAME,
@@ -44,6 +46,7 @@ from tests.acceptance.web01_realprocess_harness import (
     allocate_k1_workspace,
     allocate_web01_workspace,
     copy_playwright_json_report,
+    persist_redacted_playwright_json_report,
     evidence_root,
     redact_json_text,
     redact_log_text_with_extras,
@@ -143,6 +146,19 @@ def test_harness_workspace_guard_on_construct() -> None:
 def test_redact_log_text_strips_bearer_tokens() -> None:
     raw = "Authorization: Bearer secret-token-123"
     assert "secret-token-123" not in redact_log_text(raw)
+
+
+def test_redact_log_text_with_extras_redacts_basic_bearer_dsn_and_password_key() -> None:
+    payload = redact_log_text_with_extras(
+        '{"authorization":"Basic dXNlcjpwYXNz","token":"Bearer eyJ.secret",'
+        '"dsn":"postgresql://user:secret@127.0.0.1/db","password":"super-secret"}',
+        ("super-secret",),
+    )
+    assert "dXNlcjpwYXNz" not in payload
+    assert "eyJ.secret" not in payload
+    assert "postgresql://user:secret" not in payload
+    assert "super-secret" not in payload
+    assert "<redacted>" in payload
 
 
 def test_redact_log_text_with_extras_redacts_chunk_boundaries() -> None:
@@ -314,37 +330,140 @@ def test_verify_visual_screenshots_accepts_complete_valid_set(tmp_path: Path) ->
     assert [path.name for path in verified] == list(MANDATORY_SCREENSHOTS)
 
 
-def test_copy_playwright_json_report_requires_source() -> None:
-    workspace = allocate_k1_workspace()
-    visual = workspace / "visual"
+def test_copy_playwright_json_report_requires_source(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    visual = tmp_path / "visual"
     visual.mkdir()
     with pytest.raises(Web01HarnessError, match="Playwright JSON reporter output is missing"):
-        copy_playwright_json_report(workspace, visual)
+        copy_playwright_json_report(raw_dir, visual)
 
 
-def test_copy_playwright_json_report_copies_to_visual_dir() -> None:
-    workspace = allocate_k1_workspace()
-    visual = workspace / "visual"
-    visual.mkdir()
-    source = workspace / "browser-smoke-playwright.json"
+def test_copy_playwright_json_report_copies_to_visual_dir(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    visual = tmp_path / "visual"
+    source = raw_dir / PLAYWRIGHT_RAW_JSON_FILENAME
     source.write_text(
         '{"token":"Bearer secret-token-123","password":"super-secret"}\n',
         encoding="utf-8",
     )
     destination = copy_playwright_json_report(
-        workspace,
+        raw_dir,
         visual,
         extra_secrets=("super-secret",),
     )
     assert destination == visual / PLAYWRIGHT_JSON_FILENAME
     assert destination.is_file()
     payload = json.loads(destination.read_text(encoding="utf-8"))
-    assert payload["token"] == "Bearer <redacted>"
+    assert payload["token"] == "<redacted>"
     assert payload["password"] == "<redacted>"
-    workspace_payload = json.loads(source.read_text(encoding="utf-8"))
-    assert workspace_payload == payload
+    assert source.is_file()
     assert "secret-token-123" not in destination.read_text(encoding="utf-8")
-    assert "super-secret" not in source.read_text(encoding="utf-8")
+    assert "super-secret" not in destination.read_text(encoding="utf-8")
+
+
+def test_persist_redacted_playwright_json_report_rejects_invalid_json(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / PLAYWRIGHT_RAW_JSON_FILENAME).write_text("{not-json", encoding="utf-8")
+    with pytest.raises(Web01HarnessError, match="Playwright JSON redaction failed"):
+        persist_redacted_playwright_json_report(raw_dir, tmp_path / "visual")
+    assert (raw_dir / PLAYWRIGHT_RAW_JSON_FILENAME).is_file()
+
+
+def test_harness_persist_playwright_json_to_removes_raw_temp_dir() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+    raw_dir = harness._allocate_playwright_report_temp_dir()
+    harness._playwright_raw_report_dir = raw_dir
+    (raw_dir / PLAYWRIGHT_RAW_JSON_FILENAME).write_text(
+        '{"token":"Bearer abc.def"}\n',
+        encoding="utf-8",
+    )
+    visual = workspace / "visual"
+    destination = harness.persist_playwright_json_to(visual)
+    assert destination.is_file()
+    assert harness._playwright_raw_report_dir is None
+    assert not raw_dir.exists()
+    assert not (workspace / PLAYWRIGHT_RAW_JSON_FILENAME).exists()
+
+
+def test_start_playwright_subprocess_uses_raw_temp_evidence_dir() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+    child_env: dict[str, str] = {}
+    with patch(
+        "tests.acceptance.web01_realprocess_harness.subprocess.Popen",
+    ) as popen_mock:
+        popen_mock.return_value = SimpleNamespace(
+            stdout=SimpleNamespace(read=lambda size: ""),
+            stderr=SimpleNamespace(read=lambda size: ""),
+        )
+        harness._start_playwright_subprocess(
+            node_exe=Path("node"),
+            playwright_cli=Path("cli.js"),
+            spec="e2e/example.spec.ts",
+            child_env=child_env,
+        )
+    raw_dir = harness._playwright_raw_report_dir
+    assert raw_dir is not None
+    assert raw_dir.is_dir()
+    call_env = popen_mock.call_args.kwargs["env"]
+    assert call_env["WEB00_SMOKE_EVIDENCE_DIR"] == str(raw_dir)
+    assert "playwright-raw-temp" in Path(call_env["WEB00_SMOKE_EVIDENCE_DIR"]).parts
+    assert not (workspace / PLAYWRIGHT_RAW_JSON_FILENAME).exists()
+    harness._cleanup_playwright_raw_report_dir()
+
+
+def test_subprocess_output_drainer_join_closes_stuck_pipe(tmp_path: Path) -> None:
+    log_path = tmp_path / "stuck.log"
+
+    class _BlockingPipe:
+        def read(self, size: int) -> str:
+            time.sleep(60)
+            return ""
+
+        def close(self) -> None:
+            return None
+
+    drainer = _SubprocessOutputDrainer(_BlockingPipe(), log_path, ())
+    with pytest.raises(Web01HarnessError, match="drainer thread did not finish"):
+        drainer.join(timeout=0.05)
+
+
+def test_finalize_playwright_logs_reports_both_stream_failures() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+
+    class _BrokenDrainer:
+        def join(self, timeout: float = 10.0) -> None:
+            return None
+
+        def get_error(self) -> Exception:
+            return RuntimeError("broken")
+
+        def is_alive(self) -> bool:
+            return False
+
+    harness._playwright_stdout_drainer = _BrokenDrainer()  # type: ignore[assignment]
+    harness._playwright_stderr_drainer = _BrokenDrainer()  # type: ignore[assignment]
+    with pytest.raises(Web01HarnessError, match="stdout") as exc:
+        harness._finalize_playwright_logs()
+    assert "stderr" in str(exc.value)
+
+
+def test_wait_playwright_failure_cleans_raw_report_dir() -> None:
+    workspace = allocate_k1_workspace()
+    harness = Web01RealProcessHarness(workspace=workspace)
+    raw_dir = harness._allocate_playwright_report_temp_dir()
+    harness._playwright_raw_report_dir = raw_dir
+    (raw_dir / PLAYWRIGHT_RAW_JSON_FILENAME).write_text('{"ok":true}\n', encoding="utf-8")
+    harness.playwright = SimpleNamespace(wait=lambda timeout=None: 1, poll=lambda: 1)
+    with pytest.raises(Web01HarnessError, match="failed with exit 1"):
+        harness.wait_playwright(timeout=1.0)
+    assert harness._playwright_raw_report_dir is None
+    assert not raw_dir.exists()
 
 
 def test_wait_for_restart_request_succeeds_when_marker_present() -> None:
@@ -504,7 +623,15 @@ def test_wait_playwright_timeout_terminates_child() -> None:
 
     hung = _HungProcess()
     harness.playwright = hung  # type: ignore[assignment]
-    with patch("tests.acceptance.web01_realprocess_harness.stop_owned_process") as stop_mock:
+
+    def _mark_stopped(proc: object) -> None:
+        if hasattr(proc, "_poll"):
+            proc._poll = 0  # type: ignore[attr-defined]
+
+    with patch(
+        "tests.acceptance.web01_realprocess_harness.stop_owned_process",
+        side_effect=_mark_stopped,
+    ) as stop_mock:
         with pytest.raises(Web01HarnessError, match="timeout waiting for Playwright"):
             harness.wait_playwright(timeout=0.01)
         stop_mock.assert_called_once_with(hung)

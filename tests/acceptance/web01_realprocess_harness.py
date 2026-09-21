@@ -34,6 +34,7 @@ from modules.documents import api as documents_api
 from modules.registry import api as registry_api
 from modules.signature import api as signature_api
 from modules.usermanagement import api as usermanagement_api
+from qm_platform.audit.redaction import redact_audit_details
 from qm_platform.blob import is_host_running_marker_present
 from qm_platform.runtime.maintenance import enter_maintenance, exit_maintenance, is_maintenance_active
 from src.backend.service_host import probe_health
@@ -67,6 +68,7 @@ MAINTENANCE_EXIT_REQUEST_FILENAME = "maintenance-exit-request.json"
 MAINTENANCE_EXIT_COMPLETE_FILENAME = "maintenance-exit-complete.json"
 PIS_DOCUMENT_READY_FILENAME = "pis-document-ready.json"
 PIS_ROLES_ASSIGNED_FILENAME = "pis-roles-assigned.json"
+PLAYWRIGHT_RAW_JSON_FILENAME = "browser-smoke-playwright.json"
 PLAYWRIGHT_JSON_FILENAME = "web01-product-slice-playwright.json"
 BOOTSTRAP_USERNAME = "opsadmin"
 BOOTSTRAP_PASSWORD = "ops-secret-1"
@@ -226,8 +228,23 @@ class _SubprocessOutputDrainer:
             with self._lock:
                 self._error = exc
 
+    def close_pipe(self) -> None:
+        pipe = self._pipe
+        self._pipe = None
+        if pipe is None:
+            return
+        try:
+            pipe.close()
+        except OSError:
+            pass
+
     def join(self, timeout: float = _READER_JOIN_TIMEOUT) -> None:
         self._thread.join(timeout=timeout)
+        if self.is_alive():
+            self.close_pipe()
+            self._thread.join(timeout=timeout)
+        if self.is_alive():
+            raise Web01HarnessError("subprocess output drainer thread did not finish")
 
     def is_alive(self) -> bool:
         return self._thread.is_alive()
@@ -252,6 +269,7 @@ class Web01RealProcessHarness:
     _backend_drainer: _SubprocessOutputDrainer | None = field(default=None, repr=False)
     _playwright_stdout_drainer: _SubprocessOutputDrainer | None = field(default=None, repr=False)
     _playwright_stderr_drainer: _SubprocessOutputDrainer | None = field(default=None, repr=False)
+    _playwright_raw_report_dir: Path | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.workspace = self.workspace.resolve()
@@ -340,26 +358,76 @@ class Web01RealProcessHarness:
             ensure_bootstrap_admin_qmb(self.base_url)
             self._fixture_initialized = True
 
+    def _finalize_output_drainer(
+        self,
+        drainer: _SubprocessOutputDrainer | None,
+        *,
+        label: str,
+    ) -> Exception | None:
+        if drainer is None:
+            return None
+        try:
+            drainer.join()
+        except Web01HarnessError as exc:
+            return exc
+        error = drainer.get_error()
+        if error is not None:
+            return Web01HarnessError(f"{label} log drainer failed: {error}")
+        return None
+
     def _close_backend_log_handle(self) -> None:
-        if self._backend_drainer is not None:
-            self._backend_drainer.join()
-            error = self._backend_drainer.get_error()
-            self._backend_drainer = None
-            if error is not None:
-                raise Web01HarnessError(f"backend log drainer failed: {error}")
+        error = self._finalize_output_drainer(self._backend_drainer, label="backend")
+        self._backend_drainer = None
+        if error is not None:
+            raise error
         if self.backend_log_handle is not None:
             self.backend_log_handle.close()
             self.backend_log_handle = None
 
     def _finalize_playwright_logs(self) -> None:
-        for drainer in (self._playwright_stdout_drainer, self._playwright_stderr_drainer):
-            if drainer is not None:
-                drainer.join()
-                error = drainer.get_error()
-                if error is not None:
-                    raise Web01HarnessError(f"playwright log drainer failed: {error}")
+        errors: list[Exception] = []
+        for label, drainer in (
+            ("playwright stdout", self._playwright_stdout_drainer),
+            ("playwright stderr", self._playwright_stderr_drainer),
+        ):
+            error = self._finalize_output_drainer(drainer, label=label)
+            if error is not None:
+                errors.append(error)
         self._playwright_stdout_drainer = None
         self._playwright_stderr_drainer = None
+        if errors:
+            raise Web01HarnessError("; ".join(str(item) for item in errors))
+
+    def _allocate_playwright_report_temp_dir(self) -> Path:
+        candidate = self.workspace / "playwright-raw-temp" / uuid.uuid4().hex
+        candidate.mkdir(parents=True, exist_ok=False)
+        return candidate
+
+    def _cleanup_playwright_raw_report_dir(self) -> None:
+        raw_dir = self._playwright_raw_report_dir
+        self._playwright_raw_report_dir = None
+        if raw_dir is None:
+            return
+        shutil.rmtree(raw_dir, ignore_errors=True)
+
+    def persist_playwright_json_to(
+        self,
+        destination_dir: Path,
+        *,
+        output_filename: str = PLAYWRIGHT_JSON_FILENAME,
+    ) -> Path:
+        raw_dir = self._playwright_raw_report_dir
+        if raw_dir is None:
+            raise Web01HarnessError("Playwright raw report directory is missing")
+        try:
+            return persist_redacted_playwright_json_report(
+                raw_dir,
+                destination_dir,
+                output_filename=output_filename,
+                extra_secrets=self._collect_redaction_secrets(),
+            )
+        finally:
+            self._cleanup_playwright_raw_report_dir()
 
     def _launch_backend_process(
         self,
@@ -744,7 +812,6 @@ class Web01RealProcessHarness:
         child_env["QMTOOL_WEB01_APPROVER_USER"] = WEB01_APPROVER_USERNAME
         child_env["QMTOOL_WEB01_APPROVER_PASS"] = FIXTURE_WEB01_APPROVER_PASS
         child_env["WEB00_SMOKE_BASE_URL"] = self.base_url
-        child_env["WEB00_SMOKE_EVIDENCE_DIR"] = str(self.workspace)
 
         self._start_playwright_subprocess(
             node_exe=node_exe,
@@ -848,7 +915,6 @@ class Web01RealProcessHarness:
         child_env["QMTOOL_WEB01_VERSION"] = str(fixture.version)
         child_env["QMTOOL_WEB01_PROFILE_ID"] = fixture.workflow_profile_id
         child_env["WEB00_SMOKE_BASE_URL"] = self.base_url
-        child_env["WEB00_SMOKE_EVIDENCE_DIR"] = str(self.workspace)
 
         self._start_playwright_subprocess(
             node_exe=node_exe,
@@ -866,6 +932,11 @@ class Web01RealProcessHarness:
         child_env: dict[str, str],
     ) -> None:
         self._finalize_playwright_logs()
+        self._cleanup_playwright_raw_report_dir()
+        raw_report_dir = self._allocate_playwright_report_temp_dir()
+        self._playwright_raw_report_dir = raw_report_dir
+        child_env = dict(child_env)
+        child_env["WEB00_SMOKE_EVIDENCE_DIR"] = str(raw_report_dir)
         stdout_path = self.workspace / "playwright-stdout.log"
         stderr_path = self.workspace / "playwright-stderr.log"
         secrets = self._collect_redaction_secrets()
@@ -892,45 +963,107 @@ class Web01RealProcessHarness:
         if self.playwright is None:
             raise Web01HarnessError("Playwright was not started")
         proc = self.playwright
+        failure: Web01HarnessError | None = None
+        preserve_reference = False
         try:
-            rc = proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
             try:
-                stop_owned_process(proc)
-            except Web01HarnessError:
+                rc = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    stop_owned_process(proc)
+                except Web01HarnessError:
+                    if proc.poll() is None:
+                        preserve_reference = True
+                        raise Web01HarnessError(
+                            "timeout waiting for Playwright to finish; forced stop failed "
+                            f"(pid={proc.pid}, poll={proc.poll()})"
+                        ) from None
+                    raise
+                if proc.poll() is None:
+                    preserve_reference = True
+                    raise Web01HarnessError(
+                        "timeout waiting for Playwright to finish; child still alive "
+                        f"(pid={proc.pid})"
+                    )
+                raise Web01HarnessError("timeout waiting for Playwright to finish") from None
+            if rc != 0:
+                failure = Web01HarnessError(f"WEB01 Playwright spec failed with exit {rc}")
+        finally:
+            if not preserve_reference:
+                self.playwright = None
+            try:
                 self._finalize_playwright_logs()
-                raise Web01HarnessError(
-                    "timeout waiting for Playwright to finish; forced stop failed "
-                    f"(pid={proc.pid}, poll={proc.poll()})"
-                ) from None
-            self.playwright = None
-            self._finalize_playwright_logs()
-            raise Web01HarnessError("timeout waiting for Playwright to finish") from None
-        self.playwright = None
-        self._finalize_playwright_logs()
-        if rc != 0:
-            raise Web01HarnessError(f"WEB01 Playwright spec failed with exit {rc}")
+            except Web01HarnessError as exc:
+                if not preserve_reference:
+                    self._cleanup_playwright_raw_report_dir()
+                raise exc
+            if failure is not None:
+                if not preserve_reference:
+                    self._cleanup_playwright_raw_report_dir()
+                raise failure
 
     def cleanup(
         self,
         *,
         diagnosis_filename: str = GRACEFUL_STOP_DIAGNOSIS_FILENAME,
     ) -> None:
-        stop_owned_process(self.playwright)
+        cleanup_errors: list[Exception] = []
+        try:
+            stop_owned_process(self.playwright)
+        except Exception as exc:  # noqa: BLE001
+            cleanup_errors.append(exc)
         self.playwright = None
-        self._finalize_playwright_logs()
+        try:
+            self._finalize_playwright_logs()
+        except Exception as exc:  # noqa: BLE001
+            cleanup_errors.append(exc)
+        try:
+            self._cleanup_playwright_raw_report_dir()
+        except Exception as exc:  # noqa: BLE001
+            cleanup_errors.append(exc)
         if self.backend is not None:
-            stop_backend_graceful(
-                self.backend,
-                home=self.home,
-                workspace=self.workspace,
-                diagnosis_filename=diagnosis_filename,
+            try:
+                stop_backend_graceful(
+                    self.backend,
+                    home=self.home,
+                    workspace=self.workspace,
+                    diagnosis_filename=diagnosis_filename,
+                )
+            except Exception as exc:  # noqa: BLE001
+                cleanup_errors.append(exc)
+            else:
+                self.backend = None
+                try:
+                    self._close_backend_log_handle()
+                except Exception as exc:  # noqa: BLE001
+                    cleanup_errors.append(exc)
+                if self.bind_port > 0:
+                    try:
+                        wait_port_free(self.bind_host, self.bind_port, timeout=10.0)
+                    except Exception as exc:  # noqa: BLE001
+                        cleanup_errors.append(exc)
+                try:
+                    exit_maintenance(self.home)
+                except Exception as exc:  # noqa: BLE001
+                    cleanup_errors.append(exc)
+        else:
+            try:
+                self._close_backend_log_handle()
+            except Exception as exc:  # noqa: BLE001
+                cleanup_errors.append(exc)
+            if self.bind_port > 0:
+                try:
+                    wait_port_free(self.bind_host, self.bind_port, timeout=10.0)
+                except Exception as exc:  # noqa: BLE001
+                    cleanup_errors.append(exc)
+            try:
+                exit_maintenance(self.home)
+            except Exception as exc:  # noqa: BLE001
+                cleanup_errors.append(exc)
+        if cleanup_errors:
+            raise Web01HarnessError(
+                "; ".join(str(item) for item in cleanup_errors),
             )
-            self.backend = None
-        self._close_backend_log_handle()
-        if self.bind_port > 0:
-            wait_port_free(self.bind_host, self.bind_port, timeout=10.0)
-        exit_maintenance(self.home)
 
     def __enter__(self) -> Web01RealProcessHarness:
         return self
@@ -985,21 +1118,32 @@ def allocate_k1_visual_dir() -> Path:
 
 
 def redact_log_text_with_extras(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
-    redacted = redact_log_text(text)
+    redacted_value = redact_audit_details(text)
+    redacted = redacted_value if isinstance(redacted_value, str) else str(redacted_value)
     for secret in extra_secrets:
         if secret:
             redacted = redacted.replace(secret, "<redacted>")
     return redacted
 
 
-def redact_json_value(value: Any, extra_secrets: tuple[str, ...] = ()) -> Any:
+def _apply_extra_secrets(value: Any, extra_secrets: tuple[str, ...]) -> Any:
     if isinstance(value, dict):
-        return {key: redact_json_value(item, extra_secrets) for key, item in value.items()}
+        return {
+            key: _apply_extra_secrets(item, extra_secrets) for key, item in value.items()
+        }
     if isinstance(value, list):
-        return [redact_json_value(item, extra_secrets) for item in value]
+        return [_apply_extra_secrets(item, extra_secrets) for item in value]
     if isinstance(value, str):
-        return redact_log_text_with_extras(value, extra_secrets)
+        redacted = value
+        for secret in extra_secrets:
+            if secret:
+                redacted = redacted.replace(secret, "<redacted>")
+        return redacted
     return value
+
+
+def redact_json_value(value: Any, extra_secrets: tuple[str, ...] = ()) -> Any:
+    return _apply_extra_secrets(redact_audit_details(value), extra_secrets)
 
 
 def redact_json_text(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
@@ -1008,23 +1152,45 @@ def redact_json_text(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
     return json.dumps(redacted, indent=2, ensure_ascii=False) + "\n"
 
 
+def persist_redacted_playwright_json_report(
+    raw_report_dir: Path,
+    destination_dir: Path,
+    *,
+    output_filename: str = PLAYWRIGHT_JSON_FILENAME,
+    extra_secrets: tuple[str, ...] = (),
+) -> Path:
+    source = raw_report_dir / PLAYWRIGHT_RAW_JSON_FILENAME
+    if not source.is_file():
+        raise Web01HarnessError("Playwright JSON reporter output is missing")
+    raw = source.read_text(encoding="utf-8")
+    try:
+        redacted = redact_json_text(raw, extra_secrets)
+        json.loads(redacted)
+    except Exception as exc:  # noqa: BLE001
+        raise Web01HarnessError(f"Playwright JSON redaction failed: {exc}") from exc
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / output_filename
+    temp_destination = destination_dir / f".{output_filename}.tmp-{uuid.uuid4().hex}"
+    try:
+        temp_destination.write_text(redacted, encoding="utf-8")
+        temp_destination.replace(destination)
+    finally:
+        if temp_destination.exists():
+            temp_destination.unlink(missing_ok=True)
+    return destination
+
+
 def copy_playwright_json_report(
-    workspace: Path,
+    raw_report_dir: Path,
     visual_dir: Path,
     *,
     extra_secrets: tuple[str, ...] = (),
 ) -> Path:
-    source = workspace / "browser-smoke-playwright.json"
-    if not source.is_file():
-        raise Web01HarnessError("Playwright JSON reporter output is missing")
-    raw = source.read_text(encoding="utf-8")
-    redacted = redact_json_text(raw, extra_secrets)
-    json.loads(redacted)
-    destination = visual_dir / PLAYWRIGHT_JSON_FILENAME
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(redacted, encoding="utf-8")
-    source.write_text(redacted, encoding="utf-8")
-    return destination
+    return persist_redacted_playwright_json_report(
+        raw_report_dir,
+        visual_dir,
+        extra_secrets=extra_secrets,
+    )
 
 
 def read_png_dimensions(path: Path) -> tuple[int, int]:
