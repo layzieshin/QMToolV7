@@ -43,11 +43,17 @@ function Resolve-RepositoryJUnitPath {
 function Test-ReparsePointPath {
     param([string]$Path)
 
-    if (-not (Test-Path -LiteralPath $Path)) {
+    try {
+        $attributes = [System.IO.File]::GetAttributes($Path)
+    }
+    catch [System.IO.FileNotFoundException], [System.IO.DirectoryNotFoundException] {
         return $false
     }
-    $item = Get-Item -LiteralPath $Path -Force
-    return [bool]($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+    catch {
+        throw "Unable to inspect path attributes for reparse detection: $Path. $($_.Exception.Message)"
+    }
+
+    return [bool]($attributes -band [System.IO.FileAttributes]::ReparsePoint)
 }
 
 function Assert-NoReparsePointsInBuildPathChain {

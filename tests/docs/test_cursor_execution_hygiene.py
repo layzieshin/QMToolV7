@@ -578,6 +578,66 @@ def test_pytest_gate_wrapper_rejects_nested_junction_before_creating_artifacts(
         trap_root.rmdir()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows dangling junction guard is Windows-only")
+def test_pytest_gate_wrapper_rejects_dangling_junction_target_under_build(
+    tmp_path: Path,
+) -> None:
+    pt_dir = ROOT / "build" / "pt"
+    ptmp_dir = ROOT / "build" / "ptmp"
+    pt_dir.mkdir(parents=True, exist_ok=True)
+    ptmp_dir.mkdir(parents=True, exist_ok=True)
+    before_pt = _snapshot_build_temp_children(pt_dir)
+    before_ptmp = _snapshot_build_temp_children(ptmp_dir)
+
+    token = uuid4().hex[:8]
+    target_dir = tmp_path / f"dangling-target-{token}"
+    target_dir.mkdir()
+    dangling_junction = ROOT / "build" / f"dangling-reparse-{token}.xml"
+    mklink = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(dangling_junction), str(target_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if mklink.returncode != 0:
+        combined = mklink.stderr or mklink.stdout
+        pytest.skip(f"cannot create junction in this environment: {combined}")
+
+    target_dir.rmdir()
+    assert not dangling_junction.exists()
+    assert os.path.lexists(dangling_junction)
+
+    smoke = tmp_path / "test_dangling_junction_smoke.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    outside_escape = target_dir.parent / f"escape-{token}.xml"
+    try:
+        completed = _run_powershell(
+            TOOLS / "run-pytest-gate.ps1",
+            "-GateId",
+            "hygiene",
+            "-PythonPath",
+            sys.executable,
+            "-JUnitPath",
+            str(dangling_junction.relative_to(ROOT)),
+            str(smoke),
+            "-q",
+        )
+        assert completed.returncode != 0
+        combined = (completed.stderr or completed.stdout).lower()
+        assert "reparse point" in combined or "junction" in combined
+        assert not outside_escape.exists()
+
+        after_pt = _snapshot_build_temp_children(pt_dir)
+        after_ptmp = _snapshot_build_temp_children(ptmp_dir)
+        new_wrapper_pt = _wrapper_owned_pt_entries(after_pt - before_pt)
+        new_wrapper_ptmp = _wrapper_owned_ptmp_entries(after_ptmp - before_ptmp)
+        assert not new_wrapper_pt
+        assert not new_wrapper_ptmp
+    finally:
+        if os.path.lexists(dangling_junction):
+            dangling_junction.rmdir()
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows junction escape guard is Windows-only")
 def test_pytest_gate_wrapper_rejects_junction_escape_in_build_path(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
