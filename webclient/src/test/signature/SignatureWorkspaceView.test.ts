@@ -120,18 +120,11 @@ function suggestedTemplate() {
   };
 }
 
-const ASSIGNMENT_KIND_BY_ACTION: Record<string, string> = {
-  complete_editing: "editor",
-  review_accept: "reviewer",
-  approval_accept: "approver",
-};
-
 function actionDescriptor(
   code: string,
   enabled = true,
   options: { signatureRequired?: boolean; assignmentKind?: string | null } = {},
 ) {
-  const signatureAction = Object.hasOwn(ASSIGNMENT_KIND_BY_ACTION, code);
   return {
     code,
     enabled,
@@ -141,17 +134,15 @@ function actionDescriptor(
     requires_reason: false,
     severity: "info" as const,
     disabled_reason: enabled ? null : "blocked",
-    signature_required:
-      options.signatureRequired ?? (signatureAction && enabled),
+    signature_required: options.signatureRequired ?? false,
     assignment_kind:
-      options.assignmentKind !== undefined
-        ? options.assignmentKind
-        : (ASSIGNMENT_KIND_BY_ACTION[code] ?? null),
+      options.assignmentKind !== undefined ? options.assignmentKind : null,
   };
 }
 
 function baseDetailForSignatureAction(
   actionCode: "complete_editing" | "review_accept" | "approval_accept",
+  signatureAction: { signatureRequired: boolean; assignmentKind: string },
 ): { detail: ReturnType<typeof baseDetail>; workflowPath: string } {
   const statuses: Record<string, string> = {
     complete_editing: "IN_PROGRESS",
@@ -165,7 +156,10 @@ function baseDetailForSignatureAction(
   };
   const detail = {
     ...baseDetail(),
-    allowed_actions: [actionDescriptor(actionCode), actionDescriptor("preview")],
+    allowed_actions: [
+      actionDescriptor(actionCode, true, signatureAction),
+      actionDescriptor("preview"),
+    ],
     available_actions: [actionCode, "preview"],
     state: {
       ...baseDetail().state,
@@ -1488,11 +1482,13 @@ describe("SignatureWorkspaceView", () => {
   });
 
   it.each([
-    ["complete_editing", "/workflow/editing-complete"],
-    ["review_accept", "/workflow/review/accept"],
-    ["approval_accept", "/workflow/approval/accept"],
-  ] as const)("loads signature workspace for %s with correct workflow path", async (actionCode, workflowPath) => {
-    const { detail } = baseDetailForSignatureAction(actionCode);
+    ["complete_editing", "/workflow/editing-complete", { signatureRequired: true, assignmentKind: "editor" }],
+    ["review_accept", "/workflow/review/accept", { signatureRequired: true, assignmentKind: "reviewer" }],
+    ["approval_accept", "/workflow/approval/accept", { signatureRequired: true, assignmentKind: "approver" }],
+  ] as const)(
+    "loads signature workspace for %s with correct workflow path",
+    async (actionCode, workflowPath, signatureAction) => {
+    const { detail } = baseDetailForSignatureAction(actionCode, signatureAction);
     fetchDocumentVersionMock.mockResolvedValueOnce(detail);
     if (actionCode === "complete_editing") {
       mutateMock.mockResolvedValueOnce(ensuredResponseFromDetail(detail));
@@ -1545,10 +1541,14 @@ describe("SignatureWorkspaceView", () => {
       }),
     );
     host.remove();
-  });
+  },
+  );
 
   it("review_accept does not POST ensure-source-pdf and uses current SIGNED_PDF", async () => {
-    const { detail } = baseDetailForSignatureAction("review_accept");
+    const { detail } = baseDetailForSignatureAction("review_accept", {
+      signatureRequired: true,
+      assignmentKind: "reviewer",
+    });
     fetchDocumentVersionMock.mockResolvedValueOnce(detail);
     fetchDocumentArtifactsMock.mockResolvedValueOnce([
       signedPdfArtifact("signed-current", { isCurrent: true, createdAt: "2025-01-02T00:00:00Z" }),
@@ -1564,7 +1564,10 @@ describe("SignatureWorkspaceView", () => {
   });
 
   it("approval_accept selects newest current SIGNED_PDF among equivalent candidates", async () => {
-    const { detail } = baseDetailForSignatureAction("approval_accept");
+    const { detail } = baseDetailForSignatureAction("approval_accept", {
+      signatureRequired: true,
+      assignmentKind: "approver",
+    });
     fetchDocumentVersionMock.mockResolvedValueOnce(detail);
     fetchDocumentArtifactsMock.mockResolvedValueOnce([
       signedPdfArtifact("signed-older-current", { isCurrent: true, createdAt: "2025-01-01T00:00:00Z" }),
@@ -1580,7 +1583,10 @@ describe("SignatureWorkspaceView", () => {
   });
 
   it("review_accept falls back to newest SIGNED_PDF when none is current", async () => {
-    const { detail } = baseDetailForSignatureAction("review_accept");
+    const { detail } = baseDetailForSignatureAction("review_accept", {
+      signatureRequired: true,
+      assignmentKind: "reviewer",
+    });
     fetchDocumentVersionMock.mockResolvedValueOnce(detail);
     fetchDocumentArtifactsMock.mockResolvedValueOnce([
       signedPdfArtifact("signed-older", { isCurrent: false, createdAt: "2025-01-01T00:00:00Z" }),
@@ -1595,7 +1601,10 @@ describe("SignatureWorkspaceView", () => {
   });
 
   it("fails closed for review_accept when no SIGNED_PDF artifact exists", async () => {
-    const { detail } = baseDetailForSignatureAction("review_accept");
+    const { detail } = baseDetailForSignatureAction("review_accept", {
+      signatureRequired: true,
+      assignmentKind: "reviewer",
+    });
     fetchDocumentVersionMock.mockResolvedValueOnce(detail);
     fetchDocumentArtifactsMock.mockResolvedValueOnce([
       {
@@ -1619,10 +1628,19 @@ describe("SignatureWorkspaceView", () => {
   });
 
   it("fails closed for review_accept when preview is disabled", async () => {
-    const { detail } = baseDetailForSignatureAction("review_accept");
+    const { detail } = baseDetailForSignatureAction("review_accept", {
+      signatureRequired: true,
+      assignmentKind: "reviewer",
+    });
     fetchDocumentVersionMock.mockResolvedValueOnce({
       ...detail,
-      allowed_actions: [actionDescriptor("review_accept"), actionDescriptor("preview", false)],
+      allowed_actions: [
+        actionDescriptor("review_accept", true, {
+          signatureRequired: true,
+          assignmentKind: "reviewer",
+        }),
+        actionDescriptor("preview", false),
+      ],
     });
     fetchDocumentArtifactsMock.mockResolvedValueOnce([signedPdfArtifact("artifact-signed")]);
     const { wrapper, host } = await mountWorkspace(
@@ -1673,7 +1691,10 @@ describe("SignatureWorkspaceView", () => {
     mutateMock.mockResolvedValueOnce({
       ...ensuredResponseFromDetail(initial),
       allowed_actions: [
-        actionDescriptor("complete_editing", false),
+        actionDescriptor("complete_editing", false, {
+          signatureRequired: true,
+          assignmentKind: "editor",
+        }),
         actionDescriptor("preview"),
       ],
     });
@@ -1705,7 +1726,13 @@ describe("SignatureWorkspaceView", () => {
     fetchDocumentVersionMock.mockResolvedValueOnce(initial);
     mutateMock.mockResolvedValueOnce({
       ...ensuredResponseFromDetail(initial),
-      allowed_actions: [actionDescriptor("complete_editing"), actionDescriptor("preview", false)],
+      allowed_actions: [
+        actionDescriptor("complete_editing", true, {
+          signatureRequired: true,
+          assignmentKind: "editor",
+        }),
+        actionDescriptor("preview", false),
+      ],
     });
     const { wrapper, host } = await mountWorkspace();
     expect(wrapper.find('[data-testid="signature-load-error"]').text()).toContain("Vorschau");
