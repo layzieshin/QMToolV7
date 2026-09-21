@@ -14,6 +14,8 @@ from PIL import Image
 
 from tests.acceptance.j04_m0_realprocess_harness import redact_log_text
 from tests.acceptance.web01_realprocess_harness import (
+    REPO_ROOT,
+    _SubprocessOutputDrainer,
     HANDSHAKE_CONFLICT_STALE,
     HANDSHAKE_MAINTENANCE,
     HANDSHAKE_MAINTENANCE_EXIT,
@@ -43,6 +45,8 @@ from tests.acceptance.web01_realprocess_harness import (
     allocate_web01_workspace,
     copy_playwright_json_report,
     evidence_root,
+    redact_json_text,
+    redact_log_text_with_extras,
     is_blank_or_trivial_png,
     port_is_free,
     read_png_dimensions,
@@ -97,9 +101,9 @@ def test_evidence_root_is_under_build_ap_029_web01() -> None:
     assert root.parent.name == "build"
 
 
-def test_require_inside_web01_evidence_rejects_foreign_path(tmp_path: Path) -> None:
-    foreign = tmp_path / "outside"
-    foreign.mkdir()
+def test_require_inside_web01_evidence_rejects_foreign_path() -> None:
+    foreign = REPO_ROOT / "build" / "pytest-foreign-web01-evidence"
+    foreign.mkdir(parents=True, exist_ok=True)
     with pytest.raises(Web01HarnessBlockedError):
         require_inside_web01_evidence(foreign)
 
@@ -129,14 +133,61 @@ def test_require_joint_opt_in_blocks_without_gate(monkeypatch: pytest.MonkeyPatc
         require_joint_opt_in()
 
 
-def test_harness_workspace_guard_on_construct(tmp_path: Path) -> None:
+def test_harness_workspace_guard_on_construct() -> None:
+    foreign = REPO_ROOT / "build" / "pytest-foreign-web01-harness"
+    foreign.mkdir(parents=True, exist_ok=True)
     with pytest.raises(Web01HarnessBlockedError):
-        Web01RealProcessHarness(workspace=tmp_path / "outside")
+        Web01RealProcessHarness(workspace=foreign)
 
 
 def test_redact_log_text_strips_bearer_tokens() -> None:
     raw = "Authorization: Bearer secret-token-123"
     assert "secret-token-123" not in redact_log_text(raw)
+
+
+def test_redact_log_text_with_extras_redacts_chunk_boundaries() -> None:
+    secret = "chunk-secret-value"
+    parts = ["prefix-", "chunk-sec", "ret-value suffix"]
+    redacted = ""
+    for part in parts:
+        redacted = redact_log_text_with_extras(redacted + part, (secret,))
+    assert secret not in redacted
+    assert "<redacted>" in redacted
+
+
+def test_subprocess_output_drainer_writes_redacted_log(tmp_path: Path) -> None:
+    secret = "postgresql://user:leak@127.0.0.1/db"
+    log_path = tmp_path / "backend-stdout.log"
+
+    class _FakePipe:
+        def __init__(self, chunks: list[str]) -> None:
+            self._chunks = chunks
+
+        def read(self, size: int) -> str:
+            if not self._chunks:
+                return ""
+            return self._chunks.pop(0)
+
+    drainer = _SubprocessOutputDrainer(
+        _FakePipe([secret[:10], secret[10:] + "\n", "Bearer abc.def-123\n"]),
+        log_path,
+        extra_secrets=(secret,),
+    )
+    drainer.join()
+    text = log_path.read_text(encoding="utf-8")
+    assert secret not in text
+    assert "abc.def-123" not in text
+    assert "<redacted>" in text
+
+
+def test_redact_json_text_preserves_valid_json_without_secrets() -> None:
+    payload = redact_json_text(
+        '{"dsn":"postgresql://user:secret@127.0.0.1/db","note":"Bearer abc.def-123"}',
+        extra_secrets=("secret",),
+    )
+    parsed = json.loads(payload)
+    assert parsed["dsn"] == "postgresql://<redacted>"
+    assert parsed["note"] == "Bearer <redacted>"
 
 
 def test_allocate_k1_workspace_uses_k1_checkpoint_segment() -> None:
@@ -276,11 +327,24 @@ def test_copy_playwright_json_report_copies_to_visual_dir() -> None:
     visual = workspace / "visual"
     visual.mkdir()
     source = workspace / "browser-smoke-playwright.json"
-    source.write_text('{"ok": true}\n', encoding="utf-8")
-    destination = copy_playwright_json_report(workspace, visual)
+    source.write_text(
+        '{"token":"Bearer secret-token-123","password":"super-secret"}\n',
+        encoding="utf-8",
+    )
+    destination = copy_playwright_json_report(
+        workspace,
+        visual,
+        extra_secrets=("super-secret",),
+    )
     assert destination == visual / PLAYWRIGHT_JSON_FILENAME
     assert destination.is_file()
-    assert json.loads(destination.read_text(encoding="utf-8")) == {"ok": True}
+    payload = json.loads(destination.read_text(encoding="utf-8"))
+    assert payload["token"] == "Bearer <redacted>"
+    assert payload["password"] == "<redacted>"
+    workspace_payload = json.loads(source.read_text(encoding="utf-8"))
+    assert workspace_payload == payload
+    assert "secret-token-123" not in destination.read_text(encoding="utf-8")
+    assert "super-secret" not in source.read_text(encoding="utf-8")
 
 
 def test_wait_for_restart_request_succeeds_when_marker_present() -> None:
@@ -690,17 +754,11 @@ def test_launch_backend_process_appends_backend_log_on_restart() -> None:
     harness.bind_port = 54321
     live_env = SimpleNamespace(runtime_dsn="postgresql://example/runtime")
     dist_dir = workspace / "dist"
-    log_path = workspace / "backend-stdout.log"
-    opened: list[tuple[str, str]] = []
-    original_open = Path.open
+    mock_process = MagicMock()
+    mock_process.stdout = MagicMock()
+    mock_process.stdout.read.return_value = ""
 
-    def _selective_open(self: Path, mode: str = "r", *args: object, **kwargs: object) -> MagicMock:
-        if self.name == "backend-stdout.log":
-            opened.append((str(self), mode))
-            return MagicMock()
-        return original_open(self, mode, *args, **kwargs)
-
-    with patch.object(Path, "open", _selective_open), patch(
+    with patch(
         "tests.acceptance.web01_realprocess_harness.sys.platform",
         "linux",
     ), patch(
@@ -711,19 +769,22 @@ def test_launch_backend_process_appends_backend_log_on_restart() -> None:
         return_value=(workspace / "cert.pem", workspace / "key.pem"),
     ), patch.object(harness, "copy_tracked_license"), patch(
         "tests.acceptance.web01_realprocess_harness.subprocess.Popen",
-        return_value=MagicMock(),
+        return_value=mock_process,
     ), patch(
         "tests.acceptance.web01_realprocess_harness.wait_https_health",
     ), patch(
         "tests.acceptance.web01_realprocess_harness.is_host_running_marker_present",
         return_value=True,
-    ):
+    ), patch(
+        "tests.acceptance.web01_realprocess_harness._SubprocessOutputDrainer",
+    ) as drainer_ctor:
         harness._launch_backend_process(
             live_env=live_env,
             dist_dir=dist_dir,
             append_backend_log=True,
         )
-    assert opened == [(str(log_path), "a")]
+    drainer_ctor.assert_called_once()
+    assert drainer_ctor.call_args.kwargs["append"] is True
 
 
 def test_restart_backend_process_rejects_stale_host_running_marker() -> None:

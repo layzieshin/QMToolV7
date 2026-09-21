@@ -14,6 +14,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -122,6 +123,7 @@ _MINIMAL_PNG = (
 )
 _BACKEND_GRACEFUL_STOP_TIMEOUT = 40.0
 _MARKER_GONE_WAIT_SECONDS = 2.0
+_READER_JOIN_TIMEOUT = 10.0
 
 
 class Web01HarnessError(RuntimeError):
@@ -179,6 +181,62 @@ class Web01FixtureDocument:
     etag: str
 
 
+class _SubprocessOutputDrainer:
+    """Read a subprocess PIPE into a redacted evidence log without blocking the parent."""
+
+    def __init__(
+        self,
+        pipe: Any,
+        log_path: Path,
+        extra_secrets: tuple[str, ...],
+        *,
+        append: bool = False,
+    ) -> None:
+        self._pipe = pipe
+        self._log_path = log_path
+        self._extra_secrets = extra_secrets
+        self._append = append
+        self._lock = threading.Lock()
+        self._error: Exception | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            if self._pipe is None:
+                return
+            mode = "a" if self._append else "w"
+            pending = ""
+            with self._log_path.open(mode, encoding="utf-8") as handle:
+                while True:
+                    chunk = self._pipe.read(4096)
+                    if chunk == "":
+                        break
+                    pending += chunk
+                    while "\n" in pending:
+                        line, pending = pending.split("\n", 1)
+                        handle.write(
+                            redact_log_text_with_extras(line + "\n", self._extra_secrets),
+                        )
+                        handle.flush()
+                if pending:
+                    handle.write(redact_log_text_with_extras(pending, self._extra_secrets))
+                    handle.flush()
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                self._error = exc
+
+    def join(self, timeout: float = _READER_JOIN_TIMEOUT) -> None:
+        self._thread.join(timeout=timeout)
+
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def get_error(self) -> Exception | None:
+        with self._lock:
+            return self._error
+
+
 @dataclass
 class Web01RealProcessHarness:
     workspace: Path
@@ -191,6 +249,9 @@ class Web01RealProcessHarness:
     extra_secrets: tuple[str, ...] = field(default_factory=tuple)
     _home: Path | None = None
     _fixture_initialized: bool = False
+    _backend_drainer: _SubprocessOutputDrainer | None = field(default=None, repr=False)
+    _playwright_stdout_drainer: _SubprocessOutputDrainer | None = field(default=None, repr=False)
+    _playwright_stderr_drainer: _SubprocessOutputDrainer | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.workspace = self.workspace.resolve()
@@ -217,7 +278,26 @@ class Web01RealProcessHarness:
     def write_log(self, name: str, text: str) -> None:
         path = self.workspace / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(redact_log_text(text), encoding="utf-8")
+        path.write_text(
+            redact_log_text_with_extras(text, self._collect_redaction_secrets()),
+            encoding="utf-8",
+        )
+
+    def _collect_redaction_secrets(self) -> tuple[str, ...]:
+        secrets: list[str] = [value for value in self.extra_secrets if value]
+        for value in (
+            BOOTSTRAP_PASSWORD,
+            LOGIN_PASSWORD,
+            FIXTURE_WEB01_BOOTSTRAP_PASS,
+            FIXTURE_WEB01_ADMIN_PASS,
+            FIXTURE_WEB01_MUSTCHANGE_PASS,
+            FIXTURE_WEB01_EDITOR_PASS,
+            FIXTURE_WEB01_REVIEWER_PASS,
+            FIXTURE_WEB01_APPROVER_PASS,
+        ):
+            if value and value not in secrets:
+                secrets.append(value)
+        return tuple(secrets)
 
     def provision_postgres(self, live_env: Any) -> None:
         usermanagement_api.migrate_postgres_schema(live_env.migrator_dsn)
@@ -261,9 +341,25 @@ class Web01RealProcessHarness:
             self._fixture_initialized = True
 
     def _close_backend_log_handle(self) -> None:
+        if self._backend_drainer is not None:
+            self._backend_drainer.join()
+            error = self._backend_drainer.get_error()
+            self._backend_drainer = None
+            if error is not None:
+                raise Web01HarnessError(f"backend log drainer failed: {error}")
         if self.backend_log_handle is not None:
             self.backend_log_handle.close()
             self.backend_log_handle = None
+
+    def _finalize_playwright_logs(self) -> None:
+        for drainer in (self._playwright_stdout_drainer, self._playwright_stderr_drainer):
+            if drainer is not None:
+                drainer.join()
+                error = drainer.get_error()
+                if error is not None:
+                    raise Web01HarnessError(f"playwright log drainer failed: {error}")
+        self._playwright_stdout_drainer = None
+        self._playwright_stderr_drainer = None
 
     def _launch_backend_process(
         self,
@@ -310,12 +406,10 @@ class Web01RealProcessHarness:
             env["PYTHONPATH"] = prepend_pythonpath(env.get("PYTHONPATH", ""), startup)
 
         backend_log_path = self.workspace / "backend-stdout.log"
-        log_mode = "a" if append_backend_log else "w"
-        self.backend_log_handle = backend_log_path.open(log_mode, encoding="utf-8")
         popen_kwargs: dict[str, Any] = {
             "cwd": str(REPO_ROOT),
             "env": env,
-            "stdout": self.backend_log_handle,
+            "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT,
             "text": True,
         }
@@ -323,6 +417,15 @@ class Web01RealProcessHarness:
         if creationflags:
             popen_kwargs["creationflags"] = creationflags
         self.backend = subprocess.Popen([python_executable(), "-m", "src.backend"], **popen_kwargs)
+        if self._backend_drainer is not None:
+            self._backend_drainer.join()
+            self._backend_drainer = None
+        self._backend_drainer = _SubprocessOutputDrainer(
+            self.backend.stdout,
+            backend_log_path,
+            self._collect_redaction_secrets(),
+            append=append_backend_log,
+        )
         wait_https_health(self.bind_host, self.bind_port)
         if not is_host_running_marker_present(app_home=self.home):
             raise Web01HarnessError("production ServiceHost did not create a host-running marker")
@@ -643,17 +746,11 @@ class Web01RealProcessHarness:
         child_env["WEB00_SMOKE_BASE_URL"] = self.base_url
         child_env["WEB00_SMOKE_EVIDENCE_DIR"] = str(self.workspace)
 
-        stdout_path = self.workspace / "playwright-stdout.log"
-        stderr_path = self.workspace / "playwright-stderr.log"
-        stdout_handle = stdout_path.open("w", encoding="utf-8")
-        stderr_handle = stderr_path.open("w", encoding="utf-8")
-        self.playwright = subprocess.Popen(
-            [str(node_exe), str(playwright_cli), "test", "e2e/web01-product-slice.spec.ts"],
-            cwd=str(REPO_ROOT / "webclient"),
-            env=child_env,
-            stdout=stdout_handle,
-            stderr=stderr_handle,
-            text=True,
+        self._start_playwright_subprocess(
+            node_exe=node_exe,
+            playwright_cli=playwright_cli,
+            spec="e2e/web01-product-slice.spec.ts",
+            child_env=child_env,
         )
 
     def wait_for_restart_request(self, *, timeout: float = 240.0) -> None:
@@ -753,17 +850,42 @@ class Web01RealProcessHarness:
         child_env["WEB00_SMOKE_BASE_URL"] = self.base_url
         child_env["WEB00_SMOKE_EVIDENCE_DIR"] = str(self.workspace)
 
+        self._start_playwright_subprocess(
+            node_exe=node_exe,
+            playwright_cli=playwright_cli,
+            spec="e2e/documents-conflict-live.spec.ts",
+            child_env=child_env,
+        )
+
+    def _start_playwright_subprocess(
+        self,
+        *,
+        node_exe: Path,
+        playwright_cli: Path,
+        spec: str,
+        child_env: dict[str, str],
+    ) -> None:
+        self._finalize_playwright_logs()
         stdout_path = self.workspace / "playwright-stdout.log"
         stderr_path = self.workspace / "playwright-stderr.log"
-        stdout_handle = stdout_path.open("w", encoding="utf-8")
-        stderr_handle = stderr_path.open("w", encoding="utf-8")
+        secrets = self._collect_redaction_secrets()
         self.playwright = subprocess.Popen(
-            [str(node_exe), str(playwright_cli), "test", "e2e/documents-conflict-live.spec.ts"],
+            [str(node_exe), str(playwright_cli), "test", spec],
             cwd=str(REPO_ROOT / "webclient"),
             env=child_env,
-            stdout=stdout_handle,
-            stderr=stderr_handle,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
+        )
+        self._playwright_stdout_drainer = _SubprocessOutputDrainer(
+            self.playwright.stdout,
+            stdout_path,
+            secrets,
+        )
+        self._playwright_stderr_drainer = _SubprocessOutputDrainer(
+            self.playwright.stderr,
+            stderr_path,
+            secrets,
         )
 
     def wait_playwright(self, *, timeout: float = 180.0) -> None:
@@ -776,13 +898,16 @@ class Web01RealProcessHarness:
             try:
                 stop_owned_process(proc)
             except Web01HarnessError:
+                self._finalize_playwright_logs()
                 raise Web01HarnessError(
                     "timeout waiting for Playwright to finish; forced stop failed "
                     f"(pid={proc.pid}, poll={proc.poll()})"
                 ) from None
             self.playwright = None
+            self._finalize_playwright_logs()
             raise Web01HarnessError("timeout waiting for Playwright to finish") from None
         self.playwright = None
+        self._finalize_playwright_logs()
         if rc != 0:
             raise Web01HarnessError(f"WEB01 Playwright spec failed with exit {rc}")
 
@@ -793,6 +918,7 @@ class Web01RealProcessHarness:
     ) -> None:
         stop_owned_process(self.playwright)
         self.playwright = None
+        self._finalize_playwright_logs()
         if self.backend is not None:
             stop_backend_graceful(
                 self.backend,
@@ -858,12 +984,46 @@ def allocate_k1_visual_dir() -> Path:
     return resolved
 
 
-def copy_playwright_json_report(workspace: Path, visual_dir: Path) -> Path:
+def redact_log_text_with_extras(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
+    redacted = redact_log_text(text)
+    for secret in extra_secrets:
+        if secret:
+            redacted = redacted.replace(secret, "<redacted>")
+    return redacted
+
+
+def redact_json_value(value: Any, extra_secrets: tuple[str, ...] = ()) -> Any:
+    if isinstance(value, dict):
+        return {key: redact_json_value(item, extra_secrets) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_json_value(item, extra_secrets) for item in value]
+    if isinstance(value, str):
+        return redact_log_text_with_extras(value, extra_secrets)
+    return value
+
+
+def redact_json_text(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
+    parsed = json.loads(text)
+    redacted = redact_json_value(parsed, extra_secrets)
+    return json.dumps(redacted, indent=2, ensure_ascii=False) + "\n"
+
+
+def copy_playwright_json_report(
+    workspace: Path,
+    visual_dir: Path,
+    *,
+    extra_secrets: tuple[str, ...] = (),
+) -> Path:
     source = workspace / "browser-smoke-playwright.json"
     if not source.is_file():
         raise Web01HarnessError("Playwright JSON reporter output is missing")
+    raw = source.read_text(encoding="utf-8")
+    redacted = redact_json_text(raw, extra_secrets)
+    json.loads(redacted)
     destination = visual_dir / PLAYWRIGHT_JSON_FILENAME
-    shutil.copy2(source, destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(redacted, encoding="utf-8")
+    source.write_text(redacted, encoding="utf-8")
     return destination
 
 
