@@ -18,10 +18,10 @@ def _unique_default_basetemp(root: Path, *, pid: int | None = None, token: str |
     return root / "build" / "pt" / f"{process_id}-{run_token}"
 
 
-def _resolve_junit_target(repo_root: Path, raw_path: str) -> Path:
+def _resolve_junit_target(invocation_dir: Path, raw_path: str) -> Path:
     candidate = Path(raw_path)
     if not candidate.is_absolute():
-        candidate = repo_root / candidate
+        candidate = invocation_dir / candidate
     return candidate.resolve()
 
 
@@ -56,13 +56,17 @@ def _validate_junit_target(repo_root: Path, target: Path) -> None:
         )
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config) -> None:  # type: ignore[no-untyped-def]
     """Keep concurrent/default pytest processes out of a shared Windows basetemp."""
 
     repo_root = Path(str(config.rootpath))
+    invocation_dir = Path(str(config.invocation_params.dir))
     xmlpath = getattr(config.option, "xmlpath", None)
     if xmlpath:
-        _validate_junit_target(repo_root, _resolve_junit_target(repo_root, str(xmlpath)))
+        resolved_junit = _resolve_junit_target(invocation_dir, str(xmlpath))
+        _validate_junit_target(repo_root, resolved_junit)
+        config.option.xmlpath = str(resolved_junit)
 
     args = tuple(str(arg) for arg in config.invocation_params.args)
     if _has_explicit_basetemp(args):

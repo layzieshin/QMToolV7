@@ -40,6 +40,60 @@ function Resolve-RepositoryJUnitPath {
     return [System.IO.Path]::GetFullPath($resolvedPath)
 }
 
+function Test-ReparsePointPath {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    return [bool]($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+}
+
+function Assert-NoReparsePointsInBuildPathChain {
+    param(
+        [string]$BuildRoot,
+        [string]$TargetPath
+    )
+
+    $normalizedBuildRoot = [System.IO.Path]::GetFullPath($BuildRoot)
+    if (Test-ReparsePointPath -Path $normalizedBuildRoot) {
+        throw "Build path must not contain a junction or reparse point: $normalizedBuildRoot"
+    }
+
+    $targetDirectory = Split-Path -Parent $TargetPath
+    if (-not $targetDirectory) {
+        if (Test-ReparsePointPath -Path $TargetPath) {
+            throw "Target path must not be a junction or reparse point: $TargetPath"
+        }
+        return
+    }
+
+    $normalizedTargetDirectory = [System.IO.Path]::GetFullPath($targetDirectory)
+    $buildPrefix = $normalizedBuildRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $normalizedTargetDirectory.StartsWith($buildPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    $relativePath = $normalizedTargetDirectory.Substring($normalizedBuildRoot.Length).TrimStart('\', '/')
+    $currentPath = $normalizedBuildRoot
+    if ($relativePath) {
+        foreach ($segment in $relativePath.Split([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)) {
+            if (-not $segment) {
+                continue
+            }
+            $currentPath = Join-Path $currentPath $segment
+            if (Test-ReparsePointPath -Path $currentPath) {
+                throw "Build path chain must not contain a junction or reparse point: $currentPath"
+            }
+        }
+    }
+
+    if (Test-ReparsePointPath -Path $TargetPath) {
+        throw "Target path must not be a junction or reparse point: $TargetPath"
+    }
+}
+
 function Assert-AllowedJUnitPath {
     param(
         [string]$RepoRoot,
@@ -72,6 +126,7 @@ if ($LASTEXITCODE -ne 0 -or -not $repoRoot) {
     throw "run-pytest-gate.ps1 must be started inside a Git worktree."
 }
 $repoRoot = [System.IO.Path]::GetFullPath($repoRoot)
+$buildRoot = Join-Path $repoRoot "build"
 Set-Location $repoRoot
 
 if (-not [System.IO.Path]::IsPathRooted($PythonPath)) {
@@ -107,7 +162,9 @@ $processTemp = Join-Path $repoRoot ("build\ptmp\{0}-{1}" -f $PID, $token)
 if (Test-Path -LiteralPath $baseTemp) {
     throw "Generated basetemp already exists: $baseTemp"
 }
+Assert-NoReparsePointsInBuildPathChain -BuildRoot $buildRoot -TargetPath $baseTemp
 New-Item -ItemType Directory -Path (Split-Path -Parent $baseTemp) -Force | Out-Null
+Assert-NoReparsePointsInBuildPathChain -BuildRoot $buildRoot -TargetPath $processTemp
 New-Item -ItemType Directory -Path $processTemp -Force | Out-Null
 
 $pytestCommand = @("-m", "pytest") + @($PytestArgs) + @(
@@ -118,6 +175,7 @@ $pytestCommand = @("-m", "pytest") + @($PytestArgs) + @(
 if ($resolvedJUnitPath) {
     $junitDirectory = Split-Path -Parent $resolvedJUnitPath
     if ($junitDirectory) {
+        Assert-NoReparsePointsInBuildPathChain -BuildRoot $buildRoot -TargetPath $resolvedJUnitPath
         New-Item -ItemType Directory -Path $junitDirectory -Force | Out-Null
     }
     $pytestCommand += @("--junitxml", $resolvedJUnitPath)
