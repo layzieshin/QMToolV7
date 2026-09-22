@@ -988,7 +988,7 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     next_body = next_action.group(1)
     assert "ausschliesslich PILOT00" in next_body
     assert "WEB01 ist `PASS`" in next_body
-    assert "772298fe61a3ec18c8d1cf07f25497b2dee3dc64" in next_body
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in next_body
     assert "f4dd2ba9aaac31f378dcf7fe991c551d19049f3e" in next_body
     assert "PILOT00 bleibt TODO" in next_body
     assert "NOT RUN" in next_body
@@ -1048,7 +1048,7 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     assert "PG00/WEB00/PG01/UX00/OPS00/WCON00" in int00_section
     assert "`docs/WEBCLIENT_UX_SPECIFICATION.md`" in web01_section
     assert "runtime_test_candidate_sha" in web01_section
-    assert "772298fe61a3ec18c8d1cf07f25497b2dee3dc64" in web01_section
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in web01_section
     assert "Unbekannter Autor" in web01_section
 
     assert "Webclient product UX governance (UX00)" in smoke_gates
@@ -1176,13 +1176,15 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "WEB01 is eligible only and remains" not in int00_section
 
     evidence = web01["result_evidence"]
-    assert "772298fe61a3ec18c8d1cf07f25497b2dee3dc64" in evidence
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in evidence
     assert "f4dd2ba9aaac31f378dcf7fe991c551d19049f3e" in evidence
-    assert "build/ap-029-web01/visual/k1/20260921T191052601232Z/" in evidence
-    assert "build/ap-029-web01/review-closeout/20260921T211527Z/" in evidence
+    assert "build/ap-029-web01/visual/k1/20260922T043723947306Z/" in evidence
+    assert "build/ap-029-web01/review-closeout-r2/final-e833fad/" in evidence
     assert "FINAL_PASS_ARCH" in evidence
     assert "FINAL_PASS_EVIDENCE" in evidence
     assert "VISUAL_ACCEPTANCE_PASS" in evidence
+    assert "2/2" in evidence
+    assert "no third round" in evidence
     assert "786ed91" in evidence
     assert "eefaf40" in evidence
     assert "56f31aa" in evidence
@@ -1198,7 +1200,7 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "Terra/Luna/Sol not" in notes or "Terra/Luna/Sol not executed" in notes
 
     assert "runtime_test_candidate_sha" in web01_section
-    assert "772298fe61a3ec18c8d1cf07f25497b2dee3dc64" in web01_section
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in web01_section
     assert "f4dd2ba9aaac31f378dcf7fe991c551d19049f3e" in web01_section
     assert "docs_closeout_sha" in web01_section
     assert "not a runtime SHA" in web01_section
@@ -1216,7 +1218,7 @@ def test_web01_docs_closeout_is_current() -> None:
 
     assert "ausschliesslich PILOT00" in next_body
     assert "WEB01 ist `PASS`" in next_body
-    assert "772298fe61a3ec18c8d1cf07f25497b2dee3dc64" in next_body
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in next_body
     assert "PILOT00 bleibt TODO" in next_body
     assert "NOT RUN" in next_body
     assert "WEB01 bleibt TODO" not in next_body
@@ -1233,7 +1235,7 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "QMTOOL_WEB01_JOINT" not in smoke_web01
     assert "if (-not (Test-Path node_modules)) { npm ci }" in smoke_web01
     assert "not postgres and not j04_final_acceptance" in smoke_web01
-    assert "772298fe61a3ec18c8d1cf07f25497b2dee3dc64" in smoke_web01
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in smoke_web01
     assert "1962 collected" in smoke_web01
     assert "1942 passed" in smoke_web01
     assert "no axe/screenreader gate" in smoke_web01.lower()

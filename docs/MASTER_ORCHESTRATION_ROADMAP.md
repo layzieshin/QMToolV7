@@ -190,13 +190,14 @@ Historische oder zu klaerende Artefakte:
 Die naechste freizugebende Aktion ist ausschliesslich PILOT00 als
 Pilot-Readiness-Paket (Security, Restore, Deployment, Betrieb, Human-Smoke).
 **WEB01 ist `PASS`** auf `runtime_test_candidate_sha`
-`772298fe61a3ec18c8d1cf07f25497b2dee3dc64` gegen Basis
+`e833fad3d3c547021be23214b1adf04a86707eab` gegen Basis
 `f4dd2ba9aaac31f378dcf7fe991c551d19049f3e`. K1/Visual-Evidence:
-`build/ap-029-web01/visual/k1/20260921T191052601232Z/`; Full Regression:
-`build/ap-029-web01/review-closeout/20260921T211527Z/` (first_red null).
+`build/ap-029-web01/visual/k1/20260922T043723947306Z/`; Full Regression:
+`build/ap-029-web01/review-closeout-r2/final-e833fad/` (first_red null).
 Unabhaengige Codex-Audits `FINAL_PASS_ARCH` / `FINAL_PASS_EVIDENCE`. Native
 Terra/Luna/Sol wurde nicht ausgefuehrt und nicht attestiert. `docs_closeout_sha`
-ist der spaetere K2-Docs-Commit und kein Runtime-SHA. PR #56 ist offen; Merge und
+ist der spaetere K2-Docs-Commit und kein Runtime-SHA. GitHub Codex ist nach 2/2
+Runden abgeschlossen; eine dritte Runde wird nicht angefordert. PR #56 ist offen; Merge und
 Merge-SHA bleiben NOT RUN. **PILOT00 bleibt TODO und NOT RUN** bis zu
 separater Freigabe. PILOT00 startet nicht automatisch mit WEB01-PASS.
 Branch-/Worktree-Cleanup bleibt separat und ist keine Voraussetzung fuer den
