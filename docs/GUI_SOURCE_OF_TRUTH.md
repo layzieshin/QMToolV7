@@ -18,8 +18,9 @@ Stand WEB01 (Produkt-UI): Der freigegebene Documents/Signature-DMS-Webslice ist 
 `webclient/` implementiert und gegen `docs/WEBCLIENT_UX_SPECIFICATION.md` abgenommen.
 Der Review-Closeout ist an `runtime_test_candidate_sha`
 `e833fad3d3c547021be23214b1adf04a86707eab` in PR #56 gebunden; die zwei erlaubten
-GitHub-Codex-Runden sind verbraucht, eine dritte Runde ist ausgeschlossen. Der PR ist noch
-nicht gemergt und PILOT00 bleibt separat freizugeben.
+GitHub-Codex-Runden sind verbraucht, eine dritte Runde ist ausgeschlossen. PR #56 wurde als
+Squash nach `main` @ `cb6871ae726fbff28f6ed7140bff8a132efb412a` gemergt; PILOT00 bleibt
+separat freizugeben.
 Deferred-Themen aus Spec/Matrix (z. B. Notifications, Global Search, generische Jobs,
 zentrale Locks oder produktiver Druck) sind **nicht** als geliefert ausgewiesen. Es darf
 keine nicht vorhandene Webfunktion als bereits geliefert dargestellt werden.

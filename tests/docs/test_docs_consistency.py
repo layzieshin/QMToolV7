@@ -1004,8 +1004,12 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     assert "FINAL_PASS_ARCH" in next_body
     assert "FINAL_PASS_EVIDENCE" in next_body
     assert "docs_closeout_sha" in next_body
-    assert "PR #56 ist offen" in next_body
-    assert "Merge-SHA bleiben NOT RUN" in next_body
+    assert "PR #56 wurde als Squash" in next_body
+    assert "cb6871ae726fbff28f6ed7140bff8a132efb412a" in next_body
+    assert "35690452617" in next_body
+    assert "6/6 Threads" in next_body
+    assert "PR #56 ist offen" not in next_body
+    assert "Merge-SHA bleiben NOT RUN" not in next_body
     assert "OPS00-Publikationsabschluss" not in next_body
     assert "977667fbdb2838c47d7564992157f984141d6a9e" not in next_body
 
@@ -1196,7 +1200,10 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "Current advances to PILOT00" in notes
     assert "PILOT00 remains TODO" in notes or "PILOT00 remains TODO / NOT RUN" in notes
     assert "Unbekannter Autor" in notes
-    assert "PR #56 remains open and unmerged" in notes
+    assert "WEB01 is merged" in notes
+    assert "cb6871ae726fbff28f6ed7140bff8a132efb412a" in evidence
+    assert "35690452617" in evidence
+    assert "6/6 review threads resolved" in evidence
     assert "Terra/Luna/Sol not" in notes or "Terra/Luna/Sol not executed" in notes
 
     assert "runtime_test_candidate_sha" in web01_section
@@ -1210,6 +1217,9 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "UX-D37" in web01_section
     assert "teilweise offen" in web01_section
     assert "verbindliche PILOT00-Nachverfolgung" in web01_section
+    assert "PR #56 was" in web01_section
+    assert "cb6871ae726fbff28f6ed7140bff8a132efb412a" in web01_section
+    assert "6/6 review" in web01_section
 
     web01_gui_block = gui_sot.split("WEB01", 1)[1][:800]
     assert "implementiert" in web01_gui_block.lower() or "abgenommen" in web01_gui_block.lower()
@@ -1224,6 +1234,8 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "WEB01 bleibt TODO" not in next_body
     assert "ausschliesslich WEB01" not in next_body
     assert "docs_closeout_sha" in next_body
+    assert "cb6871ae726fbff28f6ed7140bff8a132efb412a" in next_body
+    assert "PR #56 ist offen" not in next_body
 
     assert "WEB01-H" in smoke_web01
     assert "WEB01-K1" in smoke_web01
@@ -1236,6 +1248,9 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "if (-not (Test-Path node_modules)) { npm ci }" in smoke_web01
     assert "not postgres and not j04_final_acceptance" in smoke_web01
     assert "e833fad3d3c547021be23214b1adf04a86707eab" in smoke_web01
+    assert "cb6871ae726fbff28f6ed7140bff8a132efb412a" in smoke_web01
+    assert "35690452617" in smoke_web01
+    assert "6/6 review threads resolved" in smoke_web01
     assert "1962 collected" in smoke_web01
     assert "1942 passed" in smoke_web01
     assert "no axe/screenreader gate" in smoke_web01.lower()

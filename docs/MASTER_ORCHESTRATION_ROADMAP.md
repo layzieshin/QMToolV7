@@ -196,9 +196,11 @@ Pilot-Readiness-Paket (Security, Restore, Deployment, Betrieb, Human-Smoke).
 `build/ap-029-web01/review-closeout-r2/final-e833fad/` (first_red null).
 Unabhaengige Codex-Audits `FINAL_PASS_ARCH` / `FINAL_PASS_EVIDENCE`. Native
 Terra/Luna/Sol wurde nicht ausgefuehrt und nicht attestiert. `docs_closeout_sha`
-ist der spaetere K2-Docs-Commit und kein Runtime-SHA. GitHub Codex ist nach 2/2
-Runden abgeschlossen; eine dritte Runde wird nicht angefordert. PR #56 ist offen; Merge und
-Merge-SHA bleiben NOT RUN. **PILOT00 bleibt TODO und NOT RUN** bis zu
+ist der post-merge Docs-Commit und kein Runtime-SHA. GitHub Codex ist nach 2/2
+Runden abgeschlossen; eine dritte Runde wird nicht angefordert. PR #56 wurde als Squash nach
+`main` @ `cb6871ae726fbff28f6ed7140bff8a132efb412a` gemergt; CI 35690452617 war
+fuer `quality-gates` und `postgres-usermanagement` erfolgreich, 6/6 Threads waren geloest.
+**PILOT00 bleibt TODO und NOT RUN** bis zu
 separater Freigabe. PILOT00 startet nicht automatisch mit WEB01-PASS.
 Branch-/Worktree-Cleanup bleibt separat und ist keine Voraussetzung fuer den
 fachlichen WEB01-PASS. INT00 ist `PASS` auf

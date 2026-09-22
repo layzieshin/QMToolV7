@@ -233,6 +233,9 @@ acceptance:
 Current K1 evidence: visual dir `build/ap-029-web01/visual/k1/20260922T043723947306Z/`;
 Playwright 1 PASS, 0 unexpected/flaky; five handshakes; 16/16 screenshots; independent Codex
 visual review `VISUAL_ACCEPTANCE_PASS`.
+Publication evidence: PR #56 squash-merged to `main` @
+`cb6871ae726fbff28f6ed7140bff8a132efb412a`; CI 35690452617 `quality-gates` and
+`postgres-usermanagement` SUCCESS; 6/6 review threads resolved; GitHub Codex bounded at 2/2.
 `webclient/dist` must exist (`npm run build`) before WEB01-H/K1 live gates.
 
 WEB01 evidence must cover two actor sessions, server-provided actions, ETag conflict, comments,
