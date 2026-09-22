@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthState } from "../api/types";
 
-const { logoutMock, retryConnectionMock, refreshAuthMock, shellState, authenticatedUser } =
+const { retryConnectionMock, refreshAuthMock, shellState, authenticatedUser } =
   vi.hoisted(() => {
     const user = {
       user_id: "u1",
@@ -17,7 +17,6 @@ const { logoutMock, retryConnectionMock, refreshAuthMock, shellState, authentica
       authenticated_at: "2026-01-01T00:00:00Z",
     };
     return {
-      logoutMock: vi.fn(async () => undefined),
       retryConnectionMock: vi.fn(async () => undefined),
       refreshAuthMock: vi.fn(async () => undefined),
       authenticatedUser: user,
@@ -54,7 +53,6 @@ vi.hoisted(() => {
   );
   register(pathToFileURL(loaderPath), pathToFileURL(join(process.cwd(), "package.json")));
 });
-
 vi.mock("../components/AppShell.vue", () => ({
   default: {
     name: "AppShell",
@@ -66,7 +64,6 @@ vi.mock("../state/appShell", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/appShell")>();
   return {
     ...actual,
-    logout: logoutMock,
     refreshAuth: refreshAuthMock,
     useAppShellState: () => shellState as ReturnType<typeof actual.useAppShellState>,
   };
@@ -82,7 +79,6 @@ vi.mock("../state/bootstrap", async (importOriginal) => {
 
 import ConnectionBanner from "../components/ConnectionBanner.vue";
 import ModuleNavigation from "../components/ModuleNavigation.vue";
-import DashboardView from "../views/DashboardView.vue";
 import { RETURN_URL_QUERY } from "../composables/useReturnUrl";
 import { i18n } from "../i18n";
 import AppLayout from "../layouts/AppLayout.vue";
@@ -423,33 +419,5 @@ describe("AppLayout bootstrap 401 handoff", () => {
     expect(refreshAuthMock).not.toHaveBeenCalled();
     expect(router.currentRoute.value.path).toBe("/");
     wrapper.unmount();
-  });
-});
-
-describe("DashboardView", () => {
-  beforeEach(() => {
-    document.body.innerHTML = "";
-    logoutMock.mockClear();
-  });
-
-  it("renders slim dashboard without mock tasks and logs out to login", async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes,
-    });
-    await router.push("/");
-    await router.isReady();
-
-    const wrapper = mountWithPlugins(DashboardView, {
-      global: { plugins: [router, vuetify, i18n] },
-    });
-    await flushPromises();
-
-    expect(wrapper.text()).not.toMatch(/mock|notification|aufgabe/i);
-    expect(wrapper.find("[data-testid=dashboard-logout]").exists()).toBe(true);
-    await wrapper.get("[data-testid=dashboard-logout]").trigger("click");
-    await flushPromises();
-    expect(logoutMock).toHaveBeenCalledTimes(1);
-    expect(router.currentRoute.value.path).toBe("/login");
   });
 });

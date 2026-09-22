@@ -55,29 +55,41 @@ export async function refreshConnection(): Promise<void> {
   state.connection = (await probeHealth()) ? "online" : "offline";
 }
 
-export async function refreshAuth(): Promise<void> {
+async function refreshAuthState(preserveAuthenticatedOnTransientError: boolean): Promise<boolean> {
   state.loading = true;
   state.lastError = null;
   try {
     await refreshConnection();
     const user: MeResponse = await fetchMe();
     state.auth = { status: "authenticated", user };
+    return true;
   } catch (error) {
     if (isPasswordChangeRequired(error)) {
       const preservedUsername =
         state.auth.status === "password_change_required" ? state.auth.username : "";
       state.auth = { status: "password_change_required", username: preservedUsername };
-      return;
+      return true;
     }
     if (error instanceof ApiTransportError && error.status === 401) {
       state.auth = { status: "anonymous" };
-      return;
+      return true;
     }
-    state.auth = { status: "anonymous" };
+    if (!(preserveAuthenticatedOnTransientError && state.auth.status === "authenticated")) {
+      state.auth = { status: "anonymous" };
+    }
     state.lastError = errorMessage(error);
+    return false;
   } finally {
     state.loading = false;
   }
+}
+
+export async function refreshAuth(): Promise<void> {
+  await refreshAuthState(false);
+}
+
+export async function revalidateAuth(): Promise<boolean> {
+  return refreshAuthState(true);
 }
 
 export async function login(username: string, password: string): Promise<void> {

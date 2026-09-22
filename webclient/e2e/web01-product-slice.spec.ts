@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -300,25 +300,24 @@ async function spaNavigate(page: Page, targetPath: string): Promise<void> {
   }, targetPath);
 }
 
-async function withSlowNetwork(page: Page, action: () => Promise<void>): Promise<void> {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("Network.enable");
-  await cdp.send("Network.emulateNetworkConditions", {
-    offline: false,
-    downloadThroughput: 128,
-    uploadThroughput: 128,
-    latency: 2_000,
-  });
+async function withSlowDocumentsQuery(page: Page, action: () => Promise<void>): Promise<void> {
+  const pattern = "**/api/v1/documents/query?**";
+  let routeCompletion: Promise<void> | null = null;
+  const handler = (route: Route): Promise<void> => {
+    routeCompletion = (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await route.continue();
+    })();
+    return routeCompletion;
+  };
+  await page.route(pattern, handler);
   try {
     await action();
   } finally {
-    await cdp.send("Network.emulateNetworkConditions", {
-      offline: false,
-      downloadThroughput: -1,
-      uploadThroughput: -1,
-      latency: 0,
-    });
-    await cdp.detach();
+    if (routeCompletion) {
+      await routeCompletion;
+    }
+    await page.unroute(pattern, handler);
   }
 }
 
@@ -481,13 +480,13 @@ test.describe("WEB01 product slice", () => {
       await login(adminPage, adminUser, adminPass);
       await expect(adminPage.getByTestId("authenticated-panel")).toBeVisible({ timeout: ACTION_TIMEOUT });
       await adminPage.goto("/", { timeout: NAVIGATION_TIMEOUT });
-      await expect(adminPage.getByTestId("dashboard-logout")).toBeVisible({
+      await expect(adminPage.getByTestId("shell-logout")).toBeVisible({
         timeout: ACTION_TIMEOUT,
       });
       await waitForDashboardBootstrapReady(adminPage);
       await capture(adminPage, visualDir, "dashboard-desktop.png", desktop);
 
-      await withSlowNetwork(adminPage, async () => {
+      await withSlowDocumentsQuery(adminPage, async () => {
         await adminPage.getByTestId("module-navigation").getByRole("link", { name: "Dokumente" }).click();
         await expect(adminPage.getByTestId("documents-pool-loading")).toBeVisible({ timeout: 15_000 });
         await capture(adminPage, visualDir, "loading-pool-desktop.png", desktop);
@@ -821,6 +820,7 @@ test.describe("WEB01 product slice", () => {
       { timeout: MAINTENANCE_STEP_TIMEOUT },
     );
 
+    let savedUrl = "";
     await test.step(
       "restart deep-link session restore",
       async () => {
@@ -829,7 +829,7 @@ test.describe("WEB01 product slice", () => {
       await expect(adminPage.getByTestId("document-detail-history-panel")).toBeVisible({
         timeout: WORKFLOW_STEP_TIMEOUT,
       });
-      const savedUrl = adminPage.url();
+      savedUrl = adminPage.url();
       await writeFile(
         path.join(evidenceDir, "restart-request.json"),
         JSON.stringify(
@@ -859,8 +859,8 @@ test.describe("WEB01 product slice", () => {
     await test.step(
       "logout invalidates session",
       async () => {
-      await spaNavigate(adminPage, "/");
-      await expect(adminPage.getByTestId("dashboard-logout")).toBeVisible({
+      expect(adminPage.url(), "logout remains available on the restored deep link").toBe(savedUrl);
+      await expect(adminPage.getByTestId("shell-logout")).toBeVisible({
         timeout: ACTION_TIMEOUT,
       });
       await logout(adminPage);

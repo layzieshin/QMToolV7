@@ -188,7 +188,7 @@ describe("auth session flows", () => {
     fetchMe
       .mockRejectedValueOnce(passwordChangeRequiredError)
       .mockRejectedValueOnce(passwordChangeRequiredError)
-      .mockResolvedValueOnce(meAuthenticated);
+      .mockResolvedValue(meAuthenticated);
 
     await login("admin", "admin");
     __resetAuthBootstrapForTest();
@@ -209,7 +209,7 @@ describe("auth session flows", () => {
     await wrapper.vm.$nextTick();
 
     expect(changePasswordBrowser).toHaveBeenCalledWith("admin-new-password-1");
-    expect(fetchMe).toHaveBeenCalledTimes(3);
+    expect(fetchMe).toHaveBeenCalledTimes(4);
     await vi.waitFor(() => {
       expect((wrapper.vm as { newPassword: string }).newPassword).toBe("");
     });
@@ -280,7 +280,7 @@ describe("auth session flows", () => {
     });
     await flushPromises();
 
-    await wrapper.get("[data-testid=authenticated-panel] button").trigger("click");
+    await wrapper.get("[data-testid=shell-logout]").trigger("click");
     await flushPromises();
 
     expect(testRouter.currentRoute.value.path).toBe("/login");
@@ -308,5 +308,80 @@ describe("auth session flows", () => {
 
     expect(testRouter.currentRoute.value.path).toBe("/login");
     expect(testRouter.currentRoute.value.query[RETURN_URL_QUERY]).toBe("/?view=docs");
+  });
+
+  it("revalidates an expired session before every protected follow-up navigation", async () => {
+    fetchMe
+      .mockResolvedValueOnce(meAuthenticated)
+      .mockRejectedValueOnce(new ApiTransportError("unauthorized", 401, null));
+
+    const testRouter = createAppRouter(createMemoryHistory());
+    await testRouter.push("/");
+    await testRouter.isReady();
+    await testRouter.push("/documents");
+
+    expect(fetchMe).toHaveBeenCalledTimes(2);
+    expect(testRouter.currentRoute.value.path).toBe("/login");
+    expect(testRouter.currentRoute.value.query[RETURN_URL_QUERY]).toBe("/documents");
+    expect((await import("../state/appShell")).useAppShellState().auth.status).toBe("anonymous");
+  });
+
+  it("keeps the authenticated view on a transient revalidation error and allows retry", async () => {
+    fetchMe
+      .mockResolvedValueOnce(meAuthenticated)
+      .mockRejectedValueOnce(new Error("backend temporarily unavailable"))
+      .mockResolvedValueOnce(meAuthenticated);
+
+    const testRouter = createAppRouter(createMemoryHistory());
+    await testRouter.push("/");
+    await testRouter.isReady();
+    await testRouter.push("/documents");
+
+    const shell = (await import("../state/appShell")).useAppShellState();
+    expect(testRouter.currentRoute.value.path).toBe("/");
+    expect(shell.auth.status).toBe("authenticated");
+    expect(shell.lastError).toBe("backend temporarily unavailable");
+
+    await testRouter.push("/documents");
+
+    expect(fetchMe).toHaveBeenCalledTimes(3);
+    expect(testRouter.currentRoute.value.path).toBe("/documents");
+    expect(shell.auth.status).toBe("authenticated");
+  });
+
+  it("keeps a valid session on the protected follow-up target", async () => {
+    fetchMe.mockResolvedValue(meAuthenticated);
+
+    const testRouter = createAppRouter(createMemoryHistory());
+    await testRouter.push("/");
+    await testRouter.isReady();
+    await testRouter.push("/documents");
+
+    expect(fetchMe).toHaveBeenCalledTimes(2);
+    expect(testRouter.currentRoute.value.path).toBe("/documents");
+  });
+
+  it("routes password-change-required follow-up navigation with a safe return target", async () => {
+    fetchMe.mockResolvedValueOnce(meAuthenticated).mockRejectedValueOnce(passwordChangeRequiredError);
+
+    const testRouter = createAppRouter(createMemoryHistory());
+    await testRouter.push("/");
+    await testRouter.isReady();
+    await testRouter.push("/documents");
+
+    expect(testRouter.currentRoute.value.path).toBe("/change-password");
+    expect(testRouter.currentRoute.value.query[RETURN_URL_QUERY]).toBe("/documents");
+  });
+
+  it("does not re-refresh or loop when authenticated navigation targets login", async () => {
+    fetchMe.mockResolvedValue(meAuthenticated);
+
+    const testRouter = createAppRouter(createMemoryHistory());
+    await testRouter.push("/");
+    await testRouter.isReady();
+    await testRouter.push("/login");
+
+    expect(fetchMe).toHaveBeenCalledTimes(1);
+    expect(testRouter.currentRoute.value.path).toBe("/");
   });
 });

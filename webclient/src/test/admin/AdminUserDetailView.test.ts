@@ -578,6 +578,128 @@ describe("AdminUserDetailView", () => {
     wrapper.unmount();
   });
 
+  it("ignores a stale password success after navigation and preserves the next user input", async () => {
+    const passwordDeferred = deferred<void>();
+    const carolUser = bobUser({
+      username: "carol",
+      user_id: "u-carol",
+      role: "Admin",
+      must_change_password: false,
+    });
+    fetchAdminUserMock.mockResolvedValueOnce(bobUser()).mockResolvedValueOnce(carolUser);
+    mutateMock.mockImplementationOnce(() => passwordDeferred.promise);
+
+    const { wrapper, router } = await mountDetail("bob");
+    await wrapper.get("[data-testid=admin-user-password-input]").find("input").setValue("bob-new-12");
+    void wrapper.get("[data-testid=admin-user-password-card] form").trigger("submit.prevent");
+    await flushPromises();
+
+    await router.push("/admin/users/carol");
+    await router.isReady();
+    await flushPromises();
+    await wrapper
+      .get("[data-testid=admin-user-password-input]")
+      .find("input")
+      .setValue("carol-draft-12");
+
+    passwordDeferred.resolve();
+    await flushPromises();
+
+    expect(fetchAdminUserMock).toHaveBeenCalledTimes(2);
+    expect(wrapper.get("[data-testid=admin-user-password-input]").find("input").element.value).toBe(
+      "carol-draft-12",
+    );
+    expect(wrapper.find("[data-testid=admin-user-password-error]").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("ignores a stale password failure after navigation to another user", async () => {
+    const passwordDeferred = deferred<void>();
+    const carolUser = bobUser({
+      username: "carol",
+      user_id: "u-carol",
+      role: "Admin",
+      must_change_password: false,
+    });
+    fetchAdminUserMock.mockResolvedValueOnce(bobUser()).mockResolvedValueOnce(carolUser);
+    mutateMock.mockImplementationOnce(() => passwordDeferred.promise);
+
+    const { wrapper, router } = await mountDetail("bob");
+    await wrapper.get("[data-testid=admin-user-password-input]").find("input").setValue("bob-new-12");
+    void wrapper.get("[data-testid=admin-user-password-card] form").trigger("submit.prevent");
+    await flushPromises();
+
+    await router.push("/admin/users/carol");
+    await router.isReady();
+    await flushPromises();
+    await wrapper
+      .get("[data-testid=admin-user-password-input]")
+      .find("input")
+      .setValue("carol-draft-12");
+
+    passwordDeferred.reject(new Error("bob password action failed"));
+    await flushPromises();
+
+    expect(wrapper.get("[data-testid=admin-user-password-input]").find("input").element.value).toBe(
+      "carol-draft-12",
+    );
+    expect(wrapper.find("[data-testid=admin-user-password-error]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("bob password action failed");
+    wrapper.unmount();
+  });
+
+  it("keeps a newer password action loading when the stale operation settles", async () => {
+    const bobPasswordDeferred = deferred<void>();
+    const carolPasswordDeferred = deferred<void>();
+    const carolUser = bobUser({
+      username: "carol",
+      user_id: "u-carol",
+      role: "Admin",
+      must_change_password: false,
+    });
+    fetchAdminUserMock
+      .mockResolvedValueOnce(bobUser())
+      .mockResolvedValueOnce(carolUser)
+      .mockResolvedValueOnce(carolUser);
+    mutateMock
+      .mockImplementationOnce(() => bobPasswordDeferred.promise)
+      .mockImplementationOnce(() => carolPasswordDeferred.promise);
+
+    const { wrapper, router } = await mountDetail("bob");
+    await wrapper.get("[data-testid=admin-user-password-input]").find("input").setValue("bob-new-12");
+    void wrapper.get("[data-testid=admin-user-password-card] form").trigger("submit.prevent");
+    await flushPromises();
+
+    await router.push("/admin/users/carol");
+    await router.isReady();
+    await flushPromises();
+    await wrapper
+      .get("[data-testid=admin-user-password-input]")
+      .find("input")
+      .setValue("carol-new-12");
+    void wrapper.get("[data-testid=admin-user-password-card] form").trigger("submit.prevent");
+    await flushPromises();
+
+    bobPasswordDeferred.resolve();
+    await flushPromises();
+
+    expect(mutateMock).toHaveBeenCalledTimes(2);
+    expect(wrapper.get("[data-testid=admin-user-password-submit]").classes()).toContain(
+      "v-btn--loading",
+    );
+
+    carolPasswordDeferred.resolve();
+    await flushPromises();
+
+    expect(wrapper.get("[data-testid=admin-user-password-submit]").classes()).not.toContain(
+      "v-btn--loading",
+    );
+    expect(wrapper.get("[data-testid=admin-user-password-input]").find("input").element.value).toBe(
+      "",
+    );
+    wrapper.unmount();
+  });
+
   it("ignores stale access save success after dirty discard navigates to another user", async () => {
     const patchDeferred = deferred<ReturnType<typeof bobUser>>();
     const carolUser = bobUser({

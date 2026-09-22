@@ -13,7 +13,7 @@ import {
   readReturnUrlQuery,
   sanitizeReturnUrl,
 } from "../composables/useReturnUrl";
-import { refreshAuth, useAppShellState } from "../state/appShell";
+import { refreshAuth, revalidateAuth, useAppShellState } from "../state/appShell";
 import { routes } from "./routes";
 
 let authBootstrapped = false;
@@ -34,6 +34,9 @@ export async function authNavigationGuard(
   if (!authBootstrapped) {
     authBootstrapped = true;
     await refreshAuth();
+  } else if (to.meta.requiresAuth && !(await revalidateAuth())) {
+    next(false);
+    return;
   }
 
   const shell = useAppShellState();

@@ -52,6 +52,7 @@ let pendingRouteConfirmation: ((allow: boolean) => void) | null = null;
 
 const loadGeneration = { current: 0 };
 const accessOperationGeneration = { current: 0 };
+const passwordOperationGeneration = { current: 0 };
 let mounted = false;
 
 const username = computed(() => String(route.params.username ?? ""));
@@ -114,6 +115,11 @@ function invalidateAccessOperations(): void {
   savingAccess.value = false;
 }
 
+function invalidatePasswordOperations(): void {
+  passwordOperationGeneration.current += 1;
+  passwordSaving.value = false;
+}
+
 function isAccessOperationStillCurrent(
   operationId: number,
   targetUsername: string,
@@ -127,6 +133,19 @@ function isAccessOperationStillCurrent(
   );
 }
 
+function isPasswordOperationStillCurrent(
+  operationId: number,
+  targetUsername: string,
+  loadGenerationAtStart: number,
+): boolean {
+  return (
+    mounted &&
+    operationId === passwordOperationGeneration.current &&
+    loadGenerationAtStart === loadGeneration.current &&
+    username.value === targetUsername
+  );
+}
+
 async function loadDetail(targetUsername: string): Promise<UserAccessResponse> {
   return fetchAdminUser(targetUsername);
 }
@@ -135,6 +154,7 @@ async function reload(): Promise<void> {
   const targetUsername = username.value;
   const generation = ++loadGeneration.current;
   invalidateAccessOperations();
+  invalidatePasswordOperations();
   loading.value = true;
   errorKey.value = null;
   editMode.value = false;
@@ -324,22 +344,32 @@ async function submitPasswordAction(): Promise<void> {
   if (!user.value || passwordSaving.value || !writesEnabled.value) {
     return;
   }
+  const targetUsername = user.value.username;
+  const loadGenerationAtStart = loadGeneration.current;
+  const operationId = ++passwordOperationGeneration.current;
+  const submittedPassword = passwordValue.value;
   passwordSaving.value = true;
   passwordError.value = null;
   passwordFieldErrors.value = {};
   try {
     await mutate({
       method: "POST",
-      path: `/users/${encodeAdminUsernamePathSegment(user.value.username)}/password-actions`,
+      path: `/users/${encodeAdminUsernamePathSegment(targetUsername)}/password-actions`,
       body: {
         json: {
-          new_password: passwordValue.value,
+          new_password: submittedPassword,
         },
       },
     });
+    if (!isPasswordOperationStillCurrent(operationId, targetUsername, loadGenerationAtStart)) {
+      return;
+    }
     passwordValue.value = "";
     await refreshDetailOnly();
   } catch (cause) {
+    if (!isPasswordOperationStillCurrent(operationId, targetUsername, loadGenerationAtStart)) {
+      return;
+    }
     passwordError.value = mapMutationError(cause);
     applyFieldErrors(cause, passwordFieldErrors);
     if (
@@ -349,7 +379,9 @@ async function submitPasswordAction(): Promise<void> {
       passwordError.value = t("admin.users.password.weak");
     }
   } finally {
-    passwordSaving.value = false;
+    if (isPasswordOperationStillCurrent(operationId, targetUsername, loadGenerationAtStart)) {
+      passwordSaving.value = false;
+    }
   }
 }
 
@@ -397,6 +429,7 @@ onUnmounted(() => {
   mounted = false;
   loadGeneration.current += 1;
   invalidateAccessOperations();
+  invalidatePasswordOperations();
   passwordValue.value = "";
   window.removeEventListener("beforeunload", onBeforeUnload);
 });
