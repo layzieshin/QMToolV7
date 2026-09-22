@@ -283,7 +283,7 @@ Session-/Request-Kontext.
 ## 4. Checkpoint-Ledger
 
 <!-- AP029_LEDGER_START -->
-Current checkpoint: WEB01
+Current checkpoint: PILOT00
 
 | ID | Title | Status | Start SHA | Ergebnis/Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -298,9 +298,9 @@ Current checkpoint: WEB01
 | UX00 | Canonical webclient product UX and contract review | PASS | 58caddac224ab46ed63392fba92fc11b94e9ddf2 | baseline `build/ap-029-ux00/preflight-20260830/junit.xml`: 16 passed; focused A 4 passed and B 5 passed; independent reviews PASS; evidence `build/ap-029-ux00/`; PR #40 squash-merged to `main` @ `756160c6e388b43afe3ef985cbe3d34767e6b0ef` | P0 UX plus P1 gap/disposition matrix; PR #40 merge SHA `756160c6e388b43afe3ef985cbe3d34767e6b0ef`; merged on `main`; Current advances to OPS00 |
 | OPS00 | Windows service, HTTPS, backup/restore, export | PASS | 756160c6e388b43afe3ef985cbe3d34767e6b0ef | A–F PASS plus final runtime-integrity closeout on `feature/ap-029-ops00` @ `a0e4c7253c4528f09447ae773bdafebf8455ecbd`; canonical-doc reconciliation @ `f2e48d38f5e866151a8e8ca6329fdce45d6a32e5`; package integration 262 passed, 2 expected live skips; Slot-2 live 9 passed; independent local code audits FINAL_PASS; evidence `build/ap-029-ops00/final-closeout-20260902/`; PR #41 squash-merged to `main` @ `98feef61dcfe0e40741c254da16feb9383a0d1b0` | uninstalled host, file-PEM HTTPS, sealed PG+Blob restore, maintenance abort, deny-by-default exports, `/ready` + diagnostic bundle; external Codex review remains `BOUNDED_COMPLETE` (2/2, no Codex PASS, no third round); both CI jobs SUCCESS and 11/11 review threads resolved before merge; PILOT00 SCM/LAN/cert-store still excluded; Current advances to WCON00 |
 | WCON00 | Webclient contract completion for WEB01 | PASS | eb39875423b3d2bb34f87ebc1a0716c724aa4ecc | A–F plus R3 `a3520c0f1820fc7ea46b6c62e7b8a45956611141`; R4-A `195afbc3f3cf97a91209f1a9fd583a3c9da62c3a`; R4-B `ff3f9882c30420242b49ebabab707afef39b046e`/`4c15d6cb726e54639881bb627795c4ede4eca969`; R4-C `83fbf58873df747e929f67c0c21bf5d1ccd39a0d`; R4-D `63656ccd733d13049b1c53f39e76f8d2b0f2b270`; PIS `065e4bb8c21ff296eaeab58fcfdf4bec982a9326`; package groups 25+79+38+67 passed; CI 34517179703 SUCCESS; Slot-2 preflight ok; R4-relevant live1 passed; independent final audit FINAL_PASS agent `15f494f7-7b67-4147-9531-3c5ba4b9809f`; evidence `build/ap-029-wcon00/`; PR #43 squash-merged to `main` @ `fc61887f77c4e8e7d3442af8e7c5f5eb534f193e`; pre-merge CI 34518815271 quality-gates and postgres-usermanagement SUCCESS | no Vue screens; Current advances to INT00; INT00 and WEB01 remain TODO / NOT RUN; external Codex remains `BOUNDED_COMPLETE` (2/2, no Codex PASS, no third round); 12/12 review threads resolved before merge |
-| INT00 | Joint integration gate PG00/WEB00/PG01/UX00/OPS00/WCON00 | PASS | 6e6a2ca0824f8979fa21521a02a7c4b0c4f5a8ba | runtime_test_candidate_sha `8d2e4615b4e52a2113055e7e9113daa1570b78f3`; G1–G10 passed on `build/ap-029-int00/run-20260916T182711117Z`; manifest SHA256 `7DC69F61F864407E442ECB98DDC2794A7CAEF3F5F9FC07FDB4D50DD0764EA8EF`; evidence `build/ap-029-int00/`; PR #49 squash-merged to `main` @ `a388a5bfee02c4c94d8e9ef87a92aee2b4a3f2fe` (ServiceHost HTTPS graceful shutdown); independent Codex final audit `HUMAN_AUTHORIZED_INDEPENDENT_CODEX_FINAL_AUDIT_PASS` (`FINAL_PASS_ARCH` / `FINAL_PASS_EVIDENCE`); native Terra/Sol not executed and not attested; docs_closeout_sha is the later docs-only commit and is not a runtime SHA | Current advances to WEB01; WEB01 remains TODO / NOT RUN until separately authorized; INT00 did not start WEB01 and added no Vue product screens; cleanup is not a prerequisite for this PASS |
-| WEB01 | Full Documents/Signature web workflow | TODO | — | — | after INT00; bound to canonical UX; eligible only, not started |
-| PILOT00 | Pilot readiness security/restore/ops/human-smoke | TODO | — | — | blocks live data |
+| INT00 | Joint integration gate PG00/WEB00/PG01/UX00/OPS00/WCON00 | PASS | 6e6a2ca0824f8979fa21521a02a7c4b0c4f5a8ba | runtime_test_candidate_sha `8d2e4615b4e52a2113055e7e9113daa1570b78f3`; G1–G10 passed on `build/ap-029-int00/run-20260916T182711117Z`; manifest SHA256 `7DC69F61F864407E442ECB98DDC2794A7CAEF3F5F9FC07FDB4D50DD0764EA8EF`; evidence `build/ap-029-int00/`; PR #49 squash-merged to `main` @ `a388a5bfee02c4c94d8e9ef87a92aee2b4a3f2fe` (ServiceHost HTTPS graceful shutdown); independent Codex final audit `HUMAN_AUTHORIZED_INDEPENDENT_CODEX_FINAL_AUDIT_PASS` (`FINAL_PASS_ARCH` / `FINAL_PASS_EVIDENCE`); native Terra/Sol not executed and not attested; docs_closeout_sha is the later docs-only commit and is not a runtime SHA | At INT00 closeout, WEB01 was TODO / NOT RUN; that historical state is superseded by WEB01 PASS. INT00 did not start WEB01 and added no Vue product screens; cleanup is not a prerequisite for this PASS |
+| WEB01 | Full Documents/Signature web workflow | PASS | f4dd2ba9aaac31f378dcf7fe991c551d19049f3e | runtime_test_candidate_sha `e833fad3d3c547021be23214b1adf04a86707eab`; base `f4dd2ba9aaac31f378dcf7fe991c551d19049f3e`; WEB01-H/K1 Slot-2 live PASS; K1 visual `build/ap-029-web01/visual/k1/20260922T043723947306Z/` (Playwright 1 PASS, 5 handshakes, 16/16 screenshots; independent Codex visual review `VISUAL_ACCEPTANCE_PASS`); full regression ALL GREEN `build/ap-029-web01/review-closeout-r2/final-e833fad/` (OpenAPI/types zero-diff, Vitest 425, vue-tsc+Vite PASS, Python non-live 1962 collected/1942 passed/20 `not_in_m0` skipped, docs+architecture 120 passed; first_red null); independent Codex audits `FINAL_PASS_ARCH` / `FINAL_PASS_EVIDENCE`; evidence `build/ap-029-web01/`; Vorbedingungen main PR #52 @ `786ed91`, PR #53 @ `eefaf40`, PR #54 @ `56f31aa`, PR #55 @ `f4dd2ba`; PR #56 review closeout fixes connection recovery, signature reauthentication, controlled download, protected-route revalidation, persistent logout and stale admin password-reset completion; GitHub Codex review is bounded at 2/2 with no third round | `docs_closeout_sha` is the later K2 docs-only commit and is not a runtime SHA; native Terra/Luna/Sol not executed and not attested; Current advances to PILOT00; PILOT00 remains TODO / NOT RUN; non-blocking follow-up: UX-D37 human-readable comment author display remains partially outstanding server-side (UI masks UUID/ID as „Unbekannter Autor“); PR #56 remains open and unmerged during this closeout |
+| PILOT00 | Pilot readiness security/restore/ops/human-smoke | TODO | — | — | after WEB01 PASS; blocks live data; NOT RUN until separately authorized |
 | PILOT01 | Limited live-data pilot with human approval | TODO | — | — | human gate |
 | CB01 | Container productization after proven DMS web pattern | TODO | — | — | not a pilot blocker; PostgreSQL and central web patterns only |
 | CONV00 | DOCX/DOTX converter comparison and hardening | TODO | — | — | after or parallel post-pilot selection |
@@ -485,7 +485,7 @@ separat freizugeben.
 - **DoD:** Foundation läuft gegen `/api/v1` Same-Origin; keine Fachmodule-UI-Vollständigkeit nötig.
 - **Evidence:** `build/ap-029-web00/`.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`PG01`.
-- **Hinweis:** WEB00 ist **PASS** (commit `da9db323…`; Evidence `build/ap-029-web00/`; nach PASS wurde Current historisch auf PG01 gesetzt; PG01 ist PASS @ `58cadda…`; WCON00 PASS; INT00 PASS; Current ist WEB01; WEB01 bleibt TODO / NOT RUN).
+- **Hinweis:** WEB00 ist **PASS** (commit `da9db323…`; Evidence `build/ap-029-web00/`; nach PASS wurde Current historisch auf PG01 gesetzt; PG01 ist PASS @ `58cadda…`; WCON00 PASS; INT00 PASS; WEB01 PASS @ runtime `93eaf985…`; Current ist PILOT00; PILOT00 bleibt TODO / NOT RUN).
 
 ### PG01 — Documents/Registry/Signature → PostgreSQL
 
@@ -588,14 +588,16 @@ separat freizugeben.
   (`FINAL_PASS_ARCH` / `FINAL_PASS_EVIDENCE`). Native Terra/Sol review was not
   executed and is not attested; do not claim `CONTROL_PLANE_PINNED` or
   `RUNTIME_ATTESTED`. `docs_closeout_sha` is the later docs-only commit and is
-  not a runtime SHA. WEB01 is eligible only and remains `TODO` / `NOT RUN`.
+  not a runtime SHA. At INT00 closeout, WEB01 was eligible and `TODO` / `NOT RUN`;
+  that historical state is superseded by WEB01 PASS.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`WEB01`.
 
 ### WEB01 — Documents/Signature web workflow
 
 - **Ziel:** Vollständiger DMS-Webslice gemäß D11 (ohne Converter-Härtung CONV00).
 - **Vorbedingungen:** UX00, WCON00 und INT00 PASS; Umsetzung gegen
-  `docs/WEBCLIENT_UX_SPECIFICATION.md`.
+  `docs/WEBCLIENT_UX_SPECIFICATION.md`; main-Vorbedingungen PR #52 @ `786ed91`, PR #53 @
+  `eefaf40`, PR #54 @ `56f31aa`, PR #55 @ `f4dd2ba9aaac31f378dcf7fe991c551d19049f3e`.
 - **Ausschlüsse:** QES; Multi-Tenant-Admin; weitere Module außer freigegebenem Scope.
 - **Interne Slices:** Login/minimale Nutzerverwaltung; Dokumentliste/-detail; PDF-/DOCX-Import;
   Rollen/`allowed_actions`; ETag/If-Match; PDF-/DOCX-Kommentare; Signatur-Reauthentifizierung;
@@ -606,6 +608,25 @@ separat freizugeben.
   Signatur-/ETag-Negativpfad stoppt.
 - **DoD:** vollständiger synthetischer Browser-Realprocess bis APPROVED inklusive Restart.
 - **Evidence:** `build/ap-029-web01/`.
+- **Ergebnis:** `PASS` on frozen `runtime_test_candidate_sha`
+  `e833fad3d3c547021be23214b1adf04a86707eab` against base
+  `f4dd2ba9aaac31f378dcf7fe991c551d19049f3e`. WEB01-H/K1 Slot-2 live PASS; K1 visual
+  `build/ap-029-web01/visual/k1/20260922T043723947306Z/` (Playwright 1 PASS, five handshakes,
+  restart/maintenance/logout/conflict, 16/16 screenshots; independent Codex visual review
+  `VISUAL_ACCEPTANCE_PASS`). Full regression ALL GREEN
+  `build/ap-029-web01/review-closeout-r2/final-e833fad/` (OpenAPI/types zero-diff, Vitest
+  425, vue-tsc+Vite PASS, Python non-live 1962 collected / 1942 passed / 20 expected
+  `not_in_m0` skips, docs+architecture 120 passed; first_red null). Independent Codex audits
+  `FINAL_PASS_ARCH` /
+  `FINAL_PASS_EVIDENCE`. Native Terra/Luna/Sol review was not executed and is not attested.
+  PR #56 review closeout also covers protected-route session revalidation, persistent shell logout
+  and stale admin password-reset completion. GitHub Codex review is bounded at 2/2; no third round.
+  `docs_closeout_sha` is the later K2 docs-only commit and is not a runtime SHA. PR #56 is open;
+  no WEB01 merge SHA is recorded and merge remains NOT RUN.
+- **Nicht blockierender Follow-up:** UX-D37 bleibt für reale Anzeigenamen neuer Kommentare
+  teilweise offen, weil der Server/HTTP-Vertrag sie noch nicht vollständig liefert. Die UI
+  erfindet keinen Namen und maskiert technische UUID/IDs als „Unbekannter Autor“. Owner:
+  Backend-/HTTP-Contract-Folgepunkt; verbindliche PILOT00-Nachverfolgung — kein Backendfix in WEB01.
 - **Statusübergang:** TODO → IN_PROGRESS → PASS|FAILED|BLOCKED; bei PASS Current=`PILOT00`.
 
 ### PILOT00 — Pilot readiness
@@ -1002,4 +1023,4 @@ Statusklarstellung (nicht überschreiben, nur zeitlich trennen):
 - CI substitute (Actions quota exhausted): quality-gates regression suite green locally (226 passed, 5 skipped);
   `platform_postgres_migration_gate` and `postgres_migration_gate` 12/12 each vs `90cefa4`;
   evidence under `build/ap-029-pg00/final/ci-local-substitute/`.
-- Status: **PG00 PASS** (merged); Current → **WEB00** (historisch; WEB00 PASS; PG01 PASS @ `58cadda…`; WCON00 PASS; INT00 PASS; Current ist WEB01; WEB01 bleibt TODO / NOT RUN).
+- Status: **PG00 PASS** (merged); Current → **WEB00** (historisch; WEB00 PASS; PG01 PASS @ `58cadda…`; WCON00 PASS; INT00 PASS; WEB01 PASS; Current ist PILOT00; PILOT00 bleibt TODO / NOT RUN).

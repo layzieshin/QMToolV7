@@ -2,6 +2,7 @@ import { reactive, readonly } from "vue";
 
 import {
   ApiTransportError,
+  changePasswordBrowser,
   fetchMe,
   loginBrowser,
   logoutBrowser,
@@ -37,6 +38,15 @@ function errorMessage(error: unknown): string {
   return "unexpected error";
 }
 
+function isPasswordChangeRequired(error: unknown): boolean {
+  if (!(error instanceof ApiTransportError) || error.status !== 409) {
+    return false;
+  }
+  const detail = error.body?.detail;
+  const code = !Array.isArray(detail) ? detail?.error : undefined;
+  return code === "password_change_required";
+}
+
 export function useAppShellState() {
   return readonly(state);
 }
@@ -45,31 +55,41 @@ export async function refreshConnection(): Promise<void> {
   state.connection = (await probeHealth()) ? "online" : "offline";
 }
 
-export async function refreshAuth(): Promise<void> {
+async function refreshAuthState(preserveAuthenticatedOnTransientError: boolean): Promise<boolean> {
   state.loading = true;
   state.lastError = null;
   try {
     await refreshConnection();
     const user: MeResponse = await fetchMe();
     state.auth = { status: "authenticated", user };
+    return true;
   } catch (error) {
-    if (error instanceof ApiTransportError && error.status === 409) {
-      const detail = error.body?.detail;
-      const code = !Array.isArray(detail) ? detail?.error : undefined;
-      if (code === "password_change_required") {
-        state.auth = { status: "password_change_required", username: "" };
-        return;
-      }
+    if (isPasswordChangeRequired(error)) {
+      const preservedUsername =
+        state.auth.status === "password_change_required" ? state.auth.username : "";
+      state.auth = { status: "password_change_required", username: preservedUsername };
+      return true;
     }
     if (error instanceof ApiTransportError && error.status === 401) {
       state.auth = { status: "anonymous" };
-      return;
+      return true;
     }
-    state.auth = { status: "anonymous" };
+    if (!(preserveAuthenticatedOnTransientError && state.auth.status === "authenticated")) {
+      state.auth = { status: "anonymous" };
+    }
     state.lastError = errorMessage(error);
+    return false;
   } finally {
     state.loading = false;
   }
+}
+
+export async function refreshAuth(): Promise<void> {
+  await refreshAuthState(false);
+}
+
+export async function revalidateAuth(): Promise<boolean> {
+  return refreshAuthState(true);
 }
 
 export async function login(username: string, password: string): Promise<void> {
@@ -77,9 +97,32 @@ export async function login(username: string, password: string): Promise<void> {
   state.lastError = null;
   try {
     await loginBrowser({ username, password });
-    await refreshAuth();
+    try {
+      const user: MeResponse = await fetchMe();
+      state.auth = { status: "authenticated", user };
+    } catch (error) {
+      if (isPasswordChangeRequired(error)) {
+        state.auth = { status: "password_change_required", username };
+        return;
+      }
+      throw error;
+    }
   } catch (error) {
     state.auth = { status: "anonymous" };
+    state.lastError = errorMessage(error);
+    throw error;
+  } finally {
+    state.loading = false;
+  }
+}
+
+export async function changePassword(newPassword: string): Promise<void> {
+  state.loading = true;
+  state.lastError = null;
+  try {
+    await changePasswordBrowser(newPassword);
+    await refreshAuth();
+  } catch (error) {
     state.lastError = errorMessage(error);
     throw error;
   } finally {

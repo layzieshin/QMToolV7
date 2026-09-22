@@ -637,7 +637,9 @@ def test_webclient_is_only_active_gui_source() -> None:
     assert "WEB00" in gui_sot
     assert "Foundation" in gui_sot
     assert "WEB01" in gui_sot
-    assert "noch nicht" in gui_sot.lower() or "does not yet" in gui_arch.lower()
+    web01_block = gui_sot.split("WEB01", 1)[1][:800]
+    assert "implementiert" in web01_block.lower() or "abgenommen" in web01_block.lower()
+    assert "noch nicht" not in web01_block.lower()
     assert "frozen" in gui_sot.lower()
     assert "Legacy/Reference" in gui_sot or "legacy/reference" in gui_sot.lower()
     assert "keine neuen PyQt-Contributions" in gui_sot or "no new PyQt" in gui_sot
@@ -956,7 +958,7 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
         assert "PR #43" in text
         assert "fc61887f77c4e8e7d3442af8e7c5f5eb534f193e" in text
 
-    assert current == "WEB01"
+    assert current == "PILOT00"
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "PR #40" in rows_by_id["UX00"]["notes"]
     assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in rows_by_id["UX00"]["notes"]
@@ -974,7 +976,8 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     assert "no Codex PASS" in wcon00["notes"]
     assert "no merge and no review-thread resolution" not in wcon00["notes"]
     assert rows_by_id["INT00"]["status"] == "PASS"
-    assert rows_by_id["WEB01"]["status"] == "TODO"
+    assert rows_by_id["WEB01"]["status"] == "PASS"
+    assert rows_by_id["PILOT00"]["status"] == "TODO"
 
     next_action = re.search(
         r"## Naechste freigegebene Aktion\s*(.*?)(?=\n## |\Z)",
@@ -983,39 +986,28 @@ def test_ops00_merge_closeout_and_wcon00_steering_is_current() -> None:
     )
     assert next_action, "roadmap next-action section missing"
     next_body = next_action.group(1)
-    assert "ausschliesslich WEB01" in next_body
+    assert "ausschliesslich PILOT00" in next_body
+    assert "WEB01 ist `PASS`" in next_body
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in next_body
+    assert "f4dd2ba9aaac31f378dcf7fe991c551d19049f3e" in next_body
+    assert "PILOT00 bleibt TODO" in next_body
+    assert "NOT RUN" in next_body
+    assert "WEB01 bleibt TODO" not in next_body
+    assert "ausschliesslich WEB01" not in next_body
+    assert "INT00 ist `PASS`" in next_body
+    assert "WCON00 ist `PASS`" in next_body
     assert "PR #41" in next_body
     assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in next_body
-    assert "CI-Jobs SUCCESS" in next_body
-    assert "11/11 Review-Konversationen resolved" in next_body
-    assert "WCON00 ist `PASS`" in next_body
     assert "PR #43" in next_body
     assert "fc61887f77c4e8e7d3442af8e7c5f5eb534f193e" in next_body
-    assert "12/12 Review-Konversationen resolved" in next_body
-    assert "34518815271" in next_body
-    assert "quality-gates" in next_body
-    assert "postgres-usermanagement" in next_body
-    assert "eigenen Worktree" in next_body
     assert "Branch-/Worktree-Cleanup" in next_body
-    assert "kein Codex-PASS" in next_body
-    assert "WCON00 bleibt `IN_PROGRESS`" not in next_body
-    assert "WCON00-R4-Closeout" not in next_body
-    assert "INT00 ist `PASS`" in next_body
-    assert "WEB01 bleibt TODO" in next_body
-    assert "NOT RUN" in next_body
-    assert "INT00 NOT RUN" not in next_body
-    assert "INT00 und WEB01 bleiben TODO" not in next_body
-    assert "dritte Codex-Runde" in next_body
-    assert "756160c6e388b43afe3ef985cbe3d34767e6b0ef" in next_body
-    assert "PR #40" in next_body
-    assert "feature/ap-029-ux00" not in next_body.split("PR #40", 1)[0]
+    assert "FINAL_PASS_ARCH" in next_body
+    assert "FINAL_PASS_EVIDENCE" in next_body
+    assert "docs_closeout_sha" in next_body
+    assert "PR #56 ist offen" in next_body
+    assert "Merge-SHA bleiben NOT RUN" in next_body
     assert "OPS00-Publikationsabschluss" not in next_body
     assert "977667fbdb2838c47d7564992157f984141d6a9e" not in next_body
-    assert "CI auf dem lokalen Closeout ist bis zum Push" not in next_body
-    assert "startet WEB01 nicht" in next_body
-    assert "no merge and no review-thread resolution" not in next_body
-    assert "GitHub-Review-Thread-Resolution" not in next_body
-    assert "Codex-PASS" not in next_body.replace("kein Codex-PASS", "")
 
 
 def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
@@ -1025,21 +1017,23 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     current, rows = _parse_ap029_ledger(plan)
     rows_by_id = {row["id"]: row for row in rows}
 
-    assert current == "WEB01"
+    assert current == "PILOT00"
     assert "Current ist UX00" not in plan
     assert rows_by_id["UX00"]["status"] == "PASS"
     assert "build/ap-029-ux00/" in rows_by_id["UX00"]["result_evidence"]
     assert rows_by_id["OPS00"]["status"] == "PASS"
     assert rows_by_id["WCON00"]["status"] == "PASS"
     assert rows_by_id["INT00"]["status"] == "PASS"
-    assert rows_by_id["WEB01"]["status"] == "TODO"
+    assert rows_by_id["WEB01"]["status"] == "PASS"
+    assert rows_by_id["PILOT00"]["status"] == "TODO"
 
     sequence = (
         "GOV00 → GOV01 → TOOL00 → CB00 → INV00 → PG00 → WEB00 → PG01 → "
         "UX00 → OPS00 → WCON00 → INT00 → WEB01 → PILOT00"
     )
     assert sequence in roadmap
-    assert "ausschliesslich WEB01" in roadmap
+    assert "ausschliesslich PILOT00" in roadmap
+    assert "WEB01 ist `PASS`" in roadmap
     assert "WCON00 ist `PASS`" in roadmap
     assert "WCON00 bleibt `IN_PROGRESS`" not in roadmap
     assert "98feef61dcfe0e40741c254da16feb9383a0d1b0" in roadmap
@@ -1053,12 +1047,21 @@ def test_ux00_wcon00_sequence_and_gates_are_consistent() -> None:
     assert "Notifications" in wcon00_section and "Edit Locks" in wcon00_section
     assert "PG00/WEB00/PG01/UX00/OPS00/WCON00" in int00_section
     assert "`docs/WEBCLIENT_UX_SPECIFICATION.md`" in web01_section
+    assert "runtime_test_candidate_sha" in web01_section
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in web01_section
+    assert "Unbekannter Autor" in web01_section
 
     assert "Webclient product UX governance (UX00)" in smoke_gates
     assert "Webclient contract completion (WCON00" in smoke_gates
     assert "Joint integration gate (INT00" in smoke_gates
     assert "DMS web slice (WEB01 — after WCON00 and INT00 PASS)" in smoke_gates
     assert "not WEB01 onboarding" in smoke_gates
+    assert "WEB01-H" in smoke_gates
+    assert "WEB01-K1" in smoke_gates
+    assert "test_web01_conflict_realprocess.py" in smoke_gates
+    assert "test_web01_product_slice.py" in smoke_gates
+    assert "no axe/screenreader gate" in smoke_gates.lower()
+    assert "Unbekannter Autor" in smoke_gates
 
 
 def test_ops00_closeout_contract_and_evidence_are_current() -> None:
@@ -1069,7 +1072,7 @@ def test_ops00_closeout_contract_and_evidence_are_current() -> None:
     current, rows = _parse_ap029_ledger(plan)
     rows_by_id = {row["id"]: row for row in rows}
 
-    assert current == "WEB01"
+    assert current == "PILOT00"
     ops00 = rows_by_id["OPS00"]
     assert ops00["status"] == "PASS"
     assert "a0e4c7253c4528f09447ae773bdafebf8455ecbd" in ops00["result_evidence"]
@@ -1140,17 +1143,19 @@ def test_ap029_macro_governance_is_explicit_and_serial() -> None:
     assert "first unresolved checkpoint" in workflow
 
 
-def test_int00_docs_closeout_is_current() -> None:
+def test_web01_docs_closeout_is_current() -> None:
     plan = _read(AP029_PLAN)
     roadmap = _read(MASTER_ORCHESTRATION_ROADMAP)
     smoke_gates = _read(DOCS / "TEST_SMOKE_GATES.md")
+    gui_sot = _read(GUI_SOURCE_OF_TRUTH)
     current, rows = _parse_ap029_ledger(plan)
     rows_by_id = {row["id"]: row for row in rows}
-    int00 = rows_by_id["INT00"]
     web01 = rows_by_id["WEB01"]
+    int00 = rows_by_id["INT00"]
+    pilot00 = rows_by_id["PILOT00"]
     int00_section = plan.split("### INT00", 1)[1].split("\n### ", 1)[0]
     web01_section = plan.split("### WEB01", 1)[1].split("\n### ", 1)[0]
-    smoke_int00 = smoke_gates.split("### Joint integration gate (INT00", 1)[1].split("\n### ", 1)[0]
+    smoke_web01 = smoke_gates.split("### DMS web slice (WEB01", 1)[1].split("\n### ", 1)[0]
     next_action = re.search(
         r"## Naechste freigegebene Aktion\s*(.*?)(?=\n## |\Z)",
         roadmap,
@@ -1159,68 +1164,83 @@ def test_int00_docs_closeout_is_current() -> None:
     assert next_action, "roadmap next-action section missing"
     next_body = next_action.group(1)
 
-    assert current == "WEB01"
-    assert int00["status"] == "PASS"
-    assert int00["title"] == "Joint integration gate PG00/WEB00/PG01/UX00/OPS00/WCON00"
-    assert "UX00" in int00["title"]
-    assert web01["status"] == "TODO"
-    assert "not started" in web01["notes"]
+    assert current == "PILOT00"
+    assert web01["status"] == "PASS"
+    assert web01["start_sha"] == "f4dd2ba9aaac31f378dcf7fe991c551d19049f3e"
+    assert pilot00["status"] == "TODO"
+    assert "NOT RUN" in pilot00["notes"] or "not started" in pilot00["notes"].lower()
+    assert "At INT00 closeout" in int00["notes"]
+    assert "superseded by WEB01 PASS" in int00["notes"]
+    assert "WEB01 remains TODO / NOT RUN" not in int00["notes"]
+    assert "At INT00 closeout" in int00_section
+    assert "WEB01 is eligible only and remains" not in int00_section
 
-    evidence = int00["result_evidence"]
-    assert "8d2e4615b4e52a2113055e7e9113daa1570b78f3" in evidence
-    assert "build/ap-029-int00/run-20260916T182711117Z" in evidence
-    assert "7DC69F61F864407E442ECB98DDC2794A7CAEF3F5F9FC07FDB4D50DD0764EA8EF" in evidence
-    assert "a388a5bfee02c4c94d8e9ef87a92aee2b4a3f2fe" in evidence
-    assert "PR #49" in evidence
-    assert "HUMAN_AUTHORIZED_INDEPENDENT_CODEX_FINAL_AUDIT_PASS" in evidence
-    assert "runtime_test_candidate_sha" in evidence
-    assert "docs_closeout_sha" in evidence
-    assert "native Terra/Sol not executed" in evidence
-    assert "CONTROL_PLANE_PINNED" not in evidence
-    assert "RUNTIME_ATTESTED" not in evidence
+    evidence = web01["result_evidence"]
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in evidence
+    assert "f4dd2ba9aaac31f378dcf7fe991c551d19049f3e" in evidence
+    assert "build/ap-029-web01/visual/k1/20260922T043723947306Z/" in evidence
+    assert "build/ap-029-web01/review-closeout-r2/final-e833fad/" in evidence
+    assert "FINAL_PASS_ARCH" in evidence
+    assert "FINAL_PASS_EVIDENCE" in evidence
+    assert "VISUAL_ACCEPTANCE_PASS" in evidence
+    assert "2/2" in evidence
+    assert "no third round" in evidence
+    assert "786ed91" in evidence
+    assert "eefaf40" in evidence
+    assert "56f31aa" in evidence
+    assert "f4dd2ba" in evidence
 
-    notes = int00["notes"]
-    assert "Current advances to WEB01" in notes
-    assert "TODO / NOT RUN" in notes
-    assert "did not start WEB01" in notes
-    assert "no Vue product screens" in notes
+    notes = web01["notes"]
+    assert "docs_closeout_sha" in notes
+    assert "not a runtime SHA" in notes
+    assert "Current advances to PILOT00" in notes
+    assert "PILOT00 remains TODO" in notes or "PILOT00 remains TODO / NOT RUN" in notes
+    assert "Unbekannter Autor" in notes
+    assert "PR #56 remains open and unmerged" in notes
+    assert "Terra/Luna/Sol not" in notes or "Terra/Luna/Sol not executed" in notes
 
-    assert "8d2e4615b4e52a2113055e7e9113daa1570b78f3" in int00_section
-    assert "build/ap-029-int00/run-20260916T182711117Z" in int00_section
-    assert "7DC69F61F864407E442ECB98DDC2794A7CAEF3F5F9FC07FDB4D50DD0764EA8EF" in int00_section
-    assert "HUMAN_AUTHORIZED_INDEPENDENT_CODEX_FINAL_AUDIT_PASS" in int00_section
-    assert "runtime_test_candidate_sha" in int00_section
-    assert "docs_closeout_sha" in int00_section
-    assert "not a runtime SHA" in int00_section
-    int00_folded = re.sub(r"\s+", " ", int00_section)
-    assert "not executed and is not attested" in int00_folded
-    assert "WEB01 is eligible only" in int00_section
-    assert "INT00 NOT RUN" not in int00_section
+    assert "runtime_test_candidate_sha" in web01_section
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in web01_section
+    assert "f4dd2ba9aaac31f378dcf7fe991c551d19049f3e" in web01_section
+    assert "docs_closeout_sha" in web01_section
+    assert "not a runtime SHA" in web01_section
+    assert "FINAL_PASS_ARCH" in web01_section
+    assert "FINAL_PASS_EVIDENCE" in web01_section
+    assert "Unbekannter Autor" in web01_section
+    assert "UX-D37" in web01_section
+    assert "teilweise offen" in web01_section
+    assert "verbindliche PILOT00-Nachverfolgung" in web01_section
 
-    assert "Statusübergang" in web01_section
-    assert "IN_PROGRESS" not in web01_section.split("Statusübergang", 1)[0]
-    assert "WEB01 started" not in web01_section
-    assert "Vue product" not in web01_section.lower() or "Vorbedingungen" in web01_section
+    web01_gui_block = gui_sot.split("WEB01", 1)[1][:800]
+    assert "implementiert" in web01_gui_block.lower() or "abgenommen" in web01_gui_block.lower()
+    assert "frozen" in gui_sot.lower()
+    assert "webclient/*" in gui_sot or "`webclient/*`" in gui_sot
 
-    next_folded = re.sub(r"\s+", " ", next_body)
-    assert "ausschliesslich WEB01" in next_body
-    assert "INT00 ist `PASS`" in next_body
-    assert "WEB01 bleibt TODO" in next_body
+    assert "ausschliesslich PILOT00" in next_body
+    assert "WEB01 ist `PASS`" in next_body
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in next_body
+    assert "PILOT00 bleibt TODO" in next_body
     assert "NOT RUN" in next_body
-    assert "startet WEB01 nicht" in next_body
-    assert "keine Vue-Produkt-Screens" in next_folded
-    assert "keine Voraussetzung fuer den fachlichen INT00-PASS" in next_body
-    assert "INT00 NOT RUN" not in next_body
-    assert "a388a5bfee02c4c94d8e9ef87a92aee2b4a3f2fe" in next_body
-    assert "HUMAN_AUTHORIZED_INDEPENDENT_CODEX_FINAL_AUDIT_PASS" in next_body
+    assert "WEB01 bleibt TODO" not in next_body
+    assert "ausschliesslich WEB01" not in next_body
+    assert "docs_closeout_sha" in next_body
 
-    assert "Isolated / TestClient tests" in smoke_int00
-    assert "PostgreSQL Slot-2 live tests" in smoke_int00
-    assert "J04 real-process acceptance" in smoke_int00
-    assert "Real Chromium over file-PEM HTTPS" in smoke_int00
-    assert "Backup/restore evidence" in smoke_int00
-    assert "joint INT00 Chromium" in smoke_int00
-    assert "none of them may replace another" in smoke_int00
-    assert "WEB00 browser smoke is not the INT00 joint proof" in smoke_int00
-    assert "8d2e4615b4e52a2113055e7e9113daa1570b78f3" in smoke_int00
-    assert "7DC69F61F864407E442ECB98DDC2794A7CAEF3F5F9FC07FDB4D50DD0764EA8EF" in smoke_int00
+    assert "WEB01-H" in smoke_web01
+    assert "WEB01-K1" in smoke_web01
+    assert "test_web01_conflict_realprocess.py" in smoke_web01
+    assert "test_web01_product_slice.py" in smoke_web01
+    assert "run_postgres_live_tests.py" in smoke_web01
+    assert "--basetemp build\\pytest-web01-h-<stamp>" in smoke_web01
+    assert "--basetemp build\\pytest-web01-k1-<stamp>" in smoke_web01
+    assert "QMTOOL_WEB01_JOINT" not in smoke_web01
+    assert "if (-not (Test-Path node_modules)) { npm ci }" in smoke_web01
+    assert "not postgres and not j04_final_acceptance" in smoke_web01
+    assert "e833fad3d3c547021be23214b1adf04a86707eab" in smoke_web01
+    assert "1962 collected" in smoke_web01
+    assert "1942 passed" in smoke_web01
+    assert "no axe/screenreader gate" in smoke_web01.lower()
+    assert "Unbekannter Autor" in smoke_web01
+    assert "UX-D37" in smoke_web01
+    assert "partially outstanding" in smoke_web01
+    assert "mandatory PILOT00 tracking" in smoke_web01
+    assert "VISUAL_ACCEPTANCE_PASS" in smoke_web01

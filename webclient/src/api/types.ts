@@ -5,6 +5,7 @@ export type MeResponse = components["schemas"]["MeResponse"];
 export type LoginRequest = components["schemas"]["LoginRequest"];
 export type ApiErrorDetail = components["schemas"]["ErrorDetail"];
 export type ApiErrorResponse = components["schemas"]["ErrorResponse"];
+export type ApiFieldError = NonNullable<ApiErrorDetail["field_errors"]>[number];
 
 /** SPA-local shell state (not part of the HTTP contract). */
 export type ConnectionState = "unknown" | "online" | "offline";

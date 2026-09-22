@@ -1,18 +1,33 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 
-import { refreshAuth, refreshConnection, useAppShellState } from "../state/appShell";
+import { logout, refreshAuth, refreshConnection, useAppShellState } from "../state/appShell";
 
+const { t } = useI18n();
+const router = useRouter();
 const shell = useAppShellState();
+
+const connectionLabel = computed(() => {
+  switch (shell.connection) {
+    case "online":
+      return t("shell.connection.online");
+    case "offline":
+      return t("shell.connection.offline");
+    default:
+      return t("shell.connection.unknown");
+  }
+});
 
 const authLabel = computed(() => {
   switch (shell.auth.status) {
     case "authenticated":
-      return `Angemeldet als ${shell.auth.user.username}`;
+      return t("shell.auth.authenticated", { username: shell.auth.user.username });
     case "password_change_required":
-      return "Passwortänderung erforderlich";
+      return t("shell.auth.passwordChangeRequired");
     default:
-      return "Nicht angemeldet";
+      return t("shell.auth.anonymous");
   }
 });
 
@@ -20,18 +35,28 @@ onMounted(async () => {
   await refreshConnection();
   await refreshAuth();
 });
+
+async function onLogout(): Promise<void> {
+  await logout();
+  await router.replace("/login");
+}
 </script>
 
 <template>
   <div class="app-shell" data-testid="app-shell">
     <header class="app-shell__header">
-      <strong>QMTool</strong>
-      <span data-testid="connection-state">{{ shell.connection }}</span>
+      <strong>{{ t("app.title") }}</strong>
+      <span data-testid="connection-state">{{ connectionLabel }}</span>
     </header>
-    <section class="app-shell__status">
+    <section class="app-shell__status" aria-live="polite">
       <p data-testid="auth-state">{{ authLabel }}</p>
-      <p v-if="shell.lastError" data-testid="transport-error">{{ shell.lastError }}</p>
-      <p v-if="shell.loading" data-testid="loading-indicator">Laden…</p>
+      <div v-if="shell.auth.status === 'authenticated'" data-testid="authenticated-panel">
+        <v-btn variant="outlined" data-testid="shell-logout" @click="onLogout">
+          {{ t("shell.logout") }}
+        </v-btn>
+      </div>
+      <p v-if="shell.lastError" data-testid="transport-error" role="alert">{{ shell.lastError }}</p>
+      <p v-if="shell.loading" data-testid="loading-indicator">{{ t("shell.loading") }}</p>
     </section>
     <main class="app-shell__main">
       <slot />

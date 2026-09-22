@@ -1,8 +1,42 @@
+import type { components } from "./openapi";
 import type { ApiErrorResponse, LoginRequest, MeResponse } from "./types";
 
 const API_PREFIX = "/api/v1";
 const CSRF_COOKIE = "qmtool_csrf";
 const CSRF_HEADER = "X-CSRF-Token";
+
+export type ConnectionResponse = components["schemas"]["ConnectionResponse"];
+export type BootstrapResponse = components["schemas"]["BootstrapResponse"];
+export type ModuleBootstrapItem = components["schemas"]["ModuleBootstrapItem"];
+export type DocumentQueryItem = components["schemas"]["DocumentQueryItem"];
+export type DocumentQueryPageResponse = components["schemas"]["DocumentQueryPageResponse"];
+export type VersionStateResponse = components["schemas"]["VersionStateResponse"];
+export type DocumentVersionStateModel = components["schemas"]["DocumentVersionStateModel"];
+export type UserDirectoryItem = components["schemas"]["UserDirectoryItem"];
+export type UserAccessResponse = components["schemas"]["UserAccessResponse"];
+export type CreateVersionBody = components["schemas"]["CreateVersionBody"];
+export type AssignRolesBody = components["schemas"]["AssignRolesBody"];
+export type DocumentArtifactModel = components["schemas"]["DocumentArtifactModel"];
+export type WorkflowCommentListItemModel = components["schemas"]["WorkflowCommentListItemModel"];
+export type WorkflowCommentDetailModel = components["schemas"]["WorkflowCommentDetailModel"];
+export type WorkflowCommentRecordModel = components["schemas"]["WorkflowCommentRecordModel"];
+export type CreatePdfCommentBody = components["schemas"]["CreatePdfCommentBody"];
+export type SignatureTemplateModel = components["schemas"]["SignatureTemplateModel"];
+export type EnsureSourcePdfResponse = components["schemas"]["EnsureSourcePdfResponse"];
+export type WorkflowProfileModel = components["schemas"]["WorkflowProfileModel"];
+export type VersionHistoryEvent = components["schemas"]["VersionHistoryEvent"];
+export type DocumentsCapabilities = Record<string, boolean>;
+
+const PDF_MIME = "application/pdf";
+const SIGNATURE_IMAGE_MIME = "image/png";
+
+export type DocumentsQueryRequest = {
+  q?: string;
+  status?: string;
+  sort: "updated_at" | "title" | "status";
+  order: "asc" | "desc";
+  cursor?: string;
+};
 
 export class ApiTransportError extends Error {
   readonly status: number;
@@ -25,7 +59,7 @@ function readCookie(name: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function parseErrorBody(text: string): ApiErrorResponse | null {
+export function parseApiErrorBody(text: string): ApiErrorResponse | null {
   if (!text) {
     return null;
   }
@@ -34,6 +68,10 @@ function parseErrorBody(text: string): ApiErrorResponse | null {
   } catch {
     return null;
   }
+}
+
+function parseErrorBody(text: string): ApiErrorResponse | null {
+  return parseApiErrorBody(text);
 }
 
 async function apiFetch(
@@ -108,6 +146,24 @@ export async function fetchMe(): Promise<MeResponse> {
   return expectJson<MeResponse>(response);
 }
 
+export async function changePasswordBrowser(newPassword: string): Promise<void> {
+  await bootstrapCsrf();
+  const response = await apiFetch("/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_password: newPassword }),
+    csrf: true,
+  });
+  if (response.status !== 204) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `change-password failed (${response.status})`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+}
+
 export async function logoutBrowser(): Promise<void> {
   const response = await apiFetch("/auth/logout", { method: "POST", csrf: true });
   if (response.status !== 204) {
@@ -120,10 +176,250 @@ export async function logoutBrowser(): Promise<void> {
   }
 }
 
+export async function fetchConnection(): Promise<ConnectionResponse> {
+  const response = await apiFetch("/session/connection", { method: "GET" });
+  return expectJson<ConnectionResponse>(response);
+}
+
+export async function fetchBootstrap(): Promise<BootstrapResponse> {
+  const response = await apiFetch("/session/bootstrap", { method: "GET" });
+  return expectJson<BootstrapResponse>(response);
+}
+
+function encodeDocumentPathSegment(value: string | number): string {
+  return encodeURIComponent(String(value));
+}
+
+export async function fetchDocumentVersion(
+  documentId: string,
+  version: number,
+): Promise<VersionStateResponse> {
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}`,
+    { method: "GET" },
+  );
+  return expectJson<VersionStateResponse>(response);
+}
+
+export async function fetchDocumentVersionHistory(
+  documentId: string,
+  version: number,
+): Promise<VersionHistoryEvent[]> {
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}/history`,
+    { method: "GET" },
+  );
+  return expectJson<VersionHistoryEvent[]>(response);
+}
+
+export async function fetchUsersDirectory(): Promise<UserDirectoryItem[]> {
+  const response = await apiFetch("/users/directory", { method: "GET" });
+  return expectJson<UserDirectoryItem[]>(response);
+}
+
+function encodeUsernamePathSegment(username: string): string {
+  return encodeURIComponent(username);
+}
+
+export function encodeAdminUsernamePathSegment(username: string): string {
+  return encodeUsernamePathSegment(username);
+}
+
+export async function fetchAdminUsers(): Promise<UserAccessResponse[]> {
+  const response = await apiFetch("/users", { method: "GET" });
+  return expectJson<UserAccessResponse[]>(response);
+}
+
+export async function fetchAdminUser(username: string): Promise<UserAccessResponse> {
+  const response = await apiFetch(`/users/${encodeUsernamePathSegment(username)}`, {
+    method: "GET",
+  });
+  return expectJson<UserAccessResponse>(response);
+}
+
+export async function fetchDocumentArtifacts(
+  documentId: string,
+  version: number,
+): Promise<DocumentArtifactModel[]> {
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}/artifacts`,
+    { method: "GET" },
+  );
+  return expectJson<DocumentArtifactModel[]>(response);
+}
+
+export async function fetchArtifactPreviewBlob(artifactId: string): Promise<Blob> {
+  const response = await apiFetch(
+    `/documents/artifacts/${encodeDocumentPathSegment(artifactId)}/preview`,
+    { method: "GET" },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  return response.blob();
+}
+
+/** Same-origin GET URL for controlled artifact download (cookie session; no credentials in URL). */
+export function artifactDownloadUrl(artifactId: string): string {
+  return `${API_PREFIX}/documents/artifacts/${encodeDocumentPathSegment(artifactId)}/download`;
+}
+
+export async function verifySignaturePassword(password: string): Promise<void> {
+  await bootstrapCsrf();
+  const response = await apiFetch("/signature/verify-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+    csrf: true,
+  });
+  const text = await response.text();
+  if (response.ok) {
+    if (text) {
+      const payload = JSON.parse(text) as { ok?: boolean };
+      if (payload.ok) {
+        return;
+      }
+    }
+  }
+  throw new ApiTransportError(
+    `HTTP ${response.status}`,
+    response.status,
+    parseErrorBody(text),
+  );
+}
+
+export async function fetchWorkflowComments(
+  documentId: string,
+  version: number,
+  context = "PDF_REVIEW",
+): Promise<WorkflowCommentListItemModel[]> {
+  const search = new URLSearchParams({ context });
+  const response = await apiFetch(
+    `/documents/versions/${encodeDocumentPathSegment(documentId)}/${encodeDocumentPathSegment(version)}/comments?${search.toString()}`,
+    { method: "GET" },
+  );
+  return expectJson<WorkflowCommentListItemModel[]>(response);
+}
+
+export async function fetchWorkflowCommentDetail(
+  commentId: string,
+): Promise<WorkflowCommentDetailModel> {
+  const response = await apiFetch(
+    `/documents/comments/${encodeDocumentPathSegment(commentId)}`,
+    { method: "GET" },
+  );
+  return expectJson<WorkflowCommentDetailModel>(response);
+}
+
+/** MIME constant for PDF preview validation in composables. */
+export function pdfPreviewMimeType(): string {
+  return PDF_MIME;
+}
+
+export function signatureImageMimeType(): string {
+  return SIGNATURE_IMAGE_MIME;
+}
+
+export async function fetchActiveSignatureAssetId(): Promise<string | null> {
+  const response = await apiFetch("/signature/assets/active/id", { method: "GET" });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  const payload = await expectJson<{ asset_id?: string | null }>(response);
+  const assetId = payload.asset_id?.trim();
+  return assetId || null;
+}
+
+export async function fetchActiveSignatureAssetContent(): Promise<Blob | null> {
+  const response = await apiFetch("/signature/assets/active/content", { method: "GET" });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  return response.blob();
+}
+
+export async function fetchSignatureTemplatesGlobal(): Promise<SignatureTemplateModel[]> {
+  const response = await apiFetch("/signature/templates/global", { method: "GET" });
+  return expectJson<SignatureTemplateModel[]>(response);
+}
+
+export async function fetchSignatureTemplatesUser(): Promise<SignatureTemplateModel[]> {
+  const response = await apiFetch("/signature/templates/user", { method: "GET" });
+  return expectJson<SignatureTemplateModel[]>(response);
+}
+
+export async function fetchSignatureTemplateSuggestion(
+  documentType: string,
+  roleContext: string,
+): Promise<SignatureTemplateModel | null> {
+  const search = new URLSearchParams({
+    document_type: documentType,
+    role_context: roleContext,
+  });
+  const response = await apiFetch(`/signature/templates/suggestion?${search.toString()}`, {
+    method: "GET",
+  });
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    const text = await response.text();
+    throw new ApiTransportError(
+      `HTTP ${response.status}`,
+      response.status,
+      parseErrorBody(text),
+    );
+  }
+  return expectJson<SignatureTemplateModel>(response);
+}
+
+export async function fetchDocumentsCapabilities(): Promise<DocumentsCapabilities> {
+  const response = await apiFetch("/documents/capabilities", { method: "GET" });
+  return expectJson<DocumentsCapabilities>(response);
+}
+
+export async function fetchDocumentsQuery(
+  params: DocumentsQueryRequest,
+): Promise<DocumentQueryPageResponse> {
+  const search = new URLSearchParams();
+  if (params.q) {
+    search.set("q", params.q);
+  }
+  if (params.status) {
+    search.set("status", params.status);
+  }
+  search.set("sort", params.sort);
+  search.set("order", params.order);
+  if (params.cursor) {
+    search.set("cursor", params.cursor);
+  }
+  const qs = search.toString();
+  const response = await apiFetch(`/documents/query?${qs}`, { method: "GET" });
+  return expectJson<DocumentQueryPageResponse>(response);
+}
+
 export async function probeHealth(): Promise<boolean> {
   try {
-    const response = await apiFetch("/session/connection", { method: "GET" });
-    return response.ok;
+    await fetchConnection();
+    return true;
   } catch {
     return false;
   }
@@ -131,6 +427,14 @@ export async function probeHealth(): Promise<boolean> {
 
 export function apiBasePrefix(): string {
   return API_PREFIX;
+}
+
+/** CSRF-protected mutation transport; caller supplies a validated relative path. */
+export async function mutationFetch(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  return apiFetch(path, { ...init, csrf: true });
 }
 
 /** Test hook: ensure fetch adapter never sets Authorization. */
