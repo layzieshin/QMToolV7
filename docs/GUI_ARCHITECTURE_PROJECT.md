@@ -36,8 +36,9 @@ once WEB00 exists, but CLI/operator paths stay valuable for ops and verification
 - Custom views only for genuine specialty flows (e.g. PDF viewer, signature placement)
 - No per-module frontend bundles
 
-WEB00 provides the central foundation. Do not claim the WEB01 Documents/Signature product UI or
-full productive end-user workflow exists until its contracts, implementation and gates pass.
+WEB00 provides the central foundation. WEB01 Documents/Signature product UI is PASS.
+PILOT00 readiness remains TODO / NOT RUN. This architecture document does not approve
+a Linux pilot profile.
 
 ## Runtime Alignment
 
@@ -46,7 +47,7 @@ Active adapters and hosts:
 - `modules/*` for business behavior
 - `src/backend/*` as HTTP transport host (no domain logic)
 - `interfaces/cli/*` as operator/test adapter
-- `webclient/*` as the only **new** end-user UI source; WEB00 foundation exists, WEB01 product UI does not yet
+- `webclient/*` as the only **new** end-user UI source; WEB00 foundation and WEB01 product UI exist; PILOT00 qualification does not
 
 Frozen legacy/reference adapters:
 - `interfaces/pyqt/*` — frozen legacy/reference desktop UI (no new product work)

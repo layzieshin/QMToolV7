@@ -21,11 +21,17 @@ Verpflichtende Vorher/Nachher-Gates für Governance-, Architektur-, Persistenz- 
 
 Technische Gates ersetzen keine menschliche Pilotfreigabe.
 
+`PILOT00-LINUX-PLAN` docs gates check planning only. They are neither
+deployment nor formal PILOT00 qualification. Windows evidence is not a Linux
+PASS. Slot-2 and the runtime/lab target are not a pilot target and do not gain
+a host-wide exception. A neighbor PASS does not satisfy an open PILOT00 gate.
+Phase, Git, and remote publication stay separate approvals.
+
 ## Gate-Gruppen (AP-029)
 
 | Gruppe | Zweck | Beispiele |
 | --- | --- | --- |
-| Governance / Docs | Kanonische Verträge und Ledger | `tests/docs/test_docs_consistency.py` |
+| Governance / Docs | Kanonische Verträge und Ledger | `tests/docs/test_docs_consistency.py`; PILOT00-Linux-Plan: `tests/docs/test_pilot00_linux_plan.py` |
 | Product UX governance | UX00 P0/P1 links, D01–D92 disposition, contract-gap ownership | focused UX00 docs tests + full `tests/docs` |
 | Macro tooling / reviewer | TOOL00 Agent-/Skill-Vertrag, Snapshot und read-only Review | `tests/docs/test_cursor_macro_workflow.py` + nativer Reviewer-Smoke |
 | PostgreSQL foundation | PG00 Runner/Ownership/Org/Audit/Blob contracts | platform/migration gates (defined in PG00) |
