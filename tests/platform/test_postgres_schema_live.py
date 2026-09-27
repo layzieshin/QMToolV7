@@ -1,6 +1,9 @@
 """Live PostgreSQL checks for AP-029 PG00-A/B platform schema applicator."""
 from __future__ import annotations
 
+import json
+import threading
+import time
 from pathlib import Path
 
 import psycopg
@@ -274,3 +277,167 @@ def test_failed_migration_rolls_back_completely(
             "SELECT COUNT(*) FROM platform._qm_schema_migrations"
         ).fetchone()
         assert count is not None and int(count[0]) == 2
+
+
+def _advisory_lock_rows(admin_dsn: str) -> list[tuple]:
+    with psycopg.connect(admin_dsn, autocommit=True) as conn:
+        return list(
+            conn.execute(
+                """
+                SELECT classid, objid, objsubid, granted
+                FROM pg_locks
+                WHERE locktype = 'advisory'
+                """
+            ).fetchall()
+        )
+
+
+def _matching_advisory_rows(rows: list[tuple], keys: tuple[int, int], *, granted: bool) -> list[tuple]:
+    namespace, module_key = keys
+    return [
+        row
+        for row in rows
+        if int(row[0]) == namespace
+        and int(row[1]) == module_key
+        and int(row[2]) == 2
+        and bool(row[3]) is granted
+    ]
+
+
+def _run_overlapping_module_replaces(
+    env: LivePostgresEnv,
+    module_id: str,
+    payloads: tuple[dict, dict],
+) -> None:
+    from qm_platform.settings.postgres_settings_repository import (
+        PostgresSettingsRepository,
+        _settings_module_advisory_keys,
+    )
+
+    pgs.migrate_platform_schema(env.migrator_dsn)
+    PostgresSettingsRepository(env.runtime_dsn).assert_schema_ready()
+    keys = _settings_module_advisory_keys(module_id)
+    holder = psycopg.connect(env.runtime_dsn)
+    errors: list[BaseException] = []
+    threads: list[threading.Thread] = []
+    try:
+        holder.execute("SELECT pg_advisory_xact_lock(%s, %s)", keys)
+        assert _matching_advisory_rows(
+            _advisory_lock_rows(env.admin_dsn),
+            keys,
+            granted=True,
+        )
+        for index, payload in enumerate(payloads):
+            def run(values: dict = payload, actor: str = f"writer-{index}") -> None:
+                try:
+                    PostgresSettingsRepository(env.runtime_dsn).replace_module_technical(
+                        module_id,
+                        values,
+                        actor=actor,
+                        schema_version=1,
+                    )
+                except BaseException as exc:
+                    errors.append(exc)
+
+            thread = threading.Thread(target=run)
+            thread.start()
+            threads.append(thread)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            waiting = _matching_advisory_rows(
+                _advisory_lock_rows(env.admin_dsn),
+                keys,
+                granted=False,
+            )
+            if len(waiting) >= 2:
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("both writers did not wait on the settings advisory lock")
+        with psycopg.connect(env.runtime_dsn) as observer:
+            count = observer.execute(
+                """
+                SELECT COUNT(*)
+                FROM platform.platform_settings
+                WHERE module_id = %s
+                """,
+                (module_id,),
+            ).fetchone()
+        assert count is not None and int(count[0]) == 0
+    finally:
+        holder.rollback()
+        holder.close()
+        for thread in threads:
+            thread.join(timeout=60)
+    assert errors == []
+    assert threads
+    assert all(not thread.is_alive() for thread in threads)
+
+
+def test_concurrent_replace_same_keys_history_is_gapless(
+    platform_env: LivePostgresEnv,
+) -> None:
+    module_id = "lock_same_keys"
+    payloads = ({"probe": "first"}, {"probe": "second"})
+    _run_overlapping_module_replaces(platform_env, module_id, payloads)
+    from qm_platform.settings.postgres_settings_repository import PostgresSettingsRepository
+
+    current = PostgresSettingsRepository(platform_env.runtime_dsn).load_module_technical(
+        module_id
+    )
+    assert current in payloads
+    with psycopg.connect(platform_env.runtime_dsn) as conn:
+        rows = conn.execute(
+            """
+            SELECT revision_no, old_value_json, new_value_json
+            FROM platform.platform_setting_revisions
+            WHERE module_id = %s AND setting_key = 'probe'
+            ORDER BY revision_no
+            """,
+            (module_id,),
+        ).fetchall()
+        stored = conn.execute(
+            """
+            SELECT value_json, revision
+            FROM platform.platform_settings
+            WHERE module_id = %s AND setting_key = 'probe'
+            """,
+            (module_id,),
+        ).fetchone()
+    assert [int(row[0]) for row in rows] == [1, 2]
+    assert rows[0][1] is None
+    assert rows[1][1] == rows[0][2]
+    assert stored is not None
+    assert int(stored[1]) == 2
+    assert json.loads(str(stored[0])) == current["probe"]
+    assert json.loads(str(rows[1][2])) == current["probe"]
+
+
+def test_concurrent_replace_disjoint_payloads_keep_one_payload(
+    platform_env: LivePostgresEnv,
+) -> None:
+    module_id = "lock_disjoint_payloads"
+    payloads = ({"left_key": "L"}, {"right_key": "R"})
+    _run_overlapping_module_replaces(platform_env, module_id, payloads)
+    from qm_platform.settings.postgres_settings_repository import PostgresSettingsRepository
+
+    current = PostgresSettingsRepository(platform_env.runtime_dsn).load_module_technical(
+        module_id
+    )
+    assert current in payloads
+    assert current != {"left_key": "L", "right_key": "R"}
+    with psycopg.connect(platform_env.runtime_dsn) as conn:
+        rows = conn.execute(
+            """
+            SELECT setting_key, revision_no
+            FROM platform.platform_setting_revisions
+            WHERE module_id = %s
+            ORDER BY setting_key, revision_no
+            """,
+            (module_id,),
+        ).fetchall()
+    history: dict[str, list[int]] = {}
+    for key, revision_no in rows:
+        history.setdefault(str(key), []).append(int(revision_no))
+    assert set(history) == {"left_key", "right_key"}
+    assert all(revisions == [1] for revisions in history.values())

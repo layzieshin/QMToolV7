@@ -6,6 +6,7 @@ schema, keep a connection, or fall back to SQLite.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from contextlib import contextmanager
@@ -14,7 +15,15 @@ from typing import Any, Iterator
 
 import psycopg
 
-from qm_platform.persistence.postgres_schema import PostgresSchemaError, _validate_runtime_identity
+from qm_platform.persistence.postgres_schema import (
+    PostgresSchemaError,
+    _validate_runtime_identity,
+    assert_runtime_schema_ready,
+)
+
+# Two-int advisory namespace "QSET". Distinct from QTM_PLAT, QTM_UMMG, and QTM_SEED.
+_SETTINGS_MODULE_ADVISORY_NAMESPACE = 0x5153_4554
+_INT4_MAX = 0x7FFF_FFFF
 
 
 class SettingsPersistenceUnavailable(RuntimeError):
@@ -23,6 +32,13 @@ class SettingsPersistenceUnavailable(RuntimeError):
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _settings_module_advisory_keys(module_id: str) -> tuple[int, int]:
+    """Stable int4 pair for one module. The builtin hash is process-randomized."""
+    digest = hashlib.sha256(module_id.encode("utf-8")).digest()
+    module_key = int.from_bytes(digest[:4], "big") & _INT4_MAX
+    return (_SETTINGS_MODULE_ADVISORY_NAMESPACE, module_key)
 
 
 def _value_type(value: Any) -> str:
@@ -94,11 +110,15 @@ class PostgresSettingsRepository:
             conn.close()
 
     def assert_schema_ready(self) -> None:
-        """Read-only proof that the operator-applied settings tables exist."""
-        with self._open() as conn:
-            conn.execute("SELECT 1 FROM platform.platform_settings LIMIT 0")
-            conn.execute("SELECT 1 FROM platform.platform_settings_integrity LIMIT 0")
-            conn.execute("SELECT 1 FROM platform.platform_setting_revisions LIMIT 0")
+        """Fail-closed startup guard via the canonical runtime schema owner."""
+        try:
+            assert_runtime_schema_ready(self._dsn)
+        except PostgresSchemaError as exc:
+            raise SettingsPersistenceUnavailable(
+                "platform settings PostgreSQL schema is not ready"
+            ) from exc
+        except psycopg.Error as exc:
+            raise _unavailable(exc) from exc
 
     def load_module_technical(self, module_id: str) -> dict[str, Any]:
         with self._open() as conn:
@@ -136,8 +156,12 @@ class PostgresSettingsRepository:
         schema_version: int,
         reason: str | None = None,
     ) -> None:
-        now = _utc_now()
         with self._open() as conn:
+            conn.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                _settings_module_advisory_keys(module_id),
+            )
+            now = _utc_now()
             existing = {
                 str(row[0]): (str(row[1]), int(row[2]))
                 for row in conn.execute(

@@ -153,13 +153,23 @@ class _Rows:
 class MemorySettingsStore:
     """In-memory stand-in for platform.platform_settings. Not a SQLite fallback."""
 
-    def __init__(self, *, ready: bool = True, down: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        ready: bool = True,
+        down: bool = False,
+        schema_error: str | None = None,
+    ) -> None:
         self.ready = ready
         self.down = down
+        self.schema_error = schema_error
         self.settings: dict[tuple[str, str], dict] = {}
         self.revisions: list[dict] = []
         self.integrity: dict[str, str] = {}
         self.lock_statements: list[str] = []
+        self.sql_log: list[str] = []
+        self.advisory_calls: list[tuple] = []
+        self.advisory_locked = False
         self.live_connections = 0
 
 
@@ -172,8 +182,14 @@ class _MemoryConn:
     def execute(self, sql: str, params=None):
         compact = " ".join(sql.split())
         values = tuple(params or ())
+        self.store.sql_log.append(compact)
         import psycopg
 
+        if "pg_advisory_xact_lock" in compact:
+            self.store.advisory_locked = True
+            self.store.advisory_calls.append(values)
+            self.store.lock_statements.append(compact)
+            return _Rows([])
         if "pg_has_role" in compact:
             return _Rows([("qmtool_runtime", "qmtool_runtime", True, True, False, False)])
         if "LIMIT 0" in compact:
@@ -284,12 +300,26 @@ class _MemoryConn:
 def _install_settings_store(monkeypatch, store: MemorySettingsStore) -> None:
     import psycopg
 
+    from qm_platform.settings import postgres_settings_repository as repo_mod
+
     def connect(_dsn: str, connect_timeout: int = 5):
         if store.down:
             raise psycopg.OperationalError("postgres settings down")
         return _MemoryConn(store)
 
+    def schema_ready(dsn: str, *, migrations_dir=None):
+        if store.down:
+            raise psycopg.OperationalError("postgres settings down")
+        if store.schema_error is not None:
+            raise pgs.PostgresSchemaError(store.schema_error)
+        if not store.ready:
+            raise pgs.PostgresSchemaError("platform schema history is missing")
+        if not str(dsn).strip():
+            raise pgs.PostgresSchemaError("platform schema history is missing")
+        return 6
+
     monkeypatch.setattr(psycopg, "connect", connect)
+    monkeypatch.setattr(repo_mod, "assert_runtime_schema_ready", schema_ready)
 
 
 def test_backend_attach_uses_one_postgres_repository_and_skips_sqlite(tmp_path: Path, monkeypatch) -> None:
@@ -364,9 +394,130 @@ def test_backend_settings_outage_and_missing_schema_fail_closed(tmp_path: Path, 
 
     missing = MemorySettingsStore(ready=False)
     _install_settings_store(monkeypatch, missing)
-    with pytest.raises(SettingsPersistenceUnavailable, match="runtime DDL is forbidden"):
+    with pytest.raises(SettingsPersistenceUnavailable, match="schema is not ready"):
         attach_settings_persistence(container, app_home=tmp_path)
     assert not (tmp_path / "storage" / "platform" / "platform_settings.db").exists()
+
+
+def test_assert_schema_ready_delegates_to_canonical_owner(monkeypatch) -> None:
+    import inspect
+
+    from qm_platform.settings import postgres_settings_repository as repo_mod
+
+    assert repo_mod.assert_runtime_schema_ready is pgs.assert_runtime_schema_ready
+    source = inspect.getsource(repo_mod.PostgresSettingsRepository.assert_schema_ready)
+    assert "assert_runtime_schema_ready(self._dsn)" in source
+    assert "LIMIT 0" not in source
+    assert "CREATE TABLE" not in source
+    seen: list[tuple[str, object]] = []
+
+    def spy(dsn: str, *, migrations_dir=None) -> int:
+        seen.append((dsn, migrations_dir))
+        return 6
+
+    monkeypatch.setattr(repo_mod, "assert_runtime_schema_ready", spy)
+    repository = repo_mod.PostgresSettingsRepository(
+        "postgresql://qmtool_runtime@db/qmtool"
+    )
+    repository.assert_schema_ready()
+    assert seen == [("postgresql://qmtool_runtime@db/qmtool", None)]
+
+
+@pytest.mark.parametrize(
+    "schema_error",
+    [
+        "platform schema history is missing",
+        "schema fingerprint drift detected against last applied migration",
+        "platform_settings missing columns: ['revision']",
+        "qmtool_runtime must not have INSERT on platform._qm_schema_migrations",
+    ],
+)
+def test_schema_owner_errors_block_attach_before_settings_mutation(
+    tmp_path: Path,
+    monkeypatch,
+    schema_error: str,
+) -> None:
+    import sqlite3
+
+    from qm_platform.runtime.container import RuntimeContainer
+    from qm_platform.settings.persistence_bootstrap import attach_settings_persistence
+    from qm_platform.settings.postgres_settings_repository import SettingsPersistenceUnavailable
+    from qm_platform.settings.settings_registry import SettingsRegistry
+    from qm_platform.settings.settings_service import SettingsService
+
+    def refuse_sqlite(*_args, **_kwargs):
+        raise AssertionError("schema guard opened sqlite")
+
+    monkeypatch.setattr(sqlite3, "connect", refuse_sqlite)
+    store = MemorySettingsStore(schema_error=schema_error)
+    _install_settings_store(monkeypatch, store)
+    container = RuntimeContainer()
+    container.register_port("settings_service", SettingsService(SettingsRegistry()))
+    container.register_port("app_home", tmp_path)
+    container.register_port(
+        "usermanagement_postgres_dsn",
+        "postgresql://qmtool_runtime@db/qmtool",
+    )
+    with pytest.raises(SettingsPersistenceUnavailable, match="schema is not ready") as raised:
+        attach_settings_persistence(container, app_home=tmp_path)
+    assert isinstance(raised.value.__cause__, pgs.PostgresSchemaError)
+    assert str(raised.value.__cause__) == schema_error
+    assert store.settings == {}
+    assert store.revisions == []
+    assert store.sql_log == []
+    assert store.live_connections == 0
+    assert not (tmp_path / "storage" / "platform" / "platform_settings.db").exists()
+
+
+def test_replace_module_technical_advisory_lock_precedes_snapshot(monkeypatch) -> None:
+    import inspect
+
+    from qm_platform.settings import postgres_settings_repository as repo_mod
+
+    store = MemorySettingsStore()
+    _install_settings_store(monkeypatch, store)
+
+    def utc_now() -> str:
+        assert store.advisory_locked
+        store.timestamp_after_lock = True
+        return "2026-09-27T00:00:00+00:00"
+
+    monkeypatch.setattr(repo_mod, "_utc_now", utc_now)
+    store.timestamp_after_lock = False
+    repository = repo_mod.PostgresSettingsRepository(
+        "postgresql://qmtool_runtime@db/qmtool"
+    )
+    repository.replace_module_technical(
+        "documents",
+        {"sample": 1},
+        actor="actor-1",
+        schema_version=1,
+    )
+    assert store.timestamp_after_lock is True
+    lock_at = next(
+        index
+        for index, sql in enumerate(store.sql_log)
+        if "pg_advisory_xact_lock" in sql
+    )
+    snapshot_at = next(
+        index for index, sql in enumerate(store.sql_log) if "FOR UPDATE" in sql
+    )
+    assert lock_at < snapshot_at
+    keys = repo_mod._settings_module_advisory_keys("documents")
+    assert store.advisory_calls == [keys]
+    assert keys == repo_mod._settings_module_advisory_keys("documents")
+    assert keys != repo_mod._settings_module_advisory_keys("signature")
+    assert keys[0] == repo_mod._SETTINGS_MODULE_ADVISORY_NAMESPACE
+    assert keys[0] not in {
+        0x5154_4D5F_504C_4154,
+        0x5154_4D5F_554D_4D47,
+        0x5154_4D5F_5345_4544,
+    }
+    assert all(0 <= part <= 0x7FFF_FFFF for part in keys)
+    assert "hash(" not in inspect.getsource(repo_mod._settings_module_advisory_keys)
+    assert "hash(" not in inspect.getsource(
+        repo_mod.PostgresSettingsRepository.replace_module_technical
+    )
 
 
 def test_postgres_settings_keep_governance_actor_and_module_scope(tmp_path: Path, monkeypatch) -> None:
