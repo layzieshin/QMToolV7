@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from modules.usermanagement import postgres_schema as pgs
+from qm_platform.persistence import postgres_schema as platform_schema
 from qm_platform.runtime.backend_bootstrap import wire_backend_usermanagement
 from src.backend.api import create_app
 from src.backend.bootstrap import build_platform_ports
@@ -22,6 +23,8 @@ def runtime_env(tmp_path, monkeypatch, live_postgres_env: LivePostgresEnv):
     migrator_dsn = live_postgres_env.migrator_dsn
     runtime_dsn = live_postgres_env.runtime_dsn
     pgs.migrate_usermanagement_schema(migrator_dsn)
+    platform_schema.provision_platform_schema(admin_dsn)
+    platform_schema.migrate_platform_schema(migrator_dsn)
     monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
     monkeypatch.setenv("QMTOOL_LICENSE_MODE", "dev")
     monkeypatch.setenv("QMTOOL_PG_DSN", runtime_dsn)

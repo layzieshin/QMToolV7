@@ -81,7 +81,13 @@ class DatabaseBackup:
 
 
 class DatabaseEvolutionService:
-    def __init__(self, *, app_home: Path, backup_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        app_home: Path,
+        backup_root: Path | None = None,
+        settings_repository: object | None = None,
+    ) -> None:
         self._app_home = app_home.resolve()
         self._backup_root = (
             backup_root.resolve()
@@ -90,6 +96,7 @@ class DatabaseEvolutionService:
         )
         self._lock_path = self._app_home / "storage" / "platform" / "database-migration.lock"
         self._journal_path = self._app_home / "storage" / "platform" / "database-migration-journal.json"
+        self._settings_repository = settings_repository
 
     @property
     def has_interrupted_migration(self) -> bool:
@@ -380,10 +387,15 @@ class DatabaseEvolutionService:
                     }
                 )
             residual_entry = self._backup_residual_archive(final_dir)
-            if residual_entry["present"] and not any(
+            settings_present = any(
                 entry.get("database_id") == "platform_settings"
                 and bool(entry.get("present"))
                 for entry in entries
+            )
+            if (
+                residual_entry["present"]
+                and not settings_present
+                and self._settings_repository is None
             ):
                 raise DatabaseEvolutionError(
                     "residual archive backup requires platform_settings database"
@@ -814,6 +826,20 @@ class DatabaseEvolutionService:
             db_hash_anchor = integrity.get(
                 SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256
             )
+        elif self._settings_repository is not None:
+            try:
+                db_cutover_status = self._settings_integrity(
+                    SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS
+                )
+                db_hash_anchor = self._settings_integrity(
+                    SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256
+                )
+            except DatabaseEvolutionError:
+                raise
+            except Exception as exc:
+                raise DatabaseEvolutionError(
+                    "backup platform settings integrity metadata unavailable"
+                ) from exc
         if residual["cutover_status"] != db_cutover_status:
             raise DatabaseEvolutionError(
                 "backup residual cutover_status does not match platform settings database"
@@ -837,7 +863,7 @@ class DatabaseEvolutionService:
                     "backup residual_archive metadata incomplete: "
                     + ", ".join(missing_present)
                 )
-            if settings_backup is None:
+            if settings_backup is None and self._settings_repository is None:
                 raise DatabaseEvolutionError(
                     "backup residual archive requires platform_settings database"
                 )
@@ -945,8 +971,16 @@ class DatabaseEvolutionService:
             finally:
                 lock_file.close()
 
-    def _backup_residual_archive(self, backup_dir: Path) -> dict[str, object]:
+    def _settings_integrity(self, key: str) -> str | None:
+        if self._settings_repository is not None:
+            return self._settings_repository.get_integrity(key)  # type: ignore[attr-defined]
         from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
+        from qm_platform.settings.sqlite_settings_repository import SqliteSettingsRepository
+
+        repo = SqliteSettingsRepository(resolve_platform_settings_db_path(self._app_home))
+        return repo.get_integrity(key)
+
+    def _backup_residual_archive(self, backup_dir: Path) -> dict[str, object]:
         from qm_platform.settings.residual_store import (
             RESIDUAL_ARCHIVE_REL,
             ResidualSettingsStore,
@@ -954,9 +988,8 @@ class DatabaseEvolutionService:
         from qm_platform.settings.sqlite_settings_repository import SqliteSettingsRepository
 
         residual = ResidualSettingsStore.under_app_home(self._app_home)
-        repo = SqliteSettingsRepository(resolve_platform_settings_db_path(self._app_home))
-        cutover_status = repo.get_integrity(SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS)
-        db_hash = repo.get_integrity(SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256)
+        cutover_status = self._settings_integrity(SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS)
+        db_hash = self._settings_integrity(SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256)
         if not residual.exists():
             if cutover_status is not None or db_hash is not None:
                 raise DatabaseEvolutionError(
@@ -1008,7 +1041,6 @@ class DatabaseEvolutionService:
         backup_dir: Path,
         payload: dict[str, object],
     ) -> None:
-        from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
         from qm_platform.settings.residual_store import ResidualSettingsStore
         from qm_platform.settings.sqlite_settings_repository import SqliteSettingsRepository
 
@@ -1042,9 +1074,8 @@ class DatabaseEvolutionService:
                 encoding="utf-8",
                 newline="\n",
             )
-        repo = SqliteSettingsRepository(resolve_platform_settings_db_path(self._app_home))
-        expected = repo.get_integrity(SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256)
-        cutover_status = repo.get_integrity(
+        expected = self._settings_integrity(SqliteSettingsRepository.INTEGRITY_RESIDUAL_SHA256)
+        cutover_status = self._settings_integrity(
             SqliteSettingsRepository.INTEGRITY_CUTOVER_STATUS
         )
         if not expected or expected != residual_meta.get("db_hash_anchor"):

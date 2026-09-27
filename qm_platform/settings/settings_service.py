@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from modules.usermanagement.contracts import UserContext
 
@@ -25,7 +25,30 @@ from .key_classification import (
 from .residual_store import ResidualSettingsStore
 from .schema_validation import validate_technical_settings_payload
 from .settings_registry import SettingsRegistry
-from .sqlite_settings_repository import SqliteSettingsRepository
+
+
+class SettingsRepository(Protocol):
+    """Storage port used by SettingsService. SQLite and PostgreSQL both satisfy it."""
+
+    def load_module_technical(self, module_id: str) -> dict[str, Any]: ...
+
+    def list_all_technical_keys(self) -> set[tuple[str, str]]: ...
+
+    def replace_module_technical(
+        self,
+        module_id: str,
+        values: dict[str, Any],
+        *,
+        actor: str,
+        schema_version: int,
+        reason: str | None = None,
+    ) -> None: ...
+
+    def get_integrity(self, key: str) -> str | None: ...
+
+    def set_integrity(self, key: str, value: str, *, actor: str) -> None: ...
+
+    def clear_integrity(self, key: str) -> None: ...
 
 
 def _actor_id(actor: object) -> str:
@@ -54,14 +77,14 @@ def _actor_id(actor: object) -> str:
 @dataclass
 class SettingsService:
     registry: SettingsRegistry
-    repository: SqliteSettingsRepository | None = None
+    repository: SettingsRepository | None = None
     residual: ResidualSettingsStore | None = None
     _persistence_ready: bool = field(default=False, init=False, repr=False)
     _cutover_completed: bool = field(default=False, init=False, repr=False)
 
     def attach_persistence(
         self,
-        repository: SqliteSettingsRepository,
+        repository: SettingsRepository,
         residual: ResidualSettingsStore | None = None,
         *,
         require_residual_if_present: bool = True,
@@ -80,7 +103,7 @@ class SettingsService:
             self.assert_bucket_b_complete()
         self._persistence_ready = True
 
-    def _require_persistence(self) -> SqliteSettingsRepository:
+    def _require_persistence(self) -> SettingsRepository:
         if not self._persistence_ready or self.repository is None:
             raise RuntimeError("settings persistence is not attached yet")
         return self.repository

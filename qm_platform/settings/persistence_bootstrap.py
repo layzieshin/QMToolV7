@@ -5,16 +5,39 @@ from __future__ import annotations
 from pathlib import Path
 
 from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
+from qm_platform.settings.postgres_settings_repository import (
+    PostgresSettingsRepository,
+    SettingsPersistenceUnavailable,
+)
 from qm_platform.settings.settings_cutover import ensure_settings_residual_ready
 from qm_platform.settings.settings_service import SettingsService
 from qm_platform.settings.sqlite_settings_repository import SqliteSettingsRepository
 
 
+def _backend_settings_dsn(container) -> str | None:
+    """Backend host DSN. Absent port keeps the desktop SQLite repository."""
+    if not container.has_port("usermanagement_postgres_dsn"):
+        return None
+    dsn = str(container.get_port("usermanagement_postgres_dsn")).strip()
+    if not dsn:
+        raise SettingsPersistenceUnavailable("platform settings PostgreSQL DSN is empty")
+    return dsn
+
+
 def attach_settings_persistence(container, *, app_home: Path | None = None) -> SettingsService:
-    """Open DB-backed settings after the seven databases have been migrated."""
+    """Open DB-backed settings after the seven databases have been migrated.
+
+    The backend host (PostgreSQL DSN port present) attaches one PostgreSQL
+    repository. Desktop callers without that port keep SQLite.
+    """
     home = Path(app_home) if app_home is not None else Path(container.get_port("app_home"))
     settings: SettingsService = container.get_port("settings_service")
-    repository = SqliteSettingsRepository(resolve_platform_settings_db_path(home))
+    dsn = _backend_settings_dsn(container)
+    if dsn is not None:
+        repository: PostgresSettingsRepository | SqliteSettingsRepository = PostgresSettingsRepository(dsn)
+        repository.assert_schema_ready()
+    else:
+        repository = SqliteSettingsRepository(resolve_platform_settings_db_path(home))
     settings.attach_persistence(repository, None, require_residual_if_present=False)
 
     def _pre_mutation_backup() -> str | None:
