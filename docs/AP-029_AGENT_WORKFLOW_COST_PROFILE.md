@@ -16,9 +16,10 @@ Source plan: `QMTool_Agent_Workflow_Cursor_First_20260927.md` (2026-09-27; exter
 - This document is the **authoritative package contract** for AGENT-COST-01 checkpoints W0–W3.
   Ignored evidence under `build/agent-cost-01/` is an index and control record only; it is **not**
   a second source of truth.
-- **No activation by W0, W1, or W2.** The `cursor-first` profile becomes effective only after W3
-  PASS, an independent critical Codex final audit, merge, and a documented safe transition at the
-  next package or checkpoint boundary. Until then `.cursor/agent-system.json` remains `balanced` v2.
+- **No production activation by W0, W1, or W2.** W1 may install the full `cursor-first` v1
+  **candidate** on the isolated AGENT-COST branch for qualification only; `main` and other worktrees
+  remain on `balanced` v2 until squash-merge and documented safe transition. W3 qualifies the frozen
+  final candidate commit/tree — not a last-minute JSON change after canary or audit.
 - **No retrofit** on the paused PILOT00 B1 attempt (`feature/ap-029-pilot00-service-release` at
   `60f4649ed89e195c770558b928ba464de9d1c0e0`). Resume keeps contract revision and
   `rework_count=2`; the first post-resume pilot step remains OCI double-build after resume preflight.
@@ -58,6 +59,39 @@ Verified execution basis for W0 (2026-09-27):
 
 Preparatory Git/worktree setup before Cursor W0 is an orchestrator responsibility via normal
 allowed Git/worktree tools. Cursor must not fake `FINAL_GIT` or disable hooks to perform it.
+
+## Package-local candidate lifecycle and controlstate
+
+### Candidate lifecycle (qualification vs activation)
+
+| Phase | Branch / tree | Profile behavior |
+| --- | --- | --- |
+| `main` and foreign worktrees | unchanged until merge | `balanced` v2 effective |
+| W1 | isolated `feature/cursor-agent-system-v3` | installs **complete** `cursor-first` v1 candidate in tracked allowlisted owners for qualification; does **not** activate for other running packages |
+| W2 | same branch | may extend candidate (context manifest, guards, docs); after W2 a **final candidate commit/tree** must be frozen before W3 qualification |
+| W3 canary / tests / Codex audit / PR / CI | **same final frozen commit/tree/diff** | no further tracked candidate changes between freeze and audit |
+| Post-merge | `main` after squash-merge + documented transition | `cursor-first` v1 effective for **new** packages/checkpoints only |
+
+Rules:
+
+- Any tracked change after the W3 qualification freeze **invalidates** affected canary, audit, CI,
+  and merge evidence; gates and audit must rerun on the new frozen stand. **No** unreviewed final
+  JSON or owner edit after canary or audit.
+- Activation for new packages is **squash-merge into `main` plus documented safe transition**, not
+  branch-local qualification alone.
+- PILOT00 B1 (`60f4649…`) keeps its started profile and evidence interpretation; no retrofit.
+
+### Controlstate separation (AGENT-COST vs PILOT00)
+
+| State / evidence | AGENT-COST-01 | PILOT00 |
+| --- | --- | --- |
+| Tracked `.cursor/runtime/workflow-state.json` | **forbidden** (all checkpoints) | out of scope; **do not read/write/copy/invalidate** |
+| Local workflow resume | gitignored state **only in this worktree**, bound to TargetRoot / branch / base / contract / profile of AGENT-COST | **not** a resume source |
+| Package evidence | `build/agent-cost-01/` only | `build/ap-029-pilot00/` and pilot worktrees — **untouched** |
+| Writer | single writer in `QMToolV7-agent-system-v3` | separate worktree; protected |
+
+AGENT-COST must not treat PILOT00 workflow-state, evidence, or worktree as resume input or
+invalidation target.
 
 ## Owner trace and configuration hardcodes
 
@@ -123,7 +157,10 @@ model remain `UNKNOWN` unless the host exposes them in primary evidence.
 | R-COST-07 | D15 successor without silent Terra/Sol claims | D15 reference § | W1 tests + docs |
 | R-COST-08 | PILOT00 isolation / no retrofit | Basis table § | All checkpoints |
 | R-COST-09 | 12 verification cases in real owner tests | § Verification contract | W1–W3 tests |
-| R-COST-10 | Safe activation only after W3 + Codex audit + merge | § Activation boundary | W3 only |
+| R-COST-10 | Safe activation only after W3 + Codex audit + merge | § Candidate lifecycle | W3 only |
+| R-COST-17 | W3 qualifies frozen candidate; no post-canary JSON edit | § Candidate lifecycle | W1–W3 |
+| R-COST-18 | Exact finite W2/W3 allowlists | § Allowlists | W0 contract |
+| R-COST-19 | AGENT-COST controlstate isolated from PILOT00 | § Controlstate | All checkpoints |
 
 ## Risk-to-evidence matrix (summary)
 
@@ -139,6 +176,8 @@ model remain `UNKNOWN` unless the host exposes them in primary evidence.
 | External review policy drift | Explicit W2 policy change with guard tests or N/A report | W2 allowlist |
 | GitHub API overreach | Narrow git-guard extension or capability gap report | W2 |
 | Cost/cache fiction | `UNKNOWN` semantics mandatory | W2 metrics, test case 10 |
+| Post-canary candidate drift | W3 freeze + invalidation rule | W3 report, contract § lifecycle |
+| PILOT00 state bleed | Controlstate separation | § Controlstate, W0 evidence |
 
 ## Package integration scenario
 
@@ -170,8 +209,13 @@ model remain `UNKNOWN` unless the host exposes them in primary evidence.
 
 **Commit message:** `docs(agent-cost): freeze cursor-first workflow profile`
 
-**W1 start condition:** W0 committed; tracked tree clean; this contract SHA256 recorded in W1
-`checkpoint-contract.md`. **W1 NOT RUN until then.**
+**W0 rework:** `rework_count=2` after this round (round 1: attempt 002; round 2: attempt 003). Counters
+are not reset by relabeling.
+
+**W1 start condition:** W0 complete with independent read-only reviewer **PASS** on the then-current
+contract commit; tracked tree clean; contract SHA256 recorded in W1 `checkpoint-contract.md`.
+**W1 NOT RUN** until that PASS. Status after this rework commit:
+`READY_FOR_INDEPENDENT_W0_REVIEW_R2`.
 
 ### W1 — Cursor-first routing (full, test-protected)
 
@@ -202,48 +246,98 @@ new contract fields.
 
 **Gate:** Targeted docs tests + native Grok/Composer smoke + synthetic hook tests.
 
+**Candidate install:** W1 produces the complete `cursor-first` v1 candidate on this branch (including
+`.cursor/agent-system.json` and bound owners). This is qualification material, not activation on
+`main` or for foreign packages.
+
 ### W2 — Context handoffs, reuse, measurability
 
-**Tracked allowlist (extends W1 only where needed):**
+**Tracked allowlist (exact finite maximal list; no inheritance, no globs):**
 
 - `.cursor/skills/execute-work-package/SKILL.md`
-- `.cursor/skills/execute-gated-macro/SKILL.md` (context manifest extensions)
-- `.cursor/hooks/git-guard.ps1` (only if narrow review-thread API extension is implemented)
-- `.cursor/hooks/workflow-watchdog.ps1` (only if wait/progress distinction requires it)
-- `.cursor/skills/qmtool-module-development/references/independent-codex-review.md` (explicit boundary)
+- `.cursor/skills/execute-gated-macro/SKILL.md`
+- `.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`
+- `.cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py`
+- `.cursor/skills/verify-reports-and-plan/SKILL.md`
+- `.cursor/skills/verify-reports-and-plan/references/evidence-and-prompt-patterns.md`
+- `.cursor/skills/qmtool-module-development/SKILL.md`
+- `.cursor/skills/qmtool-module-development/references/independent-codex-review.md`
+- `.cursor/hooks/git-guard.ps1`
+- `.cursor/hooks/session-start.ps1`
+- `.cursor/hooks/workflow-watchdog.ps1`
+- `.cursor/runtime/README.md`
+- `.cursor/runtime/workflow-state.template.json`
 - `.cursor/reviews/README.md`
-- `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`
 - `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md`
+- `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`
 - `tests/docs/test_cursor_agent_system.py`
 - `tests/docs/test_cursor_execution_hygiene.py`
-- `tests/docs/test_docs_consistency.py` (if index or doc links change)
+- `tests/docs/test_cursor_macro_workflow.py`
+- `tests/docs/test_docs_consistency.py`
 
-If GitHub review-thread mutation guard cannot be implemented safely: report capability gap; do not
-disable gates or set `DISABLED` without replacement tests.
+Paths in this maximal list that W2 does not need remain **unmodified**; the W2 report names unused
+optional paths explicitly. If GitHub review-thread mutation guard cannot be implemented safely:
+report capability gap; do not disable gates or set `DISABLED` without replacement tests.
+
+After W2, freeze the **final candidate commit/tree** before any W3 qualification step.
 
 ### W3 — Qualification, publication, safe activation
 
-**Tracked allowlist:**
+**Tracked allowlist (exact finite union of W1 + W2 paths plus publication docs; no wildcards):**
 
-- All W1/W2 workflow owners required by failing tests or activation docs
-- `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md` (activation section + status change only here)
-- `docs/DOCS_CANONICAL_INDEX.md` (status wording if needed)
-- `tests/docs/*` (as required by canary and regression)
-- `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md` (activation pointer)
+- `.cursor/agent-system.json`
+- `.cursor/agents/roadmap-architect.md`
+- `.cursor/agents/checkpoint-reviewer.md`
+- `.cursor/agents/plan-challenger.md`
+- `.cursor/agents/external-review-triager.md`
+- `.cursor/agents/escalation-reviewer.md`
+- `.cursor/agents/git-steward.md`
+- `.cursor/hooks/subagent-start.ps1`
+- `.cursor/tools/invoke-cursor-agent.ps1`
+- `.cursor/skills/apply-agent-profile/SKILL.md`
+- `.cursor/skills/execute-gated-macro/SKILL.md`
+- `.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`
+- `.cursor/skills/execute-work-package/SKILL.md`
+- `.cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py`
+- `.cursor/skills/verify-reports-and-plan/SKILL.md`
+- `.cursor/skills/verify-reports-and-plan/references/evidence-and-prompt-patterns.md`
+- `.cursor/skills/qmtool-module-development/SKILL.md`
+- `.cursor/skills/qmtool-module-development/references/independent-codex-review.md`
+- `.cursor/hooks/git-guard.ps1`
+- `.cursor/hooks/session-start.ps1`
+- `.cursor/hooks/workflow-watchdog.ps1`
+- `.cursor/runtime/README.md`
+- `.cursor/runtime/workflow-state.template.json`
+- `.cursor/reviews/README.md`
+- `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md`
+- `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
+- `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`
+- `docs/DOCS_CANONICAL_INDEX.md`
+- `docs/MASTER_ORCHESTRATION_ROADMAP.md`
+- `tests/docs/test_cursor_agent_system.py`
+- `tests/docs/test_cursor_macro_workflow.py`
+- `tests/docs/test_cursor_execution_hygiene.py`
+- `tests/docs/test_docs_consistency.py`
 
-**Gates:** Full `tests/docs` serial green; representative native canary; independent critical Codex
-final audit PASS; CI on PR; policy-compliant merge only under explicit package authorization.
+No further tracked paths. Unused maximal-list paths stay untouched; W3 report names them.
 
-**Activation:** Update `.cursor/agent-system.json` profile to `cursor-first` v1 only in W3 after
-all gates, documenting the next safe package/checkpoint boundary. Running attempts stay on prior
-profile version.
+**Gates:** Full `tests/docs` serial green on the **frozen final candidate** commit/tree; representative
+native canary; independent critical Codex final audit PASS on the **same** commit/tree/diff; CI on
+PR; policy-compliant merge only under explicit package authorization.
+
+**Qualification vs activation:** W3 proves the frozen candidate already installed through W1/W2.
+Canary, deterministic tests, Codex final audit, push, PR, and CI all target that same frozen stand.
+**Activation** for new packages is squash-merge into `main` plus documented safe transition — not an
+extra unreviewed `.cursor/agent-system.json` edit after audit. Running attempts and PILOT00 B1 stay
+on their prior profile version.
 
 ### Global exclusions (all checkpoints)
 
 - Product modules, `src/backend/*` (except if a test-only import path is already in docs tests),
   `webclient/*`, PostgreSQL migrations, packaging, service host, pilot Linux artifacts
-- `.cursor/runtime/workflow-state.json` and live pilot state
-- PILOT00 worktree `ap-029-pilot00-service-release` and its commits
+- Tracked edits to `.cursor/runtime/workflow-state.json` (gitignored live state)
+- PILOT00 workflow-state, evidence, worktree `ap-029-pilot00-service-release`, and its commits —
+  no read-as-resume, write, copy, or invalidation from AGENT-COST
 - New parallel roadmap, runner, cache, or API credential bridge
 - Blanket `git add .`; only explicit allowlist paths per checkpoint
 
@@ -286,7 +380,9 @@ in copied validator logic. W0 documents them; W1–W3 implement and prove them.
 
 ## Rework budgets, fail-fast, and commit boundaries
 
-Numeric limits remain those in `.cursor/agent-system.json` until W3 activation:
+W0 checkpoint rework: **`rework_count=2`** after this round (attempts 002 and 003). Not reset.
+
+Numeric limits remain those in `.cursor/agent-system.json` until merge activation:
 
 - `max_checkpoint_reworks`: 2
 - `max_escalation_reviews`: 1
@@ -303,11 +399,11 @@ W0 authorizes only the two tracked doc paths.
 
 ## Safe activation boundary
 
-| Phase | Profile effective | Document status |
-| --- | --- | --- |
-| W0–W2 | `balanced` v2 | PLANNED / NOT ACTIVE |
-| W3 pre-merge | `balanced` v2 | PLANNED until explicit W3 activation section |
-| Post-W3 merge + documented transition | `cursor-first` v1 | ACTIVE for **new** packages/checkpoints only |
+| Phase | `main` / foreign worktrees | AGENT-COST branch candidate | Document status |
+| --- | --- | --- | --- |
+| W0–W2 | `balanced` v2 | W1+ installs/extends `cursor-first` v1 candidate (qualification only) | PLANNED / NOT ACTIVE |
+| W3 pre-merge | `balanced` v2 | frozen final candidate under test/audit | PLANNED until merge |
+| Post-squash-merge + documented transition | `cursor-first` v1 | merged into `main` | ACTIVE for **new** packages only |
 
 In-flight PILOT00 B1 and any running checkpoint remain on their started profile version and evidence
 interpretation. Old PASS evidence stays historically correct.
@@ -329,11 +425,12 @@ historical `gpt-5.6-terra` strings, without claiming runtime attestation where m
 ## W0 completion criteria
 
 - [x] Package contract written (this document)
-- [x] P1 index entry added
-- [x] W0 evidence bundle under `build/agent-cost-01/w0/<attempt>/`
-- [x] `git diff --name-only` shows exactly two tracked paths
-- [x] Docs tests green
-- [x] Local commit `docs(agent-cost): freeze cursor-first workflow profile`
+- [x] P1 index entry added (commit `61f0f44…`)
+- [x] W0 evidence attempts under `build/agent-cost-01/w0/<attempt>/`
+- [x] Candidate lifecycle, exact W2/W3 allowlists, controlstate separation documented
+- [x] `rework_count=2` recorded honestly
+- [ ] Independent W0 review R2 PASS on post-rework contract
 - [ ] W1 implementation — **NOT RUN**
 
-**End state after W0:** `W0_COMMITTED_READY_FOR_INTERMEDIATE_PACKAGE`. W1 NOT RUN.
+**End state after this rework commit:** `READY_FOR_INDEPENDENT_W0_REVIEW_R2`. W1 NOT RUN until
+independent reviewer PASS on the new contract commit.
