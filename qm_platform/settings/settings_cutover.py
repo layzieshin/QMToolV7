@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -537,3 +539,68 @@ def ensure_settings_residual_ready(
         )
 
     return seed_residual_from_contribution_defaults(home, settings_service)
+
+
+def import_legacy_sqlite_settings_readonly(
+    sqlite_path: Path,
+    settings_service: SettingsService,
+) -> int:
+    """Copy a legacy platform_settings SQLite file into the attached repository.
+
+    The SQLite file is opened read-only. This function is not part of backend
+    startup and does not write the SQLite file.
+    """
+    path = Path(sqlite_path)
+    if not path.is_file():
+        raise SettingsCutoverError("legacy platform settings SQLite file is missing")
+    repository = settings_service.repository
+    importer = getattr(repository, "import_preserved_snapshot", None)
+    if not callable(importer):
+        raise SettingsCutoverError(
+            "legacy SQLite import requires the PostgreSQL settings repository"
+        )
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True)) as conn:
+        conn.execute("PRAGMA query_only = ON")
+        settings_rows = [
+            tuple(row)
+            for row in conn.execute(
+                """
+                SELECT scope_kind, scope_id, module_id, setting_key,
+                       value_type, value_json, schema_version, revision,
+                       updated_at, updated_by_user_id
+                FROM platform_settings
+                ORDER BY module_id, setting_key
+                """
+            ).fetchall()
+        ]
+        revision_rows = [
+            tuple(row)
+            for row in conn.execute(
+                """
+                SELECT revision_id, scope_kind, scope_id, module_id, setting_key,
+                       revision_no, old_value_json, new_value_json,
+                       changed_at, changed_by_user_id, reason
+                FROM platform_setting_revisions
+                ORDER BY revision_no, revision_id
+                """
+            ).fetchall()
+        ]
+        integrity_rows = [
+            tuple(row)
+            for row in conn.execute(
+                """
+                SELECT integrity_key, integrity_value, updated_at, updated_by
+                FROM platform_settings_integrity
+                ORDER BY integrity_key
+                """
+            ).fetchall()
+        ]
+    if not settings_rows and not revision_rows and not integrity_rows:
+        raise SettingsCutoverError("legacy platform settings SQLite file is empty")
+    importer(
+        settings_rows=settings_rows,
+        revision_rows=revision_rows,
+        integrity_rows=integrity_rows,
+    )
+    return len(settings_rows)

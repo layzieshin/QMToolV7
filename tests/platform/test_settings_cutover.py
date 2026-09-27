@@ -332,3 +332,44 @@ def test_bucket_partitions_cover_cutover_sample() -> None:
     assert classify_key("signature", "require_password") is SettingBucket.TECHNICAL
     assert classify_key("usermanagement", "users_db_path") is SettingBucket.BOOTSTRAP
     assert classify_key("usermanagement", "password_policy") is SettingBucket.RESIDUAL_POLICY
+
+
+def test_legacy_sqlite_import_is_explicit_readonly(tmp_path: Path, monkeypatch) -> None:
+    import hashlib
+
+    from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
+    from qm_platform.settings.actors import MIGRATION_SETTINGS_IMPORT_ACTOR
+    from qm_platform.settings.postgres_settings_repository import PostgresSettingsRepository
+    from qm_platform.settings.settings_cutover import import_legacy_sqlite_settings_readonly
+    from qm_platform.settings.settings_registry import SettingsRegistry
+    from qm_platform.settings.settings_service import SettingsService
+    from tests.platform.test_postgres_schema_static import MemorySettingsStore, _install_settings_store
+
+    source_service = build_settings_service_for_tests(tmp_path)
+    assert source_service.repository is not None
+    source_service.repository.replace_module_technical(
+        "usermanagement",
+        {"seed_mode": "hardened"},
+        actor="actor-1",
+        schema_version=1,
+        reason="legacy-import",
+    )
+    db_path = resolve_platform_settings_db_path(tmp_path)
+    before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+    store = MemorySettingsStore()
+    _install_settings_store(monkeypatch, store)
+    target = SettingsService(SettingsRegistry())
+    target.attach_persistence(
+        PostgresSettingsRepository("postgresql://qmtool_runtime@db/qmtool"),
+        None,
+        require_residual_if_present=False,
+    )
+    imported = import_legacy_sqlite_settings_readonly(db_path, target)
+    assert imported == 1
+    assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+    assert target.repository is not None
+    assert target.repository.load_module_technical("usermanagement")["seed_mode"] == "hardened"
+    assert store.revisions[-1]["actor"] == "actor-1"
+    assert store.revisions[-1]["actor"] != MIGRATION_SETTINGS_IMPORT_ACTOR
+    with pytest.raises(Exception):
+        import_legacy_sqlite_settings_readonly(db_path, target)

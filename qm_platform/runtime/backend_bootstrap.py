@@ -22,38 +22,10 @@ class BackendUsermanagementBootstrapError(RuntimeError):
 def _force_hardened_usermanagement_settings(container: RuntimeContainer) -> None:
     from pathlib import Path
 
-    from qm_platform.persistence.database_evolution import (
-        DatabaseEvolutionService,
-        DatabaseSpec,
-        MigrationStep,
-    )
-    from qm_platform.persistence.path_resolver import resolve_platform_settings_db_path
-    from qm_platform.persistence.platform_settings_contribution import (
-        PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
-    )
     from qm_platform.settings.actors import SYSTEM_BACKEND_BOOTSTRAP_ACTOR
     from qm_platform.settings.persistence_bootstrap import attach_settings_persistence
 
     app_home = Path(container.get_port("app_home"))
-    contrib = PLATFORM_SETTINGS_DATABASE_CONTRIBUTION
-    evolution = DatabaseEvolutionService(app_home=app_home)
-    evolution.migrate(
-        (
-            DatabaseSpec(
-                database_id=contrib.database_id,
-                path=resolve_platform_settings_db_path(app_home),
-                migrations=tuple(
-                    MigrationStep(
-                        version=item.version,
-                        name=item.name,
-                        sql_path=item.sql_path,
-                    )
-                    for item in contrib.migrations
-                ),
-            ),
-        ),
-        reason="backend_platform_settings",
-    )
     attach_settings_persistence(container, app_home=app_home)
 
     settings = container.get_port("settings_service")
@@ -140,13 +112,8 @@ def wire_backend_documents(
         DatabaseSpec,
         MigrationStep,
     )
-    from qm_platform.persistence.path_resolver import (
-        resolve_database_absolute_path,
-        resolve_platform_settings_db_path,
-    )
-    from qm_platform.persistence.platform_settings_contribution import (
-        PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
-    )
+    from qm_platform.persistence.path_resolver import resolve_database_absolute_path
+    from qm_platform.settings.postgres_settings_repository import PostgresSettingsRepository
 
     container.register_port("documents_runtime_owner", "backend")
     container.register_port("signature_runtime_owner", "backend")
@@ -162,13 +129,25 @@ def wire_backend_documents(
             lifecycle.prepare(contract)
 
     app_home = Path(container.get_port("app_home"))
-    evolution = DatabaseEvolutionService(app_home=app_home)
+    settings_repository = None
+    if (
+        container.has_port("usermanagement_postgres_dsn")
+        and str(container.get_port("usermanagement_postgres_dsn")).strip()
+    ):
+        settings = container.get_port("settings_service")
+        repository = getattr(settings, "repository", None)
+        if not isinstance(repository, PostgresSettingsRepository):
+            raise RuntimeError(
+                "backend documents wiring requires the PostgreSQL settings repository"
+            )
+        settings_repository = repository
+    evolution = DatabaseEvolutionService(
+        app_home=app_home,
+        settings_repository=settings_repository,
+    )
 
     def _spec_for(contribution) -> DatabaseSpec:
-        if contribution.database_id == PLATFORM_SETTINGS_DATABASE_CONTRIBUTION.database_id:
-            path = resolve_platform_settings_db_path(app_home)
-        else:
-            path = resolve_database_absolute_path(app_home, contribution)
+        path = resolve_database_absolute_path(app_home, contribution)
         return DatabaseSpec(
             database_id=contribution.database_id,
             path=path,
@@ -205,10 +184,10 @@ def wire_backend_documents(
     if use_signature_postgres:
         ensure_signature_postgres_schema_ready(container)
 
-    # Include platform_settings so pre-migrate backups with residual archive are valid.
-    contributions = (
-        PLATFORM_SETTINGS_DATABASE_CONTRIBUTION,
-        *(c for contract in contracts for c in contract.database_contributions),
+    # Platform settings on the backend host live in PostgreSQL. Do not evolve
+    # or create storage/platform/platform_settings.db from this path.
+    contributions = tuple(
+        c for contract in contracts for c in contract.database_contributions
     )
     if use_registry_postgres:
         contributions = tuple(

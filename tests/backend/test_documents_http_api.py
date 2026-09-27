@@ -586,7 +586,19 @@ def test_wire_backend_documents_registers_documents_sqlite_owner(tmp_path: Path,
         ),
     )
     monkeypatch.setattr("qm_platform.runtime.lifecycle.ensure_required_capabilities", lambda *_args, **_kwargs: None)
+    migrated: list[str] = []
+    original_migrate = DatabaseEvolutionService.migrate
+
+    def _migrate(self, specs, **kwargs):
+        migrated.extend(spec.database_id for spec in specs)
+        return original_migrate(self, specs, **kwargs)
+
+    monkeypatch.setattr(DatabaseEvolutionService, "migrate", _migrate)
+    settings_db = tmp_path / "storage" / "platform" / "platform_settings.db"
+    before_settings = settings_db.read_bytes()
     wire_backend_documents(container)
+    assert "platform_settings" not in migrated
+    assert settings_db.read_bytes() == before_settings
     assert container.has_port("documents_service")
     assert docs_db.exists()
 

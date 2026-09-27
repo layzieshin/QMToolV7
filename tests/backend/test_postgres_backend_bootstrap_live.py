@@ -9,12 +9,15 @@ import pytest
 
 import psycopg
 
+from pathlib import Path
+
 from modules.documents import postgres_schema as documents_schema
 from modules.documents.api import seed_postgres_workflow_profiles
 from modules.documents.errors import ValidationError
 from modules.registry import postgres_schema as registry_schema
 from modules.signature import postgres_schema as signature_schema
 from modules.usermanagement import postgres_schema as usermanagement_schema
+from qm_platform.persistence import postgres_schema as platform_schema
 from src.backend.bootstrap import build_backend_container
 from tests.postgres_live_support import LivePostgresEnv
 
@@ -27,6 +30,8 @@ _BOOTSTRAP_PASSWORD = "ops-secret-1"
 @pytest.fixture
 def backend_pg(tmp_path, monkeypatch, live_postgres_env: LivePostgresEnv):
     usermanagement_schema.migrate_usermanagement_schema(live_postgres_env.migrator_dsn)
+    platform_schema.provision_platform_schema(live_postgres_env.admin_dsn)
+    platform_schema.migrate_platform_schema(live_postgres_env.migrator_dsn)
     documents_schema.provision_documents_schema(live_postgres_env.admin_dsn)
     documents_schema.migrate_documents_schema(live_postgres_env.migrator_dsn)
     registry_schema.provision_registry_schema(live_postgres_env.admin_dsn)
@@ -43,6 +48,7 @@ def backend_pg(tmp_path, monkeypatch, live_postgres_env: LivePostgresEnv):
         conn.execute("DROP SCHEMA IF EXISTS documents CASCADE")
         conn.execute("DROP SCHEMA IF EXISTS registry CASCADE")
         conn.execute("DROP SCHEMA IF EXISTS signature CASCADE")
+        conn.execute("DROP SCHEMA IF EXISTS platform CASCADE")
 
 
 def test_empty_postgres_documents_backend_does_not_autoseed(backend_pg) -> None:
@@ -64,6 +70,12 @@ def test_explicit_seed_then_restart_without_reseed(backend_pg) -> None:
     }
     assert first_codes == second_codes
     assert "long_release" in second_codes
+    settings_db = Path(first.get_port("app_home")) / "storage" / "platform" / "platform_settings.db"
+    assert not settings_db.exists()
+    assert first.get_port("settings_service").get_module_settings("usermanagement")["seed_mode"] == "hardened"
+    assert second.get_port("settings_service").get_module_settings("usermanagement")["seed_mode"] == "hardened"
+    assert first.get_port("settings_service").repository is not second.get_port("settings_service").repository
+    assert not hasattr(first.get_port("settings_service").repository, "_conn")
 
 
 def test_damaged_empty_postgres_profiles_are_not_reseeded(backend_pg) -> None:

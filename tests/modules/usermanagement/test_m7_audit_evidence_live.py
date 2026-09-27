@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from modules.usermanagement import postgres_schema as pgs
+from qm_platform.persistence import postgres_schema as platform_schema
 from modules.usermanagement.contracts import issue_user_context
 from modules.usermanagement.errors import (
     AuditUnavailableError,
@@ -293,6 +294,8 @@ def test_http_login_writes_audit_and_body_cannot_set_actor(tmp_path, monkeypatch
     runtime_dsn = env.runtime_dsn
     try:
         pgs.migrate_usermanagement_schema(migrator_dsn)
+        platform_schema.provision_platform_schema(admin_dsn)
+        platform_schema.migrate_platform_schema(migrator_dsn)
         monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
         monkeypatch.setenv("QMTOOL_LICENSE_MODE", "dev")
         monkeypatch.setenv("QMTOOL_PG_DSN", runtime_dsn)
@@ -346,6 +349,8 @@ def test_http_login_returns_503_and_rolls_back_when_audit_is_unavailable(
     runtime_dsn = env.runtime_dsn
     try:
         pgs.migrate_usermanagement_schema(migrator_dsn)
+        platform_schema.provision_platform_schema(admin_dsn)
+        platform_schema.migrate_platform_schema(migrator_dsn)
         monkeypatch.setenv("QMTOOL_HOME", str(tmp_path))
         monkeypatch.setenv("QMTOOL_LICENSE_MODE", "dev")
         monkeypatch.setenv("QMTOOL_PG_DSN", runtime_dsn)

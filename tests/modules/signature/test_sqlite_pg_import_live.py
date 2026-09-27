@@ -34,6 +34,7 @@ from modules.signature.secure_store import EncryptedSignatureBlobStore
 from modules.signature.sqlite_pg_import import SqlitePgImportError, fingerprint_sqlite_bundle, import_sqlite_to_postgres
 from modules.signature.sqlite_repository import SQLiteSignatureRepository
 from modules.usermanagement import postgres_schema as usermanagement_schema
+from qm_platform.persistence import postgres_schema as platform_schema
 from tests.postgres_live_support import LivePostgresEnv
 
 pytestmark = pytest.mark.postgres
@@ -72,12 +73,15 @@ def live_cutover(live_postgres_env: LivePostgresEnv):
     signature_schema.provision_signature_schema(live_postgres_env.admin_dsn)
     signature_schema.migrate_signature_schema(live_postgres_env.migrator_dsn)
     usermanagement_schema.migrate_usermanagement_schema(live_postgres_env.migrator_dsn)
+    platform_schema.provision_platform_schema(live_postgres_env.admin_dsn)
+    platform_schema.migrate_platform_schema(live_postgres_env.migrator_dsn)
     yield live_postgres_env
     with psycopg.connect(live_postgres_env.admin_dsn, autocommit=True) as conn:
         conn.execute("DROP SCHEMA IF EXISTS signature CASCADE")
         conn.execute("DROP SCHEMA IF EXISTS registry CASCADE")
         conn.execute("DROP SCHEMA IF EXISTS documents CASCADE")
         conn.execute("DROP SCHEMA IF EXISTS usermanagement CASCADE")
+        conn.execute("DROP SCHEMA IF EXISTS platform CASCADE")
 
 
 def test_live_signature_metadata_import(live_signature: LivePostgresEnv, tmp_path: Path) -> None:
