@@ -184,6 +184,13 @@ and its verification, invoke `checkpoint-reviewer` as a native Cursor Task/subag
 the original plan, complete work report, actual diff/status and available primary evidence directly.
 Never ask the user to copy, paste, forward or relay a report between agents.
 The macro remains serial and stops at the first unresolved checkpoint.
+For a package listed in the `PILOT00_ORCHESTRATOR_REVIEW` marker of
+`execute-gated-macro/references/checkpoint-protocol.md`,
+prefer the native reviewer once. On explicit `UNAVAILABLE`, one read-only
+`INDEPENDENT_ORCHESTRATOR_REVIEW` may supply that checkpoint or final-audit
+verdict. It is not `RUNTIME_ATTESTED`, not `CONTROL_PLANE_PINNED`, and it
+does not create a budget or a new status. Numeric limits stay in
+`.cursor/agent-system.json`. Do not use the substitute outside that PILOT00 list.
 
 If the reviewer returns `FAIL`, apply only its bounded minimal order within the configured rework
 budget, rerun affected verification, and invoke a fresh reviewer Task. After exhaustion, use the

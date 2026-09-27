@@ -645,3 +645,190 @@ def test_checkpoint_snapshot_fails_closed_on_out_of_scope_path(tmp_path: Path) -
         (repo / "build" / "ap-029-test" / "snapshot.json").read_text(encoding="utf-8")
     )
     assert payload["out_of_scope_paths"] == ["unexpected.txt"]
+
+
+def _pilot00_review_policy() -> dict[str, str]:
+    text = _read(PROTOCOL)
+    start = "<!-- PILOT00_ORCHESTRATOR_REVIEW_START -->"
+    end = "<!-- PILOT00_ORCHESTRATOR_REVIEW_END -->"
+    body = text.split(start, 1)[1].split(end, 1)[0]
+    fields: dict[str, str] = {}
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        fields[key.strip()] = value.strip()
+    return fields
+
+
+def classify_pilot00_orchestrator_review(facts: dict[str, Any]) -> dict[str, str]:
+    """PILOT00-only substitute. Not a native runtime or control-plane profile."""
+
+    policy = _pilot00_review_policy()
+    packages = set(policy["scope_packages"].split())
+    rejected = {
+        "label": "REJECTED",
+        "verdict": "FAIL",
+        "evidence_profile": "UNVERIFIED",
+        "runtime_attested": "false",
+        "control_plane_pinned": "false",
+    }
+
+    def block(reason: str) -> dict[str, str]:
+        return {**rejected, "reason": reason}
+
+    if facts.get("native_role_result") != "UNAVAILABLE":
+        return block("native role was not explicitly UNAVAILABLE")
+    if facts.get("package") not in packages:
+        return block("wrong package")
+    if facts.get("authorization_source") != policy["known_authorization"]:
+        return block("unknown authorization")
+    if policy.get("target_source") != "frozen_checkpoint_contract" or "expected_target" in policy:
+        return block("foreign target")
+    frozen_target = str(facts.get("contract_target_root") or "")
+    actual_target = str(facts.get("target_root") or "")
+    if not frozen_target or actual_target != frozen_target:
+        return block("foreign target")
+    if not facts.get("separate_reviewer") or not facts.get("separate_context"):
+        return block("not a separate reviewer")
+    author = str(facts.get("author_id") or "")
+    reviewer = str(facts.get("reviewer_id") or "")
+    implementer = str(facts.get("implementer_id") or "")
+    if not author or not reviewer or author == reviewer:
+        return block("same author")
+    if not implementer or implementer == reviewer:
+        return block("same implementer")
+    consumed = facts.get("substitute_attempts_for_role_need")
+    limit_text = policy.get("max_substitutes_per_role_need")
+    if isinstance(consumed, bool) or not isinstance(consumed, int) or not str(limit_text).isdigit():
+        return block("substitute already used")
+    if consumed < 0 or consumed >= int(limit_text):
+        return block("substitute already used")
+    if facts.get("mutation_detected") or facts.get("pre_fingerprint") != facts.get("post_fingerprint"):
+        return block("mutation")
+    if not facts.get("pre_fingerprint") or not facts.get("post_fingerprint"):
+        return block("mutation")
+    if facts.get("contradictory_metadata"):
+        return block("contradictory metadata")
+    if facts.get("human_gate_open") and facts.get("verdict") == "PASS":
+        return block("open human gate as PASS")
+    if not facts.get("agent_id") or not facts.get("readonly"):
+        return block("missing separate reviewer evidence")
+    if "requested_model" not in facts or "observed_model" not in facts:
+        return block("contradictory metadata")
+    if facts.get("contract_sha256") != facts.get("expected_contract_sha256"):
+        return block("contradictory metadata")
+    if facts.get("diff_sha256") != facts.get("expected_diff_sha256"):
+        return block("contradictory metadata")
+    if facts.get("label") != policy["label"]:
+        return block("wrong label")
+    if facts.get("claims_runtime_attested") or facts.get("claims_control_plane"):
+        return block("false runtime attestation")
+    if facts.get("verdict") != "PASS":
+        return block("verdict is not PASS")
+    return {
+        "label": "INDEPENDENT_ORCHESTRATOR_REVIEW",
+        "verdict": "PASS",
+        "reason": "substitute evidence complete",
+        "evidence_profile": "INDEPENDENT_ORCHESTRATOR_REVIEW",
+        "runtime_attested": "false",
+        "control_plane_pinned": "false",
+    }
+
+
+def _valid_orchestrator_review() -> dict[str, Any]:
+    policy = _pilot00_review_policy()
+    return {
+        "native_role_result": "UNAVAILABLE",
+        "package": "PILOT00-AUTONOMY-AMENDMENT",
+        "authorization_source": policy["known_authorization"],
+        "target_root": r"I:\Projekte\QMToolV7\build\worktrees\ap-029-pilot00",
+        "contract_target_root": r"I:\Projekte\QMToolV7\build\worktrees\ap-029-pilot00",
+        "separate_reviewer": True,
+        "separate_context": True,
+        "author_id": "author-1",
+        "implementer_id": "implementer-1",
+        "reviewer_id": "orchestrator-review-9",
+        "substitute_attempts_for_role_need": 0,
+        "mutation_detected": False,
+        "pre_fingerprint": "pre",
+        "post_fingerprint": "pre",
+        "contradictory_metadata": False,
+        "human_gate_open": False,
+        "agent_id": "task-real-1",
+        "readonly": True,
+        "requested_model": "gpt-5.6-terra",
+        "observed_model": "UNAVAILABLE",
+        "contract_sha256": "contract",
+        "expected_contract_sha256": "contract",
+        "diff_sha256": "diff",
+        "expected_diff_sha256": "diff",
+        "label": "INDEPENDENT_ORCHESTRATOR_REVIEW",
+        "claims_runtime_attested": False,
+        "claims_control_plane": False,
+        "verdict": "PASS",
+    }
+
+
+def test_pilot00_orchestrator_review_accepts_one_separate_readonly_report() -> None:
+    policy = _pilot00_review_policy()
+    assert policy["label"] == "INDEPENDENT_ORCHESTRATOR_REVIEW"
+    assert policy["runtime_attestation"] == "false"
+    assert policy["global_relaxation"] == "false"
+    assert policy["target_source"] == "frozen_checkpoint_contract"
+    assert "expected_target" not in policy
+    assert "INDEPENDENT_ORCHESTRATOR_REVIEW" in _read(SKILL)
+    assert "INDEPENDENT_ORCHESTRATOR_REVIEW" in _read(PROTOCOL)
+    assert "INDEPENDENT_ORCHESTRATOR_REVIEW" in _read(WORKFLOW)
+    result = classify_pilot00_orchestrator_review(_valid_orchestrator_review())
+    assert result["verdict"] == "PASS"
+    assert result["evidence_profile"] == "INDEPENDENT_ORCHESTRATOR_REVIEW"
+    assert result["evidence_profile"] != "RUNTIME_ATTESTED"
+    assert result["evidence_profile"] != "CONTROL_PLANE_PINNED"
+    assert result["runtime_attested"] == "false"
+
+
+def test_pilot00_orchestrator_review_accepts_later_package_frozen_target() -> None:
+    facts = _valid_orchestrator_review()
+    facts["package"] = "PILOT00-SETTINGS-PG"
+    later_target = r"I:\Projekte\QMToolV7\build\worktrees\ap-029-settings-pg"
+    assert later_target != facts["contract_target_root"]
+    facts["target_root"] = later_target
+    facts["contract_target_root"] = later_target
+    result = classify_pilot00_orchestrator_review(facts)
+    assert result["verdict"] == "PASS"
+    assert result["evidence_profile"] == "INDEPENDENT_ORCHESTRATOR_REVIEW"
+
+
+def test_pilot00_orchestrator_review_rejects_forbidden_cases() -> None:
+    cases = {
+        "same author": {"author_id": "same", "reviewer_id": "same"},
+        "not a separate reviewer": {"separate_reviewer": False},
+        "mutation": {"mutation_detected": True, "post_fingerprint": "changed"},
+        "contradictory metadata": {"contradictory_metadata": True},
+        "wrong package": {"package": "WEB01"},
+        "unknown authorization": {"authorization_source": "unknown-order.md"},
+        "open human gate as PASS": {"human_gate_open": True},
+        "foreign target": {"target_root": "I:\\Projekte\\QMToolV7"},
+        "same implementer": {"implementer_id": "orchestrator-review-9"},
+        "substitute already used": {"substitute_attempts_for_role_need": 1},
+    }
+    for needle, changes in cases.items():
+        facts = _valid_orchestrator_review()
+        facts.update(changes)
+        result = classify_pilot00_orchestrator_review(facts)
+        assert result["verdict"] == "FAIL", needle
+        assert needle in result["reason"]
+        assert result["evidence_profile"] != "RUNTIME_ATTESTED"
+        assert result["evidence_profile"] != "CONTROL_PLANE_PINNED"
+    missing_attempt = _valid_orchestrator_review()
+    del missing_attempt["substitute_attempts_for_role_need"]
+    missing_result = classify_pilot00_orchestrator_review(missing_attempt)
+    assert missing_result["verdict"] == "FAIL"
+    assert "substitute already used" in missing_result["reason"]
+    missing_implementer = _valid_orchestrator_review()
+    del missing_implementer["implementer_id"]
+    missing_implementer_result = classify_pilot00_orchestrator_review(missing_implementer)
+    assert missing_implementer_result["verdict"] == "FAIL"
+    assert "same implementer" in missing_implementer_result["reason"]

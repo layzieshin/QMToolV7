@@ -202,6 +202,21 @@ Runden abgeschlossen; eine dritte Runde wird nicht angefordert. PR #56 wurde als
 fuer `quality-gates` und `postgres-usermanagement` erfolgreich, 6/6 Threads waren geloest.
 **PILOT00 bleibt TODO und NOT RUN** bis zu
 separater Freigabe. PILOT00 startet nicht automatisch mit WEB01-PASS.
+Das aktive Vorbereitungspaket ist `PILOT00-LINUX-PLAN`.
+`PILOT00-AUTONOMY-AMENDMENT` dokumentiert die Makrofreigabe vom 2026-09-27.
+Es ist nicht Deployment und nicht die formale Pilotfreigabe.
+`linux-rootless-synthetic` ist `ACCEPTED_LIMITED`. Historischer Stand
+2026-09-26: `PROPOSED / HUMAN_DECISION_REQUIRED`. Windows-Historie und
+Linux-Profil gelten nicht als gegenseitiger PASS. Folgepakete bleiben `NOT RUN`:
+`PILOT00-SETTINGS-PG` (A), `PILOT00-SERVICE-RELEASE` (`B-BUILD`, nicht
+`B-RUNTIME`), `PILOT00-SIGNATURE-RECOVERY` (C),
+`PILOT00-TARGET-RECOVERY-ADAPTER` (D) und `PILOT00-LINUX-INTEGRATION` (E).
+Die Reihenfolge ist C vor D und A–D vor einer dauerhaften Pilotinstanz.
+`B-BUILD` darf vorher nur build-only nach Build-/Codegates gemergt werden und ist keine
+Zielqualifikation. `B-RUNTIME` bleibt `NOT RUN` und blockiert den
+E-Abschluss, bis Realprocess, SIGTERM, Drain, Marker, Locks, Restart,
+Recreate, TLS und Lizenz an genau dem B-Artefakt nachgewiesen sind. Ein
+Gatewaiver dafür ist ausgeschlossen.
 Branch-/Worktree-Cleanup bleibt separat und ist keine Voraussetzung fuer den
 fachlichen WEB01-PASS. INT00 ist `PASS` auf
 `runtime_test_candidate_sha` `8d2e4615b4e52a2113055e7e9113daa1570b78f3` und

@@ -81,6 +81,12 @@ public-contract, security or persistence movement requires the applicable HUMAN_
 `implementer` → independent `checkpoint-reviewer` → configured bounded rework → configured fresh
 `escalation-reviewer`.
 
+For the PILOT00 packages named in `checkpoint-protocol.md`, the native role is
+still preferred. If that role returns explicit `UNAVAILABLE`, one separate
+read-only `INDEPENDENT_ORCHESTRATOR_REVIEW` may fill the same responsibility.
+The author of the diff cannot be that reviewer. The label is not a Terra or Sol
+PASS and not a new budget.
+
 Escalation `FAIL` sets `BLOCKED_HUMAN`; no further automatic repair runs. A missing allowlisted
 file may use Scope Correction only when it is an existing canonical owner directly required by an
 approved criterion and adds no behavior, surface, architecture or technology; otherwise it is
