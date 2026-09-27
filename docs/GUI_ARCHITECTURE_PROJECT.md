@@ -37,8 +37,9 @@ once WEB00 exists, but CLI/operator paths stay valuable for ops and verification
 - No per-module frontend bundles
 
 WEB00 provides the central foundation. WEB01 Documents/Signature product UI is PASS.
-PILOT00 readiness remains TODO / NOT RUN. This architecture document does not approve
-a Linux pilot profile.
+PILOT00 readiness remains TODO / NOT RUN. `linux-rootless-synthetic` is an
+additional bounded PILOT00 option in the profile ADR. This architecture
+document does not record a Linux, Windows, or pilot PASS.
 
 ## Runtime Alignment
 

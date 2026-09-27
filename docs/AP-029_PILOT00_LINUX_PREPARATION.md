@@ -2,32 +2,38 @@
 
 Status: Planning document (P1). Not a pilot qualification.
 Package: `PILOT00-LINUX-PLAN`
-Profile proposal: `linux-rootless-synthetic` in `docs/AP-029_PILOT_PROFILE_ADR.md`
+Amendment: `PILOT00-AUTONOMY-AMENDMENT`
+Profile: `linux-rootless-synthetic` in `docs/AP-029_PILOT_PROFILE_ADR.md`
 Current checkpoint: PILOT00, unchanged, `TODO / NOT RUN`
 Planning base: `8fa8d0a7f6957ef7f532560ed35826b9f9a7be29`
 Unchanged Windows package SHA256: `48EBFE9F4170EC93B60E807F953133463EFD8747CDD118EB4D8866DB99F0CE8D`
 Historical blocker evidence, preserved and not rewritten: `build/ap-029-pilot00/linux-plan/20260926T211200Z/`
+Historical plan evidence, preserved: `build/ap-029-pilot00/linux-plan/20260926T230849Z/FINAL_REPORT.md`
+Amendment source: `Orchestrator_Autonomer_Pilotauftrag_20260927.md` (2026-09-27)
+Amendment package: `PILOT00-AUTONOMY-AMENDMENT`
 
 This document is the versioned preparation owner. It does not deploy, qualify,
 or start PILOT01. P0 wins where this plan proposes a change. The Linux profile
-stays `PROPOSED / HUMAN_DECISION_REQUIRED`.
+`linux-rootless-synthetic` is `ACCEPTED_LIMITED` for PILOT00 only. Windows
+Server remains the production option. This acceptance is not a Windows, pilot,
+or deployment PASS. The 2026-09-26 proposal stays in the historical section.
 
 <!-- PILOT00_LINUX_CONTROL_START -->
 active_preparation: PILOT00-LINUX-PLAN
-preparation_status: PLAN_DOCS_LOCAL
+preparation_status: AMENDMENT_AUTHORIZED_NOT_DEPLOYED
 deployment_status: NOT RUN
 formal_pilot_status: NOT RUN
 current_checkpoint: PILOT00
 current_checkpoint_count: 1
 windows_scm_status: NOT RUN
-linux_profile_status: PROPOSED
-linux_profile_decision: HUMAN_DECISION_REQUIRED
+linux_profile_status: ACCEPTED_LIMITED
+linux_profile_decision: ACCEPTED_ADDITIONAL_PILOT00_PROFILE
 slot2_lab_bypass: forbidden
 automatic_pilot01: forbidden
 settings_pg_blocks_pilot: true
 signature_recovery_blocks_pilot: true
 target_recovery_blocks_pilot: true
-package_order: C before D; A-D before E
+package_order: C before D; A-D before E; B-BUILD before E; B-RUNTIME inside E; waiver forbidden
 dual_write: forbidden
 runtime_ddl: forbidden
 sqlite_product_fallback: forbidden
@@ -44,15 +50,24 @@ rootless_setup_is_deployment: false
 closeout_verdicts: TECHNICAL_PASS, SECURITY_REVIEW_PASS, ARCHITECTURE_REVIEW_PASS, HUMAN_ACCEPTANCE_PASS
 closeout_evidence: NOT RUN
 human_recovery_required: true
-git_approval: separate
-remote_approval: separate
-phase_approval: separate
+git_approval: named-macro-20260927
+remote_approval: named-macro-20260927
+phase_approval: named-macro-20260927
 plan_challenge_status: UNAVAILABLE
 roadmap_architect_status: UNAVAILABLE
 native_role_pass: not-claimed
 control_plane_pinned: false
 runtime_attested: false
 codex_plan_review: HUMAN_AUTHORIZED_INDEPENDENT_CODEX_PLAN_REVIEW
+authorization_source: Orchestrator_Autonomer_Pilotauftrag_20260927.md
+authorization_package: PILOT00-AUTONOMY-AMENDMENT
+amendment_package: PILOT00-AUTONOMY-AMENDMENT
+b_build_status: NOT RUN
+b_runtime_status: NOT RUN
+b_runtime_owner: E
+b_runtime_waiver: forbidden
+b_runtime_gates: realprocess,SIGTERM,drain,marker,locks,restart,recreate,TLS,license
+step0_pre_audit: READY_FOR_STEP_0_IMPLEMENTATION
 <!-- PILOT00_LINUX_CONTROL_END -->
 
 ## Disposition of this planning run
@@ -65,14 +80,14 @@ runtime attestation.
 
 Two separate read-only Codex audits are recorded as
 `HUMAN_AUTHORIZED_INDEPENDENT_CODEX_PLAN_REVIEW`. They are not native Cursor
-role verdicts. Their incorporated result is: the package is executable as a
-plan; Linux stays `PROPOSED / HUMAN_DECISION_REQUIRED`; Q02 has no evidenced
-person and stays `OPEN`; no password manager is assumed; Q01–Q32 are mapped
-including subpoints; UX-D37 and the accessibility smoke are already decided;
-packages A–E stay in the order C before D and A–D before E; new external module
-calls use only `modules/<name>/api.py`; runtime DDL, dual-write, and SQLite
-product fallback stay forbidden. No further reviewer or challenger substitute
-is executed in this run.
+role verdicts. Their incorporated historical result was: the package is
+executable as a plan; Linux was then `PROPOSED / HUMAN_DECISION_REQUIRED`;
+Q02 has no evidenced person and stays `OPEN`; no password manager is assumed;
+Q01–Q32 are mapped including subpoints; UX-D37 and the accessibility smoke
+are already decided; packages A–E stay in the order C before D and A–D before
+E; new external module calls use only `modules/<name>/api.py`; runtime DDL,
+dual-write, and SQLite product fallback stay forbidden. Those historical
+audits are not re-executed here and are not a native role PASS.
 
 Final-audit rework 1 records the verified settings callgraph, keeps decided
 mandatory scope on `DECIDED` with evidence `NOT RUN`, adds the three decision
@@ -87,12 +102,13 @@ green.
 Risk class of the preparation package: HIGH. Requirement traceability is the
 Q01–Q32 matrix below plus the P0 documents it cites. Risk-to-evidence is the
 matrix in the package section. The package integration scenario is specified
-and `NOT RUN`. Plan challenge status is `UNAVAILABLE`, not PASS. Product
-checkpoints stay unstarted until the three decision blocks at the end of
-this document are answered. After those answers, the copyable follow-up order
-is the serial authorization and does not ask the answered questions again.
-That order is still `NICHT AUTORISIERT` in this file. Linux stays
-`PROPOSED / HUMAN_DECISION_REQUIRED` until block 1 is answered.
+and `NOT RUN`. Plan challenge status for native Sol/Terra stays `UNAVAILABLE`,
+not PASS. The 2026-09-27 amendment does not ask the three answer blocks again
+before A. Open fields are classified below. The historical follow-up order
+stays `NICHT AUTORISIERT` in the preserved section. The active sequence is
+authorized only by `Orchestrator_Autonomer_Pilotauftrag_20260927.md` for
+`PILOT00-AUTONOMY-AMENDMENT` and the named later packages. Linux is
+`ACCEPTED_LIMITED`. That is not a Windows, pilot, or deployment PASS.
 
 ## What remains decided
 
@@ -363,9 +379,16 @@ only with lockfile, build, types, Vitest, and browser regression, and without
 `npm audit fix --all`; image has no Git worktree, no secrets, no PyQt, no
 Word COM, and no license issuer; the only start owner is `python -m src.backend`;
 candidate, image, and dist identity are immutable; data volume is separate.
-First build-only tests do not start the product backend and do not mutate the
-pilot data target. SIGTERM, drain, marker, and restart are a later real-process
-gate on the same host. License policy conflict stays unresolved here.
+`B-BUILD` is this build and code scope. Its tests do not start the product
+backend and do not mutate the pilot data target. `B-BUILD` may merge after
+its own build and code gates. That merge is not Linux, license, or deployment
+qualification and is not a pilot PASS.
+`B-RUNTIME` is not part of `B-BUILD` and is not optional or deferred past the
+pilot. It is mandatory in E, against the same release identity, and covers
+real process, SIGTERM, drain, host marker, operation locks, restart, recreate,
+TLS, and the existing strict license binding. `b_runtime_waiver: forbidden`.
+A green `B-BUILD` leaves `b_runtime_status: NOT RUN`. License policy conflict
+stays unresolved here and is not a reason to weaken LICENSE_SPEC.
 
 HIGH risk: MAC-based machine id changes when the container is recreated.
 Evidence: restart and recreate comparison without generating a license.
@@ -412,9 +435,14 @@ mutation on the future execution branch.
 
 ### E. PILOT00-LINUX-INTEGRATION
 
-Binds the same release to A–D. Not an allowlist yet. The follow-up order
-freezes E only after A–D have their own frozen contracts, and only after a
-read-only owner, import, and lifecycle trace of E itself:
+Binds the same release to A, `B-BUILD`, C, and D. Not an allowlist yet.
+E starts only after those packages are integrated. The first E obligation is
+`B-RUNTIME` on that exact artifact: real process, SIGTERM, drain, marker,
+locks, restart, recreate, TLS, and license. Failure blocks E. Build-only
+green is not E readiness. There is no waiver that marks `B-RUNTIME` optional
+or deferred until after the pilot. The follow-up order freezes E only after
+A–D have their own frozen contracts, and only after a read-only owner, import,
+and lifecycle trace of E itself:
 exact Compose project name, private PostgreSQL without a LAN port, separate
 runtime, migration, and restore roles, resource limits without a claim of IO
 isolation, health and readiness, start/stop/diagnose, migration as an operator
@@ -423,7 +451,8 @@ Real rootless gates need a later target approval. Fakes are not a Linux or
 PostgreSQL PASS.
 
 HIGH risk: treating build-only green as target qualification. Evidence: the
-integration scenario below, executed only after A–D.
+integration scenario below, executed only after A, B-BUILD, C, and D, and only
+after B-RUNTIME on that same artifact. `B-RUNTIME` stays `NOT RUN` until then.
 
 ## Package integration scenario
 
@@ -464,8 +493,11 @@ and alarm times are human decisions and measurements. End of pilot plans
 retention, account deactivation, secret withdrawal, and an abort path. This
 plan does not delete volumes.
 
-Git, phase, and remote publication stay separate approvals. This planning
-package does not authorize commit, push, pull request, or merge.
+Git, phase, and remote publication for the named 2026-09-27 sequence are
+authorized by that macro after the applicable gates. They are not authorized
+for any other package. This amendment is not itself a commit, push, or merge
+until those gates are green. Historical separate-approval text stays in the
+preserved section.
 
 ## Q01–Q32 subpoint disposition
 
@@ -1229,9 +1261,12 @@ Recommendations are not approvals. Neighbor PASS does not fill an open row.
 
 ## Entscheidungsblock 1 — Profil/Ausführung
 
-Profilfreigabe und Ausführungsfreigabe sind zwei verschiedene Ja-Worte.
-Linux bleibt `PROPOSED / HUMAN_DECISION_REQUIRED`. Windows Server first bleibt
-P0. PILOT00 bleibt `TODO / NOT RUN`.
+Profilfreigabe und Ausführungsfreigabe bleiben verschiedene Ja-Worte.
+Aktuelle Profilfreigabe: `linux-rootless-synthetic` ist `ACCEPTED_LIMITED`.
+Quelle: `Orchestrator_Autonomer_Pilotauftrag_20260927.md`.
+Paketbindung: `PILOT00-AUTONOMY-AMENDMENT`.
+Windows Server first bleibt P0. PILOT00 bleibt `TODO / NOT RUN`.
+Diese Profilfreigabe ist kein Windows-, Pilot- oder Deployment-PASS.
 
 Bereits entschieden:
 
@@ -1239,30 +1274,21 @@ Bereits entschieden:
 - Keine Echtdaten und keine PILOT01-Freigabe durch diese Planung.
 - Keine neue PyQt-Produktarbeit. CONV00 blockiert PILOT00 nicht.
 - Das historische Windows-VM-Profil wird nicht still zum Linux-Vertrag.
-- Eine Profilfreigabe startet keine Paketänderung und keinen Pilot.
+- Eine Profilfreigabe startet keinen Pilot und kein Deployment.
 
-Nur echte offene Wahlen:
+Aktive Ausführungsfreigabe: die benannte Folge
+`PILOT00-AUTONOMY-AMENDMENT`, dann A, `B-BUILD`, C, D und E einschließlich
+`B-RUNTIME`. Sie gilt nur mit der Quelle und der Paketbindung oben.
+Ein einzelnes Wort `AUTORISIERT` ohne beides ist keine Freigabe.
 
-- Ob `linux-rootless-synthetic` als zusätzliches, begrenztes PILOT00-Profil akzeptiert wird.
-- Ob der P0-Satz Windows Server first in einem separaten Entscheidungsdokument geändert werden soll. Diese Datei ändert ihn nicht.
-
-Empfehlung: `linux-rootless-synthetic` als zusätzliches Profil annehmen und den P0-Satz Windows Server first unverändert lassen. Die Ausführungsfreigabe in diesem Block auf `NEIN` lassen.
-
-Antwort:
-
-```text
-Profilfreigabe linux-rootless-synthetic: <leer>
-P0 Windows Server first unveraendert lassen: <leer>
-Ausführungsfreigabe A-E: NEIN
-```
-
-Spätestes Gate: H-PROFIL, vor der ersten Änderung eines Ausführungspakets.
-Die Profilfreigabe ist nicht die Ausführungsfreigabe.
+Spätestes Gate der Profilannahme: dieser Amendment, vor A.
+Die Profilfreigabe ist nicht die formale `HUMAN_ACCEPTANCE_PASS`.
 
 ## Entscheidungsblock 2 — Zielbetrieb
 
-Profilfreigabe wählt das Profil. Ausführungsfreigabe erlaubt später die
-Zieländerung. Beides ist hier noch offen beziehungsweise `NEIN`.
+Profilfreigabe wählt das Profil. Ausführungsfreigabe der Zielmutation bleibt
+an D und an echte Zielvoraussetzungen gebunden. Beides ist nicht ein leeres
+Sammelfeld vor A.
 
 Bereits entschieden:
 
@@ -1272,33 +1298,27 @@ Bereits entschieden:
 - Kein Dual-Write und kein SQLite-Produktfallback.
 - Versiegeltes Backup enthält PostgreSQL-Dump, Blobinventar, Releaseidentität, Schemaidentität und Checksummenmanifest. Der Nachweis ist `NOT RUN`.
 - Öffentlicher Recovery-Owner ist das Operator-Kommando. Guards und die Pflichtnegativtests sind entschieden. Die Personen in Q02 und Q14-17 fehlen.
-- Reihenfolge: C vor D, A–D vor E. B darf build-only früher laufen und ist dann kein Deployment-PASS.
+- Reihenfolge: C vor D, A–D vor E. `B-BUILD` darf build-only früher laufen und ist dann kein Deployment-PASS. `B-RUNTIME` liegt in E und hat kein Waiver.
 - Der Lizenz-Policy-Konflikt gehört in diesen Block und bleibt ungelöst.
 
 Lizenz-Policy-Konflikt, Q17-08. `docs/LICENSE_SPEC.md` sagt, die Basislizenz ist kein Startblocker der Anwendung. `build_platform_ports(fail_closed_license=True)` in `src/backend/bootstrap.py` verlangt `QMTOOL_LICENSE_MODE`, bricht bei fehlgeschlagener Validierung eines anderen Modus ab und lehnt `dev` und `auto` ab, wenn `QMTOOL_RUNTIME_PROFILE` `prod` oder `production` ist. Diese Planung ändert die Lizenzpolicy nicht.
 
-Nur echte offene Werte und Wahlen:
+Feldklassen statt eines Sammelblocks vor A:
 
-- Konkrete Zielwerte, die in der Matrix `OPEN` sind, weil der Wert fehlt: PostgreSQL-Version, Host, Port, Datenbankname, Rollen, TLS, Volumes, FQDN, Ressourcen, Patch- und Rebootfenster.
-- Die Wahl zu Q17-08. Sie ist keine schon getroffene Policyänderung.
+- PostgreSQL-Version und der private Pilot-Host sind `AUTO_DISCOVER`.
+- Eigene Datenbank-, Volumen- und Portnamen mit PILOT00-Besitz sind `ENGINEERING_DEFAULT`.
+- Öffentliche DNS-, Firewall-, Reboot- und Client-Trust-Änderungen sind `CRITICAL_DECISION`.
+- Q09-13, Q09-14 und Q13-04 sind `CRITICAL_DECISION`. Kein Backupziel, keine Remote-Netzfreigabe, kein Dienstkonto und kein Zugriff wird erfunden.
+- Q17-08 bleibt `CRITICAL_DECISION`: keine Policyabsenkung, keine erfundene Lizenz.
 
-Empfehlung: den bereits beschriebenen rootless Host nur als Kandidat behandeln, nicht als Deployment. Q17-08 so beantworten, dass `LICENSE_SPEC` und der bestehende Production-Fail-Closed-Check beide unverändert bleiben und der Production-Check für `prod`/`production` der Pilotstart bleibt. Keine neue Lizenzpolicy in A–E.
-
-Antwort:
-
-```text
-Zielhost-Kandidat servinglunatix rootless bestaetigt: <leer>
-Q17-08 Lizenzpolicy: <leer>
-Fehlende Zielwerte: <leer>
-Ausführungsfreigabe Zielmutation: NEIN
-```
-
-Spätestes Gate: H-TARGET, vor jeder Zielmutation. Die Profilfreigabe ersetzt diese Ausführungsfreigabe nicht.
+Spätestes Gate: die abhängige Ziel- oder Lizenzstufe, nicht pauschal vor A.
+Die Profilfreigabe ersetzt diese Ausführungsfreigabe nicht.
 
 ## Entscheidungsblock 3 — Mensch/Test/Betriebsziele
 
 Profilfreigabe besetzt keine Personen und startet keinen Human-Smoke.
-Die Ausführungsfreigabe für den Smoke ist ein späteres Ja.
+Die formale Ausführungsfreigabe für den Human-Smoke bleibt ein späteres Ja.
+Sie blockiert lokale Implementierung und den technischen Smoke nicht.
 
 Bereits entschieden, Nachweis jeweils `NOT RUN`:
 
@@ -1312,30 +1332,100 @@ Bereits entschieden, Nachweis jeweils `NOT RUN`:
 - `must_change_password=true`, Wechsel beim ersten Login und Session-Widerruf bleiben Pflicht.
 - Empfehlungen zu Dauer, Gruppengröße, RPO, RTO und Node 24 sind keine Freigaben.
 
-Nur echte offene Werte:
+Feldklassen:
 
-- Die Personen in Q02, der Accessibility-Tester, der Screenreader, die PILOT01-Finding-Disposition und die finale Freigabeperson Q31-14.
-- Organisation, Benutzerzahl, Laufzeit, Betriebs- und Ausfallzeiten, Stopp- und Abbruchrecht in Q01.
-- Die Zahlen in Q29. Die genannten 24h und 4h sind Empfehlungen.
-
-Empfehlung: Personenfelder leer lassen, bis ein Mensch einen belegten Namen einträgt. RPO 24h und RTO 4h nur als Empfehlung stehen lassen. Die Ausführungsfreigabe für den Human-Smoke auf `NEIN` lassen.
-
-Antwort:
-
-```text
-Fachlicher Abnehmer: <leer>
-Screenreader: <leer>
-Accessibility-Tester: <leer>
-RPO: <leer>
-RTO: <leer>
-Ausführungsfreigabe Human-Smoke: NEIN
-```
+- Q02-Personen, Q27-03, Q31-14 und Q29-10 sind `CRITICAL_DECISION`. Keine Namen erfunden.
+- Q21-13 Testperson je Konto ist `LATE_HUMAN_INPUT`. Ein Personenfeld ist nie `ENGINEERING_DEFAULT`.
+- Q27-02 Screenreader ist `LATE_HUMAN_INPUT` vor dem Human-Smoke.
+- Q29-01 und Q29-02 sind `ENGINEERING_DEFAULT` nur als synthetische Testziele 24h/4h, keine Betriebszusage und keine Nutzerfreigabe.
+- Q29-03 bis Q29-09 bleiben `LATE_HUMAN_INPUT`.
 
 Spätestes Gate: H-HUMAN, vor dem fachlichen Human-Smoke und vor `HUMAN_ACCEPTANCE_PASS`. Die Profilfreigabe ist nicht diese Ausführungsfreigabe.
 
-## Folgeauftrag A–E
+## Aktive Paketfolge
+
+Status dieses Auftrags: `AUTHORIZED_WITH_SOURCE`.
+authorization_source: `Orchestrator_Autonomer_Pilotauftrag_20260927.md`
+authorization_package: `PILOT00-AUTONOMY-AMENDMENT`
+Profilfreigabe allein wäre keine Ausführungsfreigabe. Diese Folge ist nur gültig, weil Quelle und Paketbindung zusammen stehen.
+
+Reihenfolge: A `PILOT00-SETTINGS-PG`, `B-BUILD` aus `PILOT00-SERVICE-RELEASE`, C `PILOT00-SIGNATURE-RECOVERY`, D `PILOT00-TARGET-RECOVERY-ADAPTER`, E `PILOT00-LINUX-INTEGRATION` einschließlich `B-RUNTIME`. C vor D. A, B-BUILD, C und D vor E. `B-RUNTIME` ist Realprocess, SIGTERM, Drain, Marker, Locks, Restart, Recreate, TLS und Lizenz an genau dem B-Artefakt. Kein Waiver. `B-BUILD` PASS ist kein Deployment-PASS.
+
+Echte Human-Gates bleiben: Personen und formale Abnahme einschließlich Accessibility-Ausführung, fehlende Lizenz oder Secrets oder Client-Trust, fremde Adminrechte, Kosten, öffentliche Exposition, Hostreboot, echtes Disaster-Recovery ohne unabhängiges Backupziel, Architektur außerhalb A–E, Target- oder Besitzabweichung, fehlende unabhängige Evidence, erschöpftes Eskalationsbudget. Alles andere in den vier Klassen blockiert nur sein eigenes spätestes Gate.
+
+<!-- PILOT00_CLASS_RULES_START -->
+order: exact, prefix, default
+default: ENGINEERING_DEFAULT
+CRITICAL_DECISION prefix: Q02- Q04- Q10- Q17-
+CRITICAL_DECISION exact: Q01-13 Q01-14 Q03-09 Q03-23 Q03-24 Q03-27 Q03-29 Q05-01 Q05-02 Q05-03 Q05-04 Q05-05 Q05-06 Q05-07 Q05-09 Q05-10 Q05-11 Q05-12 Q05-13 Q08-16 Q08-20 Q08-21 Q09-03 Q09-13 Q09-14 Q13-01 Q13-02 Q13-04 Q13-18 Q14-17 Q15-18 Q15-19 Q16-01 Q16-02 Q16-03 Q16-04 Q16-05 Q18-02 Q20-02 Q20-12 Q20-13 Q24-05 Q27-03 Q27-19 Q29-10 Q31-14 Q32-05 Q32-08 Q32-09
+LATE_HUMAN_INPUT exact: Q01-08 Q01-09 Q01-10 Q01-11 Q01-12 Q13-06 Q14-13 Q14-14 Q14-15 Q18-18 Q19-03 Q19-13 Q21-13 Q23-15 Q23-16 Q24-03 Q27-02 Q29-03 Q29-04 Q29-05 Q29-06 Q29-07 Q29-08 Q29-09 Q32-01 Q32-02 Q32-03 Q32-04 Q32-06 Q32-07 Q32-11
+AUTO_DISCOVER exact: Q03-08 Q03-14 Q03-15 Q03-16 Q05-08 Q06-11 Q06-16 Q06-19 Q06-23 Q06-24 Q06-25 Q11-02 Q11-03 Q24-02
+<!-- PILOT00_CLASS_RULES_END -->
+
+Jede OPEN-Zeile hat genau eine Klasse. Exact schlägt Prefix. Der Rest ist `ENGINEERING_DEFAULT`. Owner und spätestes Gate stehen in der Zeile. Personen, Lizenzen und Zertifikate werden nicht erfunden. Ein OPEN-Feld, dessen Thema `Person` enthält, ist nie `ENGINEERING_DEFAULT`. `CRITICAL_DECISION` blockiert nur das genannte Gate.
+
+## Historische Antwortlage 2026-09-26
+
+Nicht aktiv. Nicht umetikettiert. Der historische Folgeauftrag bleibt unautorisiert.
+
+<!-- PILOT00_HISTORICAL_CONTROL_START -->
+active_preparation: PILOT00-LINUX-PLAN
+preparation_status: PLAN_DOCS_LOCAL
+deployment_status: NOT RUN
+formal_pilot_status: NOT RUN
+current_checkpoint: PILOT00
+current_checkpoint_count: 1
+windows_scm_status: NOT RUN
+linux_profile_status: PROPOSED
+linux_profile_decision: HUMAN_DECISION_REQUIRED
+slot2_lab_bypass: forbidden
+automatic_pilot01: forbidden
+settings_pg_blocks_pilot: true
+signature_recovery_blocks_pilot: true
+target_recovery_blocks_pilot: true
+package_order: C before D; A-D before E
+dual_write: forbidden
+runtime_ddl: forbidden
+sqlite_product_fallback: forbidden
+external_module_calls: modules/<name>/api.py
+ux_d37: accepted-limited
+accessibility_smoke: included
+accessibility_evidence: NOT RUN
+greenfield: required
+synthetic_data: required
+first_password_change: required
+signature_identity: own-authentication
+recommendations_are_approvals: false
+rootless_setup_is_deployment: false
+closeout_verdicts: TECHNICAL_PASS, SECURITY_REVIEW_PASS, ARCHITECTURE_REVIEW_PASS, HUMAN_ACCEPTANCE_PASS
+closeout_evidence: NOT RUN
+human_recovery_required: true
+git_approval: separate
+remote_approval: separate
+phase_approval: separate
+plan_challenge_status: UNAVAILABLE
+roadmap_architect_status: UNAVAILABLE
+native_role_pass: not-claimed
+control_plane_pinned: false
+runtime_attested: false
+codex_plan_review: HUMAN_AUTHORIZED_INDEPENDENT_CODEX_PLAN_REVIEW
+<!-- PILOT00_HISTORICAL_CONTROL_END -->
+
+Historische Profilfreigabe: `<leer>`
+Historische Ausführungsfreigabe: `<leer>`
+Historischer Zielhost: `<leer>`
+Historische Lizenzpolicy: `<leer>`
+Historische Zielwerte: `<leer>`
+Historischer fachlicher Abnehmer: `<leer>`
+Historischer Screenreader: `<leer>`
+Historischer Accessibility-Tester: `<leer>`
+Historisches RPO: `<leer>`
+Historisches RTO: `<leer>`
 
 Status dieses Auftrags: `NICHT AUTORISIERT`.
+
+## Folgeauftrag A–E — historisch, nicht ausführen
+
 Den folgenden Block nicht ausführen, solange dieses Wort hier steht oder ein Antwortfeld `<leer>` ist.
 Profilfreigabe allein ist keine Ausführungsfreigabe.
 

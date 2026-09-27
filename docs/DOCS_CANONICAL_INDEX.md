@@ -29,7 +29,7 @@ This file defines document priority and decision authority for the repository.
 - `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md` — local Cursor-native work-package operation guide
 - `docs/MASTER_ORCHESTRATION_ROADMAP.md` — active work-package steering (planning only; P0 architecture docs win on boundaries)
 - `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` — Web/PostgreSQL target architecture and executable checkpoint ledger
-- `docs/AP-029_PILOT_PROFILE_ADR.md` — proposed `linux-rootless-synthetic` profile; `PROPOSED / HUMAN_DECISION_REQUIRED`; not P0 until a human accepts it
+- `docs/AP-029_PILOT_PROFILE_ADR.md` — additional bounded PILOT00 profile `linux-rootless-synthetic`; current status `ACCEPTED_LIMITED`; historical 2026-09-26 status `PROPOSED / HUMAN_DECISION_REQUIRED`; remains P1; Windows Server first stays P0 in operations; not a pilot or deployment PASS
 - `docs/AP-029_PILOT00_LINUX_PREPARATION.md` — PILOT00 preparation plan and Q01–Q32 disposition; planning only; P0 and the transition ledger win
 - `docs/WEBCLIENT_UX_CONTRACT_GAP_MATRIX.md` — current support, WEB01 blockers, deferred UX targets, and historical disposition
 - `docs/DOCUMENTS_ARCHITECTURE_CONTRACT.md`

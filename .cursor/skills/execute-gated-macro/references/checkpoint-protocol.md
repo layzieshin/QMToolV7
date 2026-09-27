@@ -83,6 +83,37 @@ Accept Gate E only when `evidence_profile` is
 `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED` and `reviewer_verdict` is `PASS`. Treat
 `CONTROL_PLANE_PINNED` as control-plane binding, never as observed runtime attestation. If
 `evidence_profile` is `UNVERIFIED` or fingerprints diverge, Gate E is blocked.
+For a package named in the `PILOT00_ORCHESTRATOR_REVIEW` marker only, Gate E may also be accepted
+when the label is `INDEPENDENT_ORCHESTRATOR_REVIEW`, the native role was explicitly
+`UNAVAILABLE`, and the substitute evidence below is complete. That label is not
+`RUNTIME_ATTESTED` and not `CONTROL_PLANE_PINNED`.
+
+Required substitute evidence when the native role is explicitly unavailable: real agent
+or task id, separate context, required `author_id`, `implementer_id`, and `reviewer_id`
+with the reviewer different from both the author and the implementer, readonly, no
+mutation, identical pre/post fingerprints, requested and observed model recorded
+separately, contract hash, diff hash, package inside the configured PILOT00 list,
+known authorization source, `target_root` equal to `target_root` in that package's
+frozen checkpoint contract, and no open human gate combined with verdict PASS.
+Reject same author, reviewer equal to implementer, missing implementer id, missing
+separate reviewer, mutation, contradictory metadata, wrong package, unknown
+authorization, open human gate as PASS, and a foreign target. The marker does not
+name one worktree for every package. Step 0 uses the frozen target of this
+preparation worktree. Packages A–E use the frozen target of their own later package
+worktree. `substitute_attempts_for_role_need` is the already-consumed count for that
+role need: zero may pass once, and a missing or already-consumed count fails closed.
+One substitute per role need. No new budget counter.
+
+<!-- PILOT00_ORCHESTRATOR_REVIEW_START -->
+scope_packages: PILOT00-AUTONOMY-AMENDMENT PILOT00-SETTINGS-PG PILOT00-SERVICE-RELEASE PILOT00-SIGNATURE-RECOVERY PILOT00-TARGET-RECOVERY-ADAPTER PILOT00-LINUX-INTEGRATION
+label: INDEPENDENT_ORCHESTRATOR_REVIEW
+known_authorization: Orchestrator_Autonomer_Pilotauftrag_20260927.md
+target_source: frozen_checkpoint_contract
+max_substitutes_per_role_need: 1
+runtime_attestation: false
+control_plane_attestation: false
+global_relaxation: false
+<!-- PILOT00_ORCHESTRATOR_REVIEW_END -->
 
 Required reviewer content fields: `agent_name`, `configured_model`,
 `requested_model`, `observed_runtime_model`, `observed_reasoning`, `evidence_profile`,

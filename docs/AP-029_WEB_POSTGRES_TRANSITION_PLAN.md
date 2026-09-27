@@ -634,9 +634,9 @@ separat freizugeben.
 ### PILOT00 — Pilot readiness
 
 - **Ziel:** Security, Restore, Deployment, Migration, Betrieb, Human-Smoke.
-- **Aktives Vorbereitungspaket:** `PILOT00-LINUX-PLAN` ist lokale Planung und weder Deployment noch formale Pilotfreigabe. Owner: `docs/AP-029_PILOT00_LINUX_PREPARATION.md`. Profilvorschlag `linux-rootless-synthetic` ist `PROPOSED / HUMAN_DECISION_REQUIRED` (`docs/AP-029_PILOT_PROFILE_ADR.md`). Windows-SCM bleibt `NOT RUN` und ist kein Linux-PASS.
+- **Aktives Vorbereitungspaket:** `PILOT00-LINUX-PLAN` bleibt der Vorbereitungsowner. `PILOT00-AUTONOMY-AMENDMENT` (Quelle `Orchestrator_Autonomer_Pilotauftrag_20260927.md`) nimmt `linux-rootless-synthetic` als zusätzliches begrenztes PILOT00-Profil an (`ACCEPTED_LIMITED`, historisch `PROPOSED / HUMAN_DECISION_REQUIRED`). Das ist weder Deployment noch formale Pilotfreigabe und kein Windows-PASS. Owner: `docs/AP-029_PILOT00_LINUX_PREPARATION.md`. Windows-SCM bleibt `NOT RUN` und ist kein Linux-PASS.
 - **Ausschlüsse:** Echtdaten ohne menschliche Freigabe. Kein automatisches PILOT01. Kein Slot-2- oder Lab-Bypass.
-- **Vorbedingungen:** WEB01 PASS; produktionsnahe, aber isolierte Zielumgebung. Blockierend und `NOT RUN`: `PILOT00-SETTINGS-PG`, `PILOT00-SIGNATURE-RECOVERY` und `PILOT00-TARGET-RECOVERY-ADAPTER`. Reihenfolge: C vor D; A–D vor `PILOT00-LINUX-INTEGRATION`; `PILOT00-SERVICE-RELEASE` darf vorher nur build-only qualifiziert werden.
+- **Vorbedingungen:** WEB01 PASS; produktionsnahe, aber isolierte Zielumgebung. Blockierend und `NOT RUN`: `PILOT00-SETTINGS-PG`, `PILOT00-SIGNATURE-RECOVERY` und `PILOT00-TARGET-RECOVERY-ADAPTER`. Reihenfolge: C vor D; A–D vor `PILOT00-LINUX-INTEGRATION`. `PILOT00-SERVICE-RELEASE` teilt sich in `B-BUILD` und `B-RUNTIME`. `B-BUILD` darf nach seinen Build-/Codegates gemergt werden und ist keine Linux-, Lizenz- oder Deploymentqualifikation. `B-RUNTIME` (Realprocess, SIGTERM, Drain, Marker, Locks, Restart, Recreate, TLS, Lizenz) liegt zwingend in E und hat kein Gatewaiver.
 - **Gates:** Threat-/Security-Review; Restore-Drill; Cutover-Dry-run; Dienst/HTTPS;
   Browser-Human-Smoke; Operator-Runbook; Monitoring/Diagnose; Lizenz-/Deploymentprüfung.
 - **Fail-fast:** erster technischer oder menschlicher Pflichtfehler stoppt; kein Echtdatenlauf.

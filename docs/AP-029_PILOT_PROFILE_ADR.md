@@ -1,15 +1,20 @@
-# ADR proposal: limited pilot profile `linux-rootless-synthetic`
+# ADR: limited pilot profile `linux-rootless-synthetic`
 
-Status: Proposed (not P0)
-Decision status: `PROPOSED / HUMAN_DECISION_REQUIRED`
+Status: Accepted for PILOT00 only (not P0, not a qualification PASS)
+Decision status: `ACCEPTED_LIMITED`
+Historical decision status at 2026-09-26: `PROPOSED / HUMAN_DECISION_REQUIRED`
+Accepted on: 2026-09-27
+Acceptance source: `Orchestrator_Autonomer_Pilotauftrag_20260927.md`
+Acceptance package: `PILOT00-AUTONOMY-AMENDMENT`
 Valid as proposal from: 2026-09-26
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
 Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
 Preparation owner: `docs/AP-029_PILOT00_LINUX_PREPARATION.md`
-Supersedes nothing until a human accepts this proposal.
+Supersedes nothing in the production operations decision.
 
 P0 operations still say Windows Server first. This file does not amend that
-decision. It asks for one additional, bounded pilot profile.
+decision. It records one additional, bounded PILOT00 profile. The historical
+proposal text below is kept. Acceptance is not a Windows, pilot, or deployment PASS.
 
 ## Context
 
@@ -31,11 +36,13 @@ the preparation owner: platform settings still open SQLite at backend start,
 sealed backups do not cover signature assets or the signature master key, and
 there is no qualified Linux release or pilot target guard.
 
-## Decision proposed
+## Decision
 
 Add a bounded profile id `linux-rootless-synthetic` for PILOT00 only.
+The 2026-09-27 macro accepts that addition for the named PILOT00 sequence.
+Historical status remains `PROPOSED / HUMAN_DECISION_REQUIRED` and is not relabeled as a PASS.
 
-If a human accepts it:
+On acceptance:
 
 - The pilot client stays the existing webclient. PostgreSQL stays the only
   productive datastore. Data stays synthetic and greenfield. PDF-first stays.
@@ -49,24 +56,27 @@ If a human accepts it:
   container/service contract around the existing `python -m src.backend`
   owner. No second server is introduced.
 - Package order stays: signature recovery before the target recovery adapter;
-  settings cutover, service release, signature recovery, and the target
-  recovery adapter before a durable pilot instance. Build-only release checks
-  may precede target mutation.
+  settings cutover, B-BUILD, signature recovery, and the target recovery
+  adapter before E. B-RUNTIME (real process, SIGTERM, drain, marker, locks,
+  restart, recreate, TLS, and license) is mandatory inside E and is not a
+  waiver. Build-only release checks are not target qualification.
 - External module calls from new operator or test adapters stay on
   `modules/<name>/api.py`. No runtime DDL, no dual-write, and no SQLite
   product fallback.
 
-If a human rejects it, PILOT00 continues under the unchanged Windows package.
-The rootless host remains an unused precondition, not a failed Windows gate.
+Historical rejection path, not the current decision: a rejection would have
+left PILOT00 on the unchanged Windows package. The rootless host would have
+stayed an unused precondition, not a failed Windows gate.
 
 ## Consequences
 
-Acceptance is a P0-adjacent operations amendment and needs an explicit human
-decision before product implementation. This planning package does not grant
-that acceptance.
+Acceptance is recorded by `PILOT00-AUTONOMY-AMENDMENT` and is limited to
+PILOT00. It does not change Windows Server first, does not pass Windows SCM,
+ACL, certificate-store, or reboot gates, and does not pass PILOT00.
 
-Rejection blocks Linux implementation and does not block keeping the Windows
-package as the pilot contract.
+The unchanged Windows package remains the production-option contract.
+Rejecting this profile later would block further Linux implementation and
+would not fail a Windows gate. That rejection is not the current decision.
 
 Either outcome leaves PILOT01 blocked until PILOT00 has passed and a separate
 human live-data decision exists.

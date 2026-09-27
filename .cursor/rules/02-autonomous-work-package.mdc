@@ -36,5 +36,11 @@ alwaysApply: true
   Verify findings through the readonly triager before rework; never automate Codex source changes.
   Unavailability follows config and does not weaken internal gates.
 - Ask the user only at the defined HUMAN_GATEs. A manual stop/abort must remain stopped.
+- A PILOT00 package named in the `PILOT00_ORCHESTRATOR_REVIEW` marker may record one
+  `INDEPENDENT_ORCHESTRATOR_REVIEW` after the native role is explicitly
+  `UNAVAILABLE`. That label uses the existing rework budget from
+  `.cursor/agent-system.json`, adds no status enum, and is not a native runtime
+  or control-plane attestation. It does not relax Git, secret, or review checks
+  for any other package.
 - Detailed test selection and Definition of Done stay in `00-agent-workflow.mdc` and
   `docs/TEST_SMOKE_GATES.md`; do not weaken tests or invent missing toolchains.

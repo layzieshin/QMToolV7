@@ -122,7 +122,9 @@ Backend bootstrap still migrates and opens the SQLite settings repository.
 PostgreSQL tables for platform settings already exist from PG00 and are not a
 runtime cutover. The open cutover is `PILOT00-SETTINGS-PG`: no dual-write, no
 SQLite product fallback, no runtime DDL, and no withdrawal of historical PG00
-PASS. Detail: `docs/AP-029_PILOT00_LINUX_PREPARATION.md`.
+PASS. That cutover is package A and is not a Linux or deployment PASS.
+`B-BUILD` does not change this policy. `B-RUNTIME` license and target proofs
+stay in E and are not optional. Detail: `docs/AP-029_PILOT00_LINUX_PREPARATION.md`.
 
 ## Required Change Package (applies to future PostgreSQL schema work and remaining SQLite Ist changes)
 

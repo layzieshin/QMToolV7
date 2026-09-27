@@ -25,7 +25,10 @@ Technische Gates ersetzen keine menschliche Pilotfreigabe.
 deployment nor formal PILOT00 qualification. Windows evidence is not a Linux
 PASS. Slot-2 and the runtime/lab target are not a pilot target and do not gain
 a host-wide exception. A neighbor PASS does not satisfy an open PILOT00 gate.
-Phase, Git, and remote publication stay separate approvals.
+`B-BUILD` docs or image gates are not `B-RUNTIME`. Realprocess, SIGTERM, drain,
+marker, locks, restart, recreate, TLS, and license proofs belong to E and have
+no gate waiver. Outside the named 2026-09-27 PILOT00 sequence, phase, Git, and
+remote publication stay separate approvals.
 
 ## Gate-Gruppen (AP-029)
 

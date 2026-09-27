@@ -57,6 +57,13 @@ come only from `.cursor/agent-system.json`.
 Keep requirement sources, risk matrices, contract bodies and review comments in the owning
 AP/evidence documents, not runtime JSON. This file remains resume/gate state only.
 
+## PILOT00 review substitute
+
+`INDEPENDENT_ORCHESTRATOR_REVIEW` is not a `status` value. Live status stays
+`IDLE`, `RUNNING`, `BLOCKED_HUMAN`, or `DONE`. The substitute is evidence for a
+listed PILOT00 package after an explicit native-role `UNAVAILABLE`. It does not
+attest `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED`.
+
 ## Document integration
 
 Use the existing flat AP structure under `docs/`. Prefer existing ledger/evidence/final sections in

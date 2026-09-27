@@ -55,6 +55,28 @@ Require:
 If the profile is `UNVERIFIED` or runtime metadata contradicts the pin, treat Gate E as blocked and
 stop the macro for that checkpoint.
 
+### PILOT00 orchestrator substitute
+
+This substitute is not a new role, model, budget, or status enum. It applies only to
+packages named in the `PILOT00_ORCHESTRATOR_REVIEW` marker of the checkpoint protocol.
+Prefer the configured native role. On one explicit `UNAVAILABLE` or quota result, do not
+retry that model and do not purchase an upgrade. Exactly one separate read-only
+orchestrator agent may take that same plan-challenge, checkpoint-review, or final-audit
+responsibility if it can read the diff, frozen contract, and primary evidence. It must
+not be the author or implementer of the diff under review. `author_id`, `implementer_id`,
+and `reviewer_id` are all required, and the reviewer must differ from both of the others.
+Compare `target_root` with `target_root` in that package's frozen checkpoint contract.
+Do not use one global worktree for every PILOT00 package. `substitute_attempts_for_role_need`
+fail-closes a second substitute for the same role need. Record the result only as
+`INDEPENDENT_ORCHESTRATOR_REVIEW`: real agent or task id, separate context, requested
+and observed model kept distinct, per-criterion findings, verdict, contract hash, diff
+hash, and identical pre/post fingerprints. Do not label it `RUNTIME_ATTESTED`,
+`CONTROL_PLANE_PINNED`, Terra, or Sol. The same rework and review budget applies.
+No second substitute and no search for another platform. Missing primary evidence or
+no reachable independent instance stops that gate as a capability gap. An open human
+gate, a foreign target, a package outside the list, or an unknown authorization cannot
+be recorded as PASS.
+
 ## Execution
 
 1. Confirm branch/base/HEAD, empty staging, foreign changes, current ledger checkpoint and exact

@@ -100,6 +100,10 @@ applicable `HUMAN_GATE`. Never silently edit acceptance criteria after implement
    violates an existing acceptance criterion, demonstrates a realistic security/data-integrity
    bypass, or was introduced by the rework. Other hardening ideas are journaled as non-blocking
    follow-ups and do not trigger another rework.
+7. For packages named in the `PILOT00_ORCHESTRATOR_REVIEW` marker, prefer the
+   native role once. On explicit `UNAVAILABLE`, accept one `INDEPENDENT_ORCHESTRATOR_REVIEW`
+   under `execute-gated-macro` instead of treating that quota gap as `BLOCKED_HUMAN`.
+   The substitute is not a native runtime attestation and uses the existing budget.
 
 ### REWORK AND ESCALATION
 

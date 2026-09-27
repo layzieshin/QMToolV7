@@ -28,14 +28,15 @@ technical contract is not a Windows-SCM, LAN, firewall, certificate-store, packa
 human-acceptance, or merge proof; those deployment effects remain PILOT00 or later gates.
 Legacy SQLite/desktop commands are retained only in their explicitly marked sections.
 
-### Proposed additional pilot profile (not a Windows PASS)
+### Additional bounded pilot profile (not a Windows PASS)
 
-`docs/AP-029_PILOT_PROFILE_ADR.md` proposes `linux-rootless-synthetic` as
+`docs/AP-029_PILOT_PROFILE_ADR.md` accepts `linux-rootless-synthetic` as
+`ACCEPTED_LIMITED` for PILOT00 only. Historical decision status at 2026-09-26:
 `PROPOSED / HUMAN_DECISION_REQUIRED`. Windows Server remains the decided first
 production option in this document. Windows SCM, ACL, and reboot gates stay
-`NOT RUN`. A later Linux result would qualify only that profile. Rootless host
-preparation is not deployment and not PILOT00 qualification. The preparation
-owner is `docs/AP-029_PILOT00_LINUX_PREPARATION.md`.
+`NOT RUN`. A Linux result qualifies only that profile and is not a Windows
+readiness PASS. Rootless host preparation is not deployment and not PILOT00
+qualification. The preparation owner is `docs/AP-029_PILOT00_LINUX_PREPARATION.md`.
 
 ## Backend service host (OPS00-A/B; implemented uninstalled contract)
 

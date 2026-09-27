@@ -75,6 +75,128 @@ def parse_control(text: str) -> dict[str, str]:
     return fields
 
 
+def _marked(text: str, start: str, end: str) -> str:
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise PlanContractError(f"marker {start} must appear exactly once")
+    return text.split(start, 1)[1].split(end, 1)[0]
+
+
+def assert_historical_proposal(text: str) -> None:
+    body = _marked(
+        text,
+        "<!-- PILOT00_HISTORICAL_CONTROL_START -->",
+        "<!-- PILOT00_HISTORICAL_CONTROL_END -->",
+    )
+    fields: dict[str, str] = {}
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        fields[key.strip()] = value.strip()
+    if fields.get("linux_profile_status") != "PROPOSED":
+        raise PlanContractError("historical profile must stay PROPOSED")
+    if fields.get("linux_profile_decision") != "HUMAN_DECISION_REQUIRED":
+        raise PlanContractError("historical decision must stay HUMAN_DECISION_REQUIRED")
+    if fields.get("preparation_status") != "PLAN_DOCS_LOCAL":
+        raise PlanContractError("historical preparation status changed")
+    if fields.get("git_approval") != "separate":
+        raise PlanContractError("historical git approval changed")
+    if "PROPOSED / HUMAN_DECISION_REQUIRED" not in text:
+        raise PlanContractError("historical proposed phrase missing")
+
+
+CLASSES = {
+    "ENGINEERING_DEFAULT",
+    "AUTO_DISCOVER",
+    "LATE_HUMAN_INPUT",
+    "CRITICAL_DECISION",
+}
+SAFETY_FLOOR = {
+    "Q02-14": "CRITICAL_DECISION",
+    "Q16-05": "CRITICAL_DECISION",
+    "Q17-08": "CRITICAL_DECISION",
+    "Q10-12": "CRITICAL_DECISION",
+    "Q09-13": "CRITICAL_DECISION",
+    "Q09-14": "CRITICAL_DECISION",
+    "Q13-01": "CRITICAL_DECISION",
+    "Q13-04": "CRITICAL_DECISION",
+    "Q31-14": "CRITICAL_DECISION",
+    "Q27-03": "CRITICAL_DECISION",
+    "Q27-02": "LATE_HUMAN_INPUT",
+    "Q21-13": "LATE_HUMAN_INPUT",
+    "Q01-08": "LATE_HUMAN_INPUT",
+    "Q06-11": "AUTO_DISCOVER",
+    "Q06-23": "AUTO_DISCOVER",
+    "Q29-01": "ENGINEERING_DEFAULT",
+    "Q29-02": "ENGINEERING_DEFAULT",
+    "Q23-05": "ENGINEERING_DEFAULT",
+}
+
+
+def class_rules(text: str) -> tuple[dict[str, str], list[tuple[str, str]], str]:
+    body = _marked(text, "<!-- PILOT00_CLASS_RULES_START -->", "<!-- PILOT00_CLASS_RULES_END -->")
+    exact: dict[str, str] = {}
+    prefixes: list[tuple[str, str]] = []
+    default = ""
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        ids = value.split()
+        if key == "default":
+            default = value.strip()
+        elif key.endswith(" exact"):
+            klass = key.split()[0]
+            for sp in ids:
+                if sp in exact:
+                    raise PlanContractError(f"duplicate class id {sp}")
+                exact[sp] = klass
+        elif key.endswith(" prefix"):
+            klass = key.split()[0]
+            for prefix in ids:
+                prefixes.append((prefix, klass))
+    if default not in CLASSES:
+        raise PlanContractError("class default missing")
+    return exact, prefixes, default
+
+
+def classify_open_field(sp: str, exact: dict[str, str], prefixes: list[tuple[str, str]], default: str) -> str:
+    if sp in exact:
+        return exact[sp]
+    matches = [klass for prefix, klass in prefixes if sp.startswith(prefix)]
+    if len(matches) > 1:
+        raise PlanContractError(f"{sp} matches multiple prefixes")
+    if len(matches) == 1:
+        return matches[0]
+    return default
+
+
+def assert_field_classes(text: str) -> None:
+    exact, prefixes, default = class_rules(text)
+    sections = parse_subpoints(text)
+    for rows in sections.values():
+        for row in rows:
+            if row["decision"] != "OPEN":
+                continue
+            klass = classify_open_field(row["sp"], exact, prefixes, default)
+            if klass not in CLASSES:
+                raise PlanContractError(f"{row['sp']} has no decision class")
+            if re.search(r"person", row["topic"], flags=re.IGNORECASE) and klass == "ENGINEERING_DEFAULT":
+                raise PlanContractError(f"{row['sp']} person field is ENGINEERING_DEFAULT")
+            if not row["owner"] or not row["gate"]:
+                raise PlanContractError(f"{row['sp']} is missing owner or gate")
+            expected = SAFETY_FLOOR.get(row["sp"])
+            if expected is not None and klass != expected:
+                raise PlanContractError(f"{row['sp']} class {klass} expected {expected}")
+    for sp, expected in SAFETY_FLOOR.items():
+        found = classify_open_field(sp, exact, prefixes, default)
+        if found != expected:
+            raise PlanContractError(f"safety floor {sp} is {found}")
+
+
 def parse_subpoints(text: str) -> dict[str, list[dict[str, str]]]:
     sections: dict[str, list[dict[str, str]]] = {}
     current: str | None = None
@@ -127,14 +249,14 @@ def assert_preparation_contract(text: str) -> None:
     control = parse_control(text)
     required = {
         "active_preparation": "PILOT00-LINUX-PLAN",
-        "preparation_status": "PLAN_DOCS_LOCAL",
+        "preparation_status": "AMENDMENT_AUTHORIZED_NOT_DEPLOYED",
         "deployment_status": "NOT RUN",
         "formal_pilot_status": "NOT RUN",
         "current_checkpoint": "PILOT00",
         "current_checkpoint_count": "1",
         "windows_scm_status": "NOT RUN",
-        "linux_profile_status": "PROPOSED",
-        "linux_profile_decision": "HUMAN_DECISION_REQUIRED",
+        "linux_profile_status": "ACCEPTED_LIMITED",
+        "linux_profile_decision": "ACCEPTED_ADDITIONAL_PILOT00_PROFILE",
         "slot2_lab_bypass": "forbidden",
         "automatic_pilot01": "forbidden",
         "settings_pg_blocks_pilot": "true",
@@ -154,15 +276,24 @@ def assert_preparation_contract(text: str) -> None:
         "rootless_setup_is_deployment": "false",
         "closeout_evidence": "NOT RUN",
         "human_recovery_required": "true",
-        "git_approval": "separate",
-        "remote_approval": "separate",
-        "phase_approval": "separate",
+        "git_approval": "named-macro-20260927",
+        "remote_approval": "named-macro-20260927",
+        "phase_approval": "named-macro-20260927",
         "plan_challenge_status": "UNAVAILABLE",
         "roadmap_architect_status": "UNAVAILABLE",
         "native_role_pass": "not-claimed",
         "control_plane_pinned": "false",
         "runtime_attested": "false",
         "codex_plan_review": "HUMAN_AUTHORIZED_INDEPENDENT_CODEX_PLAN_REVIEW",
+        "authorization_source": "Orchestrator_Autonomer_Pilotauftrag_20260927.md",
+        "authorization_package": "PILOT00-AUTONOMY-AMENDMENT",
+        "amendment_package": "PILOT00-AUTONOMY-AMENDMENT",
+        "b_build_status": "NOT RUN",
+        "b_runtime_status": "NOT RUN",
+        "b_runtime_owner": "E",
+        "b_runtime_waiver": "forbidden",
+        "b_runtime_gates": "realprocess,SIGTERM,drain,marker,locks,restart,recreate,TLS,license",
+        "step0_pre_audit": "READY_FOR_STEP_0_IMPLEMENTATION",
     }
     for key, value in required.items():
         if control.get(key) != value:
@@ -171,6 +302,16 @@ def assert_preparation_contract(text: str) -> None:
         raise PlanContractError("package order must keep C before D")
     if "A-D before E" not in control.get("package_order", ""):
         raise PlanContractError("package order must keep A-D before E")
+    if "B-RUNTIME inside E" not in control.get("package_order", ""):
+        raise PlanContractError("package order must keep B-RUNTIME inside E")
+    if control.get("b_runtime_waiver") != "forbidden":
+        raise PlanContractError("B-RUNTIME waiver is forbidden")
+    if "authorization_source" not in control or not control["authorization_source"].endswith(
+        "Orchestrator_Autonomer_Pilotauftrag_20260927.md"
+    ):
+        raise PlanContractError("authorization source missing")
+    if control.get("authorization_package") != "PILOT00-AUTONOMY-AMENDMENT":
+        raise PlanContractError("authorization package binding missing")
     if "modules/<name>/api.py" not in control.get("external_module_calls", ""):
         raise PlanContractError("external module calls must stay on api.py")
     for verdict in (
@@ -183,6 +324,8 @@ def assert_preparation_contract(text: str) -> None:
             raise PlanContractError(f"missing closeout verdict {verdict}")
     if control["formal_pilot_status"] == "PASS" or control["deployment_status"] == "PASS":
         raise PlanContractError("preparation must not be recorded as deployment or formal PASS")
+    assert_historical_proposal(text)
+    assert_field_classes(text)
     sections = parse_subpoints(text)
     if list(sections) != list(EXPECTED_COUNTS):
         raise PlanContractError("Q01-Q32 sections are missing, extra, or out of order")
@@ -309,14 +452,22 @@ def assert_decision_evidence_split(
     if positions != sorted(positions):
         raise PlanContractError("decision blocks are out of order")
     follow = text.split(headings[2], 1)[1]
+    if "Status dieses Auftrags: `AUTHORIZED_WITH_SOURCE`." not in follow:
+        raise PlanContractError("active follow-up missing source-bound authorization")
+    if "authorization_package: `PILOT00-AUTONOMY-AMENDMENT`" not in follow:
+        raise PlanContractError("authorization package binding missing")
     if "Status dieses Auftrags: `NICHT AUTORISIERT`." not in follow:
-        raise PlanContractError("A-E follow-up must stay unauthorized")
+        raise PlanContractError("historical follow-up must stay unauthorized")
+    if follow.index("AUTHORIZED_WITH_SOURCE") > follow.index("NICHT AUTORISIERT"):
+        raise PlanContractError("historical unauthorized status was moved ahead of the active authorization")
     for heading in headings:
         block = text.split(heading, 1)[1].split("## ", 1)[0]
         if "Profilfreigabe" not in block or "Ausführungsfreigabe" not in block:
             raise PlanContractError(f"{heading} must separate profile and execution approval")
-        if "<leer>" not in block:
-            raise PlanContractError(f"{heading} answer field must stay unanswered")
+        if "<leer>" in block:
+            raise PlanContractError(f"{heading} must not keep an unanswered blanket field")
+    if follow.count("<leer>") < 8:
+        raise PlanContractError("historical empty answers must stay preserved")
     block_2 = text.split(headings[1], 1)[1].split(headings[2], 1)[0]
     if "Lizenz-Policy-Konflikt" not in block_2 or "LICENSE_SPEC" not in block_2:
         raise PlanContractError("license policy conflict must stay visible in block 2")
@@ -363,6 +514,8 @@ def test_profile_adr_is_proposed_not_a_windows_pass() -> None:
     adr = ADR.read_text(encoding="utf-8")
     plan = PLAN.read_text(encoding="utf-8")
     roadmap = ROADMAP.read_text(encoding="utf-8")
+    assert "ACCEPTED_LIMITED" in adr
+    assert "Historical decision status at 2026-09-26: `PROPOSED / HUMAN_DECISION_REQUIRED`" in adr
     assert "PROPOSED / HUMAN_DECISION_REQUIRED" in adr
     assert "linux-rootless-synthetic" in adr
     assert "Windows Server remains" in adr
@@ -370,11 +523,15 @@ def test_profile_adr_is_proposed_not_a_windows_pass() -> None:
     assert plan.count("Current checkpoint: PILOT00") == 1
     assert "PILOT00-LINUX-PLAN" in plan
     assert "not a qualification PASS" in plan
+    assert "B-RUNTIME" in plan
+    assert "kein Gatewaiver" in plan
     assert "ausschliesslich PILOT00" in roadmap
     assert "PILOT00 bleibt TODO" in roadmap
+    assert "ACCEPTED_LIMITED" in roadmap
     assert "PROPOSED / HUMAN_DECISION_REQUIRED" in roadmap
     assert "gegenseitiger PASS" in roadmap
     assert "C vor D" in roadmap
+    assert "B-RUNTIME" in roadmap
     assert "PILOT00-SIGNATURE-RECOVERY" in roadmap
     assert "build-only" in roadmap
     assert "C vor D" in plan
@@ -384,6 +541,7 @@ def test_profile_adr_is_proposed_not_a_windows_pass() -> None:
     smoke = (DOCS / "TEST_SMOKE_GATES.md").read_text(encoding="utf-8")
     index = (DOCS / "DOCS_CANONICAL_INDEX.md").read_text(encoding="utf-8")
     assert "Windows Server first" in operations
+    assert "ACCEPTED_LIMITED" in operations
     assert "PROPOSED / HUMAN_DECISION_REQUIRED" in operations
     assert "NOT RUN" in operations
     assert "PILOT00-SETTINGS-PG" in database
@@ -594,3 +752,32 @@ def test_decision_evidence_regressions_fail() -> None:
         1,
     )
     _reject(authorized, "unauthorized")
+    unbound = good.replace(
+        "authorization_package: PILOT00-AUTONOMY-AMENDMENT",
+        "authorization_package: UNKNOWN",
+        1,
+    )
+    _reject(unbound, "authorization_package")
+    missing_source = good.replace(
+        "authorization_source: Orchestrator_Autonomer_Pilotauftrag_20260927.md",
+        "authorization_source: unknown-order.md",
+        1,
+    )
+    _reject(missing_source, "authorization_source")
+    waived = good.replace("b_runtime_waiver: forbidden", "b_runtime_waiver: allowed", 1)
+    _reject(waived, "waiver")
+    relabeled = good.replace("linux_profile_status: PROPOSED", "linux_profile_status: PASS", 1)
+    _reject(relabeled, "historical profile")
+    invented_person = good.replace(
+        "| Q02-14 | fachlicher Abnehmer | OPEN | NOT RUN | H-HUMAN | keine belegte Person |",
+        "| Q02-14 | fachlicher Abnehmer | DECIDED | NOT RUN | H-HUMAN | Erika Beispiel |",
+        1,
+    )
+    _reject(invented_person, "Q02-14")
+    rules_start = good.index("CRITICAL_DECISION exact:")
+    rules_end = good.index("\n", rules_start)
+    rules_line = good[rules_start:rules_end]
+    for sp in ("Q09-13", "Q09-14", "Q13-04"):
+        downgraded_line = rules_line.replace(f" {sp}", "", 1)
+        downgraded = good[:rules_start] + downgraded_line + good[rules_end:]
+        _reject(downgraded, f"{sp} class ENGINEERING_DEFAULT expected CRITICAL_DECISION")
