@@ -212,14 +212,26 @@ model remain `UNKNOWN` unless the host exposes them in primary evidence.
 **W0 rework:** `rework_count=2` after this round (round 1: attempt 002; round 2: attempt 003). Counters
 are not reset by relabeling.
 
-**W1 start condition:** W0 complete with independent read-only reviewer **PASS** on the then-current
-contract commit; tracked tree clean; contract SHA256 recorded in W1 `checkpoint-contract.md`.
-**W1 NOT RUN** until that PASS. Status after this rework commit:
-`READY_FOR_INDEPENDENT_W0_REVIEW_R2`.
+**W1 start condition:** W0 complete with independent read-only reviewer **PASS** on contract commit
+`2f577327…` (contract SHA `A3C07ED5…B213DE`). **Met.** One bounded scope correction consumed before
+implementation (see § Plan challenge).
+
+### Plan challenge and scope correction (W1)
+
+| Field | Value |
+| --- | --- |
+| Challenger ID | `/root/agent_cost_w1_challenge` |
+| Mode | read-only |
+| Verdict | `PLAN_REVISION_REQUIRED` |
+| Scope corrections | **1 of 1 consumed** |
+| Correction | Add `.cursor/skills/execute-work-package/SKILL.md` as 19th W1 path (lifecycle owner for package resume/execute) |
+| W0 R2 review | PASS on `2f577327…` / contract `A3C07ED5…B213DE` |
+
+No further scope expansion permitted in W1.
 
 ### W1 — Cursor-first routing (full, test-protected)
 
-**Tracked allowlist:**
+**Tracked allowlist (exact 19 paths):**
 
 - `.cursor/agent-system.json`
 - `.cursor/agents/roadmap-architect.md`
@@ -233,9 +245,10 @@ contract commit; tracked tree clean; contract SHA256 recorded in W1 `checkpoint-
 - `.cursor/skills/apply-agent-profile/SKILL.md`
 - `.cursor/skills/execute-gated-macro/SKILL.md`
 - `.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`
-- `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md` (bounded workflow references only)
-- `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (D15 successor references only)
-- `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md` (status still PLANNED until W3)
+- `.cursor/skills/execute-work-package/SKILL.md`
+- `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`
+- `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
+- `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md`
 - `tests/docs/test_cursor_agent_system.py`
 - `tests/docs/test_cursor_macro_workflow.py`
 - `tests/docs/test_cursor_execution_hygiene.py`
