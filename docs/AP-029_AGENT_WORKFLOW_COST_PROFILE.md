@@ -27,9 +27,9 @@ Source plan: `QMTool_Agent_Workflow_Cursor_First_20260927.md` (2026-09-27; exter
 ## Goal
 
 Reduce routine GPT usage inside Cursor by routing regular execution and read-only exploration to
-Composer 2.5 Standard, routine independent reviews to Grok 4.7 Extra High Standard, and reserving
-GPT/Codex for critical final audit and exhausted technical escalation only — without weakening
-existing authorization, Git, secret, stop, or evidence guards.
+Composer 2.5 Standard, routine independent reviews to `grok-4.7-high` with
+`runtime_reasoning=high`, and reserving GPT/Codex for critical final audit and exhausted technical
+escalation only — without weakening existing authorization, Git, secret, stop, or evidence guards.
 
 ## Non-goals
 
@@ -103,7 +103,7 @@ changed in W0):
 | Area | Owner path(s) | Notes |
 | --- | --- | --- |
 | Role frontmatter | `.cursor/agents/<role>.md` | Six GPT-bound roles today; two Composer roles |
-| Subagent hook | `.cursor/hooks/subagent-start.ps1` | Validates `subagent_model`; catalog/frontmatter = control check only |
+| Subagent / Task hook | `.cursor/hooks.json`, `.cursor/hooks/subagent-start.ps1` | `preToolUse` matcher `^Task$` = supported pre-execution cost-control gate; `subagentStart` = lifecycle audit only; model routing is cost control, not a general security boundary (Git/file/secret/permission guards stay separate) |
 | Main launcher | `.cursor/tools/invoke-cursor-agent.ps1` | No explicit model parameter today |
 | Profile apply | `.cursor/skills/apply-agent-profile/SKILL.md` | Must mirror JSON changes |
 | Macro protocol | `.cursor/skills/execute-gated-macro/SKILL.md`, `references/checkpoint-protocol.md` | D15/Terra hardcodes in tests and protocol |
@@ -121,17 +121,16 @@ Planned **active** mapping after safe activation (not effective until post-W3 tr
 | Responsibility | Host | Planned Cursor model / path | Boundary |
 | --- | --- | --- | --- |
 | Package coordinator, repo-explorer, implementer, git-steward | Cursor native | `composer-2.5[]` (Standard; `fast=false` equivalent) | One writer per worktree |
-| checkpoint-reviewer, plan-challenger, external-review-triager | Cursor native subagent | `grok-4.7[effort=xhigh,fast=false]` (catalog slug `grok-4.7-xhigh` if natively equivalent) | Independent read-only context; no self-approval |
-| roadmap-architect (in-package planning/final audit) | Cursor native | Grok 4.7 xhigh Standard | Fresh final audit context for normal packages |
-| Critical final audit / exhausted escalation | External Codex/ChatGPT-authenticated orchestrator | **Not a Cursor model ID** | Agent-ID, separate context, contract, full diff, primary evidence; no Cursor-GPT fallback |
+| checkpoint-reviewer, plan-challenger, external-review-triager | Cursor native subagent | Ladder attempt 1 `grok-4.7-high` → `cursor-grok-4.6-xhigh` → `cursor-grok-4.6-high` → `gpt-5.6-terra-high` after explicit prior `UNAVAILABLE` only | Independent read-only context; no self-approval; evidenced ladder only |
+| roadmap-architect (in-package planning/final audit) | Cursor native | Same ladder shape ending with `gpt-5.6-sol-high` after explicit prior `UNAVAILABLE` only | Fresh final audit context for normal packages |
+| Critical final audit / exhausted escalation | External Codex/ChatGPT-authenticated orchestrator | **Not a Cursor model ID** | Agent-ID, separate context, contract, full diff, primary evidence; Cursor GPT only after ladder exhaustion, then external Codex if Cursor GPT unavailable |
 | User/orchestrator product decisions | Human + external orchestrator | N/A | No second live detail controller of the same Cursor checkpoint |
 
 External orchestrator responsibilities: goal clarification, architecture decisions, package release,
 and critical GPT audit. It must not approve a diff it implemented. It is **not** `gpt-5.6-sol`,
 `gpt-5.6-terra`, `RUNTIME_ATTESTED`, or `CONTROL_PLANE_PINNED`.
 
-Catalog presence of `composer-2.5`, `composer-2.5-fast`, `grok-4.7-xhigh`, and
-`grok-4.7-xhigh-fast` is **availability metadata only**. Token, cost, cache, and actual serving
+Catalog presence of configured ladder models and Fast/Auto variants is **availability metadata only**. Token, cost, cache, and actual serving
 model remain `UNKNOWN` unless the host exposes them in primary evidence.
 
 ## Planning quality
@@ -151,7 +150,7 @@ model remain `UNKNOWN` unless the host exposes them in primary evidence.
 | R-COST-01 | Freeze package contract PLANNED / NOT ACTIVE | This doc + W0 evidence | W3 activation note |
 | R-COST-02 | Exact per-checkpoint tracked allowlists | § Allowlists | W1–W3 commits |
 | R-COST-03 | Composer for routine Cursor execution | Role matrix § | W1 JSON + launcher |
-| R-COST-04 | Grok xhigh Standard for routine reviews | Role matrix § | W1 agents + hook tests |
+| R-COST-04 | `grok-4.7-high` with `runtime_reasoning=high` for routine reviews | Role matrix § | W1 agents + hook tests |
 | R-COST-05 | Critical GPT audit via external Codex host | Host boundaries § | W1 handoff contract |
 | R-COST-06 | No false runtime/cost/cache claims | § Evidence semantics | W2 metrics, W3 canary |
 | R-COST-07 | D15 successor without silent Terra/Sol claims | D15 reference § | W1 tests + docs |
@@ -184,8 +183,8 @@ model remain `UNKNOWN` unless the host exposes them in primary evidence.
 **Scenario:** After W3 PASS, a new MEDIUM-risk docs-only package starts on `main` post-merge.
 
 1. Coordinator launches with explicit Composer 2.5 Standard via updated launcher (W1).
-2. Implementer edits only allowlisted docs; checkpoint-reviewer runs as Grok 4.7 xhigh in a
-   separate context with contract-bound diff review (W1).
+2. Implementer edits only allowlisted docs; checkpoint-reviewer runs as `grok-4.7-high` with
+   `runtime_reasoning=high` in a separate context with contract-bound diff review (W1).
 3. Context manifest from W2 is created at checkpoint start; stale manifest blocks reuse (W2).
 4. Package completes with one checkpoint review instance per attempt; no stacked Codex+Grok+Sol
    final audit for the same inner release (W2).
@@ -229,9 +228,35 @@ implementation (see § Plan challenge).
 
 No further scope expansion permitted in W1.
 
+### W1 capability/process-hygiene correction (separate authorization)
+
+| Field | Value |
+| --- | --- |
+| Checkpoint | `W1-CAPABILITY-PROCESS-HYGIENE` |
+| Authorization | Bounded hygiene correction only; **not** W1 activation or readiness |
+| Scope correction | Add `.cursor/tools/run-pytest-gate.ps1` as 20th W1 path (JUnit gate owner) |
+| Preserved counters | `rework_count=2/2` and `exceptional_recovery=1/1` — **not reset** |
+| Evidence root | `build/agent-cost-01/w1/w1-capability-process-hygiene-001/` |
+| Status | Hygiene edits allowed; **W1 remains blocked** pending fresh evidence and independent review |
+
+Historical exceptional-recovery evidence and its finalizer under
+`build/agent-cost-01/w1/w1-exceptional-recovery-001/` remain read-only history. A future fresh
+finalizer must consume the gate-runner exit code as owner truth; do not overwrite or rerun that
+attempt.
+
+### W1 corrective writer authorization (hooks matcher)
+
+| Field | Value |
+| --- | --- |
+| Checkpoint | `W1-CORRECTIVE-WRITER` |
+| Authorization | Bounded corrective writer only; **not** activation or readiness |
+| Scope correction | Add `.cursor/hooks.json` as 21st W1 path (case-sensitive `beforeShellExecution` matcher owner) |
+| Preserved counters | `rework_count=2/2` and `exceptional_recovery=1/1` — **not reset** |
+| Status | Corrective edits allowed; **W1 remains blocked** pending fresh evidence and independent review |
+
 ### W1 — Cursor-first routing (full, test-protected)
 
-**Tracked allowlist (exact 19 paths):**
+**Tracked allowlist (exact 21 paths):**
 
 - `.cursor/agent-system.json`
 - `.cursor/agents/roadmap-architect.md`
@@ -240,8 +265,10 @@ No further scope expansion permitted in W1.
 - `.cursor/agents/external-review-triager.md`
 - `.cursor/agents/escalation-reviewer.md`
 - `.cursor/agents/git-steward.md`
+- `.cursor/hooks.json`
 - `.cursor/hooks/subagent-start.ps1`
 - `.cursor/tools/invoke-cursor-agent.ps1`
+- `.cursor/tools/run-pytest-gate.ps1`
 - `.cursor/skills/apply-agent-profile/SKILL.md`
 - `.cursor/skills/execute-gated-macro/SKILL.md`
 - `.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`
@@ -262,6 +289,29 @@ new contract fields.
 **Candidate install:** W1 produces the complete `cursor-first` v1 candidate on this branch (including
 `.cursor/agent-system.json` and bound owners). This is qualification material, not activation on
 `main` or for foreign packages.
+
+**W1 implementation status:** scope committed (`0213f23…`); implementation prepared uncommitted for
+external Codex review (`READY_FOR_EXTERNAL_CODEX_W1_REVIEW`). Native smokes and gate evidence under
+`build/agent-cost-01/w1/w1-implementation-001/`. After bounded hygiene correction
+(`W1-CAPABILITY-PROCESS-HYGIENE`), W1 remains **blocked** pending fresh evidence/review;
+`rework_count=2/2` and `exceptional_recovery=1/1` are preserved and not reset by hygiene work.
+
+**W1 successor recovery (2026-09-29):** User authorized one bounded successor-recovery package with
+`successor_recovery_authorized=true` and `successor_recovery_attempt=1/1`. Historical counters remain
+unchanged (`rework_count=2/2`, `exceptional_recovery=1/1`). Tracked repair scope is exactly eight
+owners: `.cursor/agent-system.json`, `.cursor/hooks/subagent-start.ps1`,
+`.cursor/skills/execute-work-package/SKILL.md`, `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md`,
+`docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`, `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`,
+`tests/docs/test_cursor_agent_system.py`, `tests/docs/test_cursor_macro_workflow.py`. Evidence under
+`build/agent-cost-01/w1/w1-successor-recovery-001/`. **Native hook observation (historical failed
+probe; preserved):** on Cursor IDE 3.22.7, native Task `tool_7410bc54-7779-4757-a0e5-bfc17a606db`
+received valid `subagentStart` deny (exit 2, `blocked action`) twice yet still created child
+`8c77cf5c-8a57-4557-8f53-21d719d5a1c3`; `subagentStart` must not be claimed as a proven hard spawn
+blocker. The supported pre-execution cost-control gate is `preToolUse` with matcher `^Task$` (same
+`subagent-start.ps1` owner; `subagentStart` retained as second lifecycle audit). Model routing is
+cost control only; Git, file, secret, and permission guards remain separate and unchanged. This
+repair does not claim activation, total W1 completion, cost savings, cache behavior, or runtime model
+observation; W2 and W3 remain.
 
 ### W2 — Context handoffs, reuse, measurability
 
@@ -360,7 +410,8 @@ Cases 1–12 must be enforced in **real owner tests** (primarily `tests/docs/*` 
 in copied validator logic. W0 documents them; W1–W3 implement and prove them.
 
 1. Configuration, agent frontmatter, invocation, and required model parameters agree.
-2. Grok Standard/xhigh allowed; Fast, wrong effort, unknown variants, and expensive fallback rejected.
+2. `grok-4.7-high` with `runtime_reasoning=high` allowed; Fast, wrong effort, unknown variants,
+   and expensive fallback rejected.
 3. Parent and child model metadata not conflated; missing fields do not produce runtime attestation.
 4. Cursor main start uses explicit allowed Composer path; preserves prompt as one argument and host security settings.
 5. Implementer cannot grant own PASS or Git/merge approval; reviewer mutation blocked.

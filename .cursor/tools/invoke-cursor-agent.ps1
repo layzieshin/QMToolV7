@@ -33,13 +33,78 @@ if (-not $promptText.Trim()) {
     throw "Cursor prompt must not be empty."
 }
 
-$cursor = Get-Command cursor-agent -ErrorAction Stop
-$arguments = @("--print", "--output-format", "text", "--workspace", $resolvedTarget)
-if ($Force) {
-    $arguments += "--force"
+function Format-NativeCommandArgument {
+    param([string]$Value)
+    if ($null -eq $Value) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+    $quoted = '"'
+    $backslashCount = 0
+    foreach ($ch in $Value.ToCharArray()) {
+        if ($ch -eq '\') {
+            $backslashCount++
+        }
+        elseif ($ch -eq '"') {
+            $quoted += ('\' * (($backslashCount * 2) + 1))
+            $quoted += '"'
+            $backslashCount = 0
+        }
+        else {
+            if ($backslashCount -gt 0) {
+                $quoted += ('\' * $backslashCount)
+                $backslashCount = 0
+            }
+            $quoted += $ch
+        }
+    }
+    if ($backslashCount -gt 0) {
+        $quoted += ('\' * ($backslashCount * 2))
+    }
+    $quoted += '"'
+    return $quoted
 }
-$arguments += $promptText
+
+function Invoke-CursorAgentProcess {
+    param(
+        [string]$Executable,
+        [string[]]$ArgumentList
+    )
+    $fileName = $Executable
+    $argsToUse = $ArgumentList
+    if ($Executable -like '*.ps1') {
+        $fileName = (Get-Command powershell.exe -ErrorAction Stop).Source
+        $argsToUse = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Executable) + $ArgumentList
+    }
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $fileName
+    $startInfo.UseShellExecute = $false
+    if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
+        foreach ($arg in $argsToUse) {
+            [void]$startInfo.ArgumentList.Add([string]$arg)
+        }
+    }
+    else {
+        $startInfo.Arguments = ($argsToUse | ForEach-Object { Format-NativeCommandArgument $_ }) -join " "
+    }
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    if ($null -eq $process) {
+        throw "Failed to start cursor-agent."
+    }
+    $process.WaitForExit()
+    return $process.ExitCode
+}
+
+$cursor = Get-Command cursor-agent -ErrorAction Stop
+$argumentList = @(
+    "--print",
+    "--output-format", "text",
+    "--workspace", $resolvedTarget,
+    "--model", "composer-2.5"
+)
+if ($Force) {
+    $argumentList += "--force"
+}
+$argumentList += "--"
+$argumentList += $promptText
 
 Write-Host "Starting Cursor synchronously in: $resolvedTarget"
-& $cursor.Source @arguments
-exit $LASTEXITCODE
+exit (Invoke-CursorAgentProcess -Executable $cursor.Source -ArgumentList $argumentList)

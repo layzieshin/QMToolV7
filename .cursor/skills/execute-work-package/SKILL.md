@@ -88,7 +88,12 @@ applicable `HUMAN_GATE`. Never silently edit acceptance criteria after implement
 
 1. For the first review set `rework_count=0`, `phase=REVIEW`.
 2. Capture the complete diff and pre-review repository fingerprint.
-3. Invoke a fresh custom agent with a task beginning `[ROLE:checkpoint-reviewer]`.
+3. Invoke a fresh custom agent with a task beginning `[ROLE:checkpoint-reviewer]` using the
+   authorized fallback ladder in `.cursor/agent-system.json` `review_model_fallback` when the
+   preferred model is unavailable. Record each attempt (`SUCCESS`, `UNAVAILABLE`, `FAIL_SUBSTANTIVE`)
+   with role, attempt number, requested model, native agent/task id when created, and the exact
+   non-secret unavailability signal. Advance only on explicit unavailability; substantive `FAIL`
+   stops the ladder.
 4. Supply frozen checkpoint contract/hash, preserved amendments, scope corrections, architecture
    rules, complete diff, implementer report, relevant tests and primary evidence. The reviewer
    independently inspects and reruns relevant tests.
@@ -109,13 +114,19 @@ applicable `HUMAN_GATE`. Never silently edit acceptance criteria after implement
 
 - Each normal `FAIL` consumes one `defaults.max_checkpoint_reworks` unit. Send only the reviewer's
   minimal order to `[ROLE:implementer]`, then run a fresh normal review.
-- When that configured budget is exhausted and review still fails, set
-  `phase=ESCALATION_REVIEW`, `escalation_used=true`, and invoke `[ROLE:escalation-reviewer]` up to
-  `defaults.max_escalation_reviews` with the frozen contract/hash, amendments, scope corrections,
-  architecture, complete diff,
-  tests, all findings, and all reworks.
-- Escalation `PASS` advances the checkpoint. Escalation `FAIL` permits no further implementation:
-  set `status=BLOCKED_HUMAN`, `human_gate=true`, preserve its diagnosis/evidence/options, and stop.
+- When that configured budget is exhausted and review still fails, set `phase=ESCALATION_REVIEW`,
+  `escalation_used=true`, and invoke `[ROLE:escalation-reviewer]` up to
+  `defaults.max_escalation_reviews`.
+- Local pre-handoff validation uses `validation_mode=EXTERNAL_CODEX_PRE_HANDOFF` via
+  `.cursor/hooks/subagent-start.ps1` and yields `PRE_HANDOFF_READY` only when structure, route facts,
+  staleness, and hash binding are valid. Do not claim `HANDOFF_READY` before the external result
+  exists.
+- Only after `PRE_HANDOFF_READY`, run the external Codex review in its separate authenticated host.
+- Validate the returned bound result with `validation_mode=EXTERNAL_CODEX_BOUND_REVIEW`, which
+  yields `HANDOFF_READY` or `HANDOFF_INVALID`. The native `escalation-reviewer` performs this
+  read-only validation only; it never grants checkpoint `PASS`/`FAIL`, findings, or merge approval.
+- External `FAIL`, missing, stale, or conflicting evidence sets `BLOCKED_HUMAN`. No Cursor GPT
+  fallback and no Cursor verdict substitute.
 
 Do not reset a counter, disguise retries as diagnostics, weaken assertions, add hidden fallback
 paths, or continue after an unexplained failure. A material new blocker consumes the already
@@ -123,7 +134,8 @@ defined rework budget; renaming it does not create another budget or recursive r
 
 ### CHECKPOINT PASS
 
-Only after independent reviewer or escalation-reviewer `PASS`:
+Only after independent checkpoint-reviewer `PASS`, or after exhausted-rework external Codex path
+above completes with external `PASS` on the bound handoff:
 
 1. Append compact journal evidence: attempts, commands/results, verdicts, final PASS proof.
 2. Set `phase=CHECKPOINT_GIT` and `next_action` to the exact Git action.
@@ -151,20 +163,25 @@ After every checkpoint is green:
 6. Set `gates.full_regression_pass=true` only when integration/N/A, full regression, and applicable
    package/architecture/build gates are green.
 
-## Fresh final architect audit
+## Fresh final audit routing
 
 1. Set `phase=FINAL_AUDIT`.
-2. Invoke a fresh `[ROLE:roadmap-architect]` in `FINAL_AUDIT` mode with original package,
-   requirement sources, frozen contracts/amendments, checkpoints, journal, full base-branch diff,
-   HIGH-risk and package-integration evidence, regression evidence, architecture rules, and final report.
-3. Accept only `FINAL_PASS` or `FINAL_FAIL`.
-4. On `FINAL_FAIL`, issue its concrete bounded order to `[ROLE:implementer]`, increment
-   `final_rework_count`, rerun full regression, and invoke another fresh final audit.
-5. Each final-audit rework consumes the configured final-rework budget; another `FINAL_FAIL` after
-   exhaustion sets `BLOCKED_HUMAN`.
-6. On `FINAL_PASS`, set `gates.final_audit_pass=true`; update the existing roadmap, mark the package
-   complete, and fully prepare the next logical package. Set `phase=NEXT_PACKAGE` only for that
-   preparation. Never implement it automatically.
+2. Determine routing from `.cursor/agent-system.json` `routing`:
+   - **LOW/MEDIUM packages:** invoke one fresh `[ROLE:roadmap-architect]` Grok final audit with
+     original package, requirement sources, frozen contracts/amendments, checkpoints, journal, full
+     base-branch diff, HIGH-risk and package-integration evidence, regression evidence, architecture
+     rules, and final report. Accept only `FINAL_PASS` or `FINAL_FAIL`.
+   - **Critical packages** (including `AGENT-COST-01`): skip duplicate Grok full audit. Require
+     `EXTERNAL_CODEX_BOUND_REVIEW` only via external Codex host with bound contract/diff/evidence.
+     Local hook validation is structure/staleness/hash only. External `FAIL`/missing/stale =>
+     `BLOCKED_HUMAN`. No Cursor verdict substitute.
+3. On internal Grok `FINAL_FAIL`, issue bounded order to `[ROLE:implementer]`, increment
+   `final_rework_count`, rerun full regression, and invoke another fresh final audit per routing.
+4. Each final-audit rework consumes the configured final-rework budget; exhaustion sets
+   `BLOCKED_HUMAN`.
+5. On accepted final audit (`FINAL_PASS` or external Codex `PASS` on bound handoff), set
+   `gates.final_audit_pass=true`; update roadmap when applicable; prepare—but never start—the next
+   package.
 
 ## Final Git and merge
 
@@ -208,7 +225,8 @@ reviewer, never a replacement for checkpoint reviews, integration, regression, f
    Confirmed blockers produce one bundled minimal rework order; Codex itself never changes code and
    `@codex address that feedback` is never automated.
 5. Material late changes invalidate full regression, final audit and CI. Run targeted/relevant/full
-   tests, fresh Sol final audit, finalization commit/push and CI on the new head before the next
+   tests, fresh final audit per configured routing (Grok for normal packages; external Codex for
+   critical packages such as AGENT-COST-01), finalization commit/push and CI on the new head before the next
    configured external-review round. `PASS` becomes `STALE` whenever PR head changes.
 6. Stop after the configured review/rework budgets. Never request another automatic Codex review;
    after a final confirmed rework, keep the new head `STALE` until full regression, a fresh internal

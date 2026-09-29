@@ -43,8 +43,9 @@ mechanism. Reading the agent file or a main-agent self-review is not a reviewer 
 Require:
 
 - every task begins `[ROLE:checkpoint-reviewer]`;
-- selected model exactly `gpt-5.6-terra`;
-- agent frontmatter `model: gpt-5.6-terra`;
+- selected model exactly matches the authorized ladder rung from
+  `.cursor/agent-system.json` `review_model_fallback` (attempt 1 begins at `grok-4.7-high`);
+- agent frontmatter `model: grok-4.7-high` for the first ladder rung;
 - a new agent id captured by the parent from the native Task result and a separate context;
 - `$verify-reports-and-plan`;
 - evidence profile `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED` before accepting a PASS;
@@ -76,6 +77,19 @@ No second substitute and no search for another platform. Missing primary evidenc
 no reachable independent instance stops that gate as a capability gap. An open human
 gate, a foreign target, a package outside the list, or an unknown authorization cannot
 be recorded as PASS.
+
+### AGENT-COST-01 external Codex bound review
+
+Critical final audit and exhausted escalation for `AGENT-COST-01` use
+`EXTERNAL_CODEX_BOUND_REVIEW` from `.cursor/agent-system.json`. This is not the PILOT00
+substitute marker, not a Cursor model ID, and not D15 runtime attestation. Require real
+agent/task id, external host, separate read-only context, author/implementer/reviewer
+separation, package/checkpoint binding, contract/diff/evidence manifest hashes, identical
+pre/post fingerprints, and explicit PASS/FAIL from the external reviewer. Local validators
+check workspace-derived structure and staleness only. Missing, stale, or conflicting handoff
+evidence is `BLOCKED_HUMAN`. External Codex is reachable only after explicit Cursor GPT
+`UNAVAILABLE` on the applicable ladder; substantive reviewer `FAIL` never advances to another
+model or external Codex.
 
 ## Execution
 

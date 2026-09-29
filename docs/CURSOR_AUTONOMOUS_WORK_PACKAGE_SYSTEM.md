@@ -51,7 +51,14 @@ basetemp contract.
 The runtime file is never fachliche documentation.
 
 `.cursor/agent-system.json` is the only normative source for role models and numeric workflow
-limits. Rules, skills and this guide explain behavior; `hooks.json` contains only the
+limits. On branch-local `cursor-first` v3 candidates (AGENT-COST-01 qualification), Composer 2.5
+Standard carries routine execution; Grok review roles use the normalized ladder in
+`review_model_fallback` beginning at attempt 1 `grok-4.7-high` (no hidden attempt 0 and no legacy
+`grok-4.7-xhigh` route);
+critical final audit and exhausted escalation route to external Codex via
+`EXTERNAL_CODEX_BOUND_REVIEW` after the applicable Cursor ladder (and Cursor GPT rung when configured)
+is exhausted with explicit unavailability evidence. `main` and foreign worktrees remain on `balanced` v2 until merge.
+Rules, skills and this guide explain behavior; `hooks.json` contains only the
 Cursor-schema projection required by the platform, protected against drift by contract tests.
 
 ## Planning quality
@@ -63,10 +70,10 @@ security/trust, productive persistence, migration/data loss, public API/transpor
 schema/ownership, concurrency, backup/restore, secrets, deployment and central composition make a
 package at least HIGH risk.
 
-Configured HIGH-risk plans receive the bounded readonly Terra `plan-challenger` pre-mortem. It asks
-whether green planned tests could still miss the confirmed requirement or architecture. Findings
-return once to a fresh Sol Roadmap Architect for an evidenced response; no recursive challenger
-loop is allowed. Missing material requirement sources or unresolved architecture choices are
+Configured HIGH-risk plans receive the bounded readonly `plan-challenger` pre-mortem (Grok under
+`cursor-first`). It asks whether green planned tests could still miss the confirmed requirement or
+architecture. Findings return once to a fresh roadmap architect for an evidenced response; no
+recursive challenger loop is allowed. Missing material requirement sources or unresolved architecture choices are
 HUMAN_GATEs. Running packages are not retroactively reopened; V2 applies prospectively from their
 next not-started checkpoint.
 
@@ -78,8 +85,9 @@ and requirement sources. Reviewer and final audit use that contract. A necessary
 the old snapshot and creates a formal amendment/successor; material fachliche, architecture,
 public-contract, security or persistence movement requires the applicable HUMAN_GATE.
 
-`implementer` → independent `checkpoint-reviewer` → configured bounded rework → configured fresh
-`escalation-reviewer`.
+`implementer` → independent `checkpoint-reviewer` → configured bounded rework → native
+`escalation-reviewer` handoff validation (`HANDOFF_READY`/`HANDOFF_INVALID`) → external Codex
+`EXTERNAL_CODEX_BOUND_REVIEW` when routing requires it.
 
 For the PILOT00 packages named in `checkpoint-protocol.md`, the native role is
 still preferred. If that role returns explicit `UNAVAILABLE`, one separate
@@ -136,11 +144,14 @@ is not represented as external PASS.
 
 ## Cost profile
 
-The balanced model map is centralized in config: Sol for roadmap/architecture, escalation and final
-audit; Terra for checkpoint review, risk-triggered Plan Challenge and finding-triggered external
-triage; Composer standard/non-fast for implementation and exploration; Luna for Git. Do not launch
-a challenger for routine packages, a triager without findings, Codex per checkpoint, repeated
-explorers on the same scope, review rounds beyond config, or full chat transcripts as evidence.
+`.cursor/agent-system.json` is the only normative model-map owner. On the branch-local
+`cursor-first` v3 candidate, Composer 2.5 Standard carries routine execution; Grok review roles use
+the normalized ladder in `review_model_fallback` beginning at `grok-4.7-high`. Critical final audit
+for packages in `routing.ag_packages_critical` routes directly to external Codex; exhausted checkpoint
+escalation follows the applicable configured `checkpoint-reviewer` ladder before external handoff.
+`main` and foreign worktrees remain on historical `balanced` v2 until merge. Do not launch a
+challenger for routine packages, a triager without findings, Codex per checkpoint, repeated explorers
+on the same scope, review rounds beyond config, or full chat transcripts as evidence.
 
 ## HUMAN_GATEs
 

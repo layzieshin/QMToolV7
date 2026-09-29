@@ -7,9 +7,17 @@
         "timeout": 10
       }
     ],
+    "preToolUse": [
+      {
+        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/subagent-start.ps1\"; exit $LASTEXITCODE",
+        "matcher": "^Task$",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
     "subagentStart": [
       {
-        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/subagent-start.ps1\"",
+        "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/subagent-start.ps1\"; exit $LASTEXITCODE",
         "timeout": 10,
         "failClosed": true
       }
@@ -17,7 +25,7 @@
     "beforeShellExecution": [
       {
         "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/git-guard.ps1\"",
-        "matcher": "(?i)(git|gh)",
+        "matcher": "(?:[gG][iI][tT]|[gG][hH])",
         "timeout": 10,
         "failClosed": true
       }

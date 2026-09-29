@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,105 +20,223 @@ WORKFLOW = ROOT / ".cursor" / "rules" / "00-agent-workflow.mdc"
 GIT_WORKFLOW = ROOT / ".cursor" / "rules" / "01-git-workflow.mdc"
 AGENTS = ROOT / "AGENTS.md"
 
-REQUIRED_FRONTMATTER_MODEL = "gpt-5.6-terra"
-REQUIRED_TASK_MODEL = "gpt-5.6-terra"
-
-
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _config() -> dict[str, Any]:
+    return json.loads(_read(ROOT / ".cursor" / "agent-system.json"))
+
+
+def _required_reviewer_model() -> str:
+    return str(_config()["roles"]["checkpoint-reviewer"]["model"])
+
+
+def _reviewer_ladder() -> list[dict[str, Any]]:
+    return list(_config()["review_model_fallback"]["roles"]["checkpoint-reviewer"]["ladder"])
+
+
+def _authorized_reviewer_models() -> set[str]:
+    models = {_required_reviewer_model()}
+    models.update(str(rung["model"]) for rung in _reviewer_ladder())
+    return models
+
+
+REQUIRED_FRONTMATTER_MODEL = _required_reviewer_model()
+REQUIRED_TASK_MODEL = _required_reviewer_model()
+POWERSHELL = "powershell.exe"
+D15_STATE = ROOT / "build" / "pt" / "d15-validation-state.json"
 
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
 
 
-def classify_reviewer_evidence_profile(facts: dict[str, Any]) -> dict[str, str]:
-    """Pure classifier mirroring D15. Used by contract tests; not a product API."""
+def _run_d15_hook(
+    facts: dict[str, Any],
+    *,
+    stdin_bytes: bytes | None = None,
+) -> dict[str, str]:
+    D15_STATE.parent.mkdir(parents=True, exist_ok=True)
+    D15_STATE.write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["QMTOOL_WORKFLOW_STATE_PATH"] = str(D15_STATE)
+    payload = json.dumps({"validation_mode": "D15_REVIEWER_EVIDENCE", "facts": facts})
+    completed = subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / ".cursor" / "hooks" / "subagent-start.ps1"),
+        ],
+        cwd=ROOT,
+        input=stdin_bytes if stdin_bytes is not None else payload,
+        capture_output=True,
+        text=stdin_bytes is None,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    stdout = completed.stdout if stdin_bytes is None else completed.stdout.decode("utf-8")
+    return json.loads(stdout.strip())
 
-    configured = str(facts.get("configured_model") or "")
-    requested = str(facts.get("requested_model") or "")
-    observed_model = facts.get("observed_runtime_model")
-    observed_reasoning = facts.get("observed_reasoning")
-    agent_id = str(facts.get("agent_id") or "").strip()
-    separate_context = bool(facts.get("separate_context"))
-    uses_verify = bool(facts.get("uses_verify_reports_and_plan"))
-    readonly = bool(facts.get("readonly"))
-    contradictory = bool(facts.get("contradictory_metadata"))
-    fallback_msg = bool(facts.get("fallback_or_substitution_message"))
-    instantiated = bool(facts.get("agent_instantiated"))
 
-    def blocked(reason: str) -> dict[str, str]:
-        return {
-            "evidence_profile": "UNVERIFIED",
-            "gate_e": "BLOCKED",
-            "reason": reason,
-            "observed_runtime_model": (
-                "UNAVAILABLE"
-                if observed_model in (None, "", "UNAVAILABLE")
-                else str(observed_model)
-            ),
-            "observed_reasoning": (
-                "UNAVAILABLE"
-                if observed_reasoning in (None, "", "UNAVAILABLE")
-                else str(observed_reasoning)
-            ),
-        }
-
-    if not instantiated or not agent_id or not separate_context:
-        return blocked("missing agent instantiation, agent_id, or separate context")
-    if configured != REQUIRED_FRONTMATTER_MODEL:
-        return blocked("configured_model mismatch")
-    if requested != REQUIRED_TASK_MODEL:
-        return blocked("requested_model mismatch")
-    if not uses_verify or not readonly:
-        return blocked("missing verify-reports-and-plan or readonly")
-
-    # Mutation proof is fail-closed (D15): key must be an explicit bool; fingerprints required.
-    if "mutation_detected" not in facts or not isinstance(facts.get("mutation_detected"), bool):
-        return blocked("missing mutation proof")
-    pre_raw = facts.get("pre_fingerprint")
-    post_raw = facts.get("post_fingerprint")
-    if pre_raw in (None, "") or post_raw in (None, ""):
-        return blocked("missing mutation proof")
-    pre_fp = str(pre_raw)
-    post_fp = str(post_raw)
-    if facts["mutation_detected"] is True:
-        return blocked("reviewer mutation detected")
-    if post_fp != "pending_parent_capture" and pre_fp != post_fp:
-        return blocked("reviewer mutation detected")
-
-    if contradictory or fallback_msg:
-        return blocked("contradictory or fallback/substitution metadata")
-    model_observed = observed_model not in (None, "", "UNAVAILABLE")
-    reasoning_observed = observed_reasoning not in (None, "", "UNAVAILABLE")
-    allowed_models = {REQUIRED_FRONTMATTER_MODEL, REQUIRED_TASK_MODEL}
-    allowed_reasoning = {"medium", "standard", "default", "terra"}
-
-    # Exactly one observed field is fail-closed partial metadata (D15 / GOV01-R5).
-    if model_observed != reasoning_observed:
-        return blocked("partial runtime metadata")
-
-    if model_observed and reasoning_observed:
-        model_ok = str(observed_model) in allowed_models
-        reasoning_ok = str(observed_reasoning).lower() in allowed_reasoning
-        if not model_ok or not reasoning_ok:
-            return blocked("observed runtime metadata contradicts required configuration")
-        return {
-            "evidence_profile": "RUNTIME_ATTESTED",
-            "gate_e": "CONTINUE",
-            "reason": "observed runtime metadata matches required configuration",
-            "observed_runtime_model": str(observed_model),
-            "observed_reasoning": str(observed_reasoning),
-        }
-
-    # Both unavailable: CONTROL_PLANE_PINNED may continue when the pin is complete.
-    return {
-        "evidence_profile": "CONTROL_PLANE_PINNED",
-        "gate_e": "CONTINUE",
-        "reason": "local control-plane pin fully proven; runtime metadata UNAVAILABLE",
-        "observed_runtime_model": "UNAVAILABLE",
-        "observed_reasoning": "UNAVAILABLE",
+def _d15_facts(**updates: Any) -> dict[str, Any]:
+    facts: dict[str, Any] = {
+        "agent_instantiated": True,
+        "agent_id": "abc-123",
+        "separate_context": True,
+        "configured_model": REQUIRED_TASK_MODEL,
+        "requested_model": REQUIRED_TASK_MODEL,
+        "selected_model": REQUIRED_TASK_MODEL,
+        "selected_ladder_rung": 1,
+        "uses_verify_reports_and_plan": True,
+        "readonly": True,
+        "pre_fingerprint": "aa",
+        "post_fingerprint": "aa",
+        "mutation_detected": False,
+        "contradictory_metadata": False,
+        "fallback_or_substitution_message": False,
+        "explicit_ladder_fallback": False,
+        "ladder_result_category": "SUCCESS",
     }
+    facts.update(updates)
+    return facts
+
+
+def classify_reviewer_evidence_profile(facts: dict[str, Any]) -> dict[str, str]:
+    payload = dict(facts)
+    payload.setdefault("role", "checkpoint-reviewer")
+    return _run_d15_hook(payload)
+
+
+def test_d15_hook_accepts_utf8_bom_host_ingress() -> None:
+    facts = _d15_facts(
+        observed_runtime_model="UNAVAILABLE",
+        observed_reasoning="UNAVAILABLE",
+    )
+    payload = json.dumps({"validation_mode": "D15_REVIEWER_EVIDENCE", "facts": facts})
+    result = _run_d15_hook(facts, stdin_bytes=b"\xef\xbb\xbf" + payload.encode("utf-8"))
+    assert result["gate_e"] == "CONTINUE"
+    assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
+
+
+def test_d15_hook_rejects_non_object_top_level_host_ingress() -> None:
+    D15_STATE.parent.mkdir(parents=True, exist_ok=True)
+    D15_STATE.write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["QMTOOL_WORKFLOW_STATE_PATH"] = str(D15_STATE)
+    completed = subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / ".cursor" / "hooks" / "subagent-start.ps1"),
+        ],
+        cwd=ROOT,
+        input=json.dumps([]),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert completed.returncode != 0, completed.stderr or completed.stdout
+    result = json.loads(completed.stdout.strip())
+    assert result["permission"] == "deny"
+
+
+def _native_cursor_workspace_root(root: Path = ROOT) -> str:
+    path_without_drive = str(root)[len(root.drive) :].replace("\\", "/")
+    return f"/{root.drive[0].lower()}:{path_without_drive}"
+
+
+def _expected_subagent_start_exit_code(
+    payload: dict[str, Any],
+    result: dict[str, Any],
+) -> int:
+    if "validation_mode" in payload:
+        return 0
+    permission = result.get("permission")
+    if permission == "deny":
+        return 2
+    if permission == "allow":
+        return 0
+    return 0
+
+
+def _run_subagent_hook_payload(payload: dict[str, Any]) -> subprocess.CompletedProcess[str]:
+    D15_STATE.parent.mkdir(parents=True, exist_ok=True)
+    D15_STATE.write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["QMTOOL_WORKFLOW_STATE_PATH"] = str(D15_STATE)
+    return subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / ".cursor" / "hooks" / "subagent-start.ps1"),
+        ],
+        cwd=ROOT,
+        input=json.dumps(payload).encode("utf-8"),
+        capture_output=True,
+        text=False,
+        check=False,
+        env=env,
+    )
+
+
+def test_subagent_hook_native_workspace_root_drive_prefix_regression() -> None:
+    payload = {
+        "hook_event_name": "subagentStart",
+        "subagent_type": "checkpoint-reviewer",
+        "model": "composer-2.5",
+        "subagent_model": "composer-2.5",
+        "subagent_id": "4d01d1bf-2885-4f82-89b1-03a7438a04be",
+        "tool_call_id": "tool-call-native",
+        "parent_conversation_id": "e426675b-3888-43d4-b7b3-da2444d00fba",
+        "is_parallel_worker": False,
+        "workspace_roots": [_native_cursor_workspace_root()],
+        "task": "[ROLE:checkpoint-reviewer]\nReview",
+    }
+    completed = _run_subagent_hook_payload(payload)
+    stdout = completed.stdout.decode("utf-8").strip()
+    assert stdout
+    result = json.loads(stdout)
+    assert result["permission"] == "deny"
+    assert "composer-2.5" in result["user_message"]
+    assert completed.returncode == _expected_subagent_start_exit_code(payload, result)
+
+
+def test_subagent_hook_malformed_workspace_root_regression_fail_closed() -> None:
+    malformed_root = f"\\{ROOT.drive[0].lower()}:{str(ROOT)[len(ROOT.drive) :]}"
+    payload = {
+        "hook_event_name": "subagentStart",
+        "subagent_type": "checkpoint-reviewer",
+        "model": "composer-2.5",
+        "subagent_model": "composer-2.5",
+        "subagent_id": "child-malformed-root",
+        "tool_call_id": "tool-malformed-root",
+        "parent_conversation_id": "parent-malformed-root",
+        "is_parallel_worker": False,
+        "workspace_roots": [malformed_root],
+        "task": "[ROLE:checkpoint-reviewer]\nReview",
+    }
+    completed = _run_subagent_hook_payload(payload)
+    assert completed.returncode != 0, completed.stderr or completed.stdout
+    stdout = completed.stdout.decode("utf-8", errors="replace").strip()
+    assert stdout
+    result = json.loads(stdout)
+    assert result["permission"] == "deny"
+    assert result["user_message"] == (
+        "Subagent enforcement could not be completed safely."
+    )
+    assert "NotSupportedException" not in stdout
+    assert malformed_root not in stdout
 
 
 def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
@@ -155,7 +274,8 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "already-running gates" in protocol
     assert "`NOT RUN` only" in protocol
     assert "evidence_profile" in protocol
-    assert REQUIRED_TASK_MODEL in protocol
+    assert "review_model_fallback" in protocol
+    assert "grok-4.7-high" in protocol
     assert "Immutable checkpoint contract" in protocol
     assert "Scope correction" in protocol
     assert "no text in this protocol creates a separate budget" in protocol
@@ -197,46 +317,24 @@ def test_local_commit_is_included_in_implementation_authorization() -> None:
 
 def test_reviewer_evidence_profile_runtime_attested() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-terra",
-            "observed_reasoning": "standard",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            selected_model="grok-4.7-high",
+            selected_ladder_rung=1,
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="high",
+        )
     )
     assert result["evidence_profile"] == "RUNTIME_ATTESTED"
     assert result["gate_e"] == "CONTINUE"
-    assert result["observed_runtime_model"] == "gpt-5.6-terra"
+    assert result["observed_runtime_model"] == "grok-4.7-high"
 
 
 def test_reviewer_evidence_profile_control_plane_pinned() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
     assert result["gate_e"] == "CONTINUE"
@@ -247,21 +345,12 @@ def test_reviewer_evidence_profile_control_plane_pinned() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_missing_mutation_proof() -> None:
     """Absent mutation_detected or fingerprints must BLOCK (fail-closed D15)."""
-    base = {
-        "agent_instantiated": True,
-        "agent_id": "abc-123",
-        "separate_context": True,
-        "configured_model": REQUIRED_FRONTMATTER_MODEL,
-        "requested_model": REQUIRED_TASK_MODEL,
-        "observed_runtime_model": "UNAVAILABLE",
-        "observed_reasoning": "UNAVAILABLE",
-        "uses_verify_reports_and_plan": True,
-        "readonly": True,
-        "contradictory_metadata": False,
-        "fallback_or_substitution_message": False,
-    }
+    base = _d15_facts(
+        observed_runtime_model="UNAVAILABLE",
+        observed_reasoning="UNAVAILABLE",
+    )
     missing_key = classify_reviewer_evidence_profile(
-        {**base, "pre_fingerprint": "aa", "post_fingerprint": "aa"}
+        {k: v for k, v in base.items() if k != "mutation_detected"}
     )
     assert missing_key["gate_e"] == "BLOCKED"
     assert "missing mutation proof" in missing_key["reason"]
@@ -277,7 +366,7 @@ def test_reviewer_evidence_profile_blocks_on_missing_mutation_proof() -> None:
     assert empty_fp["gate_e"] == "BLOCKED"
     assert "missing mutation proof" in empty_fp["reason"]
 
-    pending_ok = classify_reviewer_evidence_profile(
+    pending_blocked = classify_reviewer_evidence_profile(
         {
             **base,
             "pre_fingerprint": "aa",
@@ -285,28 +374,16 @@ def test_reviewer_evidence_profile_blocks_on_missing_mutation_proof() -> None:
             "mutation_detected": False,
         }
     )
-    assert pending_ok["gate_e"] == "CONTINUE"
-    assert pending_ok["evidence_profile"] == "CONTROL_PLANE_PINNED"
+    assert pending_blocked["gate_e"] == "BLOCKED"
+    assert "pending parent capture" in pending_blocked["reason"]
 
 
 def test_reviewer_evidence_profile_blocks_on_observed_model_mismatch() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "some-other-model",
-            "observed_reasoning": "xhigh",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="some-other-model",
+            observed_reasoning="high",
+        )
     )
     assert result["evidence_profile"] == "UNVERIFIED"
     assert result["gate_e"] == "BLOCKED"
@@ -315,44 +392,21 @@ def test_reviewer_evidence_profile_blocks_on_observed_model_mismatch() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_observed_reasoning_mismatch() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-terra",
-            "observed_reasoning": "low",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="low",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
 
 
 def test_reviewer_evidence_profile_blocks_on_missing_agent_id() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            agent_id="",
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "agent_id" in result["reason"]
@@ -360,22 +414,11 @@ def test_reviewer_evidence_profile_blocks_on_missing_agent_id() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_missing_separate_context() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": False,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            separate_context=False,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "separate context" in result["reason"]
@@ -383,45 +426,26 @@ def test_reviewer_evidence_profile_blocks_on_missing_separate_context() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_task_model_mismatch() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": "inherit",
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            requested_model="inherit",
+            selected_model="inherit",
+            selected_ladder_rung=1,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
-    assert "requested_model" in result["reason"]
+    assert "selected model" in result["reason"]
 
 
 def test_reviewer_evidence_profile_blocks_on_mutation() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "bb",
-            "mutation_detected": True,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+            post_fingerprint="bb",
+            mutation_detected=True,
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "mutation" in result["reason"]
@@ -430,22 +454,10 @@ def test_reviewer_evidence_profile_blocks_on_mutation() -> None:
 def test_reviewer_evidence_profile_blocks_on_partial_model_only() -> None:
     """Model available and reasoning UNAVAILABLE → BLOCKED (partial runtime metadata)."""
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-terra",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert result["evidence_profile"] == "UNVERIFIED"
@@ -456,22 +468,10 @@ def test_reviewer_evidence_profile_blocks_on_partial_model_only() -> None:
 def test_reviewer_evidence_profile_blocks_on_partial_reasoning_only() -> None:
     """Reasoning available and model UNAVAILABLE → BLOCKED (partial runtime metadata)."""
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "xhigh",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="high",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "partial runtime metadata" in result["reason"]
@@ -486,22 +486,10 @@ def test_macro_skill_disallows_implicit_invocation() -> None:
 
 def test_reviewer_evidence_profile_forbids_false_runtime_attested_claim() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
     assert result["evidence_profile"] != "RUNTIME_ATTESTED"
@@ -758,7 +746,7 @@ def _valid_orchestrator_review() -> dict[str, Any]:
         "human_gate_open": False,
         "agent_id": "task-real-1",
         "readonly": True,
-        "requested_model": "gpt-5.6-terra",
+        "requested_model": "grok-4.7-xhigh",
         "observed_model": "UNAVAILABLE",
         "contract_sha256": "contract",
         "expected_contract_sha256": "contract",
@@ -832,3 +820,231 @@ def test_pilot00_orchestrator_review_rejects_forbidden_cases() -> None:
     missing_implementer_result = classify_pilot00_orchestrator_review(missing_implementer)
     assert missing_implementer_result["verdict"] == "FAIL"
     assert "same implementer" in missing_implementer_result["reason"]
+
+
+def test_reviewer_evidence_profile_runtime_attested_for_explicit_ladder_rung_one() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            selected_model="grok-4.7-high",
+            selected_ladder_rung=1,
+            ladder_result_category="SUCCESS",
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="high",
+        )
+    )
+    assert result["evidence_profile"] == "RUNTIME_ATTESTED"
+    assert result["selected_ladder_rung"] == 1
+
+
+def test_reviewer_evidence_profile_rejects_wrong_reasoning_for_runtime_attested() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            selected_model="grok-4.7-high",
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="standard",
+        )
+    )
+    assert result["evidence_profile"] == "UNVERIFIED"
+    assert result["gate_e"] == "BLOCKED"
+
+
+def test_d15_rejects_string_boolean_facts() -> None:
+    boolean_fields = (
+        "agent_instantiated",
+        "separate_context",
+        "uses_verify_reports_and_plan",
+        "readonly",
+        "contradictory_metadata",
+        "fallback_or_substitution_message",
+        "mutation_detected",
+        "explicit_ladder_fallback",
+    )
+    for field in boolean_fields:
+        facts = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        facts[field] = "false"
+        result = classify_reviewer_evidence_profile(facts)
+        assert result["gate_e"] == "BLOCKED", field
+        assert "strict boolean" in result["reason"], field
+
+
+def test_d15_rejects_missing_boolean_facts() -> None:
+    boolean_fields = (
+        "agent_instantiated",
+        "separate_context",
+        "uses_verify_reports_and_plan",
+        "readonly",
+        "contradictory_metadata",
+        "fallback_or_substitution_message",
+        "mutation_detected",
+        "explicit_ladder_fallback",
+    )
+    for field in boolean_fields:
+        facts = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        del facts[field]
+        result = classify_reviewer_evidence_profile(facts)
+        assert result["gate_e"] == "BLOCKED", field
+
+
+def test_d15_rejects_missing_selected_ladder_rung() -> None:
+    facts = _d15_facts(
+        observed_runtime_model="UNAVAILABLE",
+        observed_reasoning="UNAVAILABLE",
+    )
+    del facts["selected_ladder_rung"]
+    result = classify_reviewer_evidence_profile(facts)
+    assert result["gate_e"] == "BLOCKED"
+    assert "selected_ladder_rung" in result["reason"]
+
+
+def test_d15_rejects_rung_model_mismatch() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="grok-4.7-high",
+            selected_model="grok-4.7-high",
+            selected_ladder_rung=2,
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "does not match" in result["reason"]
+
+
+def test_d15_rejects_non_integer_selected_ladder_rung() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            selected_ladder_rung="1",
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "strict integer" in result["reason"]
+
+
+def test_d15_rejects_inconsistent_ladder_fallback_flags() -> None:
+    rung_one_fallback = classify_reviewer_evidence_profile(
+        _d15_facts(
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert rung_one_fallback["gate_e"] == "BLOCKED"
+
+    later_rung = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="gpt-5.6-terra-high",
+            selected_model="gpt-5.6-terra-high",
+            selected_ladder_rung=4,
+            ladder_result_category="SUCCESS",
+            explicit_ladder_fallback=False,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert later_rung["gate_e"] == "BLOCKED"
+    assert "fallback" in later_rung["reason"]
+
+    unavailable_selected = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="gpt-5.6-terra-high",
+            selected_model="gpt-5.6-terra-high",
+            selected_ladder_rung=4,
+            ladder_result_category="UNAVAILABLE",
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert unavailable_selected["gate_e"] == "BLOCKED"
+    assert "did not succeed" in unavailable_selected["reason"]
+
+
+def test_d15_accepts_later_rung_with_explicit_fallback_record() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            configured_model=REQUIRED_TASK_MODEL,
+            requested_model="gpt-5.6-terra-high",
+            selected_model="gpt-5.6-terra-high",
+            selected_ladder_rung=4,
+            ladder_result_category="SUCCESS",
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
+    assert result["selected_ladder_rung"] == 4
+
+
+def test_d15_rejects_missing_configured_requested_selected_models() -> None:
+    for field in ("configured_model", "requested_model", "selected_model"):
+        facts = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        del facts[field]
+        result = classify_reviewer_evidence_profile(facts)
+        assert result["gate_e"] == "BLOCKED", field
+        assert field in result["reason"]
+        wrong_type = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        wrong_type[field] = 1
+        wrong_result = classify_reviewer_evidence_profile(wrong_type)
+        assert wrong_result["gate_e"] == "BLOCKED", field
+
+
+def test_d15_rejects_requested_selected_mismatch() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="grok-4.7-high",
+            selected_model="cursor-grok-4.6-xhigh",
+            selected_ladder_rung=2,
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "requested_model" in result["reason"]
+
+
+def test_d15_rejects_configured_model_mismatch_with_role_primary() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            configured_model="cursor-grok-4.6-xhigh",
+            requested_model="grok-4.7-high",
+            selected_model="grok-4.7-high",
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "configured_model mismatch" in result["reason"]
+
+
+def test_d15_later_rung_requires_explicit_fallback_without_selected_requested_fallback() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            configured_model=REQUIRED_TASK_MODEL,
+            requested_model="cursor-grok-4.6-xhigh",
+            selected_model="cursor-grok-4.6-xhigh",
+            selected_ladder_rung=2,
+            ladder_result_category="SUCCESS",
+            explicit_ladder_fallback=False,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "fallback" in result["reason"]

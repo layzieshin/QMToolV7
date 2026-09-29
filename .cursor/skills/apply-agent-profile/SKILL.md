@@ -8,10 +8,11 @@ disable-model-invocation: true
 
 Manual invocation only: `/apply-agent-profile`.
 
-1. Read `.cursor/agent-system.json` and validate it as JSON.
+1. Read `.cursor/agent-system.json` and validate it as JSON (`profile` and `version` are authoritative).
 2. For every key in `roles`, open `.cursor/agents/<role>.md`.
 3. Confirm frontmatter `name` equals the role key.
-4. Edit only the frontmatter `model` value to equal `roles.<role>.model`.
+4. Edit only the frontmatter `model` value to equal `roles.<role>.model` (the preferred model; runtime
+   may use `review_model_fallback` ladder rungs without changing frontmatter).
 5. Do not generate files, use another configuration language, or change role instructions.
 6. Re-read every agent and compare configured and frontmatter models exactly.
 7. Run:

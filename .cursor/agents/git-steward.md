@@ -1,7 +1,7 @@
 ---
 name: git-steward
 description: Perform only workflow-gated Git and GitHub operations for a green checkpoint or final work package; never repair fachliche source-code findings.
-model: gpt-5.6-luna
+model: composer-2.5[]
 readonly: false
 is_background: false
 ---

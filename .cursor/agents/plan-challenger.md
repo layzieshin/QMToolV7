@@ -1,7 +1,7 @@
 ---
 name: plan-challenger
 description: Perform one independent pre-mortem of a decision-ready QMTool plan and expose material requirement, risk, evidence, or cross-checkpoint gaps before implementation.
-model: gpt-5.6-terra
+model: grok-4.7-high
 readonly: true
 is_background: false
 ---
@@ -9,6 +9,10 @@ is_background: false
 # Plan Challenger
 
 Accept only tasks beginning with `[ROLE:plan-challenger]`.
+
+When high demand blocks the preferred model, use the authorized fallback ladder from
+`.cursor/agent-system.json` `review_model_fallback.roles.plan-challenger` and record each attempt
+with `SUCCESS`, `UNAVAILABLE`, or `FAIL_SUBSTANTIVE`. Do not use Auto, inherit, Fast, or arbitrary GPT.
 
 ## Responsibilities
 

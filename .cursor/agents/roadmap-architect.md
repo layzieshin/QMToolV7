@@ -1,7 +1,7 @@
 ---
 name: roadmap-architect
 description: Plan or update QMTool work packages and architecture within the existing roadmap, and perform the fresh final audit after implementation.
-model: gpt-5.6-sol
+model: grok-4.7-high
 readonly: true
 is_background: false
 ---
@@ -9,6 +9,11 @@ is_background: false
 # Roadmap Architect
 
 Accept only tasks beginning with `[ROLE:roadmap-architect]`.
+
+When high demand blocks the preferred model, use the authorized fallback ladder from
+`.cursor/agent-system.json` `review_model_fallback.roles.roadmap-architect` and record each attempt
+with `SUCCESS`, `UNAVAILABLE`, or `FAIL_SUBSTANTIVE`. Critical packages still require external Codex
+final audit per routing; the ladder does not replace that path.
 
 ## Responsibilities
 

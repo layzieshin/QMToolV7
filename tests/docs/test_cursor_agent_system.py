@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -112,21 +113,24 @@ def _write_state(path: Path, **updates: Any) -> dict[str, Any]:
     return state
 
 
-def _run_hook(
+def _invoke_hook(
     script: str,
-    payload: dict[str, Any],
+    payload: str | bytes,
     *,
     state_path: Path,
     log_path: Path | None = None,
     env_overrides: dict[str, str] | None = None,
-) -> dict[str, Any]:
+    text: bool | None = None,
+) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
     env = os.environ.copy()
     env["QMTOOL_WORKFLOW_STATE_PATH"] = str(state_path)
     if log_path is not None:
         env["QMTOOL_RUNTIME_LOG_PATH"] = str(log_path)
     if env_overrides:
         env.update(env_overrides)
-    completed = subprocess.run(
+    if text is None:
+        text = isinstance(payload, str)
+    return subprocess.run(
         [
             POWERSHELL,
             "-NoProfile",
@@ -136,22 +140,109 @@ def _run_hook(
             str(HOOKS / script),
         ],
         cwd=ROOT,
-        input=json.dumps(payload),
+        input=payload,
         capture_output=True,
-        text=True,
+        text=text,
         env=env,
         check=False,
     )
-    assert completed.returncode == 0, completed.stderr
+
+
+def _expected_subagent_start_exit_code(
+    payload: dict[str, Any],
+    result: dict[str, Any],
+) -> int:
+    if "validation_mode" in payload:
+        return 0
+    permission = result.get("permission")
+    if permission == "deny":
+        return 2
+    if permission == "allow":
+        return 0
+    return 0
+
+
+def _assert_subagent_start_exit_code(
+    completed: subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes],
+    payload: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    expected = _expected_subagent_start_exit_code(payload, result)
+    detail = completed.stderr or completed.stdout
+    if isinstance(detail, bytes):
+        detail = detail.decode("utf-8", errors="replace")
+    assert completed.returncode == expected, detail
+
+
+def _run_hook(
+    script: str,
+    payload: dict[str, Any],
+    *,
+    state_path: Path,
+    log_path: Path | None = None,
+    env_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    completed = _invoke_hook(
+        script,
+        json.dumps(payload),
+        state_path=state_path,
+        log_path=log_path,
+        env_overrides=env_overrides,
+        text=True,
+    )
     output = completed.stdout.strip()
     assert output, f"{script} returned no JSON"
-    return json.loads(output)
+    result = json.loads(output)
+    if script == "subagent-start.ps1":
+        _assert_subagent_start_exit_code(completed, payload, result)
+    else:
+        assert completed.returncode == 0, completed.stderr
+    return result
+
+
+def _live_host_subagent_payload(**updates: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "hook_event_name": "subagentStart",
+        "subagent_type": "checkpoint-reviewer",
+        "model": "composer-2.5",
+        "subagent_model": "composer-2.5",
+        "subagent_id": "6c08bef5-635a-4265-b0c5-06e4806a9729",
+        "tool_call_id": "tool-call-1",
+        "parent_conversation_id": "parent-conversation-1",
+        "is_parallel_worker": False,
+        "task": "[ROLE:checkpoint-reviewer]\nReview",
+    }
+    payload.update(updates)
+    return payload
+
+
+def _pre_tool_use_task_payload(**updates: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "hook_event_name": "preToolUse",
+        "tool_name": "Task",
+        "tool_use_id": "tool-use-1",
+        "conversation_id": "conversation-1",
+        "model": "composer-2.5",
+        "tool_input": {
+            "prompt": "[ROLE:checkpoint-reviewer]\nReview",
+            "model": "grok-4.7-high",
+            "subagent_type": "checkpoint-reviewer",
+        },
+    }
+    payload.update(updates)
+    return payload
+
+
+def _native_cursor_workspace_root(root: Path = ROOT) -> str:
+    path_without_drive = str(root)[len(root.drive) :].replace("\\", "/")
+    return f"/{root.drive[0].lower()}:{path_without_drive}"
 
 
 def test_config_agents_skills_rules_and_worktree_contracts() -> None:
     config = _config()
     defaults = config["defaults"]
-    assert config["profile"] == "balanced"
+    assert config["profile"] == "cursor-first"
+    assert config["version"] == 3
     assert defaults == {
         "max_checkpoint_reworks": 2,
         "max_final_audit_reworks": 2,
@@ -272,7 +363,9 @@ def test_config_agents_skills_rules_and_worktree_contracts() -> None:
     assert hooks["version"] == 1
     assert hooks["hooks"]["stop"][0]["loop_limit"] == defaults["stop_hook_loop_limit"]
     assert hooks["hooks"]["beforeShellExecution"][0]["failClosed"] is True
-    assert hooks["hooks"]["beforeShellExecution"][0]["matcher"] == "(?i)(git|gh)"
+    assert hooks["hooks"]["beforeShellExecution"][0]["matcher"] == "(?:[gG][iI][tT]|[gG][hH])"
+    hooks_text = _read(CURSOR / "hooks.json")
+    assert "(?i)" not in hooks_text
 
     worktrees = json.loads(_read(CURSOR / "worktrees.json"))
     assert worktrees == {"setup-worktree-windows": "setup-worktree-windows.ps1"}
@@ -413,6 +506,133 @@ def test_stop_watchdog_respects_completion_gate_and_manual_stop(tmp_path: Path) 
     assert done == {}
 
 
+def test_hooks_json_pre_tool_use_task_guard_binding() -> None:
+    hooks = json.loads(_read(CURSOR / "hooks.json"))
+    pre_tool_use = hooks["hooks"]["preToolUse"]
+    assert len(pre_tool_use) == 1
+    entry = pre_tool_use[0]
+    assert (
+        entry["command"]
+        == 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".cursor/hooks/subagent-start.ps1"; exit $LASTEXITCODE'
+    )
+    assert entry["matcher"] == "^Task$"
+    assert entry["timeout"] == 10
+    assert entry["failClosed"] is True
+
+    subagent_start = hooks["hooks"]["subagentStart"]
+    assert len(subagent_start) == 1
+    assert (
+        subagent_start[0]["command"]
+        == 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".cursor/hooks/subagent-start.ps1"; exit $LASTEXITCODE'
+    )
+    assert subagent_start[0]["timeout"] == 10
+    assert subagent_start[0]["failClosed"] is True
+
+
+def test_pre_tool_use_task_guard_normalizes_child_model_and_correlation(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "state.json"
+    log_path = tmp_path / "subagent.log"
+
+    allowed = _run_hook(
+        "subagent-start.ps1",
+        _pre_tool_use_task_payload(),
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert allowed["permission"] == "allow"
+
+    denied = _run_hook(
+        "subagent-start.ps1",
+        _pre_tool_use_task_payload(
+            tool_input={
+                "prompt": "[ROLE:checkpoint-reviewer]\nReview",
+                "model": "composer-2.5",
+                "subagent_type": "checkpoint-reviewer",
+            }
+        ),
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert denied["permission"] == "deny"
+    assert "grok-4.7-high" in denied["user_message"]
+
+    parent_grok_child_composer = _run_hook(
+        "subagent-start.ps1",
+        _pre_tool_use_task_payload(
+            model="grok-4.7-high",
+            tool_input={
+                "prompt": "[ROLE:checkpoint-reviewer]\nReview",
+                "model": "composer-2.5",
+                "subagent_type": "checkpoint-reviewer",
+            },
+        ),
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert parent_grok_child_composer["permission"] == "deny"
+
+    untagged = _run_hook(
+        "subagent-start.ps1",
+        _pre_tool_use_task_payload(
+            tool_input={
+                "prompt": "plain helper without role marker",
+                "subagent_type": "generalPurpose",
+            }
+        ),
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert untagged["permission"] == "allow"
+    assert untagged["non_authoritative"] is True
+    assert untagged["gate_budget_authority"] is False
+
+    fail_closed_cases = [
+        _pre_tool_use_task_payload(tool_input="not-an-object"),
+        _pre_tool_use_task_payload(tool_input={"model": "grok-4.7-high"}),
+        _pre_tool_use_task_payload(
+            tool_input={
+                "prompt": "[ROLE:checkpoint-reviewer]\nReview",
+                "subagent_type": "checkpoint-reviewer",
+            }
+        ),
+        _pre_tool_use_task_payload(tool_use_id=""),
+        _pre_tool_use_task_payload(
+            tool_input={
+                "prompt": "[ROLE:checkpoint-reviewer]\nReview",
+                "model": "grok-4.7-high",
+                "subagent_type": "checkpoint-reviewer",
+            },
+            conversation_id="",
+        ),
+        _pre_tool_use_task_payload(
+            tool_input={
+                "prompt": "[role:checkpoint-reviewer]\nReview",
+                "model": "grok-4.7-high",
+                "subagent_type": "checkpoint-reviewer",
+            }
+        ),
+    ]
+    for payload in fail_closed_cases:
+        result = _run_hook(
+            "subagent-start.ps1",
+            payload,
+            state_path=state_path,
+            log_path=log_path,
+        )
+        assert result["permission"] == "deny"
+
+    records = [
+        json.loads(line) for line in log_path.read_text(encoding="utf-8-sig").splitlines()
+    ]
+    event = next(record for record in records if record.get("event_name") == "preToolUse")
+    assert event["subagent_model"] == "grok-4.7-high"
+    assert event["tool_call_id"] == "tool-use-1"
+    assert event["parent_conversation_id"] == "conversation-1"
+    assert event["allowed"] is True
+
+
 def test_subagent_model_gate_allows_match_denies_mismatch_and_ignores_untagged(
     tmp_path: Path,
 ) -> None:
@@ -449,15 +669,134 @@ def test_subagent_model_gate_allows_match_denies_mismatch_and_ignores_untagged(
         log_path=log_path,
     )
     assert untagged["permission"] == "allow"
+    assert untagged["non_authoritative"] is True
+    assert untagged["gate_budget_authority"] is False
 
-    lines = log_path.read_text(encoding="utf-8-sig").splitlines()
-    assert len(lines) == 3
-    assert json.loads(lines[0])["role"] == "implementer"
-    untagged_log = json.loads(lines[2])
-    assert untagged_log["role"] == "UNTAGGED"
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8-sig").splitlines()]
+    assert all(record["observation"] == "host_payload_decoded" for record in records[0::2])
+    tagged_log = records[1]
+    assert tagged_log["event_name"] == "subagentStart"
+    assert tagged_log["subagent_model"] == "composer-2.5[fast=false]"
+    assert tagged_log["allowed"] is True
+    denied_log = records[3]
+    assert denied_log["allowed"] is False
+    untagged_log = records[5]
+    assert untagged_log["role"] == "UNOBSERVED_INTERNAL_HELPER"
     assert untagged_log["actual_model"] == "inherit"
-    assert untagged_log["task_short"] == "ordinary internal helper"
+    assert "task_short" not in untagged_log
     assert untagged_log["allowed"] is True
+    assert untagged_log["non_authoritative"] is True
+
+    reviewer_task = "[ROLE:checkpoint-reviewer]\nReview"
+    reviewer_identity = {"child_agent_id": "child-1", "task_id": "task-1"}
+
+    legacy_xhigh = _run_hook(
+        "subagent-start.ps1",
+        {"task": reviewer_task, "subagent_model": "grok-4.7-xhigh", **reviewer_identity},
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert legacy_xhigh["permission"] == "deny"
+
+    fast_denied = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "grok-4.7-xhigh-fast",
+            **reviewer_identity,
+        },
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert fast_denied["permission"] == "deny"
+
+    missing_identity = _run_hook(
+        "subagent-start.ps1",
+        {"task": reviewer_task, "subagent_model": "grok-4.7-high"},
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert missing_identity["permission"] == "deny"
+
+    ladder_high = _run_hook(
+        "subagent-start.ps1",
+        {"task": reviewer_task, "subagent_model": "grok-4.7-high", **reviewer_identity},
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert ladder_high["permission"] == "allow"
+
+    ladder_rung2_without_history = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "cursor-grok-4.6-xhigh",
+            **reviewer_identity,
+        },
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert ladder_rung2_without_history["permission"] == "deny"
+
+    ladder_history = [
+        {
+            "attempt": 1,
+            "role": "checkpoint-reviewer",
+            "requested_model": "grok-4.7-high",
+            "result_category": "UNAVAILABLE",
+            "agent_id": "agent-1",
+            "signal": "explicit unavailability",
+        }
+    ]
+    ladder_rung2 = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "cursor-grok-4.6-xhigh",
+            "ladder_history": ladder_history,
+            **reviewer_identity,
+        },
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert ladder_rung2["permission"] == "allow"
+
+    ladder_gpt_without_history = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "gpt-5.6-terra-high",
+            **reviewer_identity,
+        },
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert ladder_gpt_without_history["permission"] == "deny"
+
+    random_gpt = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "gpt-5.6-sol",
+            **reviewer_identity,
+        },
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert random_gpt["permission"] == "deny"
+
+    string_fast = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "grok-4.7-high",
+            "model_params": {"fast": "true"},
+            **reviewer_identity,
+        },
+        state_path=state_path,
+        log_path=log_path,
+    )
+    assert string_fast["permission"] == "deny"
 
 
 def test_git_guard_safe_ff_only_matrix(tmp_path: Path) -> None:
@@ -950,3 +1289,683 @@ def test_workflow_lifecycle_dry_run_uses_only_declared_state_contract(tmp_path: 
     assert final["status"] in config["workflow_contract"]["statuses"]
     state_path.unlink()
     assert not state_path.exists()
+
+
+def test_w1_allowlist_includes_hooks_json() -> None:
+    allowlist = _config()["external_codex_bound_review"]["w1_allowlist_paths"]
+    assert len(allowlist) == 21
+    assert ".cursor/hooks.json" in allowlist
+
+
+def test_cost_profile_documents_grok_high_routine_reviews() -> None:
+    cost_profile = _read(ROOT / "docs" / "AP-029_AGENT_WORKFLOW_COST_PROFILE.md")
+    assert "grok-4.7-high" in cost_profile
+    assert "runtime_reasoning=high" in cost_profile
+    assert "R-COST-04" in cost_profile
+    assert "`grok-4.7-high` with `runtime_reasoning=high` allowed" in cost_profile
+    assert "W1-CORRECTIVE-WRITER" in cost_profile
+    assert "exact 21 paths" in cost_profile
+    assert ".cursor/hooks.json" in cost_profile
+
+
+def test_subagent_hook_denies_malformed_role_markers(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    cases = [
+        "prefix [ROLE:implementer]\nwork",
+        "[ROLE:checkpoint-reviewer ]\nwork",
+        "[ROLE:UNKNOWN-ROLE]\nwork",
+        "[ROLE:UNOBSERVED_INTERNAL_HELPER]\nwork",
+        "work\n[ROLE:implementer]",
+        "[ROLE:implementer]\n[ROLE:checkpoint-reviewer]\nwork",
+        "[role:implementer]\nwork",
+        "[ROLE:Implementer]\nwork",
+        "[ROLE:implementer\nwork",
+        "[ROLE :implementer]\nwork",
+        "[ROLE: implementer]\nwork",
+        "[ROLE:\timplementer]\nwork",
+    ]
+    for task in cases:
+        result = _run_hook(
+            "subagent-start.ps1",
+            {"task": task, "subagent_model": "composer-2.5[]"},
+            state_path=state_path,
+        )
+        assert result["permission"] == "deny"
+
+
+def test_subagent_hook_allows_untagged_helper_control(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    result = _run_hook(
+        "subagent-start.ps1",
+        {"task": "plain helper without role marker", "subagent_model": "inherit"},
+        state_path=state_path,
+    )
+    assert result["permission"] == "allow"
+    assert result["non_authoritative"] is True
+
+
+def test_subagent_hook_native_identity_contradiction_denied(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    reviewer_task = "[ROLE:checkpoint-reviewer]\nReview"
+    contradictory = {
+        "hook_event_name": "subagentStart",
+        "subagent_type": "checkpoint-reviewer",
+        "task": reviewer_task,
+        "subagent_model": "grok-4.7-high",
+        "subagent_id": "native-child-1",
+        "tool_call_id": "native-task-1",
+        "parent_conversation_id": "parent-1",
+        "is_parallel_worker": False,
+        "child_agent_id": "other-child",
+        "task_id": "native-task-1",
+    }
+    result = _run_hook("subagent-start.ps1", contradictory, state_path=state_path)
+    assert result["permission"] == "deny"
+
+
+def test_subagent_hook_native_identity_requires_native_fields(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    reviewer_task = "[ROLE:checkpoint-reviewer]\nReview"
+    native_payload = {
+        "hook_event_name": "subagentStart",
+        "subagent_type": "checkpoint-reviewer",
+        "task": reviewer_task,
+        "subagent_model": "grok-4.7-high",
+        "subagent_id": "native-child-1",
+        "tool_call_id": "native-task-1",
+        "parent_conversation_id": "parent-1",
+        "is_parallel_worker": False,
+    }
+    allowed = _run_hook("subagent-start.ps1", native_payload, state_path=state_path)
+    assert allowed["permission"] == "allow"
+
+    required_fields = (
+        "task",
+        "subagent_type",
+        "subagent_id",
+        "tool_call_id",
+        "parent_conversation_id",
+        "subagent_model",
+        "is_parallel_worker",
+    )
+    for field in required_fields:
+        missing_native = dict(native_payload)
+        del missing_native[field]
+        denied = _run_hook("subagent-start.ps1", missing_native, state_path=state_path)
+        assert denied["permission"] == "deny", field
+
+    invalid_parallel = dict(native_payload)
+    invalid_parallel["is_parallel_worker"] = "false"
+    denied_parallel = _run_hook(
+        "subagent-start.ps1", invalid_parallel, state_path=state_path
+    )
+    assert denied_parallel["permission"] == "deny"
+
+
+def test_subagent_hook_live_host_utf8_bom_ingress(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    log_path = tmp_path / "subagent.log"
+    payload = _live_host_subagent_payload()
+    completed = _invoke_hook(
+        "subagent-start.ps1",
+        b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"),
+        state_path=state_path,
+        log_path=log_path,
+        text=False,
+    )
+    result = json.loads(completed.stdout.decode("utf-8").strip())
+    assert result["permission"] == "deny"
+    assert "grok-4.7-high" in result["user_message"]
+    _assert_subagent_start_exit_code(completed, payload, result)
+
+    lines = log_path.read_text(encoding="utf-8-sig").splitlines()
+    ingress = json.loads(lines[0])
+    assert ingress["observation"] == "host_payload_decoded"
+    assert ingress["hook_event_name"] == "subagentStart"
+    assert ingress["subagent_type"] == "checkpoint-reviewer"
+    assert ingress["ingress_bytes"] == len(b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8"))
+
+
+def test_subagent_hook_live_host_native_payload_shape(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    log_path = tmp_path / "subagent.log"
+    payload = _live_host_subagent_payload(
+        workspace_roots=[_native_cursor_workspace_root()],
+        subagent_model="grok-4.7-high",
+        model="grok-4.7-high",
+    )
+    completed = _invoke_hook(
+        "subagent-start.ps1",
+        json.dumps(payload).encode("utf-8"),
+        state_path=state_path,
+        log_path=log_path,
+        text=False,
+    )
+    result = json.loads(completed.stdout.decode("utf-8").strip())
+    assert result["permission"] == "allow"
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    _assert_subagent_start_exit_code(completed, payload, result)
+
+    ingress = json.loads(log_path.read_text(encoding="utf-8-sig").splitlines()[0])
+    assert ingress["model_field_present"] is True
+    assert ingress["subagent_model_present"] is True
+    assert ingress["subagent_id_present"] is True
+    assert ingress["tool_call_id_present"] is True
+    assert ingress["parent_conversation_id_present"] is True
+    assert ingress["is_parallel_worker_present"] is True
+
+
+def test_subagent_hook_native_workspace_root_drive_prefix_denies_unauthorized_model(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "state.json"
+    log_path = tmp_path / "subagent.log"
+    payload = _live_host_subagent_payload(
+        workspace_roots=[_native_cursor_workspace_root()],
+        subagent_model="composer-2.5",
+        model="composer-2.5",
+        parent_conversation_id="e426675b-3888-43d4-b7b3-da2444d00fba",
+        subagent_id="4d01d1bf-2885-4f82-89b1-03a7438a04be",
+    )
+    completed = _invoke_hook(
+        "subagent-start.ps1",
+        json.dumps(payload).encode("utf-8"),
+        state_path=state_path,
+        log_path=log_path,
+        text=False,
+    )
+    stdout = completed.stdout.decode("utf-8").strip()
+    assert stdout, "expected deny JSON on stdout"
+    result = json.loads(stdout)
+    assert result["permission"] == "deny"
+    assert "composer-2.5" in result["user_message"]
+    assert completed.returncode == 2, completed.stderr or stdout
+    _assert_subagent_start_exit_code(completed, payload, result)
+
+    lines = log_path.read_text(encoding="utf-8-sig").splitlines()
+    ingress = json.loads(lines[0])
+    assert ingress["observation"] == "host_payload_decoded"
+    event = json.loads(lines[1])
+    assert event["workspace_match"] is True
+    assert event["allowed"] is False
+    assert event["parent_conversation_id"] == "e426675b-3888-43d4-b7b3-da2444d00fba"
+    assert event["subagent_id"] == "4d01d1bf-2885-4f82-89b1-03a7438a04be"
+
+
+def test_subagent_hook_malformed_workspace_root_fail_closed(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    malformed_root = f"\\{ROOT.drive[0].lower()}:{str(ROOT)[len(ROOT.drive) :]}"
+    payload = _live_host_subagent_payload(
+        workspace_roots=[malformed_root],
+        subagent_model="composer-2.5",
+        model="composer-2.5",
+    )
+    completed = _invoke_hook(
+        "subagent-start.ps1",
+        json.dumps(payload).encode("utf-8"),
+        state_path=state_path,
+        text=False,
+    )
+    assert completed.returncode != 0, completed.stderr or completed.stdout
+    stdout = completed.stdout.decode("utf-8", errors="replace").strip()
+    assert stdout, "expected generic deny JSON on stdout"
+    result = json.loads(stdout)
+    assert result["permission"] == "deny"
+    assert result["user_message"] == (
+        "Subagent enforcement could not be completed safely."
+    )
+    assert "NotSupportedException" not in stdout
+    assert "composer-2.5" not in stdout
+    assert malformed_root not in stdout
+
+
+def test_subagent_hook_ingress_rejects_non_object_top_level(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    cases = [
+        json.dumps("scalar-string"),
+        json.dumps(42),
+        json.dumps(True),
+        json.dumps(None),
+        json.dumps([]),
+        json.dumps([{"task": "x"}]),
+    ]
+    for payload in cases:
+        completed = _invoke_hook(
+            "subagent-start.ps1",
+            payload,
+            state_path=state_path,
+            text=True,
+        )
+        assert completed.returncode != 0, payload
+        output = completed.stdout.strip()
+        assert output, f"expected deny JSON for {payload}"
+        result = json.loads(output)
+        assert result["permission"] == "deny", payload
+
+
+def test_subagent_hook_ingress_parse_failure_fail_closed(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    cases = [
+        (b"", "empty"),
+        (b"\xef\xbb\xbf   \r\n", "whitespace"),
+        (b"{not-json", "malformed"),
+        (b"\xef\xbb\xbf{", "bom-only-prefix"),
+    ]
+    for stdin_bytes, label in cases:
+        completed = _invoke_hook(
+            "subagent-start.ps1",
+            stdin_bytes,
+            state_path=state_path,
+            text=False,
+        )
+        assert completed.returncode != 0, label
+        output = completed.stdout.decode("utf-8", errors="replace").strip()
+        assert output, f"{label}: expected deny JSON on stdout"
+        result = json.loads(output)
+        assert result["permission"] == "deny", label
+
+
+def test_subagent_hook_model_params_effort_binding(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    reviewer_task = "[ROLE:checkpoint-reviewer]\nReview"
+    identity = {"child_agent_id": "child-1", "task_id": "task-1"}
+    wrong_effort = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "grok-4.7-high",
+            "model_params": {"effort": "xhigh"},
+            **identity,
+        },
+        state_path=state_path,
+    )
+    assert wrong_effort["permission"] == "deny"
+
+    bound_effort = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "grok-4.7-high",
+            "model_params": {"effort": "high", "fast": False},
+            **identity,
+        },
+        state_path=state_path,
+    )
+    assert bound_effort["permission"] == "allow"
+
+    array_effort = _run_hook(
+        "subagent-start.ps1",
+        {
+            "task": reviewer_task,
+            "subagent_model": "grok-4.7-high",
+            "model_params": [
+                {"id": "effort", "value": "high"},
+                {"id": "fast", "value": False},
+            ],
+            **identity,
+        },
+        state_path=state_path,
+    )
+    assert array_effort["permission"] == "allow"
+
+    for fast_value in (True, "false", 0):
+        rejected = _run_hook(
+            "subagent-start.ps1",
+            {
+                "task": reviewer_task,
+                "subagent_model": "grok-4.7-high",
+                "model_params": {"fast": fast_value},
+                **identity,
+            },
+            state_path=state_path,
+        )
+        assert rejected["permission"] == "deny", repr(fast_value)
+
+
+def test_subagent_hook_model_denial_matrix(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    task = "[ROLE:checkpoint-reviewer]\nReview"
+    denied_models = [
+        "",
+        "auto",
+        "inherit",
+        "gpt-5.6-terra",
+        "grok-4.7-xhigh-fast",
+        "grok-4.7[effort=xhigh,fast=true]",
+        "grok-4.7[effort=high,fast=false]",
+    ]
+    for model in denied_models:
+        result = _run_hook(
+            "subagent-start.ps1",
+            {"task": task, "subagent_model": model},
+            state_path=state_path,
+        )
+        assert result["permission"] == "deny", model
+
+
+def _substitute_ladder_result(
+    history: list[dict[str, Any]], attempt: int, result_category: str
+) -> list[dict[str, Any]]:
+    updated = [dict(entry) for entry in history]
+    updated[attempt - 1]["result_category"] = result_category
+    return updated
+
+
+def _w1_diff_sha256() -> str:
+    import hashlib
+
+    allowlist = _config()["external_codex_bound_review"]["w1_allowlist_paths"]
+    base_ref = _config()["external_codex_bound_review"]["base_ref"]
+    diff = subprocess.run(
+        ["git", "diff", base_ref, "--", *allowlist],
+        cwd=ROOT,
+        capture_output=True,
+        check=True,
+    ).stdout.decode("utf-8", errors="surrogateescape").replace("\r\n", "\n")
+    return hashlib.sha256(diff.encode("utf-8")).hexdigest().upper()
+
+
+def _workspace_repository_fingerprint() -> str:
+    import uuid
+
+    token = uuid.uuid4().hex[:8]
+    output = f"build/pt/test-fingerprint-{token}.json"
+    allowlist = _config()["external_codex_bound_review"]["w1_allowlist_paths"]
+    base_ref = _config()["external_codex_bound_review"]["base_ref"]
+    snapshot = ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
+    cmd = [
+        sys.executable,
+        str(snapshot),
+        "--root",
+        str(ROOT),
+        "--checkpoint",
+        "W1",
+        "--phase",
+        "test-binding",
+        "--output",
+        output,
+        "--base-ref",
+        base_ref,
+        "--fail-on-out-of-scope",
+    ]
+    for path in allowlist:
+        cmd.extend(["--allow", path])
+    completed = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    payload = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    (ROOT / output).unlink(missing_ok=True)
+    return str(payload["repository_state_sha256"])
+
+
+def _complete_w1_ladder_history() -> list[dict[str, Any]]:
+    rungs = _config()["review_model_fallback"]["roles"]["checkpoint-reviewer"]["ladder"]
+    return [
+        {
+            "attempt": rung["attempt"],
+            "role": "checkpoint-reviewer",
+            "requested_model": rung["model"],
+            "result_category": "UNAVAILABLE",
+            "agent_id": f"agent-{rung['attempt']}",
+            "signal": "explicit unavailability for test",
+        }
+        for rung in rungs
+    ]
+
+
+def _canonical_evidence_paths(evidence_attempt: str) -> tuple[Path, Path]:
+    template = _config()["external_codex_bound_review"]["evidence_path_template"]
+    rel_root = Path(template["root"]) / evidence_attempt
+    contract = rel_root / template["contract_file"]
+    manifest = rel_root / template["manifest_file"]
+    return contract, manifest
+
+
+def _external_codex_handoff(
+    tmp_path: Path,
+    *,
+    route: str = "critical_final_audit",
+    **updates: Any,
+) -> dict[str, Any]:
+    import hashlib
+
+    evidence_attempt = f"test-handoff-{tmp_path.name}"
+    rel_contract, rel_manifest = _canonical_evidence_paths(evidence_attempt)
+    contract = ROOT / rel_contract
+    manifest = ROOT / rel_manifest
+    contract.parent.mkdir(parents=True, exist_ok=True)
+    contract.write_text("contract body\n", encoding="utf-8")
+    manifest.write_text('{"ok":true}\n', encoding="utf-8")
+    contract_sha = hashlib.sha256(contract.read_bytes()).hexdigest().upper()
+    manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest().upper()
+    branch = _observed_work_branch()
+    reviewed_head = _git(ROOT, "rev-parse", "HEAD").stdout.strip()
+    base_head = _git(ROOT, "rev-parse", _config()["external_codex_bound_review"]["base_ref"]).stdout.strip()
+    workspace_fp = _workspace_repository_fingerprint()
+    payload = {
+        "agent_id": "codex-1",
+        "task_id": "task-1",
+        "external_host": "codex-chatgpt-authenticated",
+        "separate_context": True,
+        "read_only": True,
+        "author_id": "author-1",
+        "implementer_id": "impl-1",
+        "reviewer_id": "reviewer-1",
+        "package_id": "AGENT-COST-01",
+        "checkpoint_id": "FINAL_AUDIT" if route == "critical_final_audit" else "W1",
+        "review_need": "FINAL_AUDIT" if route == "critical_final_audit" else "CHECKPOINT_ESCALATION",
+        "target_root": str(ROOT),
+        "branch": branch,
+        "base_head": base_head,
+        "reviewed_head": reviewed_head,
+        "evidence_attempt": evidence_attempt,
+        "contract_path": rel_contract.as_posix(),
+        "contract_sha256": contract_sha,
+        "diff_sha256": _w1_diff_sha256(),
+        "evidence_manifest_path": rel_manifest.as_posix(),
+        "evidence_manifest_sha256": manifest_sha,
+        "pre_fingerprint": workspace_fp,
+        "post_fingerprint": workspace_fp,
+        "mutation_detected": False,
+        "ladder_history": [] if route == "critical_final_audit" else _complete_w1_ladder_history(),
+        "requested_model": "UNAVAILABLE",
+        "observed_model": "UNAVAILABLE",
+        "verdict": "PASS",
+        "findings": [],
+    }
+    payload.update(updates)
+    return payload
+
+
+def _run_external_codex_hook(
+    tmp_path: Path,
+    handoff: dict[str, Any],
+    *,
+    mode: str = "EXTERNAL_CODEX_BOUND_REVIEW",
+) -> dict[str, Any]:
+    return _run_hook(
+        "subagent-start.ps1",
+        {"validation_mode": mode, "handoff": handoff},
+        state_path=tmp_path / "state.json",
+    )
+
+
+def test_external_codex_bound_review_hook_owner(tmp_path: Path) -> None:
+    handoff = _external_codex_handoff(tmp_path)
+    pre_payload = dict(handoff)
+    for field in ("verdict", "findings", "requested_model", "observed_model"):
+        pre_payload.pop(field, None)
+    pre_ok = _run_external_codex_hook(tmp_path, pre_payload, mode="EXTERNAL_CODEX_PRE_HANDOFF")
+    assert pre_ok["handoff"] == "PRE_HANDOFF_READY"
+    assert pre_ok["status"] == "READY"
+    ok = _run_external_codex_hook(tmp_path, handoff)
+    assert ok["handoff"] == "HANDOFF_READY"
+    assert ok["authenticates_origin"] is False
+    assert ok["authenticates_serving_model"] is False
+
+    critical_fields = _config()["external_codex_bound_review"]["bound_review_required_fields"]
+    for field in critical_fields:
+        missing = _external_codex_handoff(tmp_path)
+        del missing[field]
+        result = _run_external_codex_hook(tmp_path, missing)
+        assert result["handoff"] == "HANDOFF_INVALID", field
+
+    invalid_cases = {
+        "stale_head": {"reviewed_head": "0" * 40},
+        "foreign_target": {"target_root": str(tmp_path)},
+        "wrong_branch": {"branch": "feature/other"},
+        "wrong_base": {"base_head": "0" * 40},
+        "wrong_host": {"external_host": "cursor-internal"},
+        "wrong_hash": {"contract_sha256": "0" * 64},
+        "equal_author_reviewer": {"reviewer_id": "author-1"},
+        "equal_implementer_reviewer": {"reviewer_id": "impl-1"},
+        "mutation": {"mutation_detected": True},
+        "fingerprint_mismatch": {"post_fingerprint": "other"},
+        "external_fail": {"verdict": "FAIL"},
+        "arbitrary_equal_fingerprints": {
+            "pre_fingerprint": "fp",
+            "post_fingerprint": "fp",
+        },
+        "pending_parent_capture": {
+            "pre_fingerprint": "pending_parent_capture",
+            "post_fingerprint": "pending_parent_capture",
+        },
+        "non_canonical_contract_path": {
+            "contract_path": "build/agent-cost-01/w1/forged/contract.md",
+        },
+        "payload_selected_manifest": {
+            "evidence_manifest_path": "build/agent-cost-01/w1/forged/manifest.json",
+        },
+        "string_boolean_mutation": {"mutation_detected": "false"},
+    }
+    for label, updates in invalid_cases.items():
+        bad = _run_external_codex_hook(tmp_path, _external_codex_handoff(tmp_path, **updates))
+        assert bad["handoff"] == "HANDOFF_INVALID", label
+        assert bad["status"] == "BLOCKED_HUMAN", label
+
+    pre_with_verdict = _external_codex_handoff(tmp_path)
+    pre_with_verdict.pop("verdict", None)
+    pre_with_verdict.pop("findings", None)
+    pre_with_verdict.pop("requested_model", None)
+    pre_with_verdict.pop("observed_model", None)
+    pre_with_verdict["verdict"] = "PASS"
+    pre_bad = _run_external_codex_hook(
+        tmp_path, pre_with_verdict, mode="EXTERNAL_CODEX_PRE_HANDOFF"
+    )
+    assert pre_bad["handoff"] == "HANDOFF_INVALID"
+
+
+def test_routing_critical_packages_define_external_review_routes() -> None:
+    config = _config()
+    assert "AGENT-COST-01" in config["routing"]["ag_packages_critical"]
+    assert config["routing"]["critical_final_audit_host"] == "external-codex"
+    bindings = config["external_codex_bound_review"]["review_route_bindings"]["AGENT-COST-01"]
+    assert bindings["checkpoint_escalation"] == {
+        "checkpoint_id": "W1",
+        "review_need": "CHECKPOINT_ESCALATION",
+        "ladder_role": "checkpoint-reviewer",
+        "require_complete_ladder": True,
+    }
+    assert bindings["critical_final_audit"] == {
+        "checkpoint_id": "FINAL_AUDIT",
+        "review_need": "FINAL_AUDIT",
+        "direct_external": True,
+        "forbid_ladder_history": True,
+    }
+
+
+def test_external_codex_evidence_attempt_containment(tmp_path: Path) -> None:
+    safe = _external_codex_handoff(tmp_path)
+    assert _run_external_codex_hook(tmp_path, safe)["handoff"] == "HANDOFF_READY"
+    for label, attempt in {
+        "slash": "bad/segment",
+        "backslash": r"bad\segment",
+        "dotdot": "..",
+        "nested": "a/b",
+        "drive": "C:evil",
+        "unc": r"\\server\share",
+        "empty": "",
+    }.items():
+        bad = _run_external_codex_hook(
+            tmp_path, _external_codex_handoff(tmp_path, evidence_attempt=attempt)
+        )
+        assert bad["handoff"] == "HANDOFF_INVALID", label
+
+
+def test_external_codex_review_route_bindings(tmp_path: Path) -> None:
+    escalation = _run_external_codex_hook(
+        tmp_path, _external_codex_handoff(tmp_path, route="checkpoint_escalation")
+    )
+    assert escalation["handoff"] == "HANDOFF_READY"
+
+    final_audit = _run_external_codex_hook(tmp_path, _external_codex_handoff(tmp_path))
+    assert final_audit["handoff"] == "HANDOFF_READY"
+
+    route_mismatch = _run_external_codex_hook(
+        tmp_path,
+        _external_codex_handoff(
+            tmp_path,
+            checkpoint_id="W1",
+            review_need="FINAL_AUDIT",
+            ladder_history=_complete_w1_ladder_history(),
+        ),
+    )
+    assert route_mismatch["handoff"] == "HANDOFF_INVALID"
+
+    ladder_on_direct = _run_external_codex_hook(
+        tmp_path,
+        _external_codex_handoff(
+            tmp_path,
+            checkpoint_id="FINAL_AUDIT",
+            review_need="FINAL_AUDIT",
+            ladder_history=_complete_w1_ladder_history(),
+        ),
+    )
+    assert ladder_on_direct["handoff"] == "HANDOFF_INVALID"
+
+    wrong_checkpoint = _run_external_codex_hook(
+        tmp_path,
+        _external_codex_handoff(
+            tmp_path,
+            route="checkpoint_escalation",
+            checkpoint_id="W2",
+            review_need="CHECKPOINT_ESCALATION",
+        ),
+    )
+    assert wrong_checkpoint["handoff"] == "HANDOFF_INVALID"
+
+    missing_ladder = _run_external_codex_hook(
+        tmp_path,
+        _external_codex_handoff(
+            tmp_path,
+            route="checkpoint_escalation",
+            ladder_history=[],
+        ),
+    )
+    assert missing_ladder["handoff"] == "HANDOFF_INVALID"
+
+    substantive_fail = _run_external_codex_hook(
+        tmp_path,
+        _external_codex_handoff(
+            tmp_path,
+            route="checkpoint_escalation",
+            ladder_history=_substitute_ladder_result(
+                _complete_w1_ladder_history(), 2, "FAIL_SUBSTANTIVE"
+            ),
+        ),
+    )
+    assert substantive_fail["handoff"] == "HANDOFF_INVALID"
+
+    wrong_ladder_model = _complete_w1_ladder_history()
+    wrong_ladder_model[0] = {
+        **wrong_ladder_model[0],
+        "requested_model": "cursor-grok-4.6-xhigh",
+    }
+    wrong_model = _run_external_codex_hook(
+        tmp_path,
+        _external_codex_handoff(
+            tmp_path,
+            route="checkpoint_escalation",
+            ladder_history=wrong_ladder_model,
+        ),
+    )
+    assert wrong_model["handoff"] == "HANDOFF_INVALID"

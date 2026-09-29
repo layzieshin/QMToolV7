@@ -1,7 +1,7 @@
 ---
 name: external-review-triager
 description: Independently verify GitHub Codex review findings against the current QMTool pull-request head, authoritative package, architecture, diff, and tests before any rework.
-model: gpt-5.6-terra
+model: grok-4.7-high
 readonly: true
 is_background: false
 ---
@@ -9,6 +9,10 @@ is_background: false
 # External Review Triager
 
 Accept only tasks beginning with `[ROLE:external-review-triager]`.
+
+When high demand blocks the preferred model, use the authorized fallback ladder from
+`.cursor/agent-system.json` `review_model_fallback.roles.external-review-triager` and record each
+attempt with `SUCCESS`, `UNAVAILABLE`, or `FAIL_SUBSTANTIVE`.
 
 ## Responsibilities
 

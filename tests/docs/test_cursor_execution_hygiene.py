@@ -21,6 +21,11 @@ from conftest import (
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = ROOT / ".cursor" / "tools"
 POWERSHELL = "powershell.exe"
+GATE_RUNNER = TOOLS / "run-pytest-gate.ps1"
+JUNIT_GATE_OWNER_VALIDATION_EXIT = 91
+_BOUNDED_SUBPROCESS_TIMEOUT_SECONDS = 120.0
+_BOUNDED_TASKKILL_TIMEOUT_SECONDS = 15.0
+_BOUNDED_POST_KILL_COMMUNICATE_TIMEOUT_SECONDS = 15.0
 
 
 def _unique_build_junit(name: str) -> Path:
@@ -58,8 +63,62 @@ def _seed_git_repo(repo: Path, *tracked_paths: Path) -> None:
     )
 
 
+def _terminate_process_tree(pid: int) -> None:
+    if os.name != "nt":
+        raise AssertionError("process-tree cleanup is only implemented for Windows launcher/gate tests")
+    try:
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_BOUNDED_TASKKILL_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _communicate_after_kill(proc: subprocess.Popen[str]) -> tuple[str, str]:
+    try:
+        return proc.communicate(timeout=_BOUNDED_POST_KILL_COMMUNICATE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            return proc.communicate(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            return "", ""
+
+
+def _run_subprocess_bounded(
+    command: list[str],
+    *,
+    cwd: Path = ROOT,
+    env: dict[str, str] | None = None,
+    timeout_seconds: float = _BOUNDED_SUBPROCESS_TIMEOUT_SECONDS,
+) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        _terminate_process_tree(proc.pid)
+        stdout, stderr = _communicate_after_kill(proc)
+        raise AssertionError(
+            f"subprocess timed out after {timeout_seconds}s: {' '.join(command)}\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}"
+        )
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+
 def _run_powershell(script: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return _run_subprocess_bounded(
         [
             POWERSHELL,
             "-NoProfile",
@@ -69,11 +128,76 @@ def _run_powershell(script: Path, *args: str, env: dict[str, str] | None = None)
             str(script),
             *args,
         ],
-        cwd=ROOT,
         env=env,
-        capture_output=True,
-        text=True,
-        check=False,
+    )
+
+
+def _run_pytest_gate(
+    tmp_path: Path,
+    *,
+    smoke: Path,
+    junit: Path,
+    python_path: Path | None = None,
+    gate_id: str = "hygiene",
+) -> subprocess.CompletedProcess[str]:
+    return _run_powershell(
+        GATE_RUNNER,
+        "-GateId",
+        gate_id,
+        "-PythonPath",
+        str(python_path or Path(sys.executable)),
+        "-JUnitPath",
+        str(junit),
+        str(smoke),
+        "-q",
+    )
+
+
+def _invoke_junit_gate_owner(
+    tmp_path: Path,
+    junit: Path,
+    pytest_exit: int,
+) -> subprocess.CompletedProcess[str]:
+    gate_path = GATE_RUNNER.resolve()
+    junit_path = junit.resolve()
+    harness = tmp_path / "invoke_junit_gate_owner.ps1"
+    harness.write_text(
+        f". '{gate_path}' -GateId hygiene\n"
+        f"$code = Get-JUnitGateExitCode -JUnitPath '{junit_path}' -PytestExitCode {pytest_exit}\n"
+        "exit $code\n",
+        encoding="utf-8",
+    )
+    return _run_subprocess_bounded(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
+        ],
+    )
+
+
+def _assert_cursor_agent_resolves_to_fixture(env: dict[str, str], expected_fixture: Path) -> None:
+    completed = _run_subprocess_bounded(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "(Get-Command cursor-agent -ErrorAction Stop).Source",
+        ],
+        env=env,
+        timeout_seconds=30.0,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    resolved = Path(completed.stdout.strip()).resolve()
+    expected = expected_fixture.resolve()
+    assert resolved == expected, (
+        "cursor-agent must resolve to the test fixture before launcher invocation; "
+        f"expected={expected} resolved={resolved}"
     )
 
 
@@ -82,9 +206,11 @@ def test_default_basetemp_is_short_unique_and_explicit_override_is_preserved() -
     assert _has_explicit_basetemp(["--basetemp", "build/custom"])
     assert _has_explicit_basetemp(["--basetemp=build/custom"])
 
-    first = _unique_default_basetemp(ROOT, pid=123, token="aaaaaaaa")
-    second = _unique_default_basetemp(ROOT, pid=123, token="bbbbbbbb")
-    assert first == ROOT / "build" / "pt" / "123-aaaaaaaa"
+    first_token = "a" * 8
+    second_token = "b" * 8
+    first = _unique_default_basetemp(ROOT, pid=123, token=first_token)
+    second = _unique_default_basetemp(ROOT, pid=123, token=second_token)
+    assert first == ROOT / "build" / "pt" / f"123-{first_token}"
     assert second == ROOT / "build" / "pt" / "123-bbbbbbbb"
     assert first != second
 
@@ -766,7 +892,10 @@ def test_cursor_launcher_is_synchronous_and_does_not_weaken_host_controls() -> N
     preflight = (TOOLS / "assert-execution-host.ps1").read_text(encoding="utf-8")
     assert "Start-Process" not in launcher
     assert "RequireCursorCli" in launcher
-    assert "& $cursor.Source @arguments" in launcher
+    assert '"--model", "composer-2.5"' in launcher or "--model composer-2.5" in launcher
+    assert "--" in launcher
+    assert "Invoke-CursorAgentProcess" in launcher
+    assert "$promptText" in launcher
     assert "SetEnvironmentVariable" not in launcher
     assert "Remove-Item Env:" not in launcher
     assert "SetEnvironmentVariable" not in preflight
@@ -793,3 +922,433 @@ def test_autonomous_rules_require_preflight_and_gate_wrapper() -> None:
     assert "## Execution host and temporary paths" in system
     assert "invoke-cursor-agent.ps1" in system
     assert "build/pt/<pid>-<token>" in system
+
+
+def _launcher_mock_env(tmp_path: Path, *, exit_code: int = 0) -> tuple[dict[str, str], Path, Path]:
+    mock_dir = tmp_path / "bin"
+    mock_dir.mkdir()
+    args_log = tmp_path / "argv.log"
+    capture_script = mock_dir / "capture_argv.py"
+    capture_script.write_text(
+        "import json\n"
+        "import os\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "log = Path(os.environ['QMTOOL_MOCK_ARGV_LOG'])\n"
+        "log.parent.mkdir(parents=True, exist_ok=True)\n"
+        "args = sys.argv[1:]\n"
+        "payload = {'argv': args}\n"
+        "if '--' in args:\n"
+        "    split = args.index('--')\n"
+        "    payload['prompt_args'] = args[split + 1 :]\n"
+        "log.write_text(json.dumps(payload) + '\\n', encoding='utf-8')\n"
+        f"raise SystemExit(int(os.environ.get('QMTOOL_MOCK_EXIT_CODE', '{exit_code}')))\n",
+        encoding="utf-8",
+    )
+    mock_agent = mock_dir / "cursor-agent.cmd"
+    mock_agent.write_text(
+        f'@echo off\r\n"{sys.executable}" "{capture_script}" %*\r\n',
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["PATH"] = str(mock_dir) + os.pathsep + env.get("PATH", "")
+    env["QMTOOL_MOCK_ARGV_LOG"] = str(args_log)
+    env["QMTOOL_MOCK_EXIT_CODE"] = str(exit_code)
+    _assert_cursor_agent_resolves_to_fixture(env, mock_agent)
+    return env, args_log, mock_agent
+
+
+def _invoke_launcher(
+    env: dict[str, str],
+    *,
+    prompt: str | None = None,
+    prompt_path: Path | None = None,
+    force: bool = False,
+    prompt_as_separate_arg: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    args = [
+        POWERSHELL,
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(TOOLS / "invoke-cursor-agent.ps1"),
+        "-TargetRoot",
+        str(ROOT),
+    ]
+    if prompt_path is not None:
+        args.append("-PromptPath")
+        args.append(str(prompt_path))
+    elif prompt is not None:
+        if prompt_as_separate_arg or prompt.endswith("\\"):
+            args.extend(["-Prompt", prompt])
+        else:
+            args.append("-Prompt:" + prompt)
+    if force:
+        args.append("-Force")
+    return _run_subprocess_bounded(args, env=env)
+
+
+def _launcher_argv_payload(captured: str) -> dict[str, object]:
+    return json.loads(captured.strip())
+
+
+def _launcher_prompt_after_double_dash(captured: str) -> str:
+    payload = _launcher_argv_payload(captured)
+    prompt_args = payload.get("prompt_args")
+    assert isinstance(prompt_args, list), payload
+    assert len(prompt_args) == 1, payload
+    return str(prompt_args[0])
+
+
+def _extract_powershell_function(source: str, name: str) -> str:
+    marker = f"function {name} {{"
+    start = source.find(marker)
+    if start < 0:
+        raise AssertionError(f"missing PowerShell function: {name}")
+    depth = 0
+    for index in range(start + len(marker) - 1, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1] + "\n"
+    raise AssertionError(f"unterminated PowerShell function: {name}")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_invokes_mock_agent_with_single_prompt_argument(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    prompt = "inline prompt with spaces"
+    completed = _invoke_launcher(env, prompt=prompt)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    argv = _launcher_argv_payload(captured)["argv"]
+    assert "--model" in argv
+    assert "composer-2.5" in argv
+    assert _launcher_prompt_after_double_dash(captured) == prompt
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_reads_prompt_file_and_preserves_leading_dash(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    prompt_path = tmp_path / "prompt.txt"
+    prompt = "-leading dash and spaces\nsecond line"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    completed = _invoke_launcher(env, prompt_path=prompt_path)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    prompt_after = _launcher_prompt_after_double_dash(captured)
+    assert prompt_after.startswith("-leading dash and spaces")
+    assert prompt_path.read_text(encoding="utf-8") == prompt
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_inline_prompt_preserves_leading_dash(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    prompt = "-leading dash and spaces"
+    completed = _invoke_launcher(env, prompt=prompt)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    assert _launcher_prompt_after_double_dash(captured) == prompt
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_native_argument_quoting_round_trips_windows_argv(tmp_path: Path) -> None:
+    launcher = (TOOLS / "invoke-cursor-agent.ps1").read_text(encoding="utf-8")
+    helper_script = tmp_path / "format-native-arg.ps1"
+    helper_script.write_text(
+        _extract_powershell_function(launcher, "Format-NativeCommandArgument")
+        + "Add-Type @'\n"
+        + "using System;\n"
+        + "using System.Runtime.InteropServices;\n"
+        + "using System.Text;\n"
+        + "public static class NativeArgv {\n"
+        + "  [DllImport(\"shell32.dll\", CharSet = CharSet.Unicode)]\n"
+        + "  private static extern IntPtr CommandLineToArgvW(string lpCmdLine, out int pNumArgs);\n"
+        + "  [DllImport(\"kernel32.dll\")] private static extern IntPtr LocalFree(IntPtr hMem);\n"
+        + "  public static string[] Parse(string commandLine) {\n"
+        + "    int argc; IntPtr argv = CommandLineToArgvW(commandLine, out argc);\n"
+        + "    if (argv == IntPtr.Zero) { throw new InvalidOperationException(\"parse failed\"); }\n"
+        + "    try {\n"
+        + "      string[] args = new string[argc];\n"
+        + "      IntPtr[] ptrs = new IntPtr[argc];\n"
+        + "      Marshal.Copy(argv, ptrs, 0, argc);\n"
+        + "      for (int i = 0; i < argc; i++) { args[i] = Marshal.PtrToStringUni(ptrs[i]); }\n"
+        + "      return args;\n"
+        + "    } finally { LocalFree(argv); }\n"
+        + "  }\n"
+        + "}\n"
+        + "'@\n"
+        + "$cases = @(\n"
+        + "  '-leading dash and spaces`nsecond line',\n"
+        + "  'say \"hello\" exactly',\n"
+        + "  'path with spaces\\',\n"
+        + "  'quote \"and\" newline`nterminal\\'\n"
+        + ")\n"
+        + "foreach ($expected in $cases) {\n"
+        + "  $quoted = Format-NativeCommandArgument $expected\n"
+        + "  $parsed = [NativeArgv]::Parse('dummy.exe ' + $quoted)\n"
+        + "  if ($parsed.Count -ne 2 -or $parsed[1] -ne $expected) {\n"
+        + "    Write-Error \"round-trip failed for: $expected -> $($parsed -join '|')\"\n"
+        + "    exit 4\n"
+        + "  }\n"
+        + "}\n",
+        encoding="utf-8",
+    )
+    helper = _run_subprocess_bounded(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(helper_script),
+        ],
+    )
+    assert helper.returncode == 0, helper.stderr or helper.stdout
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_force_switch_and_exit_passthrough(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path, exit_code=7)
+    completed = _invoke_launcher(env, prompt="force off")
+    assert completed.returncode == 7, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    assert "--force" not in _launcher_argv_payload(captured)["argv"]
+
+    args_log.unlink()
+    completed_force = _invoke_launcher(env, prompt="force on", force=True)
+    assert completed_force.returncode == 7, completed_force.stderr or completed_force.stdout
+    captured_force = args_log.read_text(encoding="utf-8")
+    assert "--force" in _launcher_argv_payload(captured_force)["argv"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_preflight_failure_skips_child(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    env["HTTP_PROXY"] = "http://127.0.0.1:9"
+    completed = _invoke_launcher(env, prompt="should not run")
+    assert completed.returncode == 3
+    assert not args_log.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_model_matches_coordinator_config() -> None:
+    config = json.loads((ROOT / ".cursor" / "agent-system.json").read_text(encoding="utf-8"))
+    coordinator_model = config["routing"]["coordinator_model"]
+    launcher = (TOOLS / "invoke-cursor-agent.ps1").read_text(encoding="utf-8")
+    assert f'"--model", "{coordinator_model}"' in launcher
+    assert "ArgumentList" in launcher
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_inline_prompt_preserves_embedded_quotes(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    prompt = 'say "hello" exactly'
+    completed = _invoke_launcher(env, prompt=prompt)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    assert _launcher_prompt_after_double_dash(captured) == prompt
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_passes_with_valid_junit(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_gate_pass.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    junit = _unique_build_junit("gate-owner-pass")
+    completed = _run_pytest_gate(tmp_path, smoke=smoke, junit=junit)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    assert junit.is_file()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_preserves_nonzero_pytest_exit(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_gate_fail.py"
+    smoke.write_text("def test_smoke():\n    assert False\n", encoding="utf-8")
+    junit = _unique_build_junit("gate-owner-pytest-fail")
+    completed = _run_pytest_gate(tmp_path, smoke=smoke, junit=junit)
+    assert completed.returncode == 1, completed.stderr or completed.stdout
+    assert junit.is_file()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_missing_junit(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-missing")
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "missing JUnit" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_malformed_junit(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-malformed")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    junit.write_text("<broken", encoding="utf-8")
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "malformed JUnit" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_zero_test_junit(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-zero-tests")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    junit.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<testsuite tests="0" failures="0" errors="0"></testsuite>',
+        encoding="utf-8",
+    )
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "zero tests" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_failure_junit(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-failure")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    junit.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<testsuite tests="1" failures="1" errors="0"></testsuite>',
+        encoding="utf-8",
+    )
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "failures=1" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_error_junit(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-error")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    junit.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<testsuite tests="1" failures="0" errors="1"></testsuite>',
+        encoding="utf-8",
+    )
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "errors=1" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_missing_required_counters(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-missing-counters")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    junit.write_text(
+        '<?xml version="1.0" encoding="utf-8"?><testsuite tests="1"></testsuite>',
+        encoding="utf-8",
+    )
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "missing failures counter" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_nonnumeric_counters(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-nonnumeric-counters")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    junit.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<testsuite tests="abc" failures="0" errors="0"></testsuite>',
+        encoding="utf-8",
+    )
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "invalid tests counter" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_rejects_negative_counters(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-negative-counters")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    junit.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<testsuite tests="-1" failures="0" errors="0"></testsuite>',
+        encoding="utf-8",
+    )
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 0)
+    assert completed.returncode == JUNIT_GATE_OWNER_VALIDATION_EXIT
+    assert "negative tests counter" in (completed.stderr or completed.stdout)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_wrapper_rejects_preexisting_junit_target(tmp_path: Path) -> None:
+    smoke = tmp_path / "test_stale_junit_smoke.py"
+    smoke.write_text("def test_smoke():\n    assert True\n", encoding="utf-8")
+    junit = _unique_build_junit("gate-stale-junit")
+    junit.parent.mkdir(parents=True, exist_ok=True)
+    stale_bytes = (
+        b'<?xml version="1.0" encoding="utf-8"?>'
+        b'<testsuite tests="1" failures="0" errors="0"></testsuite>'
+    )
+    junit.write_bytes(stale_bytes)
+    completed = _run_pytest_gate(tmp_path, smoke=smoke, junit=junit)
+    assert completed.returncode != 0
+    assert "must not exist before the gate run" in (completed.stderr or completed.stdout)
+    assert junit.read_bytes() == stale_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell gate wrapper is Windows-only")
+def test_pytest_gate_owner_preserves_nonzero_pytest_exit_without_junit(tmp_path: Path) -> None:
+    junit = _unique_build_junit("gate-owner-pytest-nonzero")
+    completed = _invoke_junit_gate_owner(tmp_path, junit, 1)
+    assert completed.returncode == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_mock_resolution_guard_rejects_wrong_fixture_path(tmp_path: Path) -> None:
+    wrong_dir = tmp_path / "wrong-bin"
+    expected_dir = tmp_path / "expected-bin"
+    wrong_dir.mkdir()
+    expected_dir.mkdir()
+    wrong_agent = wrong_dir / "cursor-agent.cmd"
+    expected_agent = expected_dir / "cursor-agent.cmd"
+    wrong_agent.write_text("@echo off\r\nexit /b 0\r\n", encoding="utf-8")
+    expected_agent.write_text("@echo off\r\nexit /b 0\r\n", encoding="utf-8")
+    env = dict(os.environ)
+    env["PATH"] = str(wrong_dir) + os.pathsep + env.get("PATH", "")
+    with pytest.raises(AssertionError, match="cursor-agent must resolve to the test fixture"):
+        _assert_cursor_agent_resolves_to_fixture(env, expected_agent)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_argument_list_preserves_terminal_backslash_quotes_and_newlines(
+    tmp_path: Path,
+) -> None:
+    launcher = (TOOLS / "invoke-cursor-agent.ps1").read_text(encoding="utf-8")
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    prompt = 'quote "and" newline\nterminal\\'
+    harness = tmp_path / "argument-list-smoke.ps1"
+    harness.write_text(
+        _extract_powershell_function(launcher, "Format-NativeCommandArgument")
+        + _extract_powershell_function(launcher, "Invoke-CursorAgentProcess")
+        + f'$env:QMTOOL_MOCK_ARGV_LOG = "{args_log.as_posix()}"\n'
+        + f'$env:QMTOOL_MOCK_EXIT_CODE = "0"\n'
+        + f'$capture = "{(tmp_path / "bin" / "capture_argv.py")}"\n'
+        + f'$python = "{sys.executable}"\n'
+        + '$prompt = "quote `"and`" newline`nterminal\\"\n'
+        + "$args = @($capture,'--print','--output-format','text','--workspace','"
+        + str(ROOT).replace("\\", "\\\\")
+        + "','--model','composer-2.5','--',$prompt)\n"
+        + "$code = Invoke-CursorAgentProcess -Executable $python -ArgumentList $args\n"
+        + "exit $code\n",
+        encoding="utf-8",
+    )
+    completed = _run_subprocess_bounded(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(harness),
+        ],
+        env=env,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    assert _launcher_prompt_after_double_dash(captured) == prompt

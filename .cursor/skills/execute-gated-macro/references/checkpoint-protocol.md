@@ -69,16 +69,19 @@ Before fingerprint: <sha256>
 Pre-review fingerprint: <sha256>
 Remediation count: <0|1>
 Task prefix: [ROLE:checkpoint-reviewer]
-Requested model: gpt-5.6-terra
-Return the checkpoint-reviewer output contract including D15 evidence_profile.
+Requested model: <selected ladder rung from review_model_fallback>
+Return the checkpoint-reviewer output contract including D15 evidence_profile and ladder attempt record.
 Do not mutate repository state.
 ```
 
-Launch the reviewer as the native `checkpoint-reviewer` custom agent with model `gpt-5.6-terra` in a
-separate context. The primary Cursor agent sends the handoff directly, waits for the result and
-returns one consolidated report; never ask the user to copy, paste, forward or relay between
-agents. Capture `agent_id` from the native Task result. The reviewer does not need shell access or
-visibility into its own Task id; unavailable self-observation alone is not a content blocker.
+Launch the reviewer as the native `checkpoint-reviewer` custom agent in a separate context using the
+authorized ladder from `.cursor/agent-system.json` `review_model_fallback`, beginning at attempt 1
+`grok-4.7-high`, then `cursor-grok-4.6-xhigh`, `cursor-grok-4.6-high`, and `gpt-5.6-terra-high`
+only after explicit prior `UNAVAILABLE` evidence for the same role/review identity. There is no
+hidden attempt 0 and no legacy `grok-4.7-xhigh` route. Record each attempt; advance only on
+`UNAVAILABLE`, never on substantive `FAIL`. The primary Cursor agent sends the handoff directly,
+waits for the result and returns one consolidated report; never ask the user to copy, paste, forward
+or relay between agents. Capture `agent_id` from the native Task result. The reviewer does not need shell access or visibility into its own Task id; unavailable self-observation alone is not a content blocker.
 Accept Gate E only when `evidence_profile` is
 `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED` and `reviewer_verdict` is `PASS`. Treat
 `CONTROL_PLANE_PINNED` as control-plane binding, never as observed runtime attestation. If
@@ -114,6 +117,36 @@ runtime_attestation: false
 control_plane_attestation: false
 global_relaxation: false
 <!-- PILOT00_ORCHESTRATOR_REVIEW_END -->
+
+AGENT-COST-01 critical final audit and exhausted escalation use
+`EXTERNAL_CODEX_BOUND_REVIEW` from `.cursor/agent-system.json` `external_codex_bound_review`.
+This is not `INDEPENDENT_ORCHESTRATOR_REVIEW`, not a Cursor model ID, and not D15
+`RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED`. Local validators check structure, staleness, and
+hash binding only; they do not authenticate external origin or serving model. Missing, stale, or
+conflicting handoff evidence is `BLOCKED_HUMAN` with no Cursor GPT fallback.
+
+<!-- EXTERNAL_CODEX_BOUND_REVIEW_START -->
+contract_id: EXTERNAL_CODEX_BOUND_REVIEW
+packages: AGENT-COST-01
+external_host: codex-chatgpt-authenticated
+local_validator_scope: workspace_derived_binding
+canonical_evidence_root: build/agent-cost-01/w1/{evidence_attempt}
+pre_handoff_token: PRE_HANDOFF_READY
+bound_review_token: HANDOFF_READY
+workspace_fingerprint_source: checkpoint_snapshot.repository_state_sha256
+runtime_attestation: false
+control_plane_attestation: false
+cursor_gpt_fallback: true
+cursor_gpt_fallback_after_grok_ladder: true
+external_codex_after_cursor_gpt_unavailable: true
+substantive_fail_blocks_external: true
+<!-- EXTERNAL_CODEX_BOUND_REVIEW_END -->
+
+Exhausted checkpoint rework uses `[ROLE:escalation-reviewer]` only to validate
+`EXTERNAL_CODEX_BOUND_REVIEW` handoff via `.cursor/hooks/subagent-start.ps1`
+(`validation_mode=EXTERNAL_CODEX_BOUND_REVIEW`). After `HANDOFF_READY`, require the external Codex
+result on the same bound contract/diff/evidence. Critical packages skip duplicate Grok full audit and
+require external Codex final audit only.
 
 Required reviewer content fields: `agent_name`, `configured_model`,
 `requested_model`, `observed_runtime_model`, `observed_reasoning`, `evidence_profile`,

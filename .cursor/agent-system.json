@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "profile": "balanced",
+  "version": 3,
+  "profile": "cursor-first",
   "defaults": {
     "max_checkpoint_reworks": 2,
     "max_final_audit_reworks": 2,
@@ -72,20 +72,21 @@
   },
   "roles": {
     "roadmap-architect": {
-      "model": "gpt-5.6-sol",
+      "model": "grok-4.7-high",
       "purpose": "High-quality roadmap and architecture planning plus the fresh final audit of a complete work package.",
       "allowed_responsibility": [
         "analyze roadmap dependencies and risks",
         "prepare vertical work packages and checkpoints",
         "write architecture change proposals in the existing AP/ADR structure",
         "perform the final work-package audit",
-        "update the existing roadmap after FINAL_PASS"
+        "perform the final work-package audit for non-critical packages"
       ],
       "forbidden_responsibility": [
         "modify product source code",
         "repair implementation findings",
         "commit, push, create pull requests, or merge",
-        "silently change established architecture"
+        "silently change established architecture",
+        "perform critical-package final audit when external Codex is required"
       ]
     },
     "repo-explorer": {
@@ -121,7 +122,7 @@
       ]
     },
     "checkpoint-reviewer": {
-      "model": "gpt-5.6-terra",
+      "model": "grok-4.7-high",
       "purpose": "Independently verify one checkpoint, its real use case, acceptance criteria, architecture, scope, and tests.",
       "allowed_responsibility": [
         "inspect the original checkpoint and actual diff",
@@ -137,22 +138,23 @@
       ]
     },
     "escalation-reviewer": {
-      "model": "gpt-5.6-sol",
-      "purpose": "Fresh high-reasoning review after two unsuccessful normal reworks.",
+      "model": "composer-2.5[]",
+      "purpose": "Read-only EXTERNAL-CODEX-HANDOFF validator after exhausted normal reworks. Returns only HANDOFF_READY or HANDOFF_INVALID.",
       "allowed_responsibility": [
-        "reanalyze requirements, architecture, diff, tests, and prior findings from first principles",
-        "return PASS or FAIL with evidence",
-        "provide diagnosis and options when FAIL requires BLOCKED_HUMAN"
+        "validate external Codex handoff structure, staleness, and hash binding",
+        "return HANDOFF_READY or HANDOFF_INVALID with evidence gaps"
       ],
       "forbidden_responsibility": [
         "edit source code or tests",
+        "grant PASS or FAIL verdicts",
+        "issue findings or merge approval",
         "perform further rework",
         "commit, push, create pull requests, or merge",
-        "continue automation after FAIL"
+        "substitute for external Codex review"
       ]
     },
     "git-steward": {
-      "model": "gpt-5.6-luna",
+      "model": "composer-2.5[]",
       "purpose": "Perform only gated Git and GitHub routine operations for the active work package.",
       "allowed_responsibility": [
         "inspect status and exact staged paths",
@@ -173,7 +175,7 @@
       ]
     },
     "plan-challenger": {
-      "model": "gpt-5.6-terra",
+      "model": "grok-4.7-high",
       "purpose": "Perform a bounded independent pre-mortem of a decision-ready plan before implementation.",
       "allowed_responsibility": [
         "challenge requirement interpretation and evidence coverage",
@@ -188,7 +190,7 @@
       ]
     },
     "external-review-triager": {
-      "model": "gpt-5.6-terra",
+      "model": "grok-4.7-high",
       "purpose": "Independently classify GitHub Codex findings against the current pull-request head and authoritative package evidence.",
       "allowed_responsibility": [
         "verify all external findings against the current PR head and diff",
@@ -202,5 +204,276 @@
         "commit, push, comment, review, or merge"
       ]
     }
+  },
+  "routing": {
+    "coordinator_model": "composer-2.5",
+    "normal_final_audit_host": "cursor-grok",
+    "critical_final_audit_host": "external-codex",
+    "exhausted_escalation_host": "external-codex",
+    "ag_packages_critical": [
+      "AGENT-COST-01"
+    ]
+  },
+  "review_model_fallback": {
+    "amendment_id": "W1-004-native-ladder-normalized",
+    "amendment_version": 2,
+    "first_attempt": 1,
+    "result_categories": [
+      "SUCCESS",
+      "UNAVAILABLE",
+      "FAIL_SUBSTANTIVE"
+    ],
+    "record_attempt_fields": [
+      "role",
+      "attempt",
+      "requested_model",
+      "result_category",
+      "agent_id",
+      "signal"
+    ],
+    "roles": {
+      "checkpoint-reviewer": {
+        "ladder": [
+          {
+            "attempt": 1,
+            "model": "grok-4.7-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 2,
+            "model": "cursor-grok-4.6-xhigh",
+            "runtime_reasoning": "xhigh"
+          },
+          {
+            "attempt": 3,
+            "model": "cursor-grok-4.6-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 4,
+            "model": "gpt-5.6-terra-high",
+            "runtime_reasoning": "high",
+            "gpt_fallback": true
+          }
+        ]
+      },
+      "plan-challenger": {
+        "ladder": [
+          {
+            "attempt": 1,
+            "model": "grok-4.7-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 2,
+            "model": "cursor-grok-4.6-xhigh",
+            "runtime_reasoning": "xhigh"
+          },
+          {
+            "attempt": 3,
+            "model": "cursor-grok-4.6-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 4,
+            "model": "gpt-5.6-terra-high",
+            "runtime_reasoning": "high",
+            "gpt_fallback": true
+          }
+        ]
+      },
+      "external-review-triager": {
+        "ladder": [
+          {
+            "attempt": 1,
+            "model": "grok-4.7-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 2,
+            "model": "cursor-grok-4.6-xhigh",
+            "runtime_reasoning": "xhigh"
+          },
+          {
+            "attempt": 3,
+            "model": "cursor-grok-4.6-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 4,
+            "model": "gpt-5.6-terra-high",
+            "runtime_reasoning": "high",
+            "gpt_fallback": true
+          }
+        ]
+      },
+      "roadmap-architect": {
+        "ladder": [
+          {
+            "attempt": 1,
+            "model": "grok-4.7-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 2,
+            "model": "cursor-grok-4.6-xhigh",
+            "runtime_reasoning": "xhigh"
+          },
+          {
+            "attempt": 3,
+            "model": "cursor-grok-4.6-high",
+            "runtime_reasoning": "high"
+          },
+          {
+            "attempt": 4,
+            "model": "gpt-5.6-sol-high",
+            "runtime_reasoning": "high",
+            "gpt_fallback": true
+          }
+        ]
+      }
+    }
+  },
+  "model_binding": {
+    "composer_allowed": [
+      "composer-2.5",
+      "composer-2.5[]",
+      "composer-2.5[fast=false]"
+    ],
+    "ladder_grok_models": [
+      "grok-4.7-high",
+      "cursor-grok-4.6-xhigh",
+      "cursor-grok-4.6-high"
+    ],
+    "rejected_patterns": [
+      "fast=true",
+      "auto",
+      "inherit",
+      "grok-4.7-xhigh",
+      "grok-4.7[effort=xhigh,fast=false]"
+    ]
+  },
+  "external_codex_bound_review": {
+    "contract_id": "EXTERNAL_CODEX_BOUND_REVIEW",
+    "validation_mode_pre_handoff": "EXTERNAL_CODEX_PRE_HANDOFF",
+    "validation_mode_bound_review": "EXTERNAL_CODEX_BOUND_REVIEW",
+    "validation_mode_d15": "D15_REVIEWER_EVIDENCE",
+    "base_ref": "4bedcc84cd81a46b6e8802a3a6b2296f9f5f9d5c",
+    "evidence_path_template": {
+      "root": "build/agent-cost-01/w1",
+      "contract_file": "checkpoint-contract.md",
+      "manifest_file": "context-manifest.json"
+    },
+    "review_route_bindings": {
+      "AGENT-COST-01": {
+        "checkpoint_escalation": {
+          "checkpoint_id": "W1",
+          "review_need": "CHECKPOINT_ESCALATION",
+          "ladder_role": "checkpoint-reviewer",
+          "require_complete_ladder": true
+        },
+        "critical_final_audit": {
+          "checkpoint_id": "FINAL_AUDIT",
+          "review_need": "FINAL_AUDIT",
+          "direct_external": true,
+          "forbid_ladder_history": true
+        }
+      }
+    },
+    "pre_handoff_forbidden_fields": [
+      "verdict",
+      "findings",
+      "requested_model",
+      "observed_model"
+    ],
+    "w1_allowlist_paths": [
+      ".cursor/agent-system.json",
+      ".cursor/agents/checkpoint-reviewer.md",
+      ".cursor/agents/escalation-reviewer.md",
+      ".cursor/agents/external-review-triager.md",
+      ".cursor/agents/git-steward.md",
+      ".cursor/agents/plan-challenger.md",
+      ".cursor/agents/roadmap-architect.md",
+      ".cursor/hooks.json",
+      ".cursor/hooks/subagent-start.ps1",
+      ".cursor/skills/apply-agent-profile/SKILL.md",
+      ".cursor/skills/execute-gated-macro/SKILL.md",
+      ".cursor/skills/execute-gated-macro/references/checkpoint-protocol.md",
+      ".cursor/skills/execute-work-package/SKILL.md",
+      ".cursor/tools/invoke-cursor-agent.ps1",
+      ".cursor/tools/run-pytest-gate.ps1",
+      "docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md",
+      "docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md",
+      "docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md",
+      "tests/docs/test_cursor_agent_system.py",
+      "tests/docs/test_cursor_execution_hygiene.py",
+      "tests/docs/test_cursor_macro_workflow.py"
+    ],
+    "pre_handoff_required_fields": [
+      "agent_id",
+      "task_id",
+      "external_host",
+      "separate_context",
+      "read_only",
+      "author_id",
+      "implementer_id",
+      "reviewer_id",
+      "package_id",
+      "checkpoint_id",
+      "review_need",
+      "target_root",
+      "branch",
+      "base_head",
+      "reviewed_head",
+      "evidence_attempt",
+      "contract_path",
+      "contract_sha256",
+      "diff_sha256",
+      "evidence_manifest_path",
+      "evidence_manifest_sha256",
+      "pre_fingerprint",
+      "post_fingerprint",
+      "mutation_detected",
+      "ladder_history"
+    ],
+    "bound_review_required_fields": [
+      "agent_id",
+      "task_id",
+      "external_host",
+      "separate_context",
+      "read_only",
+      "author_id",
+      "implementer_id",
+      "reviewer_id",
+      "package_id",
+      "checkpoint_id",
+      "review_need",
+      "target_root",
+      "branch",
+      "base_head",
+      "reviewed_head",
+      "evidence_attempt",
+      "contract_path",
+      "contract_sha256",
+      "diff_sha256",
+      "evidence_manifest_path",
+      "evidence_manifest_sha256",
+      "pre_fingerprint",
+      "post_fingerprint",
+      "mutation_detected",
+      "requested_model",
+      "observed_model",
+      "verdict",
+      "findings",
+      "ladder_history"
+    ],
+    "local_validator_scope": "workspace_derived_binding",
+    "authenticates_origin": false,
+    "authenticates_serving_model": false,
+    "missing_or_stale": "BLOCKED_HUMAN",
+    "cursor_gpt_fallback": true,
+    "cursor_gpt_fallback_after_grok_ladder": true,
+    "external_codex_after_cursor_gpt_unavailable": true,
+    "substantive_fail_blocks_external": true
   }
 }
