@@ -895,6 +895,9 @@ def test_cursor_launcher_is_synchronous_and_does_not_weaken_host_controls() -> N
     assert '"--model", "composer-2.5"' in launcher or "--model composer-2.5" in launcher
     assert "--" in launcher
     assert "Invoke-CursorAgentProcess" in launcher
+    assert "$startInfo.WorkingDirectory" in launcher
+    assert "[switch]$Interactive" in launcher
+    assert "$ResumeSession" in launcher
     assert "$promptText" in launcher
     assert "SetEnvironmentVariable" not in launcher
     assert "Remove-Item Env:" not in launcher
@@ -937,7 +940,7 @@ def _launcher_mock_env(tmp_path: Path, *, exit_code: int = 0) -> tuple[dict[str,
         "log = Path(os.environ['QMTOOL_MOCK_ARGV_LOG'])\n"
         "log.parent.mkdir(parents=True, exist_ok=True)\n"
         "args = sys.argv[1:]\n"
-        "payload = {'argv': args}\n"
+        "payload = {'argv': args, 'cwd': os.getcwd()}\n"
         "if '--' in args:\n"
         "    split = args.index('--')\n"
         "    payload['prompt_args'] = args[split + 1 :]\n"
@@ -965,6 +968,11 @@ def _invoke_launcher(
     prompt_path: Path | None = None,
     force: bool = False,
     prompt_as_separate_arg: bool = False,
+    interactive: bool = False,
+    resume_session: str | None = None,
+    resume_flag_only: bool = False,
+    target_root: Path = ROOT,
+    cwd: Path = ROOT,
 ) -> subprocess.CompletedProcess[str]:
     args = [
         POWERSHELL,
@@ -974,7 +982,7 @@ def _invoke_launcher(
         "-File",
         str(TOOLS / "invoke-cursor-agent.ps1"),
         "-TargetRoot",
-        str(ROOT),
+        str(target_root),
     ]
     if prompt_path is not None:
         args.append("-PromptPath")
@@ -986,7 +994,13 @@ def _invoke_launcher(
             args.append("-Prompt:" + prompt)
     if force:
         args.append("-Force")
-    return _run_subprocess_bounded(args, env=env)
+    if interactive:
+        args.append("-Interactive")
+    if resume_flag_only or resume_session is not None:
+        args.append("-ResumeSession")
+        if resume_session is not None:
+            args.append(resume_session)
+    return _run_subprocess_bounded(args, env=env, cwd=cwd)
 
 
 def _launcher_argv_payload(captured: str) -> dict[str, object]:
@@ -1016,6 +1030,62 @@ def _extract_powershell_function(source: str, name: str) -> str:
             if depth == 0:
                 return source[start : index + 1] + "\n"
     raise AssertionError(f"unterminated PowerShell function: {name}")
+
+
+def _launcher_child_cwd(captured: str) -> str:
+    payload = _launcher_argv_payload(captured)
+    cwd = payload.get("cwd")
+    assert isinstance(cwd, str), payload
+    return cwd
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+@pytest.mark.parametrize(
+    ("interactive", "resume_session", "resume_flag_only"),
+    [
+        (False, None, False),
+        (True, None, False),
+        (False, "session-chat-abc", False),
+    ],
+    ids=("default", "interactive", "resume"),
+)
+def test_cursor_launcher_child_cwd_matches_target_from_foreign_parent_cwd(
+    tmp_path: Path,
+    interactive: bool,
+    resume_session: str | None,
+    resume_flag_only: bool,
+) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path, exit_code=7)
+    foreign_cwd = tmp_path / "foreign-parent"
+    foreign_cwd.mkdir()
+    completed = _invoke_launcher(
+        env,
+        prompt="cwd probe",
+        interactive=interactive,
+        resume_session=resume_session,
+        resume_flag_only=resume_flag_only,
+        cwd=foreign_cwd,
+    )
+    assert completed.returncode == 7, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    child_cwd = Path(_launcher_child_cwd(captured)).resolve()
+    assert child_cwd == ROOT.resolve()
+    argv = _launcher_argv_payload(captured)["argv"]
+    assert "--workspace" in argv
+    workspace_index = argv.index("--workspace")
+    assert Path(argv[workspace_index + 1]).resolve() == ROOT.resolve()
+    assert "--model" in argv
+    assert "composer-2.5" in argv
+    if interactive:
+        assert "--print" not in argv
+        assert "--output-format" not in argv
+    else:
+        assert "--print" in argv
+        assert "--output-format" in argv
+        assert "text" in argv
+    if resume_session is not None:
+        assert "--resume" in argv
+        assert resume_session in argv
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
@@ -1334,7 +1404,9 @@ def test_cursor_launcher_argument_list_preserves_terminal_backslash_quotes_and_n
         + "$args = @($capture,'--print','--output-format','text','--workspace','"
         + str(ROOT).replace("\\", "\\\\")
         + "','--model','composer-2.5','--',$prompt)\n"
-        + "$code = Invoke-CursorAgentProcess -Executable $python -ArgumentList $args\n"
+        + "$code = Invoke-CursorAgentProcess -Executable $python -ArgumentList $args -WorkingDirectory '"
+        + str(ROOT).replace("\\", "\\\\")
+        + "'\n"
         + "exit $code\n",
         encoding="utf-8",
     )

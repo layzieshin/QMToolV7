@@ -341,7 +341,10 @@ def test_config_agents_skills_rules_and_worktree_contracts() -> None:
     assert "checkpoint-contract.md" in reviewer
     assert "Moving Goalposts" in reviewer
     assert "Scope Corrections" in reviewer
-    assert "finalization commit" in _read(AGENTS / "git-steward.md")
+    steward = _read(AGENTS / "git-steward.md")
+    assert "finalization commit" in steward
+    assert "working_directory" in steward
+    assert "does not imply push" in steward
     challenger = _read(AGENTS / "plan-challenger.md")
     assert _frontmatter_value(challenger, "readonly") == "true"
     assert "PLAN_CHALLENGE_PASS" in challenger
@@ -531,6 +534,11 @@ def test_hooks_json_pre_tool_use_task_guard_binding() -> None:
     )
     assert subagent_start[0]["timeout"] == 10
     assert subagent_start[0]["failClosed"] is True
+
+    git_guard = hooks["hooks"]["beforeShellExecution"][0]
+    assert git_guard["timeout"] == 30
+    assert git_guard["matcher"] == "(?:[gG][iI][tT]|[gG][hH])"
+    assert git_guard["failClosed"] is True
 
 
 def test_pre_tool_use_task_guard_normalizes_child_model_and_correlation(
@@ -1263,6 +1271,17 @@ def _invoke_git_guard_ingress(
     return completed, json.loads(output)
 
 
+def _hook_stderr_text(
+    completed: subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes],
+) -> str:
+    detail = completed.stderr
+    if not detail:
+        return ""
+    if isinstance(detail, bytes):
+        return detail.decode("utf-8", errors="replace")
+    return detail
+
+
 def test_git_guard_host_ingress_fail_closed(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     valid_read = {
@@ -1291,21 +1310,23 @@ def test_git_guard_host_ingress_fail_closed(tmp_path: Path) -> None:
     assert result is not None
     assert result["permission"] == "allow"
 
-    deny_cases: list[tuple[bytes | str, bool | None]] = [
-        (b"", False),
-        (b"   \r\n", False),
-        (b"{not-json", False),
-        (b"\xef\xbb\xbf{", False),
-        (json.dumps("scalar"), True),
-        (json.dumps([]), True),
-        (json.dumps({"cwd": str(ROOT)}), True),
-        (json.dumps({"command": "git status"}), True),
+    deny_cases: list[tuple[bytes | str, bool | None, str]] = [
+        (b"", False, "Hook payload was empty or unreadable."),
+        (b"   \r\n", False, "Hook payload was empty or unreadable."),
+        (b"{not-json", False, "Hook payload could not be parsed as JSON."),
+        (b"\xef\xbb\xbf{", False, "Hook payload could not be parsed as JSON."),
+        (json.dumps("scalar"), True, "Hook payload must be a JSON object."),
+        (json.dumps([]), True, "Hook payload must be a JSON object."),
+        (json.dumps({"cwd": str(ROOT)}), True, "Hook payload is missing command."),
+        (json.dumps({"command": "git status"}), True, "Hook payload is missing cwd."),
     ]
-    for payload, text in deny_cases:
+    for payload, text, expected_reason in deny_cases:
         completed, result = _invoke_git_guard_ingress(payload, state_path=state_path, text=text)
-        assert completed.returncode != 0, payload
+        assert completed.returncode == 1, payload
         assert result is not None
         assert result["permission"] == "deny"
+        assert result["user_message"] == expected_reason
+        assert expected_reason in _hook_stderr_text(completed)
 
     utf16_payload = json.dumps(
         {"command": "git status", "cwd": str(ROOT), "sandbox": False}

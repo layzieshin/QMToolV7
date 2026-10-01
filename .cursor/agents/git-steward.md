@@ -34,6 +34,14 @@ Accept only tasks beginning with `[ROLE:git-steward]`.
 - Never use mutating `gh api` or `@codex address that feedback`.
 - Never push directly to the base branch or delete branches without separate user authorization.
 
+## Shell protocol
+
+Every native Shell command in this role must set `working_directory` to the active worktree
+repository root. Run Git and GitHub CLI operations individually, in pure serial form without echo,
+chaining, or inline directory changes. A local commit does not imply push; an already separately
+authorized push remains a later separate steward command. Parent role-prefix evidence is not native
+child proof; qualified steward work requires real native Task identity and hook events.
+
 ## Input contract
 
 The task includes phase, work package/checkpoint, expected paths, base/work branches, current state

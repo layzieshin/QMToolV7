@@ -31,8 +31,11 @@ proxy. `EXECUTION_HOST_REQUIRED` stops before edits, reviews, or retries; automa
 proxy/sandbox controls or moves an already checked-out branch between worktrees.
 
 `.cursor/tools/invoke-cursor-agent.ps1` is the only supported nested CLI launcher. It performs that
-preflight and runs Cursor synchronously in the specified target, preserving the prompt as one
-argument so no detached writer or split command-line option remains. Normally the already opened
+preflight, sets the child process `WorkingDirectory` to the validated target root, and runs Cursor
+synchronously in the specified target, preserving the prompt as one argument so no detached writer
+or split command-line option remains. Opt-in `-Interactive` omits non-interactive `--print` and
+`--output-format`; `-ResumeSession` passes through to `cursor-agent --resume`. Coordinators and
+`git-steward` must set native Shell `working_directory` on every call. Normally the already opened
 Cursor workspace executes `/execute-work-package` directly and needs no nested CLI.
 
 Ordinary Python work-package gates use `.cursor/tools/run-pytest-gate.ps1`. It allocates unique,

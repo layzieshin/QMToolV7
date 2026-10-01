@@ -291,6 +291,8 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "fresh reviewer Task" in workflow
     assert "one consolidated report" in protocol
     assert "does not need shell access" in protocol
+    assert "working_directory" in protocol
+    assert "does not imply push" in protocol.lower() or "separately authorized push" in protocol
 
 
 def test_local_commit_is_included_in_implementation_authorization() -> None:
@@ -1333,13 +1335,15 @@ def test_checkpoint_protocol_requires_context_manifest_lifecycle() -> None:
     protocol = _read(PROTOCOL)
     skill = _read(SKILL)
     work_package_skill = _read(ROOT / ".cursor/skills/execute-work-package/SKILL.md")
+    autonomous_doc = _read(ROOT / "docs" / "CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md")
+    assert "WorkingDirectory" in autonomous_doc
+    assert "working_directory" in work_package_skill
     assert "context manifest" in protocol.lower() or "context-manifest" in protocol
     assert "manifest-build" in skill or "context manifest" in skill.lower()
     assert "manifest-validate" in skill or "validate" in skill.lower()
     assert "reuse" in work_package_skill.lower()
     assert "--allow-reuse" in work_package_skill
     assert "--verify-command" in work_package_skill
-    autonomous_doc = _read(ROOT / "docs" / "CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md")
     assert "--allow-reuse" in autonomous_doc
     assert "--verify-command" in autonomous_doc
     assert "PRE_HANDOFF_READY" in work_package_skill

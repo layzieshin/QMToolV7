@@ -54,6 +54,7 @@ function Decode-HostHookStdinText {
 }
 
 function Deny-Ingress([string]$message) {
+    [Console]::Error.WriteLine($message)
     @{
         permission = "deny"
         user_message = $message

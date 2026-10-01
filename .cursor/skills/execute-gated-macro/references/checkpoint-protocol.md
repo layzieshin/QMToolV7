@@ -18,6 +18,19 @@ diagnostic is not a PASS and may not silently become a retry. Numeric limits and
 only from `.cursor/agent-system.json`; no text in this protocol creates a separate budget. After
 the configured normal budget, the configured fresh escalation path decides PASS or BLOCKED_HUMAN.
 
+## Runtime status evidence chain
+
+Canonical owner for workflow/runtime status writes and coordinator status evidence. Follow this
+serial order only:
+
+1. native `Write` completes;
+2. a separate native `Readback` completes and the actual persisted state equals the expected state;
+3. only then record success evidence.
+
+The first denial stops dependent steps; do not continue with readback, PASS evidence, or later
+gates. Expose normal single approvals only; do not expand to permanent allow or AlwaysAllow bypass.
+Historical denial chains remain distinct from fresh fixture or native evidence.
+
 ## Evidence layout
 
 Use `build/ap-029-<checkpoint-id-lower>/` and unique attempt subdirectories. Never overwrite an
@@ -184,6 +197,9 @@ with the checkpoint allowlist, then commit. A standalone `/execute-gated-macro` 
 push and PR separately gated. When the macro is invoked by an explicit `/execute-work-package`
 request, that outer request authorizes its git-steward checkpoint pushes and final PR/merge subject
 to the persisted final gates, hook policy, CI, and branch protection.
+
+`[ROLE:git-steward]` uses native Shell with `working_directory` on every call, pure serial Git
+commands, and treats local commit as separate from any later separately authorized push.
 
 ## Final report
 

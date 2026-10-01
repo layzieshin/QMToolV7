@@ -29,6 +29,15 @@ same checkpoint.
    Cursor, clear proxy variables, or move a branch between worktrees. Re-open the registered target
    in the trusted Cursor host and resume there. Use `.cursor/tools/run-pytest-gate.ps1` for
    ordinary Python gates; the guarded PostgreSQL runner continues to own live/J04 invocation.
+   Every native Shell call, including `[ROLE:git-steward]`, must set `working_directory` to the
+   active worktree root; run Git commands individually and serially without chaining.
+   Runtime status and role evidence follow the canonical protocol in
+   `execute-gated-macro/references/checkpoint-protocol.md` (`Write` → separate `Readback`/equality →
+   success evidence; first denial stop; regular single approvals only).
+   Required `[ROLE:...]` work, including resume, must use a real native Task with genuine role/id,
+   explicit requested model, and actual caller fields from Task/hook events. Event-based reports
+   only; missing proof stays `UNVERIFIED`. Parent `[ROLE:...]` prefix in coordinator source is not
+   native child proof and must not substitute for Task identity.
 1. Locate the approved package in the existing flat `docs/AP-*` structure. Requirements and
    architecture must already be decision-complete; otherwise use `/maintain-roadmap`.
 2. Require one non-base work branch/worktree for exactly this package. Preserve foreign changes.

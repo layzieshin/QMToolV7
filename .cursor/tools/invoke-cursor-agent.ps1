@@ -9,7 +9,9 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = "File")]
     [string]$PromptPath,
 
-    [switch]$Force
+    [switch]$Force,
+    [switch]$Interactive,
+    [string]$ResumeSession
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,7 +68,8 @@ function Format-NativeCommandArgument {
 function Invoke-CursorAgentProcess {
     param(
         [string]$Executable,
-        [string[]]$ArgumentList
+        [string[]]$ArgumentList,
+        [string]$WorkingDirectory
     )
     $fileName = $Executable
     $argsToUse = $ArgumentList
@@ -77,6 +80,7 @@ function Invoke-CursorAgentProcess {
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $fileName
     $startInfo.UseShellExecute = $false
+    $startInfo.WorkingDirectory = $WorkingDirectory
     if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
         foreach ($arg in $argsToUse) {
             [void]$startInfo.ArgumentList.Add([string]$arg)
@@ -94,12 +98,23 @@ function Invoke-CursorAgentProcess {
 }
 
 $cursor = Get-Command cursor-agent -ErrorAction Stop
-$argumentList = @(
-    "--print",
-    "--output-format", "text",
+$argumentList = @()
+if (-not $Interactive) {
+    $argumentList += @(
+        "--print",
+        "--output-format", "text"
+    )
+}
+$argumentList += @(
     "--workspace", $resolvedTarget,
     "--model", "composer-2.5"
 )
+if ($PSBoundParameters.ContainsKey('ResumeSession')) {
+    $argumentList += "--resume"
+    if ($ResumeSession) {
+        $argumentList += $ResumeSession
+    }
+}
 if ($Force) {
     $argumentList += "--force"
 }
@@ -107,4 +122,4 @@ $argumentList += "--"
 $argumentList += $promptText
 
 Write-Host "Starting Cursor synchronously in: $resolvedTarget"
-exit (Invoke-CursorAgentProcess -Executable $cursor.Source -ArgumentList $argumentList)
+exit (Invoke-CursorAgentProcess -Executable $cursor.Source -ArgumentList $argumentList -WorkingDirectory $resolvedTarget)

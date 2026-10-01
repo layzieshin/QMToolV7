@@ -104,7 +104,7 @@ changed in W0):
 | --- | --- | --- |
 | Role frontmatter | `.cursor/agents/<role>.md` | Six GPT-bound roles today; two Composer roles |
 | Subagent / Task hook | `.cursor/hooks.json`, `.cursor/hooks/subagent-start.ps1` | `preToolUse` matcher `^Task$` = supported pre-execution cost-control gate; `subagentStart` = lifecycle audit only; model routing is cost control, not a general security boundary (Git/file/secret/permission guards stay separate) |
-| Main launcher | `.cursor/tools/invoke-cursor-agent.ps1` | No explicit model parameter today |
+| Main launcher | `.cursor/tools/invoke-cursor-agent.ps1` | Child `WorkingDirectory` = validated target; `-Interactive` / `-ResumeSession` passthrough; `composer-2.5` default |
 | Profile apply | `.cursor/skills/apply-agent-profile/SKILL.md` | Must mirror JSON changes |
 | Macro protocol | `.cursor/skills/execute-gated-macro/SKILL.md`, `references/checkpoint-protocol.md` | D15/Terra hardcodes in tests and protocol |
 | D15 decision | `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` § D15 | Reviewer evidence profiles; successor references this package after activation |

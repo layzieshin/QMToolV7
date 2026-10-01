@@ -26,7 +26,7 @@
       {
         "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \".cursor/hooks/git-guard.ps1\"",
         "matcher": "(?:[gG][iI][tT]|[gG][hH])",
-        "timeout": 10,
+        "timeout": 30,
         "failClosed": true
       }
     ],
