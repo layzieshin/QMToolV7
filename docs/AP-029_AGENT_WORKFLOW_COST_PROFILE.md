@@ -290,13 +290,15 @@ new contract fields.
 `.cursor/agent-system.json` and bound owners). This is qualification material, not activation on
 `main` or for foreign packages.
 
-**W1 implementation status:** scope committed (`0213f23…`); implementation prepared uncommitted for
+**W1 implementation status (historical):** scope committed (`0213f23…`); implementation prepared uncommitted for
 external Codex review (`READY_FOR_EXTERNAL_CODEX_W1_REVIEW`). Native smokes and gate evidence under
 `build/agent-cost-01/w1/w1-implementation-001/`. After bounded hygiene correction
-(`W1-CAPABILITY-PROCESS-HYGIENE`), W1 remains **blocked** pending fresh evidence/review;
-`rework_count=2/2` and `exceptional_recovery=1/1` are preserved and not reset by hygiene work.
+(`W1-CAPABILITY-PROCESS-HYGIENE`), W1 remained **blocked** pending fresh evidence/review until the
+W1 successor-recovery path completed. Current branch qualification uses profile slug **`cursor-first`**
+with candidate JSON **`version: 3`**; `main` and foreign worktrees remain on **`balanced` v2** until W3
+publication/activation after squash-merge.
 
-**W1 successor recovery (2026-09-29):** User authorized one bounded successor-recovery package with
+**W1 successor recovery (2026-09-29, historical):** User authorized one bounded successor-recovery package with
 `successor_recovery_authorized=true` and `successor_recovery_attempt=1/1`. Historical counters remain
 unchanged (`rework_count=2/2`, `exceptional_recovery=1/1`). Tracked repair scope is exactly eight
 owners: `.cursor/agent-system.json`, `.cursor/hooks/subagent-start.ps1`,
@@ -355,8 +357,10 @@ After W2, freeze the **final candidate commit/tree** before any W3 qualification
 - `.cursor/agents/external-review-triager.md`
 - `.cursor/agents/escalation-reviewer.md`
 - `.cursor/agents/git-steward.md`
+- `.cursor/hooks.json`
 - `.cursor/hooks/subagent-start.ps1`
 - `.cursor/tools/invoke-cursor-agent.ps1`
+- `.cursor/tools/run-pytest-gate.ps1`
 - `.cursor/skills/apply-agent-profile/SKILL.md`
 - `.cursor/skills/execute-gated-macro/SKILL.md`
 - `.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`
@@ -493,8 +497,34 @@ historical `gpt-5.6-terra` strings, without claiming runtime attestation where m
 - [x] W0 evidence attempts under `build/agent-cost-01/w0/<attempt>/`
 - [x] Candidate lifecycle, exact W2/W3 allowlists, controlstate separation documented
 - [x] `rework_count=2` recorded honestly
-- [ ] Independent W0 review R2 PASS on post-rework contract
-- [ ] W1 implementation — **NOT RUN**
+- [x] Independent W0 review R2 PASS on post-rework contract (historical)
+- [x] W1 implementation — completed on branch candidate; **activation remains NOT RUN until W3 merge**
 
-**End state after this rework commit:** `READY_FOR_INDEPENDENT_W0_REVIEW_R2`. W1 NOT RUN until
-independent reviewer PASS on the new contract commit.
+**Historical end state after W0 rework commit:** `READY_FOR_INDEPENDENT_W0_REVIEW_R2`. W1 was **NOT RUN**
+at W0 close; subsequent W1 work is historical qualification only until W3 publication.
+
+### W2 — exceptional guard recovery (`W2-EXCEPTIONAL-GUARD-RECOVERY`)
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-01 parent chat `01a01438-8a66-7563-9ba9-557c8c8684ef` — full recovery scope |
+| Regular W2 rework | `rework_count=2/2` — **not reset** |
+| Exceptional recovery | `exceptional_recovery=1/1` (separate from regular W2 rework) |
+| Historical `w2-implementation-004` | gate PASS at `build/agent-cost-01/w2/w2-implementation-004/`; independent review **FAIL** — preserved |
+| Repair scope | `.cursor/hooks/git-guard.ps1`, `tests/docs/test_cursor_agent_system.py` only |
+| Findings | joined `-f`/`-F` field flags; `methodValueBoundary` suffix bypass on `GET-FOO` |
+| Diff anchor | `c9fa9c45246d990c7b389390fe3b4b4e175ee43b7a1a8ed839370612feda059a` |
+
+**Gate result (`w2-exceptional-001`):** focused `test_git_guard_denies_local_pr_review_and_mutating_review_apis` exit **0**; full serial `tests/docs` exit **0**, **155 passed**, JUnit `build/agent-cost-01/w2/w2-exceptional-001/junit-docs.xml`; independent review **FAIL** — preserved. W3 not started.
+
+### W2 — exceptional guard recovery slot 2 (`w2-exceptional-002`)
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-01 parent chat `01a01438-8a66-7563-9ba9-557c8c8684ef` — slot **2/2** (max 2 exceptional) |
+| Regular W2 rework | `rework_count=2/2` — **not reset** |
+| Exceptional slot 1 | `w2-exceptional-001` consumed — gate PASS, review FAIL |
+| Repair scope | `.cursor/hooks/git-guard.ps1`, `tests/docs/test_cursor_agent_system.py`, compact note here |
+| Finding | uniform token-boundary `-f`/`-F` deny (quotes, backtick, numeric, underscore, bare/separate) |
+| Evidence | `build/agent-cost-01/w2/w2-exceptional-002/` |
+| Focused gate | `test_git_guard_denies_local_pr_review_and_mutating_review_apis` — result pending coordinator/native review |

@@ -32,8 +32,13 @@ same checkpoint.
 1. Locate the approved package in the existing flat `docs/AP-*` structure. Requirements and
    architecture must already be decision-complete; otherwise use `/maintain-roadmap`.
 2. Require one non-base work branch/worktree for exactly this package. Preserve foreign changes.
-3. If state is `RUNNING`, resume its exact phase/checkpoint/`next_action`. Never reimplement a
-   checkpoint whose journal verdict and commit are green.
+3. If state is `RUNNING`, resume its exact phase/checkpoint/`next_action`. Validate the bound
+   `context-manifest.json` with
+   `scripts/checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`
+   before reusing any completed green checkpoint. Repeat `--verify-command` for every expected
+   normalized gate; missing or wrong commands fail closed. The manifest is an index only—resume
+   semantics stay unchanged. Stale or forged manifests block reuse; do not repeat
+   completed steps, re-ask authorization, or re-reserve reviews when the manifest still matches.
 4. Otherwise initialize the small state contract from `.cursor/runtime/README.md`:
    `status=RUNNING`, `phase=PLAN`, rework counters zero, gates false, package/branch/document paths,
    and a concrete `next_action`.
@@ -57,7 +62,8 @@ dependent state changes.
 ### FREEZE CHECKPOINT CONTRACT
 
 Before the first source edit, write `checkpoint-contract.md` in the existing checkpoint evidence
-directory. Include work-package and checkpoint IDs, UTC capture time, start HEAD, source document
+directory and build `context-manifest.json` with `execute-gated-macro/scripts/checkpoint_snapshot.py
+manifest-build`. Include work-package and checkpoint IDs, UTC capture time, start HEAD, source document
 and source commit, goal, concrete use case, in/out scope, architecture invariants, acceptance
 criteria, planned evidence, and relevant requirement sources. Compute SHA256 with PowerShell
 `Get-FileHash` and record `contract_sha256` in the execution journal before invoking implementer.

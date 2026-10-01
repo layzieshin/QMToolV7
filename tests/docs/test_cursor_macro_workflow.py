@@ -1048,3 +1048,299 @@ def test_d15_later_rung_requires_explicit_fallback_without_selected_requested_fa
     )
     assert result["gate_e"] == "BLOCKED"
     assert "fallback" in result["reason"]
+
+
+def _manifest_build(repo: Path, **kwargs: Any) -> dict[str, Any]:
+    cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-build",
+        "--root",
+        str(repo),
+        "--package-id",
+        kwargs.get("package_id", "AGENT-COST-01"),
+        "--checkpoint-id",
+        kwargs.get("checkpoint_id", "W2"),
+        "--contract-path",
+        kwargs["contract_path"],
+        "--profile-path",
+        kwargs.get("profile_path", ".cursor/agent-system.json"),
+        "--output",
+        kwargs["output"],
+        "--base-ref",
+        kwargs.get("base_ref", "HEAD"),
+        "--verify-command",
+        kwargs.get("verify_command", ".venv/Scripts/python.exe -m pytest tests/docs -q"),
+    ]
+    for path in kwargs.get("allowlist", ("tracked.txt",)):
+        cmd.extend(["--allow", path])
+    for evidence in kwargs.get("evidence", ()):
+        cmd.extend(["--evidence", evidence])
+    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    return json.loads((repo / kwargs["output"]).read_text(encoding="utf-8"))
+
+
+def _manifest_validate(
+    repo: Path,
+    manifest_path: str,
+    *,
+    allow_reuse: bool = False,
+    verify_commands: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-validate",
+        "--root",
+        str(repo),
+        "--manifest",
+        manifest_path,
+    ]
+    if allow_reuse:
+        cmd.append("--allow-reuse")
+    for command in verify_commands or ():
+        cmd.extend(["--verify-command", command])
+    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+    return {
+        "returncode": completed.returncode,
+        "payload": json.loads(completed.stdout),
+    }
+
+
+def test_context_manifest_build_validate_and_reuse(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    profile = {
+        "profile": "cursor-first",
+        "version": 3,
+    }
+    (profile_dir / "agent-system.json").write_text(json.dumps(profile) + "\n", encoding="utf-8")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    evidence_root = repo / "build" / "agent-cost-01" / "w2" / "attempt-001"
+    evidence_root.mkdir(parents=True)
+    contract = evidence_root / "checkpoint-contract.md"
+    contract.write_text("contract body\n", encoding="utf-8")
+    junit = evidence_root / "junit-docs.xml"
+    junit.write_text("<testsuite/>", encoding="utf-8")
+
+    manifest_path = "build/agent-cost-01/w2/attempt-001/context-manifest.json"
+    manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-001/checkpoint-contract.md",
+        output=manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-001/junit-docs.xml",),
+    )
+    assert manifest["package_id"] == "AGENT-COST-01"
+    assert manifest["checkpoint_id"] == "W2"
+    assert len(manifest["reuse_key_sha256"]) == 64
+
+    ok = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert ok["returncode"] == 0
+    assert ok["payload"]["valid"] is True
+    assert ok["payload"]["reuse_allowed"] is True
+
+    tracked.write_text("changed\n", encoding="utf-8")
+    stale = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert stale["returncode"] == 2
+    assert stale["payload"]["valid"] is False
+    assert stale["payload"]["reuse_allowed"] is False
+    assert any(reason.startswith("binding_mismatch:") for reason in stale["payload"]["reasons"])
+
+    tracked.write_text("baseline\n", encoding="utf-8")
+    contract.write_text("changed contract\n", encoding="utf-8")
+    contract_stale = _manifest_validate(
+        repo,
+        manifest_path,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert contract_stale["returncode"] == 2
+    assert contract_stale["payload"]["valid"] is False
+
+    tracked.write_text("baseline\n", encoding="utf-8")
+    contract.write_text("contract body\n", encoding="utf-8")
+    junit.write_text("<testsuite changed/>", encoding="utf-8")
+    evidence_changed = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert evidence_changed["returncode"] == 2
+    assert evidence_changed["payload"]["valid"] is False
+    assert evidence_changed["payload"]["reuse_allowed"] is False
+    assert any(reason.startswith("evidence_changed:") for reason in evidence_changed["payload"]["reasons"])
+
+    junit.write_text("<testsuite/>", encoding="utf-8")
+    reuse_without_commands = _manifest_validate(repo, manifest_path, allow_reuse=True)
+    assert reuse_without_commands["returncode"] == 2
+    assert reuse_without_commands["payload"]["valid"] is False
+    assert reuse_without_commands["payload"]["reuse_allowed"] is False
+    assert "reuse_requires_verification_commands" in reuse_without_commands["payload"]["reasons"]
+
+    wrong_command = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q --maxfail=1",),
+    )
+    assert wrong_command["returncode"] == 2
+    assert wrong_command["payload"]["valid"] is False
+    assert wrong_command["payload"]["reuse_allowed"] is False
+    assert "binding_mismatch:verification_commands" in wrong_command["payload"]["reasons"]
+
+    missing_root = repo / "build" / "agent-cost-01" / "w2" / "attempt-missing"
+    missing_root.mkdir(parents=True)
+    missing_contract = missing_root / "checkpoint-contract.md"
+    missing_contract.write_text("contract body\n", encoding="utf-8")
+    missing_manifest_path = "build/agent-cost-01/w2/attempt-missing/context-manifest.json"
+    missing_manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-missing/checkpoint-contract.md",
+        output=missing_manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-missing/junit-docs.xml",),
+    )
+    assert missing_manifest["evidence_sha256"]["junit"] is None
+    missing_result = _manifest_validate(
+        repo,
+        missing_manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert missing_result["returncode"] == 2
+    assert missing_result["payload"]["valid"] is False
+    assert missing_result["payload"]["reuse_allowed"] is False
+    assert any(
+        reason.startswith("evidence_missing:") or reason.startswith("evidence_not_bound_at_build:")
+        for reason in missing_result["payload"]["reasons"]
+    )
+
+    (missing_root / "junit-docs.xml").write_text("<testsuite/>", encoding="utf-8")
+    successor_manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-missing/checkpoint-contract.md",
+        output=missing_manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-missing/junit-docs.xml",),
+    )
+    assert successor_manifest["evidence_sha256"]["junit"] is not None
+    successor_ok = _manifest_validate(
+        repo,
+        missing_manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert successor_ok["returncode"] == 0
+    assert successor_ok["payload"]["valid"] is True
+    assert successor_ok["payload"]["reuse_allowed"] is True
+
+
+def test_context_manifest_rejects_traversal_and_forged_evidence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "agent-system.json").write_text(
+        '{"profile":"cursor-first","version":3}\n',
+        encoding="utf-8",
+    )
+    (repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    evidence_root = repo / "build" / "agent-cost-01" / "w2" / "attempt-002"
+    evidence_root.mkdir(parents=True)
+    contract = evidence_root / "checkpoint-contract.md"
+    contract.write_text("contract body\n", encoding="utf-8")
+    manifest_path = "build/agent-cost-01/w2/attempt-002/context-manifest.json"
+    traversal_cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-build",
+        "--root",
+        str(repo),
+        "--package-id",
+        "AGENT-COST-01",
+        "--checkpoint-id",
+        "W2",
+        "--contract-path",
+        "build/agent-cost-01/w2/attempt-002/checkpoint-contract.md",
+        "--profile-path",
+        ".cursor/agent-system.json",
+        "--output",
+        manifest_path,
+        "--base-ref",
+        "HEAD",
+        "--verify-command",
+        ".venv/Scripts/python.exe -m pytest tests/docs -q",
+        "--allow",
+        "tracked.txt",
+        "--allow",
+        ".cursor/agent-system.json",
+        "--evidence",
+        "junit=../outside/junit.xml",
+    ]
+    traversal = subprocess.run(traversal_cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert traversal.returncode != 0
+
+    (evidence_root / "junit-docs.xml").write_text("<testsuite/>", encoding="utf-8")
+    _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-002/checkpoint-contract.md",
+        output=manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-002/junit-docs.xml",),
+    )
+    forged = json.loads((repo / manifest_path).read_text(encoding="utf-8"))
+    forged["verification_commands"] = ["echo forged"]
+    (repo / manifest_path).write_text(json.dumps(forged, indent=2) + "\n", encoding="utf-8")
+    result = _manifest_validate(
+        repo,
+        manifest_path,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert result["returncode"] == 2
+    assert result["payload"]["valid"] is False
+
+
+def test_checkpoint_protocol_requires_context_manifest_lifecycle() -> None:
+    protocol = _read(PROTOCOL)
+    skill = _read(SKILL)
+    work_package_skill = _read(ROOT / ".cursor/skills/execute-work-package/SKILL.md")
+    assert "context manifest" in protocol.lower() or "context-manifest" in protocol
+    assert "manifest-build" in skill or "context manifest" in skill.lower()
+    assert "manifest-validate" in skill or "validate" in skill.lower()
+    assert "reuse" in work_package_skill.lower()
+    assert "--allow-reuse" in work_package_skill
+    assert "--verify-command" in work_package_skill
+    autonomous_doc = _read(ROOT / "docs" / "CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md")
+    assert "--allow-reuse" in autonomous_doc
+    assert "--verify-command" in autonomous_doc
+    assert "PRE_HANDOFF_READY" in work_package_skill
+    assert "HANDOFF_READY" in work_package_skill

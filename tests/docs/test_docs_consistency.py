@@ -1259,3 +1259,45 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "partially outstanding" in smoke_web01
     assert "mandatory PILOT00 tracking" in smoke_web01
     assert "VISUAL_ACCEPTANCE_PASS" in smoke_web01
+
+
+def test_agent_cost_profile_w2_naming_and_historical_status() -> None:
+    cost_profile = _read(DOCS / "AP-029_AGENT_WORKFLOW_COST_PROFILE.md")
+    autonomous = _read(DOCS / "CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md")
+    verify_skill = _read(ROOT / ".cursor/skills/verify-reports-and-plan/SKILL.md")
+
+    assert "profile slug **`cursor-first`**" in cost_profile
+    assert "candidate JSON **`version: 3`**" in cost_profile
+    assert "**`balanced` v2**" in cost_profile
+    assert "W1 remained **blocked**" in cost_profile or "W1 was **NOT RUN**" in cost_profile
+    assert "`.cursor/hooks.json`" in cost_profile
+    assert "`.cursor/tools/run-pytest-gate.ps1`" in cost_profile
+    assert "subagentStart` must not be claimed as a proven hard spawn" in cost_profile
+    assert "PRE_HANDOFF_READY" in autonomous
+    assert "HANDOFF_READY" in autonomous
+    assert "gh pr review" in autonomous
+    assert "UNKNOWN" in verify_skill
+    assert "Never invent zero cost" in verify_skill
+
+
+def test_agent_cost_docs_reject_false_cost_and_stale_reuse_claims() -> None:
+    patterns = _read(
+        ROOT / ".cursor/skills/verify-reports-and-plan/references/evidence-and-prompt-patterns.md"
+    )
+    codex_ref = _read(
+        ROOT / ".cursor/skills/qmtool-module-development/references/independent-codex-review.md"
+    )
+    assert "invented zero cost" in patterns.lower() or "Reject invented zero cost" in patterns
+    assert "stale-manifest reuse" in patterns.lower() or "stale-manifest reuse wording" in patterns
+    assert "EXTERNAL_CODEX_BOUND_REVIEW" in codex_ref
+    assert "PRE_HANDOFF_READY" in codex_ref
+    assert "HANDOFF_READY" in codex_ref
+    forbidden = (
+        "cost: 0",
+        "cache savings confirmed",
+        "reuse without manifest-validate",
+        "stacked Routine-Grok",
+    )
+    for token in forbidden:
+        assert token not in patterns
+        assert token not in codex_ref

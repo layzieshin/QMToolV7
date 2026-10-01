@@ -26,6 +26,7 @@ earlier result. Each checkpoint records:
 - base, start and end HEAD; branch and divergence;
 - allowlist, actual changed paths and foreign preserved paths;
 - before, pre-review and post-review snapshot JSON;
+- `context-manifest.json` built at checkpoint start and validated before resume/reuse;
 - commands, exit codes, counts, skips/errors, JUnit and logs;
 - first-red and later `NOT RUN` steps;
 - reviewer configured/observed model, verdict and findings;
@@ -39,6 +40,27 @@ Before the first source edit, create `checkpoint-contract.md` in the existing ch
 root. Record work package/checkpoint, `captured_at`, start HEAD, source document and commit, goal,
 use case, in/out scope, invariants, acceptance criteria, planned evidence, and requirement sources.
 Compute SHA256 with PowerShell `Get-FileHash` and write `contract_sha256` to the execution journal.
+
+## Context manifest lifecycle
+
+At checkpoint start, build `context-manifest.json` with
+`scripts/checkpoint_snapshot.py manifest-build`. Bind package/checkpoint, branch, HEAD, base SHA,
+contract path+SHA256, profile path+slug+version+SHA256, exact allowlist, owner hashes, normalized
+verification commands, canonical evidence paths below `build/`, evidence SHA-256 values (or honest
+missing markers when evidence is not yet present), and the allowlist repository fingerprint. Record
+the manifest path in the execution journal.
+
+Before resume or reuse of a completed green checkpoint, run
+`scripts/checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`.
+`--allow-reuse` without the exact expected verification command(s) fails closed. Validation
+recomputes every workspace-derived field, compares recorded evidence SHA-256 values to live bytes,
+and never trusts supplied expected/actual pairs from reports. Changed contract, profile/version,
+owner content, verification command, base/HEAD, allowlist, repository state, evidence bytes,
+missing/malformed manifest, traversal, or forged ignored evidence blocks reuse. A manifest built
+before evidence exists records missing evidence honestly and cannot qualify for reuse until a
+successor manifest is regenerated after the evidence exists. An unchanged matching manifest may
+reuse the checkpoint context without repeating completed green work, re-asking authorization, or
+re-reserving reviews. Regenerate the manifest after any material change.
 
 Reviewer and final audit use this snapshot, not only mutable roadmap text. Preserve every prior
 snapshot. A material change requires a formal amendment and successor snapshot referencing the old

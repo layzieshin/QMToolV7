@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -121,6 +122,7 @@ def _invoke_hook(
     log_path: Path | None = None,
     env_overrides: dict[str, str] | None = None,
     text: bool | None = None,
+    cwd: Path = ROOT,
 ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
     env = os.environ.copy()
     env["QMTOOL_WORKFLOW_STATE_PATH"] = str(state_path)
@@ -139,7 +141,7 @@ def _invoke_hook(
             "-File",
             str(HOOKS / script),
         ],
-        cwd=ROOT,
+        cwd=cwd,
         input=payload,
         capture_output=True,
         text=text,
@@ -181,6 +183,7 @@ def _run_hook(
     state_path: Path,
     log_path: Path | None = None,
     env_overrides: dict[str, str] | None = None,
+    cwd: Path = ROOT,
 ) -> dict[str, Any]:
     completed = _invoke_hook(
         script,
@@ -189,6 +192,7 @@ def _run_hook(
         log_path=log_path,
         env_overrides=env_overrides,
         text=True,
+        cwd=cwd,
     )
     output = completed.stdout.strip()
     assert output, f"{script} returned no JSON"
@@ -1239,7 +1243,159 @@ def test_git_guard_policy_matrix(tmp_path: Path) -> None:
     assert guard("gh pr merge 999 --squash", mock_env)["permission"] == "deny"
 
 
-def test_workflow_lifecycle_dry_run_uses_only_declared_state_contract(tmp_path: Path) -> None:
+def _invoke_git_guard_ingress(
+    payload: str | bytes,
+    *,
+    state_path: Path,
+    text: bool | None = None,
+) -> tuple[subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes], dict[str, Any] | None]:
+    if text is None:
+        text = isinstance(payload, str)
+    completed = _invoke_hook(
+        "git-guard.ps1",
+        payload,
+        state_path=state_path,
+        text=text,
+    )
+    output = completed.stdout.strip() if text else completed.stdout.decode("utf-8", errors="replace").strip()
+    if not output:
+        return completed, None
+    return completed, json.loads(output)
+
+
+def test_git_guard_host_ingress_fail_closed(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    valid_read = {
+        "command": "git status --short --branch",
+        "cwd": str(ROOT),
+        "sandbox": False,
+    }
+    completed, result = _invoke_git_guard_ingress(json.dumps(valid_read), state_path=state_path)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    assert result is not None
+    assert result["permission"] == "allow"
+
+    valid_write = _write_state(state_path, phase="CHECKPOINT_GIT")
+    del valid_write
+    completed, result = _invoke_git_guard_ingress(
+        json.dumps(
+            {
+                "command": 'git commit -m "checkpoint"',
+                "cwd": str(ROOT),
+                "sandbox": False,
+            }
+        ),
+        state_path=state_path,
+    )
+    assert completed.returncode == 0
+    assert result is not None
+    assert result["permission"] == "allow"
+
+    deny_cases: list[tuple[bytes | str, bool | None]] = [
+        (b"", False),
+        (b"   \r\n", False),
+        (b"{not-json", False),
+        (b"\xef\xbb\xbf{", False),
+        (json.dumps("scalar"), True),
+        (json.dumps([]), True),
+        (json.dumps({"cwd": str(ROOT)}), True),
+        (json.dumps({"command": "git status"}), True),
+    ]
+    for payload, text in deny_cases:
+        completed, result = _invoke_git_guard_ingress(payload, state_path=state_path, text=text)
+        assert completed.returncode != 0, payload
+        assert result is not None
+        assert result["permission"] == "deny"
+
+    utf16_payload = json.dumps(
+        {"command": "git status", "cwd": str(ROOT), "sandbox": False}
+    )
+    utf16_bytes = b"\xff\xfe" + utf16_payload.encode("utf-16-le")
+    completed, result = _invoke_git_guard_ingress(utf16_bytes, state_path=state_path, text=False)
+    assert completed.returncode == 0
+    assert result is not None
+    assert result["permission"] == "allow"
+
+    bom_payload = b"\xef\xbb\xbf" + json.dumps(
+        {"command": "git status", "cwd": str(ROOT), "sandbox": False}
+    ).encode("utf-8")
+    completed, result = _invoke_git_guard_ingress(bom_payload, state_path=state_path, text=False)
+    assert completed.returncode == 0
+    assert result is not None
+    assert result["permission"] == "allow"
+
+
+def test_git_guard_denies_local_pr_review_and_mutating_review_apis(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    _write_state(state_path, phase="FINAL_GIT")
+
+    def guard(command: str) -> dict[str, Any]:
+        return _run_hook(
+            "git-guard.ps1",
+            {"command": command, "cwd": str(ROOT), "sandbox": False},
+            state_path=state_path,
+        )
+
+    reviews = "repos/layzieshin/QMToolV7/pulls/30/reviews"
+    pull = "repos/layzieshin/QMToolV7/pulls/30"
+    embedded_foo = "repos/layzieshin/QMToolV7/repo-with-foo/pulls/30"
+    guard_cases: list[tuple[str, str]] = [
+        ("gh pr review 999 --approve", "deny"),
+        ("gh pr review 999 --comment -b ok", "deny"),
+        (f"gh api --method POST {reviews} -f event=APPROVE", "deny"),
+        (
+            "gh api repos/layzieshin/QMToolV7/pulls/30/reviews/1/dismissals --method PUT",
+            "deny",
+        ),
+        (f"gh api {reviews} --method=POST -f event=APPROVE", "deny"),
+        (f"gh api {reviews} -XPOST -f event=APPROVE", "deny"),
+        (f"gh api {reviews} -fevent=APPROVE", "deny"),
+        (f"gh api {reviews} -Fevent=APPROVE", "deny"),
+        (f"gh api {reviews} -f event=APPROVE", "deny"),
+        (f"gh api {reviews} -F event=APPROVE", "deny"),
+        (f'gh api {reviews} -f"event=APPROVE"', "deny"),
+        (f"gh api {reviews} -f'event=APPROVE'", "deny"),
+        (f"gh api {reviews} -f`event=APPROVE`", "deny"),
+        (f"gh api {reviews} -f=event=APPROVE", "deny"),
+        (f"gh api {reviews} -f123=value", "deny"),
+        (f"gh api {reviews} -f_field=value", "deny"),
+        (f'gh api {reviews} -F"event=APPROVE"', "deny"),
+        (f"gh api {reviews} -F'event=APPROVE'", "deny"),
+        (f"gh api {reviews} -F`event=APPROVE`", "deny"),
+        (f"gh api {reviews} -F=event=APPROVE", "deny"),
+        (f"gh api {reviews} -F123=value", "deny"),
+        (f"gh api {reviews} -F_field=value", "deny"),
+        (f"gh api {reviews} -f", "deny"),
+        (f"gh api {reviews} -F", "deny"),
+        (f"gh api {reviews} --field event=APPROVE", "deny"),
+        (f"gh api {reviews} --field=event=APPROVE", "deny"),
+        (f"gh api {reviews} --raw-field event=APPROVE", "deny"),
+        (f"gh api {reviews} --raw-field=event=APPROVE", "deny"),
+        (f"gh api {reviews} --input payload.json", "deny"),
+        (f"gh api {pull} --method GET", "allow"),
+        (f"gh api {pull} --method=GET", "allow"),
+        (f"gh api {pull} -XGET", "allow"),
+        (f"gh api {pull} -X=GET", "allow"),
+        (f"gh api {pull}", "allow"),
+        (f"gh api {embedded_foo}", "allow"),
+        (f"gh api {pull} -X=POST", "deny"),
+        (f"gh api {pull} -X=TRACE", "deny"),
+        (f"gh api {reviews} --method GET-FOO", "deny"),
+        (f"gh api {reviews} --method=GET-FOO", "deny"),
+        (f"gh api {pull} --method GET-FOO", "deny"),
+        (f"gh api {pull} --method=GET-FOO", "deny"),
+        (f"gh api {pull} -XGET-FOO", "deny"),
+        (f"gh api {pull} -X GET-FOO", "deny"),
+        (f"gh api {pull} -X=GET-FOO", "deny"),
+        ('gh api repos/layzieshin/QMToolV7/pulls/30 --method "POST"', "deny"),
+        (f'gh api {reviews} -X"POST" -f event=APPROVE', "deny"),
+        (f"gh api {pull} --method GET --method POST", "deny"),
+        (f"gh api {pull} --method", "deny"),
+        (f"gh api {pull} -X", "deny"),
+        (f"gh api {pull} --method GET --method=GET -XGET", "allow"),
+    ]
+    for command, expected in guard_cases:
+        assert guard(command)["permission"] == expected, command
     config = _config()
     declared_phases = set(config["workflow_contract"]["phases"])
     lifecycle = [
@@ -1665,23 +1821,61 @@ def _w1_diff_sha256() -> str:
     return hashlib.sha256(diff.encode("utf-8")).hexdigest().upper()
 
 
-def _workspace_repository_fingerprint() -> str:
+def _isolated_codex_binding_repo(tmp_path: Path, *, extra_allowlist: tuple[str, ...] = ()) -> Path:
+    repo = tmp_path / "binding-repo"
+    repo.mkdir()
+    config_path = ROOT / ".cursor/agent-system.json"
+    allowlist = list(_config()["external_codex_bound_review"]["w1_allowlist_paths"])
+    for relative in allowlist:
+        source = ROOT / Path(relative)
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_file():
+            shutil.copy2(source, target)
+        else:
+            target.write_text(f"placeholder for {relative}\n", encoding="utf-8")
+    snapshot_src = ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
+    snapshot_dst = repo / snapshot_src.relative_to(ROOT)
+    snapshot_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(snapshot_src, snapshot_dst)
+    shutil.copy2(config_path, repo / ".cursor/agent-system.json")
+    _git(repo, "init", "-q", "-b", "feature/cursor-agent-system-v3")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "binding base")
+    base_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    config = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    config["external_codex_bound_review"]["base_ref"] = base_sha
+    extended = sorted(set(allowlist) | set(extra_allowlist))
+    config["external_codex_bound_review"]["w1_allowlist_paths"] = extended
+    (repo / ".cursor/agent-system.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "binding config")
+    return repo
+
+
+def _hook_workspace_fingerprint(repo: Path, allowlist: tuple[str, ...]) -> str:
     import uuid
 
     token = uuid.uuid4().hex[:8]
     output = f"build/pt/test-fingerprint-{token}.json"
-    allowlist = _config()["external_codex_bound_review"]["w1_allowlist_paths"]
-    base_ref = _config()["external_codex_bound_review"]["base_ref"]
-    snapshot = ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
+    base_ref = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))[
+        "external_codex_bound_review"
+    ]["base_ref"]
+    snapshot = repo / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
     cmd = [
         sys.executable,
         str(snapshot),
         "--root",
-        str(ROOT),
+        str(repo),
         "--checkpoint",
         "W1",
         "--phase",
-        "test-binding",
+        "hook-binding",
         "--output",
         output,
         "--base-ref",
@@ -1690,11 +1884,32 @@ def _workspace_repository_fingerprint() -> str:
     ]
     for path in allowlist:
         cmd.extend(["--allow", path])
-    completed = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, check=False)
+    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
     assert completed.returncode == 0, completed.stderr or completed.stdout
-    payload = json.loads((ROOT / output).read_text(encoding="utf-8"))
-    (ROOT / output).unlink(missing_ok=True)
+    payload = json.loads((repo / output).read_text(encoding="utf-8"))
+    (repo / output).unlink(missing_ok=True)
     return str(payload["repository_state_sha256"])
+
+
+def _repository_fingerprint(repo: Path, allowlist: tuple[str, ...]) -> str:
+    return _hook_workspace_fingerprint(repo, allowlist)
+
+
+def _allowlist_diff_sha256(repo: Path, allowlist: tuple[str, ...], base_ref: str) -> str:
+    import hashlib
+
+    diff = subprocess.run(
+        ["git", "diff", base_ref, "--", *allowlist],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    ).stdout.decode("utf-8", errors="surrogateescape").replace("\r\n", "\n")
+    return hashlib.sha256(diff.encode("utf-8")).hexdigest().upper()
+
+
+def _workspace_repository_fingerprint() -> str:
+    allowlist = tuple(_config()["external_codex_bound_review"]["w1_allowlist_paths"])
+    return _repository_fingerprint(ROOT, allowlist)
 
 
 def _complete_w1_ladder_history() -> list[dict[str, Any]]:
@@ -1720,27 +1935,78 @@ def _canonical_evidence_paths(evidence_attempt: str) -> tuple[Path, Path]:
     return contract, manifest
 
 
+def _is_safe_evidence_attempt_segment(segment: str) -> bool:
+    value = segment.strip() if segment else ""
+    if not value:
+        return False
+    if value in (".", ".."):
+        return False
+    if "/" in value or "\\" in value:
+        return False
+    if re.match(r"^[a-zA-Z]:", value):
+        return False
+    if value.startswith("\\\\"):
+        return False
+    if ".." in value:
+        return False
+    return bool(re.match(r"^[A-Za-z0-9._-]+$", value))
+
+
 def _external_codex_handoff(
     tmp_path: Path,
     *,
     route: str = "critical_final_audit",
+    binding_repo: Path | None = None,
+    evidence_attempt: str | None = None,
     **updates: Any,
 ) -> dict[str, Any]:
     import hashlib
 
-    evidence_attempt = f"test-handoff-{tmp_path.name}"
+    if "evidence_attempt" in updates:
+        evidence_attempt = str(updates.pop("evidence_attempt"))
+    if evidence_attempt is None:
+        evidence_attempt = f"test-handoff-{tmp_path.name}"
     rel_contract, rel_manifest = _canonical_evidence_paths(evidence_attempt)
-    contract = ROOT / rel_contract
-    manifest = ROOT / rel_manifest
-    contract.parent.mkdir(parents=True, exist_ok=True)
-    contract.write_text("contract body\n", encoding="utf-8")
-    manifest.write_text('{"ok":true}\n', encoding="utf-8")
-    contract_sha = hashlib.sha256(contract.read_bytes()).hexdigest().upper()
-    manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest().upper()
-    branch = _observed_work_branch()
-    reviewed_head = _git(ROOT, "rev-parse", "HEAD").stdout.strip()
-    base_head = _git(ROOT, "rev-parse", _config()["external_codex_bound_review"]["base_ref"]).stdout.strip()
-    workspace_fp = _workspace_repository_fingerprint()
+    materialize_evidence = _is_safe_evidence_attempt_segment(evidence_attempt)
+    if materialize_evidence:
+        extra_allowlist = (rel_contract.as_posix(), rel_manifest.as_posix())
+    else:
+        safe_contract, safe_manifest = _canonical_evidence_paths(f"test-handoff-{tmp_path.name}")
+        extra_allowlist = (safe_contract.as_posix(), safe_manifest.as_posix())
+    repo = binding_repo or _isolated_codex_binding_repo(tmp_path, extra_allowlist=extra_allowlist)
+    allowlist = tuple(
+        json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))[
+            "external_codex_bound_review"
+        ]["w1_allowlist_paths"]
+    )
+    base_ref = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))[
+        "external_codex_bound_review"
+    ]["base_ref"]
+    if materialize_evidence:
+        contract = repo / rel_contract
+        manifest = repo / rel_manifest
+        contract.parent.mkdir(parents=True, exist_ok=True)
+        contract.write_text("contract body\n", encoding="utf-8")
+        manifest.write_text('{"ok":true}\n', encoding="utf-8")
+        _git(repo, "add", rel_contract.as_posix(), rel_manifest.as_posix())
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if status.stdout.strip():
+            _git(repo, "commit", "-q", "-m", "binding evidence")
+        contract_sha = hashlib.sha256(contract.read_bytes()).hexdigest().upper()
+        manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest().upper()
+    else:
+        contract_sha = "0" * 64
+        manifest_sha = "0" * 64
+    branch = _git(repo, "branch", "--show-current").stdout.strip()
+    reviewed_head = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    base_head = _git(repo, "rev-parse", base_ref).stdout.strip()
+    workspace_fp = _hook_workspace_fingerprint(repo, allowlist)
     payload = {
         "agent_id": "codex-1",
         "task_id": "task-1",
@@ -1753,14 +2019,14 @@ def _external_codex_handoff(
         "package_id": "AGENT-COST-01",
         "checkpoint_id": "FINAL_AUDIT" if route == "critical_final_audit" else "W1",
         "review_need": "FINAL_AUDIT" if route == "critical_final_audit" else "CHECKPOINT_ESCALATION",
-        "target_root": str(ROOT),
+        "target_root": str(repo.resolve()),
         "branch": branch,
         "base_head": base_head,
         "reviewed_head": reviewed_head,
         "evidence_attempt": evidence_attempt,
         "contract_path": rel_contract.as_posix(),
         "contract_sha256": contract_sha,
-        "diff_sha256": _w1_diff_sha256(),
+        "diff_sha256": _allowlist_diff_sha256(repo, allowlist, base_ref),
         "evidence_manifest_path": rel_manifest.as_posix(),
         "evidence_manifest_sha256": manifest_sha,
         "pre_fingerprint": workspace_fp,
@@ -1781,32 +2047,45 @@ def _run_external_codex_hook(
     handoff: dict[str, Any],
     *,
     mode: str = "EXTERNAL_CODEX_BOUND_REVIEW",
+    binding_repo: Path | None = None,
 ) -> dict[str, Any]:
+    repo = binding_repo or Path(str(handoff["target_root"]))
     return _run_hook(
         "subagent-start.ps1",
         {"validation_mode": mode, "handoff": handoff},
         state_path=tmp_path / "state.json",
+        log_path=tmp_path / "subagent-start.log",
+        cwd=repo,
     )
 
 
 def test_external_codex_bound_review_hook_owner(tmp_path: Path) -> None:
-    handoff = _external_codex_handoff(tmp_path)
+    binding_repo = _isolated_codex_binding_repo(
+        tmp_path,
+        extra_allowlist=(
+            _canonical_evidence_paths(f"test-handoff-{tmp_path.name}")[0].as_posix(),
+            _canonical_evidence_paths(f"test-handoff-{tmp_path.name}")[1].as_posix(),
+        ),
+    )
+    handoff = _external_codex_handoff(tmp_path, binding_repo=binding_repo)
     pre_payload = dict(handoff)
     for field in ("verdict", "findings", "requested_model", "observed_model"):
         pre_payload.pop(field, None)
-    pre_ok = _run_external_codex_hook(tmp_path, pre_payload, mode="EXTERNAL_CODEX_PRE_HANDOFF")
+    pre_ok = _run_external_codex_hook(
+        tmp_path, pre_payload, mode="EXTERNAL_CODEX_PRE_HANDOFF", binding_repo=binding_repo
+    )
     assert pre_ok["handoff"] == "PRE_HANDOFF_READY"
     assert pre_ok["status"] == "READY"
-    ok = _run_external_codex_hook(tmp_path, handoff)
+    ok = _run_external_codex_hook(tmp_path, handoff, binding_repo=binding_repo)
     assert ok["handoff"] == "HANDOFF_READY"
     assert ok["authenticates_origin"] is False
     assert ok["authenticates_serving_model"] is False
 
     critical_fields = _config()["external_codex_bound_review"]["bound_review_required_fields"]
     for field in critical_fields:
-        missing = _external_codex_handoff(tmp_path)
+        missing = dict(handoff)
         del missing[field]
-        result = _run_external_codex_hook(tmp_path, missing)
+        result = _run_external_codex_hook(tmp_path, missing, binding_repo=binding_repo)
         assert result["handoff"] == "HANDOFF_INVALID", field
 
     invalid_cases = {
@@ -1838,18 +2117,25 @@ def test_external_codex_bound_review_hook_owner(tmp_path: Path) -> None:
         "string_boolean_mutation": {"mutation_detected": "false"},
     }
     for label, updates in invalid_cases.items():
-        bad = _run_external_codex_hook(tmp_path, _external_codex_handoff(tmp_path, **updates))
+        bad = _run_external_codex_hook(
+            tmp_path,
+            {**handoff, **updates},
+            binding_repo=binding_repo,
+        )
         assert bad["handoff"] == "HANDOFF_INVALID", label
         assert bad["status"] == "BLOCKED_HUMAN", label
 
-    pre_with_verdict = _external_codex_handoff(tmp_path)
+    pre_with_verdict = dict(handoff)
     pre_with_verdict.pop("verdict", None)
     pre_with_verdict.pop("findings", None)
     pre_with_verdict.pop("requested_model", None)
     pre_with_verdict.pop("observed_model", None)
     pre_with_verdict["verdict"] = "PASS"
     pre_bad = _run_external_codex_hook(
-        tmp_path, pre_with_verdict, mode="EXTERNAL_CODEX_PRE_HANDOFF"
+        tmp_path,
+        pre_with_verdict,
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
     )
     assert pre_bad["handoff"] == "HANDOFF_INVALID"
 
@@ -1874,8 +2160,13 @@ def test_routing_critical_packages_define_external_review_routes() -> None:
 
 
 def test_external_codex_evidence_attempt_containment(tmp_path: Path) -> None:
-    safe = _external_codex_handoff(tmp_path)
-    assert _run_external_codex_hook(tmp_path, safe)["handoff"] == "HANDOFF_READY"
+    rel_contract, rel_manifest = _canonical_evidence_paths(f"test-handoff-{tmp_path.name}")
+    binding_repo = _isolated_codex_binding_repo(
+        tmp_path,
+        extra_allowlist=(rel_contract.as_posix(), rel_manifest.as_posix()),
+    )
+    safe = _external_codex_handoff(tmp_path, binding_repo=binding_repo)
+    assert _run_external_codex_hook(tmp_path, safe, binding_repo=binding_repo)["handoff"] == "HANDOFF_READY"
     for label, attempt in {
         "slash": "bad/segment",
         "backslash": r"bad\segment",
@@ -1885,73 +2176,93 @@ def test_external_codex_evidence_attempt_containment(tmp_path: Path) -> None:
         "unc": r"\\server\share",
         "empty": "",
     }.items():
+        attempt_root = tmp_path / f"case-{label}"
+        attempt_root.mkdir(parents=True, exist_ok=True)
         bad = _run_external_codex_hook(
-            tmp_path, _external_codex_handoff(tmp_path, evidence_attempt=attempt)
+            attempt_root,
+            _external_codex_handoff(attempt_root, evidence_attempt=attempt),
         )
         assert bad["handoff"] == "HANDOFF_INVALID", label
 
 
 def test_external_codex_review_route_bindings(tmp_path: Path) -> None:
+    binding_repo = _isolated_codex_binding_repo(
+        tmp_path,
+        extra_allowlist=(
+            _canonical_evidence_paths(f"test-handoff-{tmp_path.name}")[0].as_posix(),
+            _canonical_evidence_paths(f"test-handoff-{tmp_path.name}")[1].as_posix(),
+        ),
+    )
+    handoff = _external_codex_handoff(tmp_path, binding_repo=binding_repo)
+    escalation_handoff = _external_codex_handoff(
+        tmp_path, route="checkpoint_escalation", binding_repo=binding_repo
+    )
     escalation = _run_external_codex_hook(
-        tmp_path, _external_codex_handoff(tmp_path, route="checkpoint_escalation")
+        tmp_path,
+        escalation_handoff,
+        binding_repo=binding_repo,
     )
     assert escalation["handoff"] == "HANDOFF_READY"
 
-    final_audit = _run_external_codex_hook(tmp_path, _external_codex_handoff(tmp_path))
+    audit_handoff = _external_codex_handoff(tmp_path, binding_repo=binding_repo)
+    final_audit = _run_external_codex_hook(
+        tmp_path,
+        audit_handoff,
+        binding_repo=binding_repo,
+    )
     assert final_audit["handoff"] == "HANDOFF_READY"
 
     route_mismatch = _run_external_codex_hook(
         tmp_path,
-        _external_codex_handoff(
-            tmp_path,
-            checkpoint_id="W1",
-            review_need="FINAL_AUDIT",
-            ladder_history=_complete_w1_ladder_history(),
-        ),
+        {
+            **escalation_handoff,
+            "checkpoint_id": "W1",
+            "review_need": "FINAL_AUDIT",
+            "ladder_history": _complete_w1_ladder_history(),
+        },
+        binding_repo=binding_repo,
     )
     assert route_mismatch["handoff"] == "HANDOFF_INVALID"
 
     ladder_on_direct = _run_external_codex_hook(
         tmp_path,
-        _external_codex_handoff(
-            tmp_path,
-            checkpoint_id="FINAL_AUDIT",
-            review_need="FINAL_AUDIT",
-            ladder_history=_complete_w1_ladder_history(),
-        ),
+        {
+            **audit_handoff,
+            "checkpoint_id": "FINAL_AUDIT",
+            "review_need": "FINAL_AUDIT",
+            "ladder_history": _complete_w1_ladder_history(),
+        },
+        binding_repo=binding_repo,
     )
     assert ladder_on_direct["handoff"] == "HANDOFF_INVALID"
 
     wrong_checkpoint = _run_external_codex_hook(
         tmp_path,
-        _external_codex_handoff(
-            tmp_path,
-            route="checkpoint_escalation",
-            checkpoint_id="W2",
-            review_need="CHECKPOINT_ESCALATION",
-        ),
+        {
+            **escalation_handoff,
+            "checkpoint_id": "W2",
+            "review_need": "CHECKPOINT_ESCALATION",
+        },
+        binding_repo=binding_repo,
     )
     assert wrong_checkpoint["handoff"] == "HANDOFF_INVALID"
 
     missing_ladder = _run_external_codex_hook(
         tmp_path,
-        _external_codex_handoff(
-            tmp_path,
-            route="checkpoint_escalation",
-            ladder_history=[],
-        ),
+        {**escalation_handoff, "ladder_history": []},
+        binding_repo=binding_repo,
     )
     assert missing_ladder["handoff"] == "HANDOFF_INVALID"
 
     substantive_fail = _run_external_codex_hook(
         tmp_path,
-        _external_codex_handoff(
-            tmp_path,
-            route="checkpoint_escalation",
-            ladder_history=_substitute_ladder_result(
+        {
+            **escalation_handoff,
+            "ladder_history": _substitute_ladder_result(
                 _complete_w1_ladder_history(), 2, "FAIL_SUBSTANTIVE"
             ),
-        ),
+        },
+        binding_repo=binding_repo,
     )
     assert substantive_fail["handoff"] == "HANDOFF_INVALID"
 
@@ -1962,10 +2273,7 @@ def test_external_codex_review_route_bindings(tmp_path: Path) -> None:
     }
     wrong_model = _run_external_codex_hook(
         tmp_path,
-        _external_codex_handoff(
-            tmp_path,
-            route="checkpoint_escalation",
-            ladder_history=wrong_ladder_model,
-        ),
+        {**escalation_handoff, "ladder_history": wrong_ladder_model},
+        binding_repo=binding_repo,
     )
     assert wrong_model["handoff"] == "HANDOFF_INVALID"

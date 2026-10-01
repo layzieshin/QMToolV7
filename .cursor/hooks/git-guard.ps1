@@ -9,9 +9,99 @@ function Deny-Command([string]$message) {
     exit 0
 }
 
-$raw = [Console]::In.ReadToEnd()
-$inputData = $raw | ConvertFrom-Json
+function Read-HostHookStdinBytes {
+    $stdin = [Console]::OpenStandardInput()
+    if ($null -eq $stdin) {
+        $fallback = [Console]::In.ReadToEnd()
+        if ([string]::IsNullOrEmpty($fallback)) {
+            return @()
+        }
+        return [System.Text.Encoding]::UTF8.GetBytes($fallback)
+    }
+    $buffer = New-Object byte[] 8192
+    $ms = New-Object System.IO.MemoryStream
+    try {
+        while (($read = $stdin.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $ms.Write($buffer, 0, $read)
+        }
+        return $ms.ToArray()
+    }
+    finally {
+        $ms.Dispose()
+    }
+}
+
+function Decode-HostHookStdinText {
+    param([byte[]]$Bytes)
+    if ($null -eq $Bytes -or $Bytes.Length -eq 0) {
+        $fallback = [Console]::In.ReadToEnd()
+        if ([string]::IsNullOrWhiteSpace($fallback)) {
+            return ""
+        }
+        return $fallback.Trim()
+    }
+    $offset = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        $offset = 3
+    }
+    elseif ($Bytes.Length -ge 2 -and $Bytes[0] -eq 0xFF -and $Bytes[1] -eq 0xFE) {
+        if ($Bytes.Length -ge 4 -and $Bytes[2] -eq 0xFE -and $Bytes[3] -eq 0xFF) {
+            return [System.Text.Encoding]::UTF32.GetString($Bytes, 4, $Bytes.Length - 4).Trim()
+        }
+        return [System.Text.Encoding]::Unicode.GetString($Bytes, 2, $Bytes.Length - 2).Trim()
+    }
+    return [System.Text.Encoding]::UTF8.GetString($Bytes, $offset, $Bytes.Length - $offset).Trim()
+}
+
+function Deny-Ingress([string]$message) {
+    @{
+        permission = "deny"
+        user_message = $message
+        agent_message = $message
+    } | ConvertTo-Json -Compress | Write-Output
+    exit 1
+}
+
+function Test-IsConvertFromJsonObject {
+    param($Value)
+    if ($null -eq $Value) {
+        return $false
+    }
+    if ($Value -is [string] -or $Value -is [bool] -or $Value -is [ValueType]) {
+        return $false
+    }
+    if ($Value -is [System.Array] -or $Value -is [System.Collections.ArrayList]) {
+        return $false
+    }
+    return ($Value.PSObject.TypeNames -contains 'System.Management.Automation.PSCustomObject')
+}
+
+$ingressBytes = @(Read-HostHookStdinBytes)
+$raw = Decode-HostHookStdinText -Bytes $ingressBytes
+if ([string]::IsNullOrWhiteSpace($raw)) {
+    Deny-Ingress "Hook payload was empty or unreadable."
+}
+try {
+    $inputData = $raw | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    Deny-Ingress "Hook payload could not be parsed as JSON."
+}
+if ($null -eq $inputData) {
+    Deny-Ingress "Hook payload decoded to null."
+}
+if (-not (Test-IsConvertFromJsonObject -Value $inputData)) {
+    Deny-Ingress "Hook payload must be a JSON object."
+}
+
 $command = [string]$inputData.command
+$cwd = [string]$inputData.cwd
+if ([string]::IsNullOrWhiteSpace($command)) {
+    Deny-Ingress "Hook payload is missing command."
+}
+if ([string]::IsNullOrWhiteSpace($cwd)) {
+    Deny-Ingress "Hook payload is missing cwd."
+}
 $lower = $command.ToLowerInvariant()
 
 # Narrow exception: synchronize a clean local main that is only behind origin/main.
@@ -145,13 +235,41 @@ foreach ($match in $ghTopMatches) {
         continue
     }
     if ($topCommand -eq "api") {
-        if ($lower -match "(?:--method|-x)\s+(?:post|put|patch|delete)\b" -or
-            $lower -match "(?:^|\s)(?:-f|-F|--field|--raw-field|--input)(?:\s|=)") {
+        if ($lower -match "(?:^|\s)-f(?:\s|\S|$)" -or
+            $lower -match "(?:^|\s)(?:--field|--raw-field|--input)(?:\s|=)") {
             Deny-Command "Mutating gh api requests are forbidden; use a gated first-class gh pr command."
         }
-        if ($lower -match "(?:--method|-x)\s+\S+" -and
-            $lower -notmatch "(?:--method|-x)\s+get\b") {
+        $methodTokenCount = (
+            [regex]::Matches($command, '(?i)(?:^|\s)--method(?=\s|=|$)').Count +
+            [regex]::Matches($command, '(?i)(?:^|\s)-x(?=\s|=|$|[a-z\x22\x27])').Count
+        )
+        $explicitMethods = New-Object 'System.Collections.Generic.List[string]'
+        $methodValueBoundary = '(?=\s|$)'
+        foreach ($methodMatch in [regex]::Matches($command, "(?i)(?:^|\s)--method\s+(?<method>[a-z]+)$methodValueBoundary")) {
+            $explicitMethods.Add($methodMatch.Groups['method'].Value.ToLowerInvariant())
+        }
+        foreach ($methodMatch in [regex]::Matches($command, "(?i)(?:^|\s)--method=(?<method>[a-z]+)$methodValueBoundary")) {
+            $explicitMethods.Add($methodMatch.Groups['method'].Value.ToLowerInvariant())
+        }
+        foreach ($methodMatch in [regex]::Matches($command, "(?i)(?:^|\s)-x\s+(?<method>[a-z]+)$methodValueBoundary")) {
+            $explicitMethods.Add($methodMatch.Groups['method'].Value.ToLowerInvariant())
+        }
+        foreach ($methodMatch in [regex]::Matches($command, "(?i)(?:^|\s)-x=(?<method>[a-z]+)$methodValueBoundary")) {
+            $explicitMethods.Add($methodMatch.Groups['method'].Value.ToLowerInvariant())
+        }
+        foreach ($methodMatch in [regex]::Matches($command, "(?i)(?:^|\s)-x(?<method>[a-z]+)$methodValueBoundary")) {
+            $explicitMethods.Add($methodMatch.Groups['method'].Value.ToLowerInvariant())
+        }
+        if ($methodTokenCount -ne $explicitMethods.Count) {
             Deny-Command "Only read-only GET requests are allowed through gh api."
+        }
+        foreach ($explicitMethod in $explicitMethods) {
+            if ($explicitMethod -in @('post', 'put', 'patch', 'delete')) {
+                Deny-Command "Mutating gh api requests are forbidden; use a gated first-class gh pr command."
+            }
+            if ($explicitMethod -ne 'get') {
+                Deny-Command "Only read-only GET requests are allowed through gh api."
+            }
         }
         continue
     }
@@ -177,6 +295,9 @@ $writeGh = @("create", "edit", "close", "reopen", "comment", "review", "ready", 
 $hasGhWrite = $false
 foreach ($match in $ghMatches) {
     $subcommand = $match.Groups[1].Value.ToLowerInvariant()
+    if ($subcommand -eq "review") {
+        Deny-Command "Local gh pr review submission is forbidden; use the bounded @codex review comment and gh pr merge --squash only."
+    }
     if ($subcommand -in $writeGh) {
         $hasGhWrite = $true
         continue
@@ -218,7 +339,6 @@ if ([bool]$state.human_gate) {
 $phase = [string]$state.phase
 $baseBranch = [string]$state.base_branch
 $stateWorkBranch = [string]$state.work_branch
-$cwd = [string]$inputData.cwd
 if (-not $cwd -or -not (Test-Path -LiteralPath $cwd -PathType Container)) {
     Deny-Command "Git write denied: command working directory is unavailable."
 }

@@ -98,29 +98,35 @@ model or external Codex.
 2. Create the `before` snapshot with `scripts/checkpoint_snapshot.py`; stop if out-of-scope paths
    are present and are not explicitly declared foreign changes.
 3. Create the immutable checkpoint contract in the existing evidence root, hash it with
-   `Get-FileHash`, record `contract_sha256`, then mark only the active checkpoint `IN_PROGRESS` and
-   implement only its allowlist.
-4. Run mandatory gates in order. At the first red/blocked gate, stop that sequence and preserve
+   `Get-FileHash`, and record `contract_sha256`.
+4. Build `context-manifest.json` with `scripts/checkpoint_snapshot.py manifest-build`, bind review
+   evidence paths, and record the manifest path in the execution journal.
+5. Mark only the active checkpoint `IN_PROGRESS` and implement only its allowlist.
+6. Run mandatory gates in order. At the first red/blocked gate, stop that sequence and preserve
    evidence.
-5. Each bounded, decision-complete failure consumes the configured checkpoint-rework budget and
+7. Each bounded, decision-complete failure consumes the configured checkpoint-rework budget and
    runs a new complete gate sequence. After exhaustion, invoke the configured fresh
    `[ROLE:escalation-reviewer]`; escalation `FAIL` sets `BLOCKED_HUMAN`.
-6. If implementer reports `SCOPE_CORRECTION_REQUIRED`, classify it before editing under the strict
+8. If implementer reports `SCOPE_CORRECTION_REQUIRED`, classify it before editing under the strict
    existing-owner/approved-criterion/no-new-behavior-or-surface rule. Record an allowed correction
    within the configured budget; otherwise treat it as Scope Expansion and stop for normal planning.
-7. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
-   native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
-   primary evidence directly; never ask the user to relay them. Require its output contract and
-   capture parent-owned Task metadata separately.
-8. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
-   review makes the checkpoint `BLOCKED`; do not revert it automatically.
-9. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
-   minimal order and consumes the configured shared rework budget; correct it, rerun the affected gates,
-   and invoke a fresh reviewer Task. After the budget, use the single escalation path above.
-10. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
-   paths and create the local commit included by the implementation authorization unless the user
-   opted out. Verify the commit file set.
-11. Advance to the next checkpoint only when it is named by the same macro authorization.
+9. Validate or regenerate the context manifest before resume/reuse with
+   `scripts/checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`.
+   `--allow-reuse` without the exact expected verification command(s) fails closed. Stale manifests
+   block reuse of completed green checkpoints.
+10. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
+    native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
+    primary evidence directly; never ask the user to relay them. Require its output contract and
+    capture parent-owned Task metadata separately.
+11. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
+    review makes the checkpoint `BLOCKED`; do not revert it automatically.
+12. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
+    minimal order and consumes the configured shared rework budget; correct it, rerun the affected gates,
+    and invoke a fresh reviewer Task. After the budget, use the single escalation path above.
+13. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
+    paths and create the local commit included by the implementation authorization unless the user
+    opted out. Verify the commit file set.
+14. Advance to the next checkpoint only when it is named by the same macro authorization.
 
 Package Integration and External GitHub Codex Review remain owned by the outer
 `/execute-work-package` lifecycle. Never run Codex after individual AP-029 subcheckpoints; evaluate

@@ -86,8 +86,14 @@ the old snapshot and creates a formal amendment/successor; material fachliche, a
 public-contract, security or persistence movement requires the applicable HUMAN_GATE.
 
 `implementer` → independent `checkpoint-reviewer` → configured bounded rework → native
-`escalation-reviewer` handoff validation (`HANDOFF_READY`/`HANDOFF_INVALID`) → external Codex
-`EXTERNAL_CODEX_BOUND_REVIEW` when routing requires it.
+`escalation-reviewer` local pre-handoff validation (`PRE_HANDOFF_READY`) → external Codex result →
+locally bound `HANDOFF_READY`/`HANDOFF_INVALID` when routing requires `EXTERNAL_CODEX_BOUND_REVIEW`.
+
+Resume a running package only after `context-manifest.json` validates with
+`checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`
+on a still-matching context. Repeat `--verify-command` for every expected normalized gate; missing or
+wrong commands fail closed. The manifest remains an index; stale manifests block reuse of completed
+green checkpoints; do not repeat steps, re-ask authorization, or re-reserve reviews when reuse is valid.
 
 For the PILOT00 packages named in `checkpoint-protocol.md`, the native role is
 still preferred. If that role returns explicit `UNAVAILABLE`, one separate
@@ -115,14 +121,20 @@ introduced by the rework. Other parser variants, optional hardening, and specula
 are recorded as follow-ups and do not extend the loop. Material new blockers consume the existing
 rework budget; they do not create another budget.
 
+Report token, cost, cache-hit, savings, runtime serving model, and reasoning effort as
+`UNKNOWN`/`UNAVAILABLE` unless the host measured or attested them in primary evidence. Never claim
+zero cost, cache activity, or savings without measurement. An untagged helper never implies complete
+workflow cost coverage.
+
 ## External GitHub Codex review
 
 GitHub Codex is an additional independent layer on the final PR head after internal integration,
 full regression, Sol final audit and current-head CI. It never runs after individual checkpoints
 and never replaces internal evidence. Existing current-head reviews are reused; otherwise the Git
 Steward may post the bounded `@codex review` request through `FINAL_GIT`. Reviews, inline comments,
-issue comments, PR head and checks are read through safe `gh` paths; mutating `gh api` remains
-forbidden.
+issue comments, PR head and checks are read through safe `gh` paths; mutating `gh api` and local
+`gh pr review` submission remain forbidden. Merge uses only `gh pr merge <number> --squash` under
+persisted gates.
 
 Codex findings are claims. A fresh readonly Terra `external-review-triager` classifies them as
 `CONFIRMED_BLOCKING`, `CONFIRMED_NONBLOCKING`, `FALSE_POSITIVE`, `OUTDATED_ALREADY_FIXED`, or

@@ -30,6 +30,12 @@ Extract at least:
 
 Mark each claim `VERIFIED`, `PARTIAL`, `UNSUPPORTED`, `CONTRADICTED`, `FAILED`, `BLOCKED`, or `NOT RUN`.
 
+Token counts, billing cost, cache-hit/read/write savings, runtime serving model, and reasoning
+effort remain `UNKNOWN` or `UNAVAILABLE` unless directly measured in primary evidence or explicitly
+host-attested under the applicable D15 profile. Never invent zero cost, placeholder savings, or
+cache activity without measurement. An untagged helper task never implies complete workflow cost
+coverage.
+
 ### 3. Verify independently and proportionately
 
 - Inspect current files and diffs instead of trusting summaries.
