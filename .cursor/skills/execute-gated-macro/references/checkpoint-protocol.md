@@ -153,6 +153,10 @@ control_plane_attestation: false
 global_relaxation: false
 <!-- PILOT00_ORCHESTRATOR_REVIEW_END -->
 
+Context-manifest creation requires a resolvable commit base. A planning manifest without evidence
+may be valid as an index, but `manifest-validate --allow-reuse` requires at least one bound evidence
+artifact as well as the exact expected verification commands; it cannot prove completion without evidence.
+
 AGENT-COST-01 critical final audit and exhausted escalation use
 `EXTERNAL_CODEX_BOUND_REVIEW` from `.cursor/agent-system.json`
 `external_codex_bound_review.review_route_bindings` for the exact package/checkpoint/review_need

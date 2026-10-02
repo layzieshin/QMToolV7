@@ -1535,6 +1535,7 @@ def test_context_manifest_w1_legacy_build_validate_without_foreign_bindings(tmp_
     w1_root = repo / "build" / "agent-cost-01" / "w1" / "attempt-legacy"
     w1_root.mkdir(parents=True)
     (w1_root / "checkpoint-contract.md").write_text("contract body\n", encoding="utf-8")
+    (w1_root / "gate-result.txt").write_text("synthetic gate evidence\n", encoding="utf-8")
     w1_manifest_path = "build/agent-cost-01/w1/attempt-legacy/context-manifest.json"
     w1_manifest = _manifest_build(
         repo,
@@ -1544,6 +1545,7 @@ def test_context_manifest_w1_legacy_build_validate_without_foreign_bindings(tmp_
         checkpoint_id="W1",
         allowlist=("tracked.txt", ".cursor/agent-system.json"),
         profile_path=".cursor/agent-system.json",
+        evidence=("gate=build/agent-cost-01/w1/attempt-legacy/gate-result.txt",),
     )
     assert "declared_foreign_bindings" not in w1_manifest
     w1_reuse_key = w1_manifest["reuse_key_sha256"]
@@ -1560,6 +1562,7 @@ def test_context_manifest_w1_legacy_build_validate_without_foreign_bindings(tmp_
     pilot_root = repo / "build" / "pilot00-b1" / "w2" / "attempt-legacy"
     pilot_root.mkdir(parents=True)
     (pilot_root / "checkpoint-contract.md").write_text("pilot contract\n", encoding="utf-8")
+    (pilot_root / "gate-result.txt").write_text("synthetic pilot gate evidence\n", encoding="utf-8")
     pilot_manifest_path = "build/pilot00-b1/w2/attempt-legacy/context-manifest.json"
     pilot_manifest = _manifest_build(
         repo,
@@ -1569,6 +1572,7 @@ def test_context_manifest_w1_legacy_build_validate_without_foreign_bindings(tmp_
         checkpoint_id="W2",
         allowlist=("tracked.txt", ".cursor/agent-system.json"),
         profile_path=".cursor/agent-system.json",
+        evidence=("gate=build/pilot00-b1/w2/attempt-legacy/gate-result.txt",),
     )
     assert "declared_foreign_bindings" not in pilot_manifest
     pilot_ok = _manifest_validate(
@@ -1651,6 +1655,53 @@ def test_context_manifest_build_validate_and_reuse(tmp_path: Path) -> None:
     assert ok["returncode"] == 0
     assert ok["payload"]["valid"] is True
     assert ok["payload"]["reuse_allowed"] is True
+
+    empty_manifest_path = "build/agent-cost-01/w2/attempt-001/empty-context-manifest.json"
+    _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-001/checkpoint-contract.md",
+        output=empty_manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+    )
+    empty_valid = _manifest_validate(repo, empty_manifest_path)
+    assert empty_valid["returncode"] == 0  # A planning index is valid, not completion proof.
+    empty_reuse = _manifest_validate(
+        repo,
+        empty_manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert empty_reuse["returncode"] == 2
+    assert empty_reuse["payload"]["reuse_allowed"] is False
+    assert "reuse_requires_bound_evidence" in empty_reuse["payload"]["reasons"]
+
+    invalid_output = repo / "build/agent-cost-01/w2/attempt-001/invalid-context-manifest.json"
+    for invalid_base in ("origin/missing-review-base", "HEAD:tracked.txt"):
+        invalid_build = subprocess.run(
+            [
+                sys.executable, str(SNAPSHOT), "manifest-build", "--root", str(repo),
+                "--package-id", "AGENT-COST-01", "--checkpoint-id", "W2",
+                "--contract-path", "build/agent-cost-01/w2/attempt-001/checkpoint-contract.md",
+                "--output", str(invalid_output), "--base-ref", invalid_base,
+                "--allow", "tracked.txt", "--verify-command", "pytest tests/docs -q",
+            ],
+            cwd=repo, capture_output=True, text=True, check=False,
+        )
+        assert invalid_build.returncode != 0
+        assert "missing base ref" in invalid_build.stderr
+        assert not invalid_output.exists()
+
+    legacy_null_base = dict(manifest, base_ref="origin/missing-review-base", base_sha=None)
+    invalid_output.write_text(json.dumps(legacy_null_base), encoding="utf-8")
+    invalid_reuse = _manifest_validate(
+        repo,
+        invalid_output.relative_to(repo).as_posix(),
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert invalid_reuse["returncode"] == 2
+    assert invalid_reuse["payload"]["reuse_allowed"] is False
+    assert any("missing base ref" in reason for reason in invalid_reuse["payload"]["reasons"])
 
     tracked.write_text("changed\n", encoding="utf-8")
     stale = _manifest_validate(

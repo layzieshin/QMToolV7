@@ -715,3 +715,23 @@ PR, remote merge, CI PASS, profile activation, or project-wide `DONE` is claimed
 Activation remains conditional on later actual integration and a safe transition for new
 checkpoints; PILOT00 is unchanged. Serving identity, measured cost and achieved 50:50
 allocation remain `UNKNOWN` without host-attested runtime evidence.
+
+#### PR #60 follow-up — manifest repair, 2026-10-02
+
+The published repair is tracked in [PR #60](https://github.com/layzieshin/QMToolV7/pull/60).
+Its initial CI run `37038862016` passed both `quality-gates` and `postgres-usermanagement`,
+but GitHub blocked integration on unresolved review conversations; neither merge nor activation
+has occurred. Historical 252/42 PASS results precede this follow-up and are not a new full-suite claim.
+
+Manifest creation now resolves `base_ref^{commit}` strictly and rejects missing or non-commit
+bases; validation rejects legacy null-base manifests. Evidence-free planning manifests remain
+valid indexes but cannot be reused as completed checkpoints. Reuse requires non-empty bound
+evidence plus the exact verification commands and unchanged hashes. Relevant macro and docs
+verification passed **73 tests** (`build/agent-cost-01/agent-rework-pr60-manifest-final-junit.xml`).
+The initial negative regression reproduced the evidence-free reuse bug; a legacy positive fixture
+was corrected to bind synthetic test evidence rather than relying on that unsafe behavior.
+
+The remaining P1 review concerns the generic implementer registry prerequisite. It is unchanged
+pending separate human authorization for a narrow correction. Do not resolve that finding, merge,
+activate, restart the cancelled chain, reset counters, or relabel historical review results merely
+because the independent manifest repairs are green.

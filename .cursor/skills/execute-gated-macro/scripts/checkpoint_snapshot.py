@@ -449,7 +449,9 @@ def build_context_manifest(
             evidence_sha256[key] = None
 
     head = _git(root, "rev-parse", "HEAD")
-    base_sha = _git(root, "rev-parse", base_ref, allow_missing_ref=True)
+    base_sha = _verify_base_commit(root, base_ref)
+    if not base_sha:
+        raise RuntimeError(f"missing base ref: {base_ref}")
     branch = _git(root, "branch", "--show-current") or "DETACHED"
     repository_fingerprint = _repository_fingerprint_for_allowlist(root, allowlist, head=head)
 
@@ -647,8 +649,12 @@ def validate_context_manifest(
         elif recorded_sha256 != live_sha256:
             reasons.append(f"evidence_changed:{key}")
 
+    evidence_complete = bool(recorded_evidence_sha256) and all(
+        value is not None for value in recorded_evidence_sha256.values()
+    )
+    if allow_reuse and not evidence_complete:
+        reasons.append("reuse_requires_bound_evidence")
     valid = not reasons
-    evidence_complete = all(value is not None for value in recorded_evidence_sha256.values())
     reuse_allowed = valid and allow_reuse and evidence_complete
     return {
         "valid": valid,
