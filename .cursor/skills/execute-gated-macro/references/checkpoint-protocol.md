@@ -166,6 +166,15 @@ packages: AGENT-COST-01
 external_host: codex-chatgpt-authenticated
 local_validator_scope: workspace_derived_binding
 canonical_evidence_root: build/agent-cost-01/w1/{evidence_attempt}
+final_audit_evidence_root: build/agent-cost-01/w3/{evidence_attempt}
+final_audit_allowlist_owner: external_codex_bound_review.w3_allowlist_paths
+final_audit_base_ref: 4bedcc84cd81a46b6e8802a3a6b2296f9f5f9d5c
+dirty_negative_canary_root: build/agent-cost-01/w3/w3-prep-01-dirty-canary-002
+<!-- dirty_negative_canary: -001 historical labels-only stub (no hook-result); -002 mandated substitution with genuine HANDOFF_INVALID dirty_tracked_or_index naming all 9 owners -->
+dirty_negative_canary_labels: DIRTY_NEGATIVE_CANARY NOT_FINAL_FREEZE NOT_FINAL_AUDIT_PASS
+foreign_scope_default: dirty/W1 prefix matching on declared foreign rules only
+foreign_scope_final_audit: committed_final_audit exact three path/size/hash bindings; foreign child DENY opt-in here only
+final_audit_allowlist_match: exact35 path equality in committed_final_audit; dirty scope keeps prefix allowlist matching
 pre_handoff_token: PRE_HANDOFF_READY
 bound_review_token: HANDOFF_READY
 workspace_fingerprint_source: checkpoint_snapshot.repository_state_sha256

@@ -1842,6 +1842,39 @@ def _w1_diff_sha256() -> str:
     return hashlib.sha256(diff.encode("utf-8")).hexdigest().upper()
 
 
+def _synthetic_foreign_cli_bytes() -> bytes:
+    return b'{"fixture_only":"w3-prep-01-declared-foreign","never_from_root_cli":true}\n'
+
+
+def _patch_fixture_foreign_bindings(config: dict[str, Any]) -> None:
+    cli_bytes = _synthetic_foreign_cli_bytes()
+    bindings = config["external_codex_bound_review"]["declared_foreign_bindings"]
+    for binding in bindings:
+        if binding["path"] == ".cursor/cli.json":
+            binding["size"] = len(cli_bytes)
+            binding["sha256"] = __import__("hashlib").sha256(cli_bytes).hexdigest()
+
+
+def _materialize_declared_foreign(repo: Path, *, config: dict[str, Any] | None = None) -> None:
+    active = config or json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    cli_bytes = _synthetic_foreign_cli_bytes()
+    for binding in active["external_codex_bound_review"]["declared_foreign_bindings"]:
+        target = repo / binding["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if binding["path"] == ".cursor/cli.json":
+            target.write_bytes(cli_bytes)
+        else:
+            target.write_bytes(b"")
+
+
+def _declared_foreign_rules(*, config: dict[str, Any] | None = None) -> tuple[str, ...]:
+    active = config or _config()
+    return tuple(
+        binding["path"]
+        for binding in active["external_codex_bound_review"]["declared_foreign_bindings"]
+    )
+
+
 def _isolated_codex_binding_repo(tmp_path: Path, *, extra_allowlist: tuple[str, ...] = ()) -> Path:
     repo = tmp_path / "binding-repo"
     repo.mkdir()
@@ -1860,6 +1893,12 @@ def _isolated_codex_binding_repo(tmp_path: Path, *, extra_allowlist: tuple[str, 
     snapshot_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(snapshot_src, snapshot_dst)
     shutil.copy2(config_path, repo / ".cursor/agent-system.json")
+    config = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    _patch_fixture_foreign_bindings(config)
+    (repo / ".cursor/agent-system.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     _git(repo, "init", "-q", "-b", "feature/cursor-agent-system-v3")
     _git(repo, "config", "user.email", "tests@example.invalid")
     _git(repo, "config", "user.name", "Tests")
@@ -1879,37 +1918,65 @@ def _isolated_codex_binding_repo(tmp_path: Path, *, extra_allowlist: tuple[str, 
     return repo
 
 
-def _hook_workspace_fingerprint(repo: Path, allowlist: tuple[str, ...]) -> str:
-    import uuid
+def _isolated_final_audit_binding_repo(
+    tmp_path: Path,
+    *,
+    prebase_out_of_scope: tuple[str, ...] = (),
+) -> Path:
+    repo = tmp_path / "final-audit-repo"
+    repo.mkdir()
+    allowlist = list(_config()["external_codex_bound_review"]["w3_allowlist_paths"])
+    assert len(allowlist) == 35
+    for relative in allowlist:
+        source = ROOT / Path(relative)
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_file():
+            shutil.copy2(source, target)
+        else:
+            target.write_text(f"placeholder for {relative}\n", encoding="utf-8")
+    for relative in prebase_out_of_scope:
+        rogue = repo / relative
+        rogue.parent.mkdir(parents=True, exist_ok=True)
+        rogue.write_text(f"out-of-scope fixture {relative}\n", encoding="utf-8")
+    snapshot_src = ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
+    snapshot_dst = repo / snapshot_src.relative_to(ROOT)
+    snapshot_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(snapshot_src, snapshot_dst)
+    shutil.copy2(ROOT / ".cursor/agent-system.json", repo / ".cursor/agent-system.json")
+    config = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    _patch_fixture_foreign_bindings(config)
+    (repo / ".gitignore").write_text(
+        "build/agent-cost-01/w3/\nbuild/pt/\n",
+        encoding="utf-8",
+    )
+    (repo / ".cursor/agent-system.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _git(repo, "init", "-q", "-b", "feature/cursor-agent-system-v3")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "final audit baseline")
+    base_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    config = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    config["external_codex_bound_review"]["base_ref"] = base_sha
+    (repo / ".cursor/agent-system.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "register final audit base")
+    _materialize_declared_foreign(repo, config=config)
+    return repo
 
-    token = uuid.uuid4().hex[:8]
-    output = f"build/pt/test-fingerprint-{token}.json"
-    base_ref = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))[
-        "external_codex_bound_review"
-    ]["base_ref"]
-    snapshot = repo / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
-    cmd = [
-        sys.executable,
-        str(snapshot),
-        "--root",
-        str(repo),
-        "--checkpoint",
-        "W1",
-        "--phase",
-        "hook-binding",
-        "--output",
-        output,
-        "--base-ref",
-        base_ref,
-        "--fail-on-out-of-scope",
-    ]
-    for path in allowlist:
-        cmd.extend(["--allow", path])
-    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
-    assert completed.returncode == 0, completed.stderr or completed.stdout
-    payload = json.loads((repo / output).read_text(encoding="utf-8"))
-    (repo / output).unlink(missing_ok=True)
-    return str(payload["repository_state_sha256"])
+
+def _final_audit_pre_payload(handoff: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(handoff)
+    for field in ("verdict", "findings", "requested_model", "observed_model"):
+        payload.pop(field, None)
+    return payload
 
 
 def _repository_fingerprint(repo: Path, allowlist: tuple[str, ...]) -> str:
@@ -1926,6 +1993,120 @@ def _allowlist_diff_sha256(repo: Path, allowlist: tuple[str, ...], base_ref: str
         check=False,
     ).stdout.decode("utf-8", errors="surrogateescape").replace("\r\n", "\n")
     return hashlib.sha256(diff.encode("utf-8")).hexdigest().upper()
+
+
+def _full_diff_sha256(repo: Path, base_ref: str) -> str:
+    import hashlib
+
+    diff = subprocess.run(
+        ["git", "diff", base_ref, "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    ).stdout.decode("utf-8", errors="surrogateescape").replace("\r\n", "\n")
+    return hashlib.sha256(diff.encode("utf-8")).hexdigest().upper()
+
+
+def _build_external_codex_context_manifest(
+    repo: Path,
+    *,
+    contract_path: str,
+    manifest_path: str,
+    route: str,
+    allowlist: tuple[str, ...],
+    base_ref: str,
+) -> None:
+    checkpoint_id = "FINAL_AUDIT" if route == "critical_final_audit" else "W1"
+    cmd = [
+        sys.executable,
+        str(ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"),
+        "manifest-build",
+        "--root",
+        str(repo),
+        "--package-id",
+        "AGENT-COST-01",
+        "--checkpoint-id",
+        checkpoint_id,
+        "--contract-path",
+        contract_path,
+        "--profile-path",
+        ".cursor/agent-system.json",
+        "--output",
+        manifest_path,
+        "--base-ref",
+        base_ref,
+        "--verify-command",
+        ".venv/Scripts/python.exe -m pytest tests/docs -q",
+    ]
+    for path in allowlist:
+        cmd.extend(["--allow", path])
+    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+def _w3_prep_allowlist() -> tuple[str, ...]:
+    return tuple(_config()["external_codex_bound_review"]["w3_allowlist_paths"])
+
+
+W3_PREP_SOURCE_OWNERS: tuple[str, ...] = (
+    ".cursor/agent-system.json",
+    ".cursor/hooks/subagent-start.ps1",
+    ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py",
+    ".cursor/skills/execute-gated-macro/references/checkpoint-protocol.md",
+    "tests/docs/test_cursor_agent_system.py",
+    "tests/docs/test_cursor_macro_workflow.py",
+    "tests/docs/test_docs_consistency.py",
+    "docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md",
+    "docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md",
+)
+
+
+def _hook_workspace_fingerprint(
+    repo: Path,
+    allowlist: tuple[str, ...],
+    *,
+    base_ref: str | None = None,
+    scope_mode: str = "dirty",
+    checkpoint: str = "W1",
+    foreign: tuple[str, ...] = (),
+) -> str:
+    import uuid
+
+    token = uuid.uuid4().hex[:8]
+    output = f"build/pt/test-fingerprint-{token}.json"
+    if base_ref is None:
+        base_ref = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))[
+            "external_codex_bound_review"
+        ]["base_ref"]
+    snapshot = repo / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
+    cmd = [
+        sys.executable,
+        str(snapshot),
+        "snapshot",
+        "--root",
+        str(repo),
+        "--checkpoint",
+        checkpoint,
+        "--phase",
+        "hook-binding",
+        "--output",
+        output,
+        "--base-ref",
+        base_ref,
+        "--scope-mode",
+        scope_mode,
+        "--fail-on-out-of-scope",
+        "--fail-on-denial",
+    ]
+    for path in allowlist:
+        cmd.extend(["--allow", path])
+    for path in foreign:
+        cmd.extend(["--foreign", path])
+    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    payload = json.loads((repo / output).read_text(encoding="utf-8"))
+    (repo / output).unlink(missing_ok=True)
+    return str(payload["repository_state_sha256"])
 
 
 def _workspace_repository_fingerprint() -> str:
@@ -1948,8 +2129,13 @@ def _complete_w1_ladder_history() -> list[dict[str, Any]]:
     ]
 
 
-def _canonical_evidence_paths(evidence_attempt: str) -> tuple[Path, Path]:
-    template = _config()["external_codex_bound_review"]["evidence_path_template"]
+def _canonical_evidence_paths(
+    evidence_attempt: str, *, route: str = "checkpoint_escalation"
+) -> tuple[Path, Path]:
+    contract = _config()["external_codex_bound_review"]
+    template = contract["evidence_path_template"]
+    if route == "critical_final_audit":
+        template = contract["final_audit_evidence_path_template"]
     rel_root = Path(template["root"]) / evidence_attempt
     contract = rel_root / template["contract_file"]
     manifest = rel_root / template["manifest_file"]
@@ -1976,7 +2162,7 @@ def _is_safe_evidence_attempt_segment(segment: str) -> bool:
 def _external_codex_handoff(
     tmp_path: Path,
     *,
-    route: str = "critical_final_audit",
+    route: str = "checkpoint_escalation",
     binding_repo: Path | None = None,
     evidence_attempt: str | None = None,
     **updates: Any,
@@ -1987,38 +2173,74 @@ def _external_codex_handoff(
         evidence_attempt = str(updates.pop("evidence_attempt"))
     if evidence_attempt is None:
         evidence_attempt = f"test-handoff-{tmp_path.name}"
-    rel_contract, rel_manifest = _canonical_evidence_paths(evidence_attempt)
+    rel_contract, rel_manifest = _canonical_evidence_paths(evidence_attempt, route=route)
     materialize_evidence = _is_safe_evidence_attempt_segment(evidence_attempt)
     if materialize_evidence:
         extra_allowlist = (rel_contract.as_posix(), rel_manifest.as_posix())
     else:
-        safe_contract, safe_manifest = _canonical_evidence_paths(f"test-handoff-{tmp_path.name}")
+        safe_contract, safe_manifest = _canonical_evidence_paths(
+            f"test-handoff-{tmp_path.name}", route=route
+        )
         extra_allowlist = (safe_contract.as_posix(), safe_manifest.as_posix())
-    repo = binding_repo or _isolated_codex_binding_repo(tmp_path, extra_allowlist=extra_allowlist)
-    allowlist = tuple(
-        json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))[
-            "external_codex_bound_review"
-        ]["w1_allowlist_paths"]
+    repo = binding_repo or (
+        _isolated_final_audit_binding_repo(tmp_path)
+        if route == "critical_final_audit"
+        else _isolated_codex_binding_repo(tmp_path, extra_allowlist=extra_allowlist)
     )
-    base_ref = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))[
-        "external_codex_bound_review"
-    ]["base_ref"]
+    config = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    allowlist_key = (
+        "w3_allowlist_paths" if route == "critical_final_audit" else "w1_allowlist_paths"
+    )
+    allowlist = tuple(config["external_codex_bound_review"][allowlist_key])
+    base_ref = config["external_codex_bound_review"]["base_ref"]
     if materialize_evidence:
         contract = repo / rel_contract
         manifest = repo / rel_manifest
         contract.parent.mkdir(parents=True, exist_ok=True)
         contract.write_text("contract body\n", encoding="utf-8")
-        manifest.write_text('{"ok":true}\n', encoding="utf-8")
-        _git(repo, "add", rel_contract.as_posix(), rel_manifest.as_posix())
-        status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        if status.stdout.strip():
-            _git(repo, "commit", "-q", "-m", "binding evidence")
+        if route == "critical_final_audit":
+            assert len(allowlist) == 35
+            _materialize_declared_foreign(repo, config=config)
+            _build_external_codex_context_manifest(
+                repo,
+                contract_path=rel_contract.as_posix(),
+                manifest_path=rel_manifest.as_posix(),
+                route=route,
+                allowlist=allowlist,
+                base_ref=base_ref,
+            )
+        else:
+            manifest.write_text('{"ok":true}\n', encoding="utf-8")
+            _git(repo, "add", rel_contract.as_posix(), rel_manifest.as_posix())
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if status.stdout.strip():
+                _git(repo, "commit", "-q", "-m", "binding evidence")
+            extended_w1 = sorted(
+                set(config["external_codex_bound_review"]["w1_allowlist_paths"]) | set(extra_allowlist)
+            )
+            config["external_codex_bound_review"]["w1_allowlist_paths"] = extended_w1
+            (repo / ".cursor/agent-system.json").write_text(
+                json.dumps(config, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            _git(repo, "add", ".cursor/agent-system.json")
+            pending = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if pending.stdout.strip():
+                _git(repo, "commit", "-q", "-m", "extend w1 allowlist for evidence")
+            config = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+            allowlist = tuple(config["external_codex_bound_review"]["w1_allowlist_paths"])
         contract_sha = hashlib.sha256(contract.read_bytes()).hexdigest().upper()
         manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest().upper()
     else:
@@ -2027,7 +2249,19 @@ def _external_codex_handoff(
     branch = _git(repo, "branch", "--show-current").stdout.strip()
     reviewed_head = _git(repo, "rev-parse", "HEAD").stdout.strip()
     base_head = _git(repo, "rev-parse", base_ref).stdout.strip()
-    workspace_fp = _hook_workspace_fingerprint(repo, allowlist)
+    if route == "critical_final_audit":
+        diff_sha = _full_diff_sha256(repo, base_ref)
+        workspace_fp = _hook_workspace_fingerprint(
+            repo,
+            allowlist,
+            base_ref=base_ref,
+            scope_mode="committed_final_audit",
+            checkpoint="FINAL_AUDIT",
+            foreign=_declared_foreign_rules(config=config),
+        )
+    else:
+        diff_sha = _allowlist_diff_sha256(repo, allowlist, base_ref)
+        workspace_fp = _hook_workspace_fingerprint(repo, allowlist, base_ref=base_ref)
     payload = {
         "agent_id": "codex-1",
         "task_id": "task-1",
@@ -2047,7 +2281,7 @@ def _external_codex_handoff(
         "evidence_attempt": evidence_attempt,
         "contract_path": rel_contract.as_posix(),
         "contract_sha256": contract_sha,
-        "diff_sha256": _allowlist_diff_sha256(repo, allowlist, base_ref),
+        "diff_sha256": diff_sha,
         "evidence_manifest_path": rel_manifest.as_posix(),
         "evidence_manifest_sha256": manifest_sha,
         "pre_fingerprint": workspace_fp,
@@ -2069,6 +2303,7 @@ def _run_external_codex_hook(
     *,
     mode: str = "EXTERNAL_CODEX_BOUND_REVIEW",
     binding_repo: Path | None = None,
+    env_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     repo = binding_repo or Path(str(handoff["target_root"]))
     return _run_hook(
@@ -2077,7 +2312,153 @@ def _run_external_codex_hook(
         state_path=tmp_path / "state.json",
         log_path=tmp_path / "subagent-start.log",
         cwd=repo,
+        env_overrides=env_overrides,
     )
+
+
+def _run_final_audit_pre_handoff(
+    tmp_path: Path,
+    handoff: dict[str, Any],
+    binding_repo: Path,
+    *,
+    env_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    return _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+        env_overrides=env_overrides,
+    )
+
+
+def _rebind_final_audit_handoff(handoff: dict[str, Any], binding_repo: Path) -> None:
+    config = json.loads((binding_repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    allowlist = tuple(config["external_codex_bound_review"]["w3_allowlist_paths"])
+    base_ref = config["external_codex_bound_review"]["base_ref"]
+    handoff["branch"] = _git(binding_repo, "branch", "--show-current").stdout.strip()
+    handoff["reviewed_head"] = _git(binding_repo, "rev-parse", "HEAD").stdout.strip()
+    handoff["base_head"] = _git(binding_repo, "rev-parse", base_ref).stdout.strip()
+    handoff["diff_sha256"] = _full_diff_sha256(binding_repo, base_ref)
+    workspace_fp = _hook_workspace_fingerprint(
+        binding_repo,
+        allowlist,
+        base_ref=base_ref,
+        scope_mode="committed_final_audit",
+        checkpoint="FINAL_AUDIT",
+        foreign=_declared_foreign_rules(config=config),
+    )
+    handoff["pre_fingerprint"] = workspace_fp
+    handoff["post_fingerprint"] = workspace_fp
+
+
+def _handoff_manifest_path(binding_repo: Path, handoff: dict[str, Any]) -> Path:
+    return binding_repo / handoff["evidence_manifest_path"]
+
+
+def _read_handoff_manifest(binding_repo: Path, handoff: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(_handoff_manifest_path(binding_repo, handoff).read_text(encoding="utf-8"))
+
+
+def _write_handoff_manifest(
+    binding_repo: Path,
+    handoff: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    import hashlib
+
+    path = _handoff_manifest_path(binding_repo, handoff)
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    handoff["evidence_manifest_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+
+def _commit_config_base_ref(binding_repo: Path, base_ref: str) -> None:
+    config = json.loads((binding_repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    config["external_codex_bound_review"]["base_ref"] = base_ref
+    (binding_repo / ".cursor/agent-system.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _git(binding_repo, "add", ".cursor/agent-system.json")
+    _git(binding_repo, "commit", "-q", "-m", "update base ref")
+
+
+def _git_shim_env(
+    tmp_path: Path,
+    *,
+    mode: str,
+) -> dict[str, str]:
+    shim_dir = tmp_path / "git-shim"
+    shim_dir.mkdir(exist_ok=True)
+    real_git = shutil.which("git")
+    if not real_git:
+        raise RuntimeError("git executable not found for shim")
+    launcher = shim_dir / "git_shim.py"
+    launcher.write_text(
+        f"""import subprocess
+import sys
+
+REAL = r"{real_git.replace(chr(92), chr(92) * 2)}"
+MODE = "{mode}"
+
+def _rest(args: list[str]) -> list[str]:
+    if len(args) >= 2 and args[0] == "-C":
+        return args[2:]
+    return args
+
+def _fail() -> None:
+    print("synthetic git shim failure", file=sys.stderr)
+    raise SystemExit(2)
+
+args = sys.argv[1:]
+rest = _rest(args)
+if MODE == "final_diff":
+    if len(rest) >= 3 and rest[0] == "diff" and rest[-1] == "HEAD":
+        _fail()
+elif MODE == "foreign_cached":
+    if len(rest) >= 3 and rest[0] == "diff" and rest[1] == "--cached" and rest[2] == "--name-only":
+        _fail()
+elif MODE == "foreign_unstaged":
+    if rest[:2] == ["diff", "--name-only"]:
+        _fail()
+elif MODE == "foreign_untracked":
+    if rest[:3] == ["ls-files", "--others", "--exclude-standard"]:
+        _fail()
+else:
+    raise SystemExit(f"unknown git shim mode: {{MODE}}")
+raise SystemExit(subprocess.call([REAL, *args]))
+""",
+        encoding="utf-8",
+    )
+    if os.name == "nt":
+        wrapper = shim_dir / "git.ps1"
+        wrapper.write_text(
+            f'& "{sys.executable}" "{launcher}" @args\n'
+            f"exit $LASTEXITCODE\n",
+            encoding="utf-8",
+        )
+    else:
+        wrapper = shim_dir / "git"
+        wrapper.write_text(
+            f'#!/usr/bin/env python3\nimport runpy\nrunpy.run_path(r"{launcher}", run_name="__main__")\n',
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = str(shim_dir) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def _same_length_foreign_cli_mutation(original: bytes) -> bytes:
+    mutated = bytearray(original)
+    for index, byte in enumerate(mutated):
+        if byte in (ord("a"), ord("z"), ord("0")):
+            mutated[index] = byte + 1
+            break
+    else:
+        mutated[0] = (mutated[0] + 1) % 256
+    assert len(mutated) == len(original)
+    return bytes(mutated)
 
 
 def test_external_codex_bound_review_hook_owner(tmp_path: Path) -> None:
@@ -2225,11 +2606,14 @@ def test_external_codex_review_route_bindings(tmp_path: Path) -> None:
     )
     assert escalation["handoff"] == "HANDOFF_READY"
 
-    audit_handoff = _external_codex_handoff(tmp_path, binding_repo=binding_repo)
+    audit_repo = _isolated_final_audit_binding_repo(tmp_path)
+    audit_handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=audit_repo
+    )
     final_audit = _run_external_codex_hook(
         tmp_path,
         audit_handoff,
-        binding_repo=binding_repo,
+        binding_repo=audit_repo,
     )
     assert final_audit["handoff"] == "HANDOFF_READY"
 
@@ -2298,3 +2682,859 @@ def test_external_codex_review_route_bindings(tmp_path: Path) -> None:
         binding_repo=binding_repo,
     )
     assert wrong_model["handoff"] == "HANDOFF_INVALID"
+
+
+def test_external_codex_config_declares_w3_final_audit_route_fields() -> None:
+    contract = _config()["external_codex_bound_review"]
+    assert contract["base_ref"] == "4bedcc84cd81a46b6e8802a3a6b2296f9f5f9d5c"
+    assert len(contract["w3_allowlist_paths"]) == 35
+    assert contract["final_audit_evidence_path_template"]["root"] == "build/agent-cost-01/w3"
+    assert contract["evidence_path_template"]["root"] == "build/agent-cost-01/w1"
+    bindings = contract["declared_foreign_bindings"]
+    assert {item["path"] for item in bindings} == {".cursor/cli.json", "agent", "models"}
+
+
+def test_final_audit_canonical_evidence_paths_use_w3_root() -> None:
+    contract, manifest = _canonical_evidence_paths("attempt-001", route="critical_final_audit")
+    assert contract.as_posix() == "build/agent-cost-01/w3/attempt-001/checkpoint-contract.md"
+    assert manifest.as_posix() == "build/agent-cost-01/w3/attempt-001/context-manifest.json"
+    w1_contract, _ = _canonical_evidence_paths("attempt-001", route="checkpoint_escalation")
+    assert w1_contract.as_posix().startswith("build/agent-cost-01/w1/")
+
+
+def test_final_audit_pre_handoff_accepts_clean_committed_candidate(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "PRE_HANDOFF_READY"
+
+
+def test_final_audit_denies_dirty_tracked_allowlist_path(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    dirty_owner = binding_repo / ".cursor/agent-system.json"
+    dirty_owner.write_text(dirty_owner.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "dirty_tracked_or_index" in result["reason"]
+    assert ".cursor/agent-system.json" in result["reason"]
+
+
+def test_final_audit_denies_noncanonical_evidence_root_override(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    pre_payload = _final_audit_pre_payload(handoff)
+    pre_payload["contract_path"] = "build/agent-cost-01/w1/forged/checkpoint-contract.md"
+    result = _run_external_codex_hook(
+        tmp_path, pre_payload, mode="EXTERNAL_CODEX_PRE_HANDOFF", binding_repo=binding_repo
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "contract path not canonical" in result["reason"]
+
+
+def test_final_audit_foreign_exact_match_accepts_untracked_hashes(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "PRE_HANDOFF_READY"
+
+
+def test_final_audit_foreign_child_path_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    (binding_repo / "agent").unlink(missing_ok=True)
+    child = binding_repo / "agent/nested.txt"
+    child.parent.mkdir(parents=True, exist_ok=True)
+    child.write_text("child\n", encoding="utf-8")
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "foreign child" in result["reason"]
+
+
+def test_w1_escalation_route_still_uses_w1_allowlist_and_root(tmp_path: Path) -> None:
+    rel_contract, rel_manifest = _canonical_evidence_paths(
+        f"test-handoff-{tmp_path.name}", route="checkpoint_escalation"
+    )
+    binding_repo = _isolated_codex_binding_repo(
+        tmp_path,
+        extra_allowlist=(rel_contract.as_posix(), rel_manifest.as_posix()),
+    )
+    handoff = _external_codex_handoff(
+        tmp_path, route="checkpoint_escalation", binding_repo=binding_repo
+    )
+    assert handoff["contract_path"].startswith("build/agent-cost-01/w1/")
+    result = _run_external_codex_hook(tmp_path, handoff, binding_repo=binding_repo)
+    assert result["handoff"] == "HANDOFF_READY"
+
+
+def test_w3_prep_negative_prehandoff_denies_dirty_allowlist_owner(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    dirty_owner = binding_repo / ".cursor/agent-system.json"
+    dirty_owner.write_text(dirty_owner.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "dirty_tracked_or_index" in result["reason"]
+    assert ".cursor/agent-system.json" in result["reason"]
+    assert "foreign path hash mismatch" not in result["reason"]
+
+
+def test_final_audit_snapshot_denies_missing_base_ref(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    (repo / "allowed.txt").write_text("v1\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "only")
+    output = "build/pt/final-audit-missing-base.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "missing-base",
+            "--output",
+            output,
+            "--allow",
+            "allowed.txt",
+            "--base-ref",
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 2
+    payload = json.loads((repo / output).read_text(encoding="utf-8"))
+    assert payload["denial_reasons"]
+    assert str(payload["denial_reasons"][0]).startswith("base_failure:")
+
+
+def test_final_audit_denies_committed_out_of_scope_path(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    rogue = binding_repo / "rogue-product.txt"
+    rogue.write_text("forbidden\n", encoding="utf-8")
+    _git(binding_repo, "add", "rogue-product.txt")
+    _git(binding_repo, "commit", "-q", "-m", "out of scope")
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "rogue-product.txt" in result["reason"]
+    assert result["reason"].startswith("out-of-scope repository mutation:")
+
+
+def test_final_audit_snapshot_records_rename_both_sides(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    old = repo / "old-name.txt"
+    old.write_text("v1\n", encoding="utf-8")
+    _git(repo, "add", "old-name.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    _git(repo, "mv", "old-name.txt", "new-name.txt")
+    _git(repo, "commit", "-q", "-m", "rename")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "rename",
+            "--output",
+            "build/pt/final-rename.json",
+            "--allow",
+            "old-name.txt",
+            "--allow",
+            "new-name.txt",
+            "--base-ref",
+            base,
+            "--scope-mode",
+            "committed_final_audit",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads((repo / "build/pt/final-rename.json").read_text(encoding="utf-8"))
+    assert set(payload["committed_paths"]) == {"old-name.txt", "new-name.txt"}
+
+
+def test_final_audit_snapshot_denies_rename_out_of_scope_side(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    old = repo / "old-name.txt"
+    old.write_text("v1\n", encoding="utf-8")
+    _git(repo, "add", "old-name.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    _git(repo, "mv", "old-name.txt", "new-name.txt")
+    _git(repo, "commit", "-q", "-m", "rename")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "rename-deny",
+            "--output",
+            "build/pt/final-rename-deny.json",
+            "--allow",
+            "old-name.txt",
+            "--base-ref",
+            base,
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-out-of-scope",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 2
+    payload = json.loads((repo / "build/pt/final-rename-deny.json").read_text(encoding="utf-8"))
+    assert "new-name.txt" in payload["out_of_scope_paths"]
+
+
+def test_final_audit_foreign_staged_file_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    (binding_repo / "agent").unlink(missing_ok=True)
+    staged = binding_repo / "agent"
+    staged.write_bytes(b"")
+    _git(binding_repo, "add", "agent")
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "foreign path staged denied: agent"
+
+
+def test_final_audit_pre_handoff_rejects_forged_full_diff(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    pre_payload = _final_audit_pre_payload(handoff)
+    pre_payload["diff_sha256"] = "0" * 64
+    result = _run_external_codex_hook(
+        tmp_path,
+        pre_payload,
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "stale diff"
+
+
+def test_final_audit_foreign_missing_expected_binding_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    (binding_repo / "agent").unlink(missing_ok=True)
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "missing expected foreign binding" in result["reason"]
+
+
+def test_final_audit_accepts_w2_only_committed_owner_in_full_diff(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    w2_owner = binding_repo / ".cursor/hooks/git-guard.ps1"
+    w2_owner.write_text(w2_owner.read_text(encoding="utf-8") + "# w2-only\n", encoding="utf-8")
+    _git(binding_repo, "add", ".cursor/hooks/git-guard.ps1")
+    _git(binding_repo, "commit", "-q", "-m", "w2-only owner")
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "PRE_HANDOFF_READY"
+
+
+def test_final_audit_rejects_stale_w1_only_diff_hash(tmp_path: Path) -> None:
+    import hashlib
+
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    w2_owner = binding_repo / ".cursor/hooks/git-guard.ps1"
+    w2_owner.write_text(w2_owner.read_text(encoding="utf-8") + "# w2-only\n", encoding="utf-8")
+    _git(binding_repo, "add", ".cursor/hooks/git-guard.ps1")
+    _git(binding_repo, "commit", "-q", "-m", "w2-only owner")
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    pre_payload = _final_audit_pre_payload(handoff)
+    w1_allowlist = tuple(_config()["external_codex_bound_review"]["w1_allowlist_paths"])
+    w1_only_diff = subprocess.run(
+        ["git", "diff", handoff["base_head"], "--", *w1_allowlist],
+        cwd=binding_repo,
+        capture_output=True,
+        check=False,
+    ).stdout.decode("utf-8", errors="surrogateescape").replace("\r\n", "\n")
+    assert w1_only_diff != subprocess.run(
+        ["git", "diff", handoff["base_head"]],
+        cwd=binding_repo,
+        capture_output=True,
+        check=False,
+    ).stdout.decode("utf-8", errors="surrogateescape").replace("\r\n", "\n")
+    pre_payload["diff_sha256"] = hashlib.sha256(w1_only_diff.encode("utf-8")).hexdigest().upper()
+    result = _run_external_codex_hook(
+        tmp_path,
+        pre_payload,
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "stale diff"
+
+
+def test_final_audit_foreign_hash_mismatch_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    cli = binding_repo / ".cursor/cli.json"
+    original = cli.read_bytes()
+    cli.write_bytes(_same_length_foreign_cli_mutation(original))
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "foreign path hash mismatch" in result["reason"]
+
+
+def test_final_audit_foreign_committed_file_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    _git(binding_repo, "add", "agent")
+    _git(binding_repo, "commit", "-q", "-m", "commit foreign")
+    result = _run_external_codex_hook(
+        tmp_path,
+        _final_audit_pre_payload(handoff),
+        mode="EXTERNAL_CODEX_PRE_HANDOFF",
+        binding_repo=binding_repo,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "foreign path must remain untracked" in result["reason"]
+
+
+def test_final_audit_snapshot_denies_extra_untracked_out_of_scope(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    config = json.loads((binding_repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+    allowlist = config["external_codex_bound_review"]["w3_allowlist_paths"]
+    base_ref = config["external_codex_bound_review"]["base_ref"]
+    (binding_repo / "rogue-untracked.txt").write_text("unexpected\n", encoding="utf-8")
+    output = "build/pt/final-audit-extra-untracked.json"
+    cmd = [
+        sys.executable,
+        str(ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"),
+        "snapshot",
+        "--root",
+        str(binding_repo),
+        "--checkpoint",
+        "FINAL_AUDIT",
+        "--phase",
+        "extra-untracked",
+        "--output",
+        output,
+        "--base-ref",
+        base_ref,
+        "--scope-mode",
+        "committed_final_audit",
+        "--fail-on-out-of-scope",
+        "--fail-on-denial",
+    ]
+    for path in allowlist:
+        cmd.extend(["--allow", path])
+    for path in _declared_foreign_rules(config=config):
+        cmd.extend(["--foreign", path])
+    completed = subprocess.run(
+        cmd,
+        cwd=binding_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    payload = json.loads((binding_repo / output).read_text(encoding="utf-8"))
+    assert "rogue-untracked.txt" in payload["out_of_scope_paths"]
+
+
+def test_final_audit_snapshot_denies_committed_out_of_scope_deletion(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    allowed = repo / "allowed.txt"
+    allowed.write_text("v1\n", encoding="utf-8")
+    rogue = repo / "rogue-committed.txt"
+    rogue.write_text("forbidden\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt", "rogue-committed.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    _git(repo, "rm", "rogue-committed.txt")
+    _git(repo, "commit", "-q", "-m", "delete out-of-scope path")
+    output = "build/pt/final-audit-deletion.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "deletion",
+            "--output",
+            output,
+            "--allow",
+            "allowed.txt",
+            "--base-ref",
+            base,
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-out-of-scope",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    payload = json.loads((repo / output).read_text(encoding="utf-8"))
+    assert "rogue-committed.txt" in payload["out_of_scope_paths"]
+
+
+def test_final_audit_hook_denies_missing_base_ref(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    _commit_config_base_ref(
+        binding_repo,
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    )
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "git rev-parse base failed for final audit binding"
+
+
+def test_final_audit_hook_denies_non_ancestor_base(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    _git(binding_repo, "checkout", "--orphan", "disconnected-head")
+    (binding_repo / ".orphan-root").write_text("orphan\n", encoding="utf-8")
+    _git(binding_repo, "add", ".orphan-root")
+    _git(binding_repo, "commit", "-q", "-m", "orphan root")
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "base ref is not an ancestor of HEAD"
+
+
+def test_final_audit_hook_denies_git_diff_binding_failure(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    shim_env = _git_shim_env(tmp_path, mode="final_diff")
+    result = _run_final_audit_pre_handoff(
+        tmp_path,
+        handoff,
+        binding_repo,
+        env_overrides=shim_env,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "git diff failed for final audit binding"
+
+
+def test_final_audit_hook_empty_diff_success_not_git_failure(tmp_path: Path) -> None:
+    import hashlib
+
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    _commit_config_base_ref(binding_repo, "HEAD")
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    assert handoff["diff_sha256"] == hashlib.sha256(b"").hexdigest().upper()
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "PRE_HANDOFF_READY"
+    assert "git diff failed" not in result["reason"]
+    assert "dirty_tracked_or_index" not in result["reason"]
+
+
+def test_final_audit_foreign_git_query_failure_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    shim_env = _git_shim_env(tmp_path, mode="foreign_cached")
+    result = _run_final_audit_pre_handoff(
+        tmp_path,
+        handoff,
+        binding_repo,
+        env_overrides=shim_env,
+    )
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "git diff --cached failed for foreign binding"
+
+
+def test_final_audit_hook_denies_additional_untracked_allowlist_path(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    _git(binding_repo, "rm", "--cached", ".cursor/hooks.json")
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "foreign binding add denied: .cursor/hooks.json"
+
+
+def test_final_audit_foreign_fourth_path_add_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    forged = binding_repo / ".cursor/forged-foreign.json"
+    forged.write_text('{"fixture_only":true}\n', encoding="utf-8")
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "foreign binding add denied: .cursor/forged-foreign.json" in result["reason"]
+
+
+def test_final_audit_handoff_declared_foreign_bindings_override_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    for field in (
+        "declared_foreign_bindings",
+        "declared_foreign_paths",
+        "foreign_bindings",
+        "foreign_override",
+        "foreign_rules",
+    ):
+        payload = _final_audit_pre_payload(handoff)
+        payload[field] = [{"path": "forged-foreign.txt"}]
+        result = _run_external_codex_hook(
+            tmp_path,
+            payload,
+            mode="EXTERNAL_CODEX_PRE_HANDOFF",
+            binding_repo=binding_repo,
+        )
+        assert result["handoff"] == "HANDOFF_INVALID"
+        assert result["reason"] == f"foreign binding override denied: {field}"
+
+
+def test_final_audit_manifest_foreign_binding_add_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    manifest["declared_foreign_bindings"] = list(manifest["declared_foreign_bindings"]) + [
+        {
+            "path": "forged-foreign.txt",
+            "size": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "index_state": "untracked",
+            "index_entry": None,
+        }
+    ]
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "manifest foreign binding add denied: forged-foreign.txt" in result["reason"]
+
+
+def test_final_audit_manifest_foreign_binding_drop_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    manifest["declared_foreign_bindings"] = [
+        item for item in manifest["declared_foreign_bindings"] if item["path"] != "agent"
+    ]
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "manifest foreign binding drop denied: agent" in result["reason"]
+
+
+def test_final_audit_manifest_foreign_binding_replace_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    for item in manifest["declared_foreign_bindings"]:
+        if item["path"] == "agent":
+            item["path"] = "forged-agent-alias"
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "manifest foreign binding drop denied: agent" in result["reason"]
+
+
+def test_final_audit_manifest_foreign_binding_missing_index_entry_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    for item in manifest["declared_foreign_bindings"]:
+        if item["path"] == "models":
+            del item["index_entry"]
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "manifest foreign binding missing field index_entry: models"
+
+
+def test_final_audit_manifest_foreign_binding_missing_size_zero_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    for item in manifest["declared_foreign_bindings"]:
+        if item["path"] == "agent":
+            assert item["size"] == 0
+            del item["size"]
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "manifest foreign binding missing field size: agent"
+
+
+def test_final_audit_manifest_foreign_binding_null_size_zero_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    for item in manifest["declared_foreign_bindings"]:
+        if item["path"] == "models":
+            assert item["size"] == 0
+            item["size"] = None
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "manifest foreign binding missing field size: models"
+
+
+def test_final_audit_manifest_foreign_binding_missing_index_state_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    for item in manifest["declared_foreign_bindings"]:
+        if item["path"] == "agent":
+            del item["index_state"]
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "manifest foreign binding missing field index_state: agent"
+
+
+def test_final_audit_manifest_foreign_binding_hash_mismatch_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    for item in manifest["declared_foreign_bindings"]:
+        if item["path"] == ".cursor/cli.json":
+            item["sha256"] = "0" * 64
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "manifest foreign binding hash mismatch: .cursor/cli.json" in result["reason"]
+
+
+def test_final_audit_manifest_foreign_binding_index_entry_mismatch_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    for item in manifest["declared_foreign_bindings"]:
+        if item["path"] == "agent":
+            item["index_entry"] = "100644 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 0\tagent"
+    _write_handoff_manifest(binding_repo, handoff, manifest)
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "manifest foreign binding index_entry mismatch: agent" in result["reason"]
+
+
+def test_final_audit_hook_denies_committed_out_of_scope_deletion(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(
+        tmp_path,
+        prebase_out_of_scope=("rogue-deletion-target.txt",),
+    )
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    _git(binding_repo, "rm", "rogue-deletion-target.txt")
+    _git(binding_repo, "commit", "-q", "-m", "delete rogue")
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert result["reason"] == "out-of-scope repository mutation: rogue-deletion-target.txt"
+
+
+def test_final_audit_hook_denies_rename_out_of_scope_old_path(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(
+        tmp_path,
+        prebase_out_of_scope=("legacy-out-of-scope.txt",),
+    )
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    _git(binding_repo, "mv", "legacy-out-of-scope.txt", "legacy-renamed-out-of-scope.txt")
+    _git(binding_repo, "commit", "-q", "-m", "rename legacy")
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "legacy-out-of-scope.txt" in result["reason"]
+    assert result["reason"].startswith("out-of-scope repository mutation:")
+
+
+def test_final_audit_foreign_staged_index_denied(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    _git(binding_repo, "add", "agent")
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "HANDOFF_INVALID"
+    assert "foreign path staged denied: agent" in result["reason"]
+
+
+def test_final_audit_manifest_records_exact_three_foreign_bindings(tmp_path: Path) -> None:
+    binding_repo = _isolated_final_audit_binding_repo(tmp_path)
+    handoff = _external_codex_handoff(
+        tmp_path, route="critical_final_audit", binding_repo=binding_repo
+    )
+    manifest = _read_handoff_manifest(binding_repo, handoff)
+    bindings = manifest["declared_foreign_bindings"]
+    assert {item["path"] for item in bindings} == {".cursor/cli.json", "agent", "models"}
+    assert len(bindings) == 3
+    by_path = {item["path"]: item for item in bindings}
+    cli = by_path[".cursor/cli.json"]
+    agent = by_path["agent"]
+    models = by_path["models"]
+    for item in bindings:
+        assert "path" in item
+        assert "size" in item
+        assert "sha256" in item
+        assert "index_state" in item
+        assert "index_entry" in item
+        assert item["index_state"] == "untracked"
+        assert item["index_entry"] is None
+    assert agent["size"] == 0
+    assert models["size"] == 0
+    assert cli["size"] > 0
+    result = _run_final_audit_pre_handoff(tmp_path, handoff, binding_repo)
+    assert result["handoff"] == "PRE_HANDOFF_READY"
+    assert result["reason"] == "workspace-derived pre-handoff binding valid"

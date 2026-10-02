@@ -364,6 +364,65 @@
       "contract_file": "checkpoint-contract.md",
       "manifest_file": "context-manifest.json"
     },
+    "final_audit_evidence_path_template": {
+      "root": "build/agent-cost-01/w3",
+      "contract_file": "checkpoint-contract.md",
+      "manifest_file": "context-manifest.json"
+    },
+    "declared_foreign_bindings": [
+      {
+        "path": ".cursor/cli.json",
+        "size": 311,
+        "sha256": "20b446a23cbeb31ff8b9d35c5b86264d03bc97dcf63e0dc2df4bace06ff58c9b"
+      },
+      {
+        "path": "agent",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "models",
+        "size": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "w3_allowlist_paths": [
+      ".cursor/agent-system.json",
+      ".cursor/agents/roadmap-architect.md",
+      ".cursor/agents/checkpoint-reviewer.md",
+      ".cursor/agents/plan-challenger.md",
+      ".cursor/agents/external-review-triager.md",
+      ".cursor/agents/escalation-reviewer.md",
+      ".cursor/agents/git-steward.md",
+      ".cursor/hooks.json",
+      ".cursor/hooks/subagent-start.ps1",
+      ".cursor/tools/invoke-cursor-agent.ps1",
+      ".cursor/tools/run-pytest-gate.ps1",
+      ".cursor/skills/apply-agent-profile/SKILL.md",
+      ".cursor/skills/execute-gated-macro/SKILL.md",
+      ".cursor/skills/execute-gated-macro/references/checkpoint-protocol.md",
+      ".cursor/skills/execute-work-package/SKILL.md",
+      ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py",
+      ".cursor/skills/verify-reports-and-plan/SKILL.md",
+      ".cursor/skills/verify-reports-and-plan/references/evidence-and-prompt-patterns.md",
+      ".cursor/skills/qmtool-module-development/SKILL.md",
+      ".cursor/skills/qmtool-module-development/references/independent-codex-review.md",
+      ".cursor/hooks/git-guard.ps1",
+      ".cursor/hooks/session-start.ps1",
+      ".cursor/hooks/workflow-watchdog.ps1",
+      ".cursor/runtime/README.md",
+      ".cursor/runtime/workflow-state.template.json",
+      ".cursor/reviews/README.md",
+      "docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md",
+      "docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md",
+      "docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md",
+      "docs/DOCS_CANONICAL_INDEX.md",
+      "docs/MASTER_ORCHESTRATION_ROADMAP.md",
+      "tests/docs/test_cursor_agent_system.py",
+      "tests/docs/test_cursor_macro_workflow.py",
+      "tests/docs/test_cursor_execution_hygiene.py",
+      "tests/docs/test_docs_consistency.py"
+    ],
     "review_route_bindings": {
       "AGENT-COST-01": {
         "checkpoint_escalation": {

@@ -637,6 +637,293 @@ def test_checkpoint_snapshot_fails_closed_on_out_of_scope_path(tmp_path: Path) -
     assert payload["out_of_scope_paths"] == ["unexpected.txt"]
 
 
+def test_checkpoint_snapshot_committed_final_audit_mode(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    allowed = repo / "allowed.txt"
+    allowed.write_text("v1\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    allowed.write_text("v2\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "change")
+    foreign = repo / "agent"
+    foreign.write_bytes(b"")
+
+    clean = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "audit",
+            "--output",
+            "build/ap-029-test/final-clean.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "agent",
+            "--base-ref",
+            base,
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert clean.returncode == 0, clean.stderr
+    payload = json.loads((repo / "build/ap-029-test/final-clean.json").read_text(encoding="utf-8"))
+    assert payload["scope_mode"] == "committed_final_audit"
+    assert payload["committed_paths"] == ["allowed.txt"]
+    assert payload["declared_foreign_paths"] == ["agent"]
+
+    allowed.write_text("dirty\n", encoding="utf-8")
+    dirty = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "audit-dirty",
+            "--output",
+            "build/ap-029-test/final-dirty.json",
+            "--allow",
+            "allowed.txt",
+            "--base-ref",
+            base,
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert dirty.returncode == 2
+    denied = json.loads((repo / "build/ap-029-test/final-dirty.json").read_text(encoding="utf-8"))
+    assert any("dirty_tracked_or_index" in reason for reason in denied["denial_reasons"])
+
+
+def test_checkpoint_snapshot_committed_final_audit_strict_base_ref(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    allowed = repo / "allowed.txt"
+    allowed.write_text("v1\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    ancestor_base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    allowed.write_text("v2\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "change")
+
+    def _run_snapshot(base_ref: str, output_name: str, *, fail_on_denial: bool = False) -> dict[str, Any]:
+        cmd = [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            output_name,
+            "--output",
+            f"build/ap-029-test/{output_name}.json",
+            "--allow",
+            "allowed.txt",
+            "--base-ref",
+            base_ref,
+            "--scope-mode",
+            "committed_final_audit",
+        ]
+        if fail_on_denial:
+            cmd.append("--fail-on-denial")
+        completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+        payload = json.loads(
+            (repo / "build" / "ap-029-test" / f"{output_name}.json").read_text(encoding="utf-8")
+        )
+        payload["_returncode"] = completed.returncode
+        return payload
+
+    valid = _run_snapshot(ancestor_base, "strict-base-ancestor", fail_on_denial=True)
+    assert valid["_returncode"] == 0
+    assert valid["base_sha"] == ancestor_base
+    assert valid["denial_reasons"] == []
+
+    missing = _run_snapshot(
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        "strict-base-missing",
+    )
+    assert missing["base_sha"] is None
+    assert any(str(reason).startswith("base_failure:") for reason in missing["denial_reasons"])
+
+    tree_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    non_commit = _run_snapshot(tree_sha, "strict-base-non-commit")
+    assert non_commit["base_sha"] is None
+    assert any(str(reason).startswith("base_failure:") for reason in non_commit["denial_reasons"])
+
+    _git(repo, "checkout", "--orphan", "orphan-head")
+    (repo / ".orphan-root").write_text("orphan\n", encoding="utf-8")
+    _git(repo, "add", ".orphan-root")
+    _git(repo, "commit", "-q", "-m", "orphan root")
+    non_ancestor = _run_snapshot(ancestor_base, "strict-base-non-ancestor")
+    assert non_ancestor["base_sha"] == ancestor_base
+    assert any("not an ancestor" in str(reason) for reason in non_ancestor["denial_reasons"])
+
+
+def test_checkpoint_snapshot_foreign_child_denied_only_in_final_audit(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    (repo / "allowed.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    child = repo / "models/extra.txt"
+    child.parent.mkdir(parents=True, exist_ok=True)
+    child.write_text("x\n", encoding="utf-8")
+    dirty_default = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "W1",
+            "--phase",
+            "foreign-child-dirty-default",
+            "--output",
+            "build/ap-029-test/foreign-child-dirty-default.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "models",
+            "--base-ref",
+            "HEAD",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert dirty_default.returncode == 0, dirty_default.stderr
+    final_audit = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "foreign-child-final-audit",
+            "--output",
+            "build/ap-029-test/foreign-child-final-audit.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "models",
+            "--base-ref",
+            "HEAD",
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert final_audit.returncode == 2
+    payload = json.loads(
+        (repo / "build/ap-029-test/foreign-child-final-audit.json").read_text(encoding="utf-8")
+    )
+    assert any("foreign_child_denied" in reason for reason in payload["denial_reasons"])
+
+
+def test_checkpoint_snapshot_foreign_child_denied(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    (repo / "allowed.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    child = repo / "models/extra.txt"
+    child.parent.mkdir(parents=True, exist_ok=True)
+    child.write_text("x\n", encoding="utf-8")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "W1",
+            "--phase",
+            "foreign-child-dirty-default",
+            "--output",
+            "build/ap-029-test/foreign-child-dirty-default-legacy.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "models",
+            "--base-ref",
+            "HEAD",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(
+        (repo / "build/ap-029-test/foreign-child-dirty-default-legacy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "models/extra.txt" in payload["declared_foreign_paths"]
+
+
 def _pilot00_review_policy() -> dict[str, str]:
     text = _read(PROTOCOL)
     start = "<!-- PILOT00_ORCHESTRATOR_REVIEW_START -->"
@@ -1078,6 +1365,8 @@ def _manifest_build(repo: Path, **kwargs: Any) -> dict[str, Any]:
         cmd.extend(["--allow", path])
     for evidence in kwargs.get("evidence", ()):
         cmd.extend(["--evidence", evidence])
+    for foreign in kwargs.get("foreign", ()):
+        cmd.extend(["--foreign", foreign])
     completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
     assert completed.returncode == 0, completed.stderr or completed.stdout
     return json.loads((repo / kwargs["output"]).read_text(encoding="utf-8"))
@@ -1108,6 +1397,211 @@ def _manifest_validate(
         "returncode": completed.returncode,
         "payload": json.loads(completed.stdout),
     }
+
+
+def test_context_manifest_foreign_cli_rejects_override_and_records_profile_bindings(
+    tmp_path: Path,
+) -> None:
+    import hashlib
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    root_config = _config()
+    foreign_bindings = list(root_config["external_codex_bound_review"]["declared_foreign_bindings"])
+    cli_bytes = b'{"fixture_only":"macro-manifest-foreign","never_from_root_cli":true}\n'
+    for binding in foreign_bindings:
+        if binding["path"] == ".cursor/cli.json":
+            binding["size"] = len(cli_bytes)
+            binding["sha256"] = hashlib.sha256(cli_bytes).hexdigest()
+    profile = {
+        "profile": "cursor-first",
+        "version": 3,
+        "external_codex_bound_review": {
+            "declared_foreign_bindings": foreign_bindings,
+        },
+    }
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "agent-system.json").write_text(json.dumps(profile) + "\n", encoding="utf-8")
+    (repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    for binding in foreign_bindings:
+        target = repo / binding["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if binding["path"] == ".cursor/cli.json":
+            target.write_bytes(cli_bytes)
+        else:
+            target.write_bytes(b"")
+    evidence_root = repo / "build" / "agent-cost-01" / "w3" / "attempt-foreign-cli"
+    evidence_root.mkdir(parents=True)
+    contract = evidence_root / "checkpoint-contract.md"
+    contract.write_text("contract body\n", encoding="utf-8")
+    manifest_path = "build/agent-cost-01/w3/attempt-foreign-cli/context-manifest.json"
+    manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w3/attempt-foreign-cli/checkpoint-contract.md",
+        output=manifest_path,
+        checkpoint_id="FINAL_AUDIT",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        base_ref="HEAD",
+    )
+    assert "foreign" not in manifest
+    bindings = manifest["declared_foreign_bindings"]
+    assert len(bindings) == 3
+    assert {item["path"] for item in bindings} == {".cursor/cli.json", "agent", "models"}
+    for item in bindings:
+        assert item["index_state"] == "untracked"
+        assert item["index_entry"] is None
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "?? .cursor/cli.json" in status.stdout
+    assert "?? agent" in status.stdout
+    assert "?? models" in status.stdout
+
+    matching_manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w3/attempt-foreign-cli/checkpoint-contract.md",
+        output="build/agent-cost-01/w3/attempt-foreign-cli/context-manifest-matching.json",
+        checkpoint_id="FINAL_AUDIT",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        base_ref="HEAD",
+        foreign=tuple(binding["path"] for binding in foreign_bindings),
+    )
+    assert len(matching_manifest["declared_foreign_bindings"]) == 3
+
+    override_cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-build",
+        "--root",
+        str(repo),
+        "--package-id",
+        "AGENT-COST-01",
+        "--checkpoint-id",
+        "FINAL_AUDIT",
+        "--contract-path",
+        "build/agent-cost-01/w3/attempt-foreign-cli/checkpoint-contract.md",
+        "--profile-path",
+        ".cursor/agent-system.json",
+        "--output",
+        "build/agent-cost-01/w3/attempt-foreign-cli/context-manifest-forged.json",
+        "--base-ref",
+        "HEAD",
+        "--verify-command",
+        ".venv/Scripts/python.exe -m pytest tests/docs -q",
+        "--allow",
+        "tracked.txt",
+        "--allow",
+        ".cursor/agent-system.json",
+        "--foreign",
+        "forged-foreign.txt",
+    ]
+    completed = subprocess.run(override_cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert completed.returncode != 0
+    assert "manifest-build --foreign cannot override profile declared_foreign_bindings" in (
+        completed.stderr or completed.stdout
+    )
+
+
+def test_context_manifest_w1_legacy_build_validate_without_foreign_bindings(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    root_config = _config()
+    foreign_bindings = list(root_config["external_codex_bound_review"]["declared_foreign_bindings"])
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "agent-system.json").write_text(json.dumps(root_config) + "\n", encoding="utf-8")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    for binding in foreign_bindings:
+        foreign_path = repo / binding["path"]
+        assert not foreign_path.exists()
+    verify_commands = (".venv/Scripts/python.exe -m pytest tests/docs -q",)
+
+    w1_root = repo / "build" / "agent-cost-01" / "w1" / "attempt-legacy"
+    w1_root.mkdir(parents=True)
+    (w1_root / "checkpoint-contract.md").write_text("contract body\n", encoding="utf-8")
+    w1_manifest_path = "build/agent-cost-01/w1/attempt-legacy/context-manifest.json"
+    w1_manifest = _manifest_build(
+        repo,
+        package_id="AGENT-COST-01",
+        contract_path="build/agent-cost-01/w1/attempt-legacy/checkpoint-contract.md",
+        output=w1_manifest_path,
+        checkpoint_id="W1",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+    )
+    assert "declared_foreign_bindings" not in w1_manifest
+    w1_reuse_key = w1_manifest["reuse_key_sha256"]
+    w1_ok = _manifest_validate(
+        repo,
+        w1_manifest_path,
+        allow_reuse=True,
+        verify_commands=verify_commands,
+    )
+    assert w1_ok["returncode"] == 0
+    assert w1_ok["payload"]["valid"] is True
+    assert w1_ok["payload"]["reuse_allowed"] is True
+
+    pilot_root = repo / "build" / "pilot00-b1" / "w2" / "attempt-legacy"
+    pilot_root.mkdir(parents=True)
+    (pilot_root / "checkpoint-contract.md").write_text("pilot contract\n", encoding="utf-8")
+    pilot_manifest_path = "build/pilot00-b1/w2/attempt-legacy/context-manifest.json"
+    pilot_manifest = _manifest_build(
+        repo,
+        package_id="PILOT00-B1",
+        contract_path="build/pilot00-b1/w2/attempt-legacy/checkpoint-contract.md",
+        output=pilot_manifest_path,
+        checkpoint_id="W2",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+    )
+    assert "declared_foreign_bindings" not in pilot_manifest
+    pilot_ok = _manifest_validate(
+        repo,
+        pilot_manifest_path,
+        allow_reuse=True,
+        verify_commands=verify_commands,
+    )
+    assert pilot_ok["returncode"] == 0
+    assert pilot_ok["payload"]["valid"] is True
+    assert pilot_ok["payload"]["reuse_allowed"] is True
+
+    legacy_manifest_file = repo / w1_manifest_path
+    legacy_manifest = json.loads(legacy_manifest_file.read_text(encoding="utf-8"))
+    legacy_manifest["declared_foreign_bindings"] = [
+        {
+            "path": binding["path"],
+            "size": binding["size"],
+            "sha256": binding["sha256"],
+        }
+        for binding in foreign_bindings
+    ]
+    assert legacy_manifest["reuse_key_sha256"] == w1_reuse_key
+    legacy_manifest_file.write_text(json.dumps(legacy_manifest, indent=2) + "\n", encoding="utf-8")
+    legacy_ok = _manifest_validate(
+        repo,
+        w1_manifest_path,
+        allow_reuse=True,
+        verify_commands=verify_commands,
+    )
+    assert legacy_ok["returncode"] == 0
+    assert legacy_ok["payload"]["valid"] is True
+    assert legacy_ok["payload"]["reuse_allowed"] is True
 
 
 def test_context_manifest_build_validate_and_reuse(tmp_path: Path) -> None:
@@ -1145,6 +1639,7 @@ def test_context_manifest_build_validate_and_reuse(tmp_path: Path) -> None:
     )
     assert manifest["package_id"] == "AGENT-COST-01"
     assert manifest["checkpoint_id"] == "W2"
+    assert "declared_foreign_bindings" not in manifest
     assert len(manifest["reuse_key_sha256"]) == 64
 
     ok = _manifest_validate(

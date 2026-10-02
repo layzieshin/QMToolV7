@@ -2,8 +2,9 @@
 
 Status: **PLANNED / NOT ACTIVE** (P1 package contract; not a product checkpoint)
 Package ID: `AGENT-COST-01`
-Profile target (future): `cursor-first` v1
-Effective profile today: `balanced` v2 in `.cursor/agent-system.json`
+Profile target (historical W0 baseline): `cursor-first` v1 — planning artifact only; not the active branch candidate
+Branch qualification candidate (current): **`cursor-first` `version: 3`** on `feature/cursor-agent-system-v3`
+Effective profile on `main` today: `balanced` v2 in `.cursor/agent-system.json`
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
 Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (P0 wins on architecture boundaries)
 Operation guide: `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`
@@ -527,4 +528,155 @@ at W0 close; subsequent W1 work is historical qualification only until W3 public
 | Repair scope | `.cursor/hooks/git-guard.ps1`, `tests/docs/test_cursor_agent_system.py`, compact note here |
 | Finding | uniform token-boundary `-f`/`-F` deny (quotes, backtick, numeric, underscore, bare/separate) |
 | Evidence | `build/agent-cost-01/w2/w2-exceptional-002/` |
-| Focused gate | `test_git_guard_denies_local_pr_review_and_mutating_review_apis` — result pending coordinator/native review |
+| Focused gate | `test_git_guard_denies_local_pr_review_and_mutating_review_apis` — exit **0** (historical); review outcome preserved in evidence root |
+
+### W3 — qualification and activation (CURRENT)
+
+**Qualification** proves the frozen branch-local candidate **before** squash-merge. On
+`feature/cursor-agent-system-v3`, the effective profile is **`cursor-first` `version: 3`**; `main` and
+foreign worktrees remain on historical **`balanced` v2** until merge. Routine Cursor execution uses
+Composer 2.5 Standard; routine independent reviews use the configured Grok ladder beginning at
+`grok-4.7-high`. Critical final audit for packages in `routing.ag_packages_critical` routes
+directly to the external Codex/ChatGPT-authenticated orchestrator; exhausted checkpoint escalation
+follows the applicable configured `checkpoint-reviewer` ladder before external handoff.
+
+**Activation** applies **only after** squash-merge into `main` plus a documented safe transition for
+**new** checkpoints/packages. Running attempts, PILOT00 B1, and in-flight packages keep their started
+profile version and evidence interpretation. Branch-local qualification alone does not activate the
+mapping elsewhere.
+
+Serving model, token cost, cache hit rate, and 50:50 usage remain **UNKNOWN** unless separately
+measured in primary evidence — never invent zero cost, cache activity, or serving attestation.
+
+**Evidence status (2026-10-02):** `W3-PREP-01-EXCEPTIONAL-001` focused gate RED recorded
+(`w3p01-exceptional-001-focused`, 1 executed / 1 FAIL, JUnit
+`build/agent-cost-01/w3-prep-01-exceptional-001/focused-junit.xml`). `W3-PREP-01-EXCEPTIONAL-002`
+Items A–D source repair complete on branch candidate (historical fact). E002 focused
+(`w3p01-exceptional-002-focused`): **10 pass / 1 fail** — node 11
+`test_final_audit_foreign_staged_file_denied` (expected substring `foreign path must remain untracked`
+vs actual `foreign path staged denied: agent`; JUnit
+`build/agent-cost-01/w3-prep-01-exceptional-002/focused-junit.xml`). E003 focused
+(`w3p01-exceptional-003-focused`): **22 pass / 1 fail** — node 23
+`test_final_audit_hook_denies_missing_base_ref` (`git merge-base failed` vs expected
+`git rev-parse base failed`). diagnostic001 NOT_ACCEPTANCE (`w3p01-remaining22-diagnostic`): **21 pass /
+1 fail** — `test_agent_cost_profile_w2_naming_and_historical_status` missing exact **35** path
+assertion. E004 full three-file gate (`w3p01-exceptional-004-full`): **143 pass / 2 fail** (145 total;
+JUnit `build/agent-cost-01/w3-prep-01-exceptional-004/full-junit.xml`) — shim `git.cmd` caret
+reparsing on `ref^{commit}` before diff/foreign probes; **not** a 145 PASS claim. E005 two-node gate
+(`w3p01-exceptional-005-two-node`): **2 pass** (JUnit
+`build/agent-cost-01/w3-prep-01-exceptional-005/two-node-junit.xml`). E005 transparent reuse:
+source-identical unaffected E004 **143 pass / 2 fail** cases, plus separate E005 two-node and final
+docs-consistency node — **never** a single 145 PASS claim. Genuine dirty negative canary at
+`w3-prep-01-dirty-canary-002` (`HANDOFF_INVALID`, `dirty_tracked_or_index` all 9 owners; evidence root
+`build/agent-cost-01/w3/w3-prep-01-dirty-canary-002/`). Independent native review PREP-PASS agent
+`46b3d29b-375a-460e-83ba-1d0ecb579029` with limits: serving/reasoning **UNKNOWN**, evidence
+**UNVERIFIED**, **NOT** final audit, **NOT** external Codex PASS. Full final-commit `tests/docs` gate,
+external audit, publication, and activation remain **OPEN**.
+Qualification remains **before** merge; activation remains **after** squash-merge plus documented
+safe transition for **new** checkpoints only.
+
+#### W3 FINAL_AUDIT allowlist (exact **35** paths)
+
+Normative owner: `.cursor/agent-system.json` → `external_codex_bound_review.w3_allowlist_paths`
+(**35** entries; path equality in `committed_final_audit` scope).
+
+1. `.cursor/agent-system.json`
+2. `.cursor/agents/roadmap-architect.md`
+3. `.cursor/agents/checkpoint-reviewer.md`
+4. `.cursor/agents/plan-challenger.md`
+5. `.cursor/agents/external-review-triager.md`
+6. `.cursor/agents/escalation-reviewer.md`
+7. `.cursor/agents/git-steward.md`
+8. `.cursor/hooks.json`
+9. `.cursor/hooks/subagent-start.ps1`
+10. `.cursor/tools/invoke-cursor-agent.ps1`
+11. `.cursor/tools/run-pytest-gate.ps1`
+12. `.cursor/skills/apply-agent-profile/SKILL.md`
+13. `.cursor/skills/execute-gated-macro/SKILL.md`
+14. `.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`
+15. `.cursor/skills/execute-work-package/SKILL.md`
+16. `.cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py`
+17. `.cursor/skills/verify-reports-and-plan/SKILL.md`
+18. `.cursor/skills/verify-reports-and-plan/references/evidence-and-prompt-patterns.md`
+19. `.cursor/skills/qmtool-module-development/SKILL.md`
+20. `.cursor/skills/qmtool-module-development/references/independent-codex-review.md`
+21. `.cursor/hooks/git-guard.ps1`
+22. `.cursor/hooks/session-start.ps1`
+23. `.cursor/hooks/workflow-watchdog.ps1`
+24. `.cursor/runtime/README.md`
+25. `.cursor/runtime/workflow-state.template.json`
+26. `.cursor/reviews/README.md`
+27. `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md`
+28. `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md`
+29. `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`
+30. `docs/DOCS_CANONICAL_INDEX.md`
+31. `docs/MASTER_ORCHESTRATION_ROADMAP.md`
+32. `tests/docs/test_cursor_agent_system.py`
+33. `tests/docs/test_cursor_macro_workflow.py`
+34. `tests/docs/test_cursor_execution_hygiene.py`
+35. `tests/docs/test_docs_consistency.py`
+
+#### W3-PREP-01 — exceptional recovery (`W3-PREP-01-EXCEPTIONAL-001`)
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-02 coordinator mandate after regular rework `2/2` RED (`rework002-focused-junit` 14 pass / 2 fail) |
+| Regular rework | `regular_rework_count=2` — **not reset** |
+| Exceptional recovery | `exceptional_count=1` (separate from regular rework) |
+| Evidence root | `build/agent-cost-01/w3-prep-01-exceptional-001/` (ignored) |
+| Historical regular arc | `build/agent-cost-01/w3-prep-01/` journals, contracts, and JUnit artifacts preserved |
+| Repair scope | exact nine W3-PREP owners only; synthetic portable foreign fixtures; FINAL_AUDIT full diff binding; foreign3 metadata-only |
+| Focused gate (2026-10-02) | RED — `test_external_codex_bound_review_hook_owner` (`w3p01-exceptional-001-focused`; 1/42 executed) |
+| Qualification vs activation | branch proof only until merge; **activation** remains post-merge safe transition for **new** checkpoints only |
+
+#### W3-PREP-01 — exceptional recovery slot 2 (`W3-PREP-01-EXCEPTIONAL-002`)
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-02 coordinator mandate after exceptional001 focused RED |
+| Regular rework | `regular_rework_count=2` — **not reset** |
+| Exceptional recovery | `exceptional_count=2` (separate from regular rework) |
+| Evidence root | `build/agent-cost-01/w3-prep-01-exceptional-002/` (ignored) |
+| Repair scope | Item A `Invoke-GitCommand` `GitArgv`; Items B–D FINAL-only manifest legacy, untracked macro foreign fixture, exact untracked-minus-three + dirty-tracked classification |
+| Focused gate (2026-10-02) | **10 pass / 1 fail** — `test_final_audit_foreign_staged_file_denied` (`w3p01-exceptional-002-focused`; 11/45 executed) |
+| Qualification vs activation | unchanged — qualification **before** merge; activation **after** safe transition for **new** checkpoints only |
+
+#### W3-PREP-01 — exceptional recovery slot 3 (`W3-PREP-01-EXCEPTIONAL-003`)
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-02 coordinator mandate after E002 focused RED |
+| Regular rework | `regular_rework_count=2` — **not reset** |
+| Exceptional recovery | `exceptional_count=3` (separate from regular rework) |
+| Evidence root | `build/agent-cost-01/w3-prep-01-exceptional-003/` (ignored) |
+| Repair scope | test-only: `test_final_audit_foreign_staged_file_denied` exact reason; docs direct-external normalization; `_git_shim_env` Windows launcher |
+| Focused gate (2026-10-02) | **22 pass / 1 fail** — `test_final_audit_hook_denies_missing_base_ref` (`w3p01-exceptional-003-focused`; 23/45 executed) |
+| diagnostic001 NOT_ACCEPTANCE | `w3p01-remaining22-diagnostic`: **21 pass / 1 fail** — `test_agent_cost_profile_w2_naming_and_historical_status` |
+| Qualification vs activation | unchanged — qualification **before** merge; activation **after** safe transition for **new** checkpoints only |
+
+#### W3-PREP-01 — exceptional recovery slot 4 (`W3-PREP-01-EXCEPTIONAL-004`)
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-02 coordinator mandate after E003 focused/diagnostic RED |
+| Regular rework | `regular_rework_count=2` — **not reset** |
+| Exceptional recovery | `exceptional_count=4` (separate from regular rework) |
+| Evidence root | `build/agent-cost-01/w3-prep-01-exceptional-004/` (ignored) |
+| Repair scope | FINAL strict `rev-parse --verify ref^{commit}` in hook + snapshot; macro strict-base regression; AP exact **35** allowlist section |
+| Full three-file gate (2026-10-02) | **143 pass / 2 fail** (145 total) — `test_final_audit_hook_denies_git_diff_binding_failure`, `test_final_audit_foreign_git_query_failure_denied` (`w3p01-exceptional-004-full`; JUnit `full-junit.xml`) |
+| Closure status | historical **143 pass / 2 fail** only — no E005 full three-file re-run; complete `tests/docs` gate on final commit independently required |
+| Qualification vs activation | unchanged — qualification **before** merge; activation **after** safe transition for **new** checkpoints only |
+
+#### W3-PREP-01 — exceptional recovery slot 5 (`W3-PREP-01-EXCEPTIONAL-005`)
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-02 coordinator mandate after E004 full gate shim failures |
+| Regular rework | `regular_rework_count=2` — **not reset** |
+| Exceptional recovery | `exceptional_count=5` (separate from regular rework) |
+| Evidence root | `build/agent-cost-01/w3-prep-01-exceptional-005/` (ignored) |
+| Repair scope | `_git_shim_env` Windows `git.ps1` wrapper (`@args` forwarding; no `cmd %*` caret reparsing) |
+| Two-node gate (2026-10-02) | **2 pass** — shim regression nodes (`w3p01-exceptional-005-two-node`; JUnit `two-node-junit.xml`) |
+| Docs-consistency gate (2026-10-02) | `test_agent_cost_profile_w2_naming_and_historical_status` (`w3p01-exceptional-005-docs`; JUnit `docs-consistency-junit.xml`) |
+| Closure status | transparent reuse — source-identical unaffected E004 **143/2**, E005 two-node **2 pass**, final docs node separate; **never** single 145 PASS; complete `tests/docs` gate on final commit independently required |
+| Qualification vs activation | unchanged — qualification **before** merge; activation **after** safe transition for **new** checkpoints only |

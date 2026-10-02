@@ -57,10 +57,10 @@ The runtime file is never fachliche documentation.
 limits. On branch-local `cursor-first` v3 candidates (AGENT-COST-01 qualification), Composer 2.5
 Standard carries routine execution; Grok review roles use the normalized ladder in
 `review_model_fallback` beginning at attempt 1 `grok-4.7-high` (no hidden attempt 0 and no legacy
-`grok-4.7-xhigh` route);
-critical final audit and exhausted escalation route to external Codex via
-`EXTERNAL_CODEX_BOUND_REVIEW` after the applicable Cursor ladder (and Cursor GPT rung when configured)
-is exhausted with explicit unavailability evidence. `main` and foreign worktrees remain on `balanced` v2 until merge.
+`grok-4.7-xhigh` route). Critical final audit for packages in `routing.ag_packages_critical` routes
+**directly** to the external Codex/ChatGPT-authenticated orchestrator; exhausted checkpoint escalation
+follows the applicable configured `checkpoint-reviewer` ladder (and Cursor GPT rung when configured)
+before external handoff. `main` and foreign worktrees remain on `balanced` v2 until merge.
 Rules, skills and this guide explain behavior; `hooks.json` contains only the
 Cursor-schema projection required by the platform, protected against drift by contract tests.
 
@@ -159,14 +159,34 @@ is not represented as external PASS.
 
 ## Cost profile
 
-`.cursor/agent-system.json` is the only normative model-map owner. On the branch-local
-`cursor-first` v3 candidate, Composer 2.5 Standard carries routine execution; Grok review roles use
-the normalized ladder in `review_model_fallback` beginning at `grok-4.7-high`. Critical final audit
-for packages in `routing.ag_packages_critical` routes directly to external Codex; exhausted checkpoint
-escalation follows the applicable configured `checkpoint-reviewer` ladder before external handoff.
-`main` and foreign worktrees remain on historical `balanced` v2 until merge. Do not launch a
-challenger for routine packages, a triager without findings, Codex per checkpoint, repeated explorers
-on the same scope, review rounds beyond config, or full chat transcripts as evidence.
+`.cursor/agent-system.json` is the only normative model-map owner.
+
+### AGENT-COST-01 qualification vs activation
+
+| Phase | Where | Profile | What changes |
+| --- | --- | --- | --- |
+| Qualification (pre-merge) | `feature/cursor-agent-system-v3` branch candidate | `cursor-first` v3 | Branch-local proof only; `main` stays `balanced` v2 |
+| Activation (post-merge) | `main` after squash-merge + documented safe transition | `cursor-first` v3 effective | **New** checkpoints/packages only |
+
+Qualification **before** squash-merge installs and proves the frozen candidate on the isolated branch.
+Activation **after** merge applies the documented safe transition; it does not retrofit running
+packages or PILOT00 B1.
+
+On the branch-local `cursor-first` v3 candidate, Composer 2.5 Standard carries routine Cursor
+execution. Routine independent reviews use the normalized Grok ladder in `review_model_fallback`
+beginning at `grok-4.7-high`. Critical final audit for packages in `routing.ag_packages_critical`
+routes to the external Codex/ChatGPT-authenticated orchestrator; exhausted checkpoint escalation
+follows the applicable configured `checkpoint-reviewer` ladder (and configured Cursor GPT rung when
+present) before external handoff. External Codex is coordination, architecture, and critical final
+audit — not a Cursor model ID, `RUNTIME_ATTESTED`, or `CONTROL_PLANE_PINNED`.
+
+Serving model, token cost, cache hit rate, 50:50 usage, and billing remain **UNKNOWN** unless the
+host measured or attested them in primary evidence. Never invent zero cost, cache activity, savings,
+or serving-model claims. An untagged helper never implies complete workflow cost coverage.
+
+Do not launch a challenger for routine packages, a triager without findings, Codex per checkpoint,
+repeated explorers on the same scope, review rounds beyond config, or full chat transcripts as
+evidence.
 
 ## HUMAN_GATEs
 

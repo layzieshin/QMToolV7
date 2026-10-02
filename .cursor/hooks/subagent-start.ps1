@@ -201,10 +201,19 @@ function Test-NonEmptyString {
 }
 
 function Get-GitValue {
-    param([string[]]$GitArguments)
-    $output = & git -C (Get-Location).Path @GitArguments 2>$null
+    param(
+        [string[]]$GitArguments,
+        [string]$RepoRoot = ""
+    )
+    if (-not (Test-NonEmptyString $RepoRoot)) {
+        $RepoRoot = (Get-Location).Path
+    }
+    $output = & git -C $RepoRoot @GitArguments 2>$null
     if ($LASTEXITCODE -ne 0) { return $null }
-    return ([string]$output).Trim()
+    if ($null -eq $output) { return $null }
+    $text = [string]$output
+    if ($text.Trim().Length -eq 0) { return $null }
+    return $text.Trim()
 }
 
 function Resolve-PythonExecutable {
@@ -230,6 +239,100 @@ function Get-GitPathSet {
     return @($output -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
+function Format-OutOfScopeDenialReason {
+    param([string[]]$Paths)
+    $normalized = @($Paths | ForEach-Object { ([string]$_).Replace('\', '/') } | Where-Object { $_ })
+    if ($normalized.Count -eq 0) {
+        return "out-of-scope repository mutation"
+    }
+    return "out-of-scope repository mutation: " + ($normalized -join ",")
+}
+
+function Invoke-GitCommand {
+    param([string]$RepoRoot, [string[]]$GitArguments)
+    $stderrCapture = [System.IO.Path]::GetTempFileName()
+    $priorEap = $ErrorActionPreference
+    try {
+        $gitResult = & {
+            param($Root, [string[]]$GitArgv, $ErrFile)
+            $ErrorActionPreference = 'Continue'
+            $stdoutRaw = & git -C $Root @GitArgv 2> $ErrFile
+            $exitCode = $LASTEXITCODE
+            [pscustomobject]@{
+                stdoutRaw = $stdoutRaw
+                exitCode = $exitCode
+            }
+        } -Root $RepoRoot -GitArgv $GitArguments -ErrFile $stderrCapture
+        $exitCode = $gitResult.exitCode
+        $stdoutRaw = $gitResult.stdoutRaw
+        $stdout = ""
+        if ($null -ne $stdoutRaw) {
+            if ($stdoutRaw -is [System.Array]) {
+                # Out-String restores Git's terminal newline; -join "`n" drops it and breaks diff_sha256.
+                $stdout = [string]($stdoutRaw | Out-String)
+            }
+            else {
+                $stdout = [string]$stdoutRaw
+            }
+        }
+        $stderr = ""
+        if (Test-Path -LiteralPath $stderrCapture) {
+            $stderrContent = Get-Content -LiteralPath $stderrCapture -Raw -ErrorAction SilentlyContinue
+            if ($stderrContent) {
+                $stderr = [string]$stderrContent
+            }
+        }
+        return @{
+            ok = ($exitCode -eq 0)
+            exit_code = $exitCode
+            stdout = $stdout
+            stderr = $stderr
+        }
+    }
+    finally {
+        $ErrorActionPreference = $priorEap
+        if (Test-Path -LiteralPath $stderrCapture) {
+            Remove-Item -LiteralPath $stderrCapture -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Get-GitPathSetStrict {
+    param([string]$RepoRoot, [string[]]$GitArguments, [string]$FailureReason)
+    $result = Invoke-GitCommand -RepoRoot $RepoRoot -GitArguments $GitArguments
+    if (-not $result.ok) {
+        return @{ ok = $false; reason = $FailureReason; paths = @() }
+    }
+    if ($result.stdout.Trim().Length -eq 0) {
+        return @{ ok = $true; paths = @() }
+    }
+    return @{
+        ok = $true
+        paths = @($result.stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+}
+
+function Get-GitValueStrict {
+    param([string]$RepoRoot, [string[]]$GitArguments, [string]$FailureReason)
+    $result = Invoke-GitCommand -RepoRoot $RepoRoot -GitArguments $GitArguments
+    if (-not $result.ok) {
+        return @{ ok = $false; reason = $FailureReason }
+    }
+    return @{ ok = $true; value = $result.stdout.Trim() }
+}
+
+function Get-GitStageEntryStrict {
+    param([string]$RepoRoot, [string]$RelativePath)
+    $result = Invoke-GitCommand -RepoRoot $RepoRoot -GitArguments @("ls-files", "--stage", "--", $RelativePath)
+    if (-not $result.ok) {
+        return @{ ok = $false; reason = "git ls-files failed for foreign path: $RelativePath" }
+    }
+    if ($result.stdout.Trim().Length -eq 0) {
+        return @{ ok = $true; indexed = $false; entry = $null }
+    }
+    return @{ ok = $true; indexed = $true; entry = $result.stdout.Trim() }
+}
+
 function Test-PathMatchesAllowlist {
     param([string]$Path, [string[]]$Allowlist)
     $normalized = ($Path -replace '\\', '/').Trim()
@@ -243,10 +346,9 @@ function Test-PathMatchesAllowlist {
 }
 
 function Invoke-WorkspaceSnapshotBinding {
-    param($Config)
-    $contract = $Config.external_codex_bound_review
-    $allowlist = @($contract.w1_allowlist_paths)
-    $baseRef = [string]$contract.base_ref
+    param($Config, $Policy)
+    $allowlist = @($Policy.allowlist)
+    $baseRef = [string]$Policy.base_ref
     $repoRoot = Get-GitValue @("rev-parse", "--show-toplevel")
     if (-not $repoRoot) {
         $repoRoot = (Get-Location).Path
@@ -255,12 +357,14 @@ function Invoke-WorkspaceSnapshotBinding {
     $unstaged = Get-GitPathSet $repoRoot @("diff", "--name-only")
     $untracked = Get-GitPathSet $repoRoot @("ls-files", "--others", "--exclude-standard")
     $changed = @($staged + $unstaged + $untracked | Select-Object -Unique)
-    $outOfScope = @($changed | Where-Object { -not (Test-PathMatchesAllowlist $_ $allowlist) })
-    if ($outOfScope.Count -gt 0) {
-        return @{
-            valid = $false
-            reason = "out-of-scope repository mutation"
-            out_of_scope_paths = $outOfScope
+    if ($Policy.scope_mode -eq "dirty") {
+        $outOfScope = @($changed | Where-Object { -not (Test-PathMatchesAllowlist $_ $allowlist) })
+        if ($outOfScope.Count -gt 0) {
+            return @{
+                valid = $false
+                reason = (Format-OutOfScopeDenialReason @($outOfScope))
+                out_of_scope_paths = $outOfScope
+            }
         }
     }
 
@@ -277,19 +381,27 @@ function Invoke-WorkspaceSnapshotBinding {
     $outputPath = Join-Path $repoRoot $relativeOutput
     $outputDir = Split-Path -Parent $outputPath
     if ($outputDir) { New-Item -ItemType Directory -Path $outputDir -Force | Out-Null }
-    $args = @(
+    $checkpoint = if ($Policy.route -eq "critical_final_audit") { "FINAL_AUDIT" } else { "W1" }
+    $snapshotArgs = @(
         $snapshotScript,
+        "snapshot",
         "--root", $repoRoot,
-        "--checkpoint", "W1",
+        "--checkpoint", $checkpoint,
         "--phase", "hook-binding",
         "--output", ($relativeOutput -replace '\\', '/'),
         "--base-ref", $baseRef,
-        "--fail-on-out-of-scope"
+        "--scope-mode", [string]$Policy.scope_mode,
+        "--fail-on-out-of-scope",
+        "--fail-on-denial"
     )
-    foreach ($path in $allowlist) { $args += @("--allow", $path) }
-    & $python @args 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputPath)) {
-        if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath -Force }
+    foreach ($path in $allowlist) { $snapshotArgs += @("--allow", $path) }
+    if ($Policy.route -eq "critical_final_audit") {
+        foreach ($foreignPath in (Get-DeclaredForeignRules -Config $Config)) {
+            $snapshotArgs += @("--foreign", $foreignPath)
+        }
+    }
+    & $python @snapshotArgs 2>$null | Out-Null
+    if (-not (Test-Path -LiteralPath $outputPath)) {
         return @{ valid = $false; reason = "workspace snapshot failed" }
     }
     try {
@@ -297,6 +409,39 @@ function Invoke-WorkspaceSnapshotBinding {
     }
     finally {
         if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath -Force }
+    }
+    if ($LASTEXITCODE -ne 0) {
+        if ($snapshot.denial_reasons -and @($snapshot.denial_reasons).Count -gt 0) {
+            return @{
+                valid = $false
+                reason = ([string]$snapshot.denial_reasons[0])
+                denial_reasons = @($snapshot.denial_reasons)
+                out_of_scope_paths = @($snapshot.out_of_scope_paths)
+            }
+        }
+        if ($snapshot.out_of_scope_paths -and @($snapshot.out_of_scope_paths).Count -gt 0) {
+            return @{
+                valid = $false
+                reason = (Format-OutOfScopeDenialReason @($snapshot.out_of_scope_paths))
+                out_of_scope_paths = @($snapshot.out_of_scope_paths)
+            }
+        }
+        return @{ valid = $false; reason = "workspace snapshot failed" }
+    }
+    if ($snapshot.denial_reasons -and @($snapshot.denial_reasons).Count -gt 0) {
+        return @{
+            valid = $false
+            reason = ([string]$snapshot.denial_reasons[0])
+            denial_reasons = @($snapshot.denial_reasons)
+            out_of_scope_paths = @($snapshot.out_of_scope_paths)
+        }
+    }
+    if ($snapshot.out_of_scope_paths -and @($snapshot.out_of_scope_paths).Count -gt 0) {
+        return @{
+            valid = $false
+            reason = (Format-OutOfScopeDenialReason @($snapshot.out_of_scope_paths))
+            out_of_scope_paths = @($snapshot.out_of_scope_paths)
+        }
     }
     return @{
         valid = $true
@@ -318,15 +463,17 @@ function Test-SafeEvidenceAttemptSegment {
 }
 
 function Get-CanonicalEvidencePaths {
-    param([string]$EvidenceAttempt, $Config)
+    param([string]$EvidenceAttempt, $Config, $Template = $null)
     if (-not (Test-SafeEvidenceAttemptSegment $EvidenceAttempt)) {
         return @{ valid = $false; reason = "invalid evidence_attempt segment" }
     }
-    $template = $Config.external_codex_bound_review.evidence_path_template
+    if ($null -eq $Template) {
+        $Template = $Config.external_codex_bound_review.evidence_path_template
+    }
     $repoRoot = (Get-Location).Path
-    $rootRelative = ([string]$template.root).Replace('\', '/').TrimEnd('/')
-    $contractFile = [string]$template.contract_file
-    $manifestFile = [string]$template.manifest_file
+    $rootRelative = ([string]$Template.root).Replace('\', '/').TrimEnd('/')
+    $contractFile = [string]$Template.contract_file
+    $manifestFile = [string]$Template.manifest_file
     $contractRel = "$rootRelative/$EvidenceAttempt/$contractFile"
     $manifestRel = "$rootRelative/$EvidenceAttempt/$manifestFile"
     $canonicalRoot = Normalize-PathForCompare (Join-Path $repoRoot $rootRelative)
@@ -418,6 +565,228 @@ function Test-ExternalReviewRouteBinding {
     return @{ valid = $true; route = "checkpoint_escalation"; ladder_role = $ladderRole }
 }
 
+function Get-ExternalReviewRoutePolicy {
+    param($Handoff, $Config)
+    $routeCheck = Test-ExternalReviewRouteBinding -Handoff $Handoff -Config $Config
+    if (-not $routeCheck.valid) {
+        return @{ valid = $false; reason = $routeCheck.reason }
+    }
+    $contract = $Config.external_codex_bound_review
+    if ($routeCheck.route -eq "critical_final_audit") {
+        return @{
+            valid = $true
+            route = "critical_final_audit"
+            allowlist = @($contract.w3_allowlist_paths)
+            base_ref = [string]$contract.base_ref
+            evidence_template = $contract.final_audit_evidence_path_template
+            scope_mode = "committed_final_audit"
+        }
+    }
+    return @{
+        valid = $true
+        route = "checkpoint_escalation"
+        allowlist = @($contract.w1_allowlist_paths)
+        base_ref = [string]$contract.base_ref
+        evidence_template = $contract.evidence_path_template
+        scope_mode = "dirty"
+    }
+}
+
+function Get-DeclaredForeignRules {
+    param($Config)
+    return @($Config.external_codex_bound_review.declared_foreign_bindings | ForEach-Object { [string]$_.path })
+}
+
+function Get-CanonicalForeignBindingRecords {
+    param([string]$RepoRoot, $Config)
+    $bindings = @($Config.external_codex_bound_review.declared_foreign_bindings)
+    $records = @()
+    foreach ($binding in $bindings) {
+        $relative = ([string]$binding.path).Replace('\', '/')
+        $absolute = Join-Path $RepoRoot ($relative -replace '/', '\')
+        $stage = Get-GitStageEntryStrict -RepoRoot $RepoRoot -RelativePath $relative
+        if (-not $stage.ok) {
+            return @{ valid = $false; reason = $stage.reason }
+        }
+        $indexState = if ($stage.indexed) { "indexed" } else { "untracked" }
+        if (-not (Test-Path -LiteralPath $absolute -PathType Leaf)) {
+            return @{ valid = $false; reason = "missing expected foreign binding: $relative" }
+        }
+        $size = (Get-Item -LiteralPath $absolute).Length
+        if ([int]$binding.size -ne [int]$size) {
+            return @{ valid = $false; reason = "foreign path size mismatch: $relative" }
+        }
+        $hash = Get-FileSha256 $absolute
+        if ($null -eq $hash) {
+            return @{ valid = $false; reason = "foreign path hash unavailable: $relative" }
+        }
+        if ($hash.ToLowerInvariant() -ne ([string]$binding.sha256).ToLowerInvariant()) {
+            return @{ valid = $false; reason = "foreign path hash mismatch: $relative" }
+        }
+        $records += @{
+            path = $relative
+            size = [int]$size
+            sha256 = $hash.ToLowerInvariant()
+            index_state = $indexState
+            index_entry = $stage.entry
+        }
+    }
+    return @{ valid = $true; records = $records }
+}
+
+function Test-DeclaredForeignBinding {
+    param([string]$RepoRoot, $Config)
+    $bindings = @($Config.external_codex_bound_review.declared_foreign_bindings)
+    if ($bindings.Count -eq 0) {
+        return @{ valid = $true }
+    }
+    $expectedPaths = @($bindings | ForEach-Object { ([string]$_.path).Replace('\', '/') })
+    $staged = Get-GitPathSetStrict $RepoRoot @("diff", "--cached", "--name-only") "git diff --cached failed for foreign binding"
+    if (-not $staged.ok) { return @{ valid = $false; reason = $staged.reason } }
+    $unstaged = Get-GitPathSetStrict $RepoRoot @("diff", "--name-only") "git diff failed for foreign binding"
+    if (-not $unstaged.ok) { return @{ valid = $false; reason = $unstaged.reason } }
+    $untracked = Get-GitPathSetStrict $RepoRoot @("ls-files", "--others", "--exclude-standard") "git ls-files --others failed for foreign binding"
+    if (-not $untracked.ok) { return @{ valid = $false; reason = $untracked.reason } }
+
+    foreach ($expected in $expectedPaths) {
+        if ($expected -in @($staged.paths)) {
+            return @{ valid = $false; reason = "foreign path staged denied: $expected" }
+        }
+        if ($expected -in @($unstaged.paths)) {
+            return @{ valid = $false; reason = "foreign path mutation denied: $expected" }
+        }
+    }
+
+    foreach ($path in @($untracked.paths)) {
+        $normalized = ($path -replace '\\', '/').Trim()
+        if ($normalized -in $expectedPaths) {
+            continue
+        }
+        foreach ($expected in $expectedPaths) {
+            if ($normalized.StartsWith("$expected/")) {
+                return @{ valid = $false; reason = "foreign child path denied: $normalized" }
+            }
+        }
+        return @{ valid = $false; reason = "foreign binding add denied: $normalized" }
+    }
+
+    $canonical = Get-CanonicalForeignBindingRecords -RepoRoot $RepoRoot -Config $Config
+    if (-not $canonical.valid) {
+        return @{ valid = $false; reason = $canonical.reason }
+    }
+    foreach ($record in $canonical.records) {
+        $relative = [string]$record.path
+        if ($record.index_state -ne "untracked") {
+            return @{ valid = $false; reason = "foreign path must remain untracked: $relative" }
+        }
+        if ($relative -notin @($untracked.paths)) {
+            return @{ valid = $false; reason = "foreign path must be untracked only: $relative" }
+        }
+    }
+    if (@($canonical.records).Count -ne $bindings.Count) {
+        return @{ valid = $false; reason = "foreign binding drop denied" }
+    }
+    return @{ valid = $true; records = $canonical.records }
+}
+
+function Test-HandoffForeignOverrideDenied {
+    param($Handoff)
+    foreach ($field in @(
+        "declared_foreign_bindings",
+        "declared_foreign_paths",
+        "foreign_bindings",
+        "foreign_override",
+        "foreign_rules"
+    )) {
+        if ($Handoff.PSObject.Properties.Name.Contains($field)) {
+            return @{ valid = $false; reason = "foreign binding override denied: $field" }
+        }
+    }
+    return @{ valid = $true }
+}
+
+function Test-ManifestDeclaredForeignBindings {
+    param([string]$RepoRoot, [string]$ManifestRelativePath, $Config)
+    $manifestPath = Join-Path $RepoRoot ($ManifestRelativePath -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        return @{ valid = $false; reason = "manifest missing for foreign binding validation" }
+    }
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        return @{ valid = $false; reason = "manifest malformed for foreign binding validation" }
+    }
+    if (-not $manifest.PSObject.Properties.Name.Contains("declared_foreign_bindings")) {
+        return @{ valid = $false; reason = "manifest missing declared_foreign_bindings" }
+    }
+    $canonical = Get-CanonicalForeignBindingRecords -RepoRoot $RepoRoot -Config $Config
+    if (-not $canonical.valid) {
+        return @{ valid = $false; reason = $canonical.reason }
+    }
+    $manifestRecords = @($manifest.declared_foreign_bindings)
+    $expectedByPath = @{}
+    foreach ($record in $canonical.records) {
+        $expectedByPath[[string]$record.path] = $record
+    }
+    $manifestByPath = @{}
+    foreach ($actual in $manifestRecords) {
+        $actualPath = ([string]$actual.path).Replace('\', '/')
+        if ($manifestByPath.ContainsKey($actualPath)) {
+            return @{ valid = $false; reason = "manifest foreign binding duplicate denied: $actualPath" }
+        }
+        $manifestByPath[$actualPath] = $actual
+    }
+    foreach ($path in $expectedByPath.Keys) {
+        if (-not $manifestByPath.ContainsKey($path)) {
+            return @{ valid = $false; reason = "manifest foreign binding drop denied: $path" }
+        }
+    }
+    foreach ($path in $manifestByPath.Keys) {
+        if (-not $expectedByPath.ContainsKey($path)) {
+            return @{ valid = $false; reason = "manifest foreign binding add denied: $path" }
+        }
+        $expected = $expectedByPath[$path]
+        $actual = $manifestByPath[$path]
+        foreach ($requiredField in @("path", "size", "sha256", "index_state", "index_entry")) {
+            if (-not $actual.PSObject.Properties.Name.Contains($requiredField)) {
+                return @{ valid = $false; reason = "manifest foreign binding missing field ${requiredField}: $path" }
+            }
+        }
+        if ($null -eq $actual.path -or [string]::IsNullOrWhiteSpace([string]$actual.path)) {
+            return @{ valid = $false; reason = "manifest foreign binding missing field path: $path" }
+        }
+        if ($null -eq $actual.size) {
+            return @{ valid = $false; reason = "manifest foreign binding missing field size: $path" }
+        }
+        if ($null -eq $actual.sha256 -or [string]::IsNullOrWhiteSpace([string]$actual.sha256)) {
+            return @{ valid = $false; reason = "manifest foreign binding missing field sha256: $path" }
+        }
+        if ($null -eq $actual.index_state -or [string]::IsNullOrWhiteSpace([string]$actual.index_state)) {
+            return @{ valid = $false; reason = "manifest foreign binding missing field index_state: $path" }
+        }
+        if ([int]$actual.size -ne [int]$expected.size) {
+            return @{ valid = $false; reason = "manifest foreign binding size mismatch: $path" }
+        }
+        if ([string]$actual.sha256 -ne [string]$expected.sha256) {
+            return @{ valid = $false; reason = "manifest foreign binding hash mismatch: $path" }
+        }
+        if ([string]$actual.index_state -ne [string]$expected.index_state) {
+            return @{ valid = $false; reason = "manifest foreign binding index_state mismatch: $path" }
+        }
+        $expectedIndexEntry = if ($null -eq $expected.index_entry) { $null } else { [string]$expected.index_entry }
+        $actualIndexEntry = if ($actual.PSObject.Properties.Name.Contains("index_entry") -and $null -ne $actual.index_entry) {
+            [string]$actual.index_entry
+        } else {
+            $null
+        }
+        if ($expectedIndexEntry -ne $actualIndexEntry) {
+            return @{ valid = $false; reason = "manifest foreign binding index_entry mismatch: $path" }
+        }
+    }
+    return @{ valid = $true }
+}
+
 function Test-StrictBooleanField {
     param($Object, [string]$Name)
     if ($null -eq $Object) { return $false }
@@ -426,24 +795,113 @@ function Test-StrictBooleanField {
 }
 
 function Get-WorkspaceDerivedBindings {
-    param($Config)
-    $contract = $Config.external_codex_bound_review
-    $allowlist = @($contract.w1_allowlist_paths)
-    $baseRef = [string]$contract.base_ref
-    $repoRoot = Get-GitValue @("rev-parse", "--show-toplevel")
-    if (-not $repoRoot) {
-        $repoRoot = (Get-Location).Path
+    param($Config, $Policy)
+    $allowlist = @($Policy.allowlist)
+    $baseRef = [string]$Policy.base_ref
+    $cwdRoot = (Get-Location).Path
+    $repoRootResult = Get-GitValueStrict -RepoRoot $cwdRoot -GitArguments @("rev-parse", "--show-toplevel") -FailureReason "git rev-parse failed for workspace binding"
+    if (-not $repoRootResult.ok) {
+        return @{
+            target_root = Normalize-PathForCompare $cwdRoot
+            snapshot_error = $repoRootResult.reason
+        }
     }
-    $diffText = (& git -C $repoRoot diff $baseRef -- @allowlist 2>$null | Out-String)
+    $repoRoot = $repoRootResult.value
+    if ($Policy.scope_mode -eq "committed_final_audit") {
+        $baseHeadResult = Get-GitValueStrict -RepoRoot $repoRoot -GitArguments @("rev-parse", "--verify", "$baseRef^{commit}") -FailureReason "git rev-parse base failed for final audit binding"
+        if (-not $baseHeadResult.ok) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                snapshot_error = $baseHeadResult.reason
+            }
+        }
+        $priorEap = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & git -C $repoRoot merge-base --is-ancestor $baseRef HEAD 2>$null | Out-Null
+            $ancestorExit = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $priorEap
+        }
+        if ($ancestorExit -eq 1) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                snapshot_error = "base ref is not an ancestor of HEAD"
+            }
+        }
+        if ($ancestorExit -ne 0) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                snapshot_error = "git merge-base failed for final audit binding"
+            }
+        }
+        $diffResult = Invoke-GitCommand -RepoRoot $repoRoot -GitArguments @("diff", $baseRef, "HEAD")
+        if (-not $diffResult.ok) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                snapshot_error = "git diff failed for final audit binding"
+            }
+        }
+        $diffText = $diffResult.stdout
+        $branchResult = Get-GitValueStrict -RepoRoot $repoRoot -GitArguments @("branch", "--show-current") -FailureReason "git branch failed for final audit binding"
+        if (-not $branchResult.ok) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                snapshot_error = $branchResult.reason
+            }
+        }
+        $reviewedHeadResult = Get-GitValueStrict -RepoRoot $repoRoot -GitArguments @("rev-parse", "HEAD") -FailureReason "git rev-parse HEAD failed for final audit binding"
+        if (-not $reviewedHeadResult.ok) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                snapshot_error = $reviewedHeadResult.reason
+            }
+        }
+        $branch = $branchResult.value
+        $reviewedHead = $reviewedHeadResult.value
+        $baseHead = $baseHeadResult.value
+    }
+    else {
+        $diffArgs = @("diff", $baseRef, "--") + $allowlist
+        $diffResult = Invoke-GitCommand -RepoRoot $repoRoot -GitArguments $diffArgs
+        if (-not $diffResult.ok) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                snapshot_error = "git diff failed for checkpoint escalation binding"
+            }
+        }
+        $diffText = $diffResult.stdout
+        $branch = Get-GitValue -RepoRoot $repoRoot @("branch", "--show-current")
+        $reviewedHead = Get-GitValue -RepoRoot $repoRoot @("rev-parse", "HEAD")
+        $baseHead = Get-GitValue -RepoRoot $repoRoot @("rev-parse", $baseRef)
+    }
     if ($null -eq $diffText) { $diffText = "" }
     $diffSha = Get-TextSha256 $diffText
-    $snapshot = Invoke-WorkspaceSnapshotBinding -Config $Config
+    if ($Policy.route -eq "critical_final_audit") {
+        $foreignPrecheck = Test-DeclaredForeignBinding -RepoRoot $repoRoot -Config $Config
+        if (-not $foreignPrecheck.valid) {
+            return @{
+                target_root = Normalize-PathForCompare $repoRoot
+                branch = $branch
+                reviewed_head = $reviewedHead
+                base_head = $baseHead
+                diff_sha256 = $diffSha
+                route = [string]$Policy.route
+                scope_mode = [string]$Policy.scope_mode
+                snapshot_error = $foreignPrecheck.reason
+            }
+        }
+    }
+    $snapshot = Invoke-WorkspaceSnapshotBinding -Config $Config -Policy $Policy
     $binding = @{
         target_root = Normalize-PathForCompare $repoRoot
-        branch = Get-GitValue @("branch", "--show-current")
-        reviewed_head = Get-GitValue @("rev-parse", "HEAD")
-        base_head = Get-GitValue @("rev-parse", $baseRef)
+        branch = $branch
+        reviewed_head = $reviewedHead
+        base_head = $baseHead
         diff_sha256 = $diffSha
+        route = [string]$Policy.route
+        scope_mode = [string]$Policy.scope_mode
     }
     if ($snapshot.valid) {
         $binding.repository_state_sha256 = $snapshot.repository_state_sha256
@@ -451,6 +909,12 @@ function Get-WorkspaceDerivedBindings {
     }
     else {
         $binding.snapshot_error = $snapshot.reason
+        if ($snapshot.denial_reasons) {
+            $binding.denial_reasons = @($snapshot.denial_reasons)
+        }
+        if ($snapshot.out_of_scope_paths) {
+            $binding.out_of_scope_paths = @($snapshot.out_of_scope_paths)
+        }
     }
     return $binding
 }
@@ -589,6 +1053,8 @@ function Invoke-ExternalCodexWorkspaceValidation {
     }
 
     if ($null -eq $Handoff) { return Invalid("missing handoff") }
+    $foreignOverride = Test-HandoffForeignOverrideDenied -Handoff $Handoff
+    if (-not $foreignOverride.valid) { return Invalid($foreignOverride.reason) }
     foreach ($field in $requiredFields) {
         if (-not $Handoff.PSObject.Properties.Name.Contains($field)) {
             return Invalid("missing field $field")
@@ -639,13 +1105,22 @@ function Invoke-ExternalCodexWorkspaceValidation {
     $routeCheck = Test-ExternalReviewRouteBinding -Handoff $Handoff -Config $Config
     if (-not $routeCheck.valid) { return Invalid($routeCheck.reason) }
 
-    $derived = Get-WorkspaceDerivedBindings -Config $Config
+    $policy = Get-ExternalReviewRoutePolicy -Handoff $Handoff -Config $Config
+    if (-not $policy.valid) { return Invalid($policy.reason) }
+
+    $derived = Get-WorkspaceDerivedBindings -Config $Config -Policy $policy
     if ($derived.snapshot_error) { return Invalid($derived.snapshot_error) }
     if ($derived.out_of_scope_paths -and @($derived.out_of_scope_paths).Count -gt 0) {
-        return Invalid("out-of-scope repository mutation")
+        return Invalid((Format-OutOfScopeDenialReason @($derived.out_of_scope_paths)))
     }
     if (-not $derived.repository_state_sha256) {
         return Invalid("workspace fingerprint unavailable")
+    }
+    if ($policy.route -eq "critical_final_audit") {
+        $foreignCheck = Test-DeclaredForeignBinding -RepoRoot $derived.target_root -Config $Config
+        if (-not $foreignCheck.valid) {
+            return Invalid($foreignCheck.reason)
+        }
     }
     if ([string]$Handoff.reviewed_head -ne $derived.reviewed_head) { return Invalid("stale head") }
     if ([string]$Handoff.base_head -ne $derived.base_head) { return Invalid("wrong base") }
@@ -665,7 +1140,7 @@ function Invoke-ExternalCodexWorkspaceValidation {
         return Invalid("pending parent capture cannot prove immutability")
     }
 
-    $canonical = Get-CanonicalEvidencePaths -EvidenceAttempt ([string]$Handoff.evidence_attempt) -Config $Config
+    $canonical = Get-CanonicalEvidencePaths -EvidenceAttempt ([string]$Handoff.evidence_attempt) -Config $Config -Template $policy.evidence_template
     if ($canonical.valid -ne $true) {
         return Invalid([string]$canonical.reason)
     }
@@ -689,6 +1164,12 @@ function Invoke-ExternalCodexWorkspaceValidation {
     $computedManifest = Get-FileSha256 $manifestPath
     if ($computedManifest -ne [string]$Handoff.evidence_manifest_sha256) {
         return Invalid("evidence manifest hash mismatch")
+    }
+    if ($policy.route -eq "critical_final_audit") {
+        $manifestForeign = Test-ManifestDeclaredForeignBindings -RepoRoot $repoRoot -ManifestRelativePath $canonical.manifest_path -Config $Config
+        if (-not $manifestForeign.valid) {
+            return Invalid($manifestForeign.reason)
+        }
     }
 
     if ($Mode -eq "EXTERNAL_CODEX_PRE_HANDOFF") {
