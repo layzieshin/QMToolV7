@@ -35,7 +35,7 @@ const moduleItems = computed(() =>
       return {
         routeName,
         label: t(labelKey),
-        active: route.name === routeName,
+        active: route.name === routeName || (module.id === "documents" && route.path.startsWith("/documents/")),
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
@@ -71,6 +71,7 @@ const showAnyNavigation = computed(
       :aria-label="t('modules.navigationLabel')"
     >
       <v-list density="compact" nav>
+        <v-list-item :to="{ name: 'home' }" exact :active="route.name === 'home'" :title="t('dashboard.title')" data-testid="navigation-home" />
         <v-list-item
           v-for="item in moduleItems"
           :key="item.routeName"

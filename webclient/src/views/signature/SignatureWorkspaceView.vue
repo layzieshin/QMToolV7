@@ -39,6 +39,7 @@ import type { ActionDescriptor } from "../../actions/actionTypes";
 import { parseDetailRouteVersion } from "../../composables/useDocumentDetail";
 import { useConflictRecovery } from "../../composables/useConflictRecovery";
 import { normalizeBlobMimeType } from "../../composables/usePdfPreview";
+import { useAppShellState } from "../../state/appShell";
 
 const SIGNATURE_ACTION_CODES = new Set(["complete_editing", "review_accept", "approval_accept"]);
 const SIGNED_PDF_ARTIFACT_TYPE = "SIGNED_PDF";
@@ -51,6 +52,7 @@ const DEFAULT_PLACEMENT: CanonicalPlacement = {
 };
 
 type SignatureLayout = {
+  [key: string]: unknown;
   show_signature: boolean;
   show_name: boolean;
   show_date: boolean;
@@ -87,6 +89,8 @@ defineOptions({
 });
 
 const { t } = useI18n();
+const shell = useAppShellState();
+const signerName = computed(() => shell.auth.status === "authenticated" ? shell.auth.user.username : "");
 const { writesAllowed, blockedMessage } = useProductWriteAvailability();
 const route = useRoute();
 const router = useRouter();
@@ -536,6 +540,7 @@ function applyTemplatePreview(template: SignatureTemplateModel, select: boolean)
     target_width: template.placement.target_width,
   };
   layout.value = {
+    ...template.layout,
     show_signature: template.layout.show_signature,
     show_name: template.layout.show_name,
     show_date: template.layout.show_date,
@@ -1106,10 +1111,13 @@ onUnmounted(() => {
       </aside>
 
       <div class="signature-workspace__canvas-region" data-testid="signature-workspace-canvas-region">
+        <p class="text-caption" data-testid="signature-preview-time-notice">{{ t("signature.workspace.previewTimeNotice") }}</p>
         <SignaturePlacementCanvas
           :pdf-url="sourcePdfUrl"
           :placement="placement"
           :signature-image-url="signaturePreviewUrl"
+          :preview-layout="layout"
+          :signer-name="signerName"
           :loading="loading"
           :error="Boolean(loadError)"
           @update:placement="(next) => { placement = next; }"
@@ -1202,7 +1210,7 @@ onUnmounted(() => {
 
 .signature-workspace__grid {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
@@ -1211,6 +1219,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  padding: 0.75rem;
+  background: white;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 6px;
 }
 
 .signature-workspace__canvas-region {
@@ -1218,10 +1230,12 @@ onUnmounted(() => {
 }
 
 .signature-workspace__layout-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 0.5rem;
 }
+.signature-workspace__sidebar :deep(.v-btn) { height: auto; min-height: 36px; padding-block: .5rem; }
+.signature-workspace__sidebar :deep(.v-btn__content) { white-space: normal; text-align: center; }
 
 .signature-workspace__templates {
   display: flex;

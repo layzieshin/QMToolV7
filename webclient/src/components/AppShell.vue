@@ -68,7 +68,8 @@ async function onLogout(): Promise<void> {
 .app-shell {
   font-family: system-ui, sans-serif;
   margin: 0 auto;
-  max-width: 960px;
+  max-width: 1800px;
+  width: 100%;
   padding: 1rem;
 }
 .app-shell__header {
@@ -78,6 +79,12 @@ async function onLogout(): Promise<void> {
   justify-content: space-between;
 }
 .app-shell__status {
-  margin: 1rem 0;
+  margin: 0.5rem 0 1rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
 }
+.app-shell__status p { margin: 0; }
+.app-shell__header { padding-bottom: .5rem; border-bottom: 1px solid rgba(0,0,0,.12); }
 </style>

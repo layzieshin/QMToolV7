@@ -1134,6 +1134,29 @@ Recommendations are not approvals. Neighbor PASS does not fill an open row.
 | Q26-12 | keine clientseitig erfundene Berechtigung | DECIDED | NOT RUN | E/H-HUMAN | Darstellungspflicht bleibt; Human-Nachweis NOT RUN | vor Fachsmoke |
 | Q26-13 | keine deferred Funktion als implementiert darstellen | DECIDED | NOT RUN | E/H-HUMAN | Darstellungspflicht bleibt; Human-Nachweis NOT RUN | vor Fachsmoke |
 
+#### Begrenztes UI-Paket vor der Pilotabnahme (Freigabe 2026-10-02)
+
+Vor der menschlichen Pilotabnahme sind das schlanke Dashboard mit eigenen offenen
+Dokumentaufgaben aus `/api/v1/documents/home/tasks`, der direkte Einstieg in die
+Dokumentverwaltung sowie der breite, PDF-dominante Signaturarbeitsplatz umzusetzen.
+Die Layoutvorschau zeigt die eingeschalteten Bestandteile Unterschriftsbild,
+Benutzername und Datum/Uhrzeit; Datum und Uhrzeit teilen dieselbe Position.
+Vorlagen behalten Schriftgrößen, Farben und PDF-Koordinaten/Offsets. Die lokale
+Vorschauzeit ist vorläufig; die finale Signaturzeit bleibt backendautoritativ.
+
+Zur Sichtprüfung dienen drei neu erstellte synthetische Ansichten: Dashboard,
+Dokumentenübersicht und Signatur, geprüft an üblichen Desktopgrößen. Reproduzierbare
+Browserprüfung: `webclient/e2e/ui-pilot-synthetic.spec.ts` (API-Antworten vollständig
+synthetisch; kein Nachweis einer echten Backend-/PostgreSQL-Integration).
+Die vorhandene P0-UX-Spezifikation und das historische Zielbild geben die Orientierung;
+QmSign dient nur als Layoutreferenz für PDF-Fläche und konsistente Vorschau.
+
+**Menschliche Sichtabnahme: NOT RUN.** Technische Tests/Screenshots ersetzen weder
+diese Abnahme noch PILOT00-Fachsmoke, Pilotaktivierung oder Veröffentlichungsfreigabe.
+Favoriten, Personalisierung, modulübergreifende Inbox, globale Suche,
+Benachrichtigungszentrum, Edit-Leases, generische Jobs, Print/IPP und QmSign-Export
+bleiben außerhalb dieses freigegebenen Pakets. Q25/Q26-Entscheidungen bleiben erhalten.
+
 ### Q27 27. Accessibility (19)
 
 | SP | Unterpunkt | Entscheidung | Evidence | Owner | Offener Wert | Spaetestes Gate |

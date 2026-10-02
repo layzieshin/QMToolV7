@@ -32,6 +32,7 @@ import SignaturePlacementCanvas, {
   estimateBlockHeightPdf,
   placementFitsPage,
   pointerToSurfaceCoords,
+  previewLabelAnchor,
   viewportDistanceToPdfWidth,
   viewportRectToCanonicalPlacement,
 } from "../../components/signature/SignaturePlacementCanvas.vue";
@@ -90,6 +91,7 @@ function createMockViewport(scale: number, skewY = 0): PageViewport {
   const pageHeight = 792;
   return {
     width: 612 * scale,
+    scale,
     height: pageHeight * scale,
     convertToPdfPoint: (x: number, y: number) => [
       (x + skewY) / scale,
@@ -318,6 +320,11 @@ function queryReauthPassword(): HTMLInputElement {
 }
 
 describe("Signature placement coordinates", () => {
+  it("matches backend text baselines including custom template offsets", () => {
+    const placement = { page_index: 0, x: 72, y: 72, target_width: 120 };
+    expect(previewLabelAnchor(placement, 36, "above", 6, 12)).toEqual([72, 114]);
+    expect(previewLabelAnchor(placement, 36, "below", 18, 24, 3, 4, -2)).toEqual([79, 46]);
+  });
   it("round-trips viewport and canonical coordinates at two zoom levels", () => {
     for (const scale of [1, 1.5]) {
       const viewport = createMockViewport(scale);
@@ -448,6 +455,45 @@ describe("SignaturePlacementCanvas", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     vi.unstubAllGlobals();
+  });
+
+  it("previews image aspect, name and combined date/time at PDF baselines through zoom and toggles", async () => {
+    setupPdfJsMocks();
+    const wrapper = mount(SignaturePlacementCanvas, {
+      attachTo: document.body,
+      props: {
+        pdfUrl: "blob:pdf-1", signatureImageUrl: "blob:signature-1", signerName: "synthetic.user",
+        placement: { page_index: 0, x: 72, y: 72, target_width: 120 },
+        previewLayout: { show_signature: true, show_name: true, show_date: true, show_time: true,
+          name_position: "above", date_position: "below", x_offset: 3, name_rel_x: 4, name_font_size: 14 },
+      }, global: { plugins: [i18n, vuetify] },
+    });
+    await flushPromises();
+    const source = wrapper.get("img").element as HTMLImageElement;
+    Object.defineProperties(source, { naturalWidth: { value: 200 }, naturalHeight: { value: 80 } });
+    await wrapper.get("img").trigger("load");
+    const name = wrapper.get('[data-testid="signature-preview-name"]');
+    expect(name.text()).toBe("synthetic.user");
+    expect(Number(name.attributes("x"))).toBe(79);
+    expect(Number(name.attributes("y"))).toBe(792 - (72 + 48 + 6));
+    expect(name.attributes("font-size")).toBe("14");
+    expect(wrapper.get('[data-testid="signature-preview-date"]').text()).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(wrapper.get('[data-testid="signature-preview-image"]').attributes("height")).toBe("48");
+    const zoomIn = wrapper.findAll("button").find(button => button.text().includes("Vergrößern"));
+    await zoomIn!.trigger("click"); await flushPromises();
+    expect(Number(wrapper.get('[data-testid="signature-preview-name"]').attributes("x"))).toBeCloseTo(79 * 1.25);
+    await wrapper.setProps({ placement: { page_index: 0, x: 100, y: 100, target_width: 120 } });
+    expect(Number(wrapper.get('[data-testid="signature-preview-name"]').attributes("x"))).toBeCloseTo(107 * 1.25);
+    await wrapper.setProps({ signatureImageUrl: null, previewLayout: { show_signature: false, show_name: true, show_date: true, show_time: false, name_position: "above" } });
+    // Backend uses a transparent 1x1 PNG for text-only signatures: aspect ratio 1.
+    expect(Number(wrapper.get('[data-testid="signature-preview-name"]').attributes("y"))).toBeCloseTo((792 - (100 + 120 + 6)) * 1.25);
+    expect(wrapper.get('[data-testid="signature-preview-date"]').text()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await wrapper.setProps({ signatureImageUrl: null, previewLayout: { show_signature: false, show_name: false, show_date: false } });
+    expect(wrapper.find('[data-testid="signature-preview-image"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="signature-preview-name"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="signature-preview-date"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Unterschriftsbereich");
+    wrapper.unmount();
   });
 
   it("renders after mount when canvasRef is available", async () => {
@@ -975,8 +1021,10 @@ describe("SignatureWorkspaceView", () => {
     host.remove();
   });
 
-  it("preselects suggested template and sends template_id in final sign_intent", async () => {
-    fetchSignatureTemplateSuggestionMock.mockResolvedValue(suggestedTemplate());
+  it("preselects suggested template and preserves its full layout in final sign_intent", async () => {
+    const template = suggestedTemplate();
+    const customLayout = { ...template.layout, name_font_size: 14, date_font_size: 10, name_above: 9, x_offset: 5, name_rel_y: 3, color_hex: "#173d64" };
+    fetchSignatureTemplateSuggestionMock.mockResolvedValue({ ...template, layout: customLayout });
     const { wrapper, host } = await mountWorkspace();
     expect(wrapper.get('[data-testid="signature-suggestion"]').text()).toContain("Suggested");
     const picker = wrapper.getComponent({ name: "VSelect" });
@@ -1013,6 +1061,7 @@ describe("SignatureWorkspaceView", () => {
           json: expect.objectContaining({
             sign_intent: expect.objectContaining({
               template_id: "tpl-suggested",
+              layout: expect.objectContaining(customLayout),
             }),
           }),
         }),

@@ -9,6 +9,12 @@ export type ConnectionResponse = components["schemas"]["ConnectionResponse"];
 export type BootstrapResponse = components["schemas"]["BootstrapResponse"];
 export type ModuleBootstrapItem = components["schemas"]["ModuleBootstrapItem"];
 export type DocumentQueryItem = components["schemas"]["DocumentQueryItem"];
+export type DocumentTaskItem = components["schemas"]["DocumentTaskItemModel"];
+
+/** The backend resolves the actor from the cookie session, never a client user ID. */
+export async function fetchDocumentHomeTasks(): Promise<DocumentTaskItem[]> {
+  return expectJson<DocumentTaskItem[]>(await apiFetch("/documents/home/tasks", { method: "GET" }));
+}
 export type DocumentQueryPageResponse = components["schemas"]["DocumentQueryPageResponse"];
 export type VersionStateResponse = components["schemas"]["VersionStateResponse"];
 export type DocumentVersionStateModel = components["schemas"]["DocumentVersionStateModel"];

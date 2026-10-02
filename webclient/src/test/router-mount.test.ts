@@ -150,7 +150,7 @@ describe("router mount", () => {
       expect(router.currentRoute.value.path).toBe("/");
       expect(wrapper.find(".v-application").exists()).toBe(true);
       expect(wrapper.find("[data-testid=app-shell]").exists()).toBe(true);
-      expect(wrapper.find("[data-testid=shell-placeholder]").exists()).toBe(true);
+      expect(wrapper.find("[data-testid=dashboard]").exists()).toBe(true);
     });
 
     expect(wrapper.text()).toContain("Start");

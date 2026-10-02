@@ -4,7 +4,14 @@ export default {
   },
   dashboard: {
     title: "Start",
-    hint: "Willkommen in QMTool. Wählen Sie ein Modul in der Navigation, sobald es verfügbar ist.",
+    hint: "Ihre Dokumentaufgaben und der direkte Einstieg in die Dokumentverwaltung.",
+    openDocuments: "Dokumentverwaltung öffnen",
+    tasksTitle: "Meine offenen Dokumentaufgaben",
+    refresh: "Aktualisieren",
+    loading: "Dokumentaufgaben werden geladen …",
+    empty: "Keine offenen Dokumentaufgaben.",
+    unavailable: "Die Dokumentverwaltung ist für diese Sitzung nicht verfügbar.",
+    version: "Version {version}",
   },
   connection: {
     offline: "Verbindung unterbrochen",
@@ -374,6 +381,7 @@ export default {
   },
   signature: {
     workspace: {
+      previewTimeNotice: "Layoutvorschau mit vorläufiger lokaler Zeit. Der endgültige Signaturzeitpunkt wird vom Server bestimmt.",
       title: "Signatur-Arbeitsbereich",
       backToDetail: "Zurück zur Detailansicht",
       loading: "Signatur-Arbeitsbereich wird geladen…",
