@@ -31,8 +31,11 @@ proxy. `EXECUTION_HOST_REQUIRED` stops before edits, reviews, or retries; automa
 proxy/sandbox controls or moves an already checked-out branch between worktrees.
 
 `.cursor/tools/invoke-cursor-agent.ps1` is the only supported nested CLI launcher. It performs that
-preflight and runs Cursor synchronously in the specified target, preserving the prompt as one
-argument so no detached writer or split command-line option remains. Normally the already opened
+preflight, sets the child process `WorkingDirectory` to the validated target root, and runs Cursor
+synchronously in the specified target, preserving the prompt as one argument so no detached writer
+or split command-line option remains. Opt-in `-Interactive` omits non-interactive `--print` and
+`--output-format`; `-ResumeSession` passes through to `cursor-agent --resume`. Coordinators and
+`git-steward` must set native Shell `working_directory` on every call. Normally the already opened
 Cursor workspace executes `/execute-work-package` directly and needs no nested CLI.
 
 Ordinary Python work-package gates use `.cursor/tools/run-pytest-gate.ps1`. It allocates unique,
@@ -51,7 +54,14 @@ basetemp contract.
 The runtime file is never fachliche documentation.
 
 `.cursor/agent-system.json` is the only normative source for role models and numeric workflow
-limits. Rules, skills and this guide explain behavior; `hooks.json` contains only the
+limits. On branch-local `cursor-first` v3 candidates (AGENT-COST-01 qualification), Composer 2.5
+Standard carries routine execution; Grok review roles use the normalized ladder in
+`review_model_fallback` beginning at attempt 1 `grok-4.7-high` (no hidden attempt 0 and no legacy
+`grok-4.7-xhigh` route). Critical final audit for packages in `routing.ag_packages_critical` routes
+**directly** to the external Codex/ChatGPT-authenticated orchestrator; exhausted checkpoint escalation
+follows the applicable configured `checkpoint-reviewer` ladder (and Cursor GPT rung when configured)
+before external handoff. `main` and foreign worktrees remain on `balanced` v2 until merge.
+Rules, skills and this guide explain behavior; `hooks.json` contains only the
 Cursor-schema projection required by the platform, protected against drift by contract tests.
 
 ## Planning quality
@@ -63,10 +73,10 @@ security/trust, productive persistence, migration/data loss, public API/transpor
 schema/ownership, concurrency, backup/restore, secrets, deployment and central composition make a
 package at least HIGH risk.
 
-Configured HIGH-risk plans receive the bounded readonly Terra `plan-challenger` pre-mortem. It asks
-whether green planned tests could still miss the confirmed requirement or architecture. Findings
-return once to a fresh Sol Roadmap Architect for an evidenced response; no recursive challenger
-loop is allowed. Missing material requirement sources or unresolved architecture choices are
+Configured HIGH-risk plans receive the bounded readonly `plan-challenger` pre-mortem (Grok under
+`cursor-first`). It asks whether green planned tests could still miss the confirmed requirement or
+architecture. Findings return once to a fresh roadmap architect for an evidenced response; no
+recursive challenger loop is allowed. Missing material requirement sources or unresolved architecture choices are
 HUMAN_GATEs. Running packages are not retroactively reopened; V2 applies prospectively from their
 next not-started checkpoint.
 
@@ -78,8 +88,24 @@ and requirement sources. Reviewer and final audit use that contract. A necessary
 the old snapshot and creates a formal amendment/successor; material fachliche, architecture,
 public-contract, security or persistence movement requires the applicable HUMAN_GATE.
 
-`implementer` → independent `checkpoint-reviewer` → configured bounded rework → configured fresh
-`escalation-reviewer`.
+`implementer` → independent `checkpoint-reviewer` → configured bounded rework → native
+`escalation-reviewer` local pre-handoff validation (`PRE_HANDOFF_READY`) → external Codex result →
+locally bound `HANDOFF_READY`/`HANDOFF_INVALID` when routing requires `EXTERNAL_CODEX_BOUND_REVIEW`.
+
+Four operational external routes share one registry owner
+(`external_codex_bound_review.review_route_bindings`): W1 checkpoint escalation after a complete
+UNAVAILABLE ladder; FINAL_AUDIT direct external with no ladder history; budget-FAIL recovery
+diagnosis (`RECOVERY_DIAGNOSIS` → `RECOVERY_DIAGNOSIS_READY` → `RECOVERY_PROPOSAL_BOUND` only); and
+native review that never substitutes external PASS. PRE computes `bindingRecord`; the coordinator
+anchors it once in `external_review.bindingRecord`; BOUND and recovery receipt reuse that anchored
+record plus existing `manifest-validate`. Diagnosis receipts do not grant resume, implement, commit,
+`HANDOFF_READY`, or `CONTINUE`.
+
+Resume a running package only after `context-manifest.json` validates with
+`checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`
+on a still-matching context. Repeat `--verify-command` for every expected normalized gate; missing or
+wrong commands fail closed. The manifest remains an index; stale manifests block reuse of completed
+green checkpoints; do not repeat steps, re-ask authorization, or re-reserve reviews when reuse is valid.
 
 For the PILOT00 packages named in `checkpoint-protocol.md`, the native role is
 still preferred. If that role returns explicit `UNAVAILABLE`, one separate
@@ -107,14 +133,20 @@ introduced by the rework. Other parser variants, optional hardening, and specula
 are recorded as follow-ups and do not extend the loop. Material new blockers consume the existing
 rework budget; they do not create another budget.
 
+Report token, cost, cache-hit, savings, runtime serving model, and reasoning effort as
+`UNKNOWN`/`UNAVAILABLE` unless the host measured or attested them in primary evidence. Never claim
+zero cost, cache activity, or savings without measurement. An untagged helper never implies complete
+workflow cost coverage.
+
 ## External GitHub Codex review
 
 GitHub Codex is an additional independent layer on the final PR head after internal integration,
 full regression, Sol final audit and current-head CI. It never runs after individual checkpoints
 and never replaces internal evidence. Existing current-head reviews are reused; otherwise the Git
 Steward may post the bounded `@codex review` request through `FINAL_GIT`. Reviews, inline comments,
-issue comments, PR head and checks are read through safe `gh` paths; mutating `gh api` remains
-forbidden.
+issue comments, PR head and checks are read through safe `gh` paths; mutating `gh api` and local
+`gh pr review` submission remain forbidden. Merge uses only `gh pr merge <number> --squash` under
+persisted gates.
 
 Codex findings are claims. A fresh readonly Terra `external-review-triager` classifies them as
 `CONFIRMED_BLOCKING`, `CONFIRMED_NONBLOCKING`, `FALSE_POSITIVE`, `OUTDATED_ALREADY_FIXED`, or
@@ -136,11 +168,34 @@ is not represented as external PASS.
 
 ## Cost profile
 
-The balanced model map is centralized in config: Sol for roadmap/architecture, escalation and final
-audit; Terra for checkpoint review, risk-triggered Plan Challenge and finding-triggered external
-triage; Composer standard/non-fast for implementation and exploration; Luna for Git. Do not launch
-a challenger for routine packages, a triager without findings, Codex per checkpoint, repeated
-explorers on the same scope, review rounds beyond config, or full chat transcripts as evidence.
+`.cursor/agent-system.json` is the only normative model-map owner.
+
+### AGENT-COST-01 qualification vs activation
+
+| Phase | Where | Profile | What changes |
+| --- | --- | --- | --- |
+| Qualification (pre-merge) | `feature/cursor-agent-system-v3` branch candidate | `cursor-first` v3 | Branch-local proof only; `main` stays `balanced` v2 |
+| Activation (post-merge) | `main` after squash-merge + documented safe transition | `cursor-first` v3 effective | **New** checkpoints/packages only |
+
+Qualification **before** squash-merge installs and proves the frozen candidate on the isolated branch.
+Activation **after** merge applies the documented safe transition; it does not retrofit running
+packages or PILOT00 B1.
+
+On the branch-local `cursor-first` v3 candidate, Composer 2.5 Standard carries routine Cursor
+execution. Routine independent reviews use the normalized Grok ladder in `review_model_fallback`
+beginning at `grok-4.7-high`. Critical final audit for packages in `routing.ag_packages_critical`
+routes to the external Codex/ChatGPT-authenticated orchestrator; exhausted checkpoint escalation
+follows the applicable configured `checkpoint-reviewer` ladder (and configured Cursor GPT rung when
+present) before external handoff. External Codex is coordination, architecture, and critical final
+audit — not a Cursor model ID, `RUNTIME_ATTESTED`, or `CONTROL_PLANE_PINNED`.
+
+Serving model, token cost, cache hit rate, 50:50 usage, and billing remain **UNKNOWN** unless the
+host measured or attested them in primary evidence. Never invent zero cost, cache activity, savings,
+or serving-model claims. An untagged helper never implies complete workflow cost coverage.
+
+Do not launch a challenger for routine packages, a triager without findings, Codex per checkpoint,
+repeated explorers on the same scope, review rounds beyond config, or full chat transcripts as
+evidence.
 
 ## HUMAN_GATEs
 
@@ -164,6 +219,18 @@ Use Cursor Stop normally. The stop hook resumes only after `status=completed`; `
 continuation. The follow-up limit comes from `.cursor/agent-system.json`.
 
 ## Cursor limitations
+
+Local repair closure (2026-10-02): the complete `tests/docs` verification passed 252 tests
+with no failures, errors or skips (`build/agent-cost-01/agent-rework-direct-final-junit.xml`).
+This result is the pre-publication repair baseline; later PR #60 follow-up is recorded in the cost
+profile. SessionStart blocks
+Resume for actual recovery-diagnosis bindings as well as recovery receipts, while normal
+Resume remains supported. Implementer RUNNING-state, canonical role, model and identity checks
+remain mandatory; external-review registry preflight applies to actual external handoffs only.
+The cancelled chain is stopped and operational state is `IDLE`; historical counters and
+review outcomes are not reset or relabelled. Local readiness does not authorize publication
+or activation. Actual integration and a safe transition for new checkpoints are still required;
+PILOT00 and serving/cost qualification remain unchanged.
 
 - `sessionStart` injects context but cannot block startup and is unavailable to Cloud Agents.
 - Shell hooks protect only Git operations executed through Cursor's shell path; server-side branch

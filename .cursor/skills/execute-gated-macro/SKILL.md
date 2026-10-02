@@ -43,8 +43,9 @@ mechanism. Reading the agent file or a main-agent self-review is not a reviewer 
 Require:
 
 - every task begins `[ROLE:checkpoint-reviewer]`;
-- selected model exactly `gpt-5.6-terra`;
-- agent frontmatter `model: gpt-5.6-terra`;
+- selected model exactly matches the authorized ladder rung from
+  `.cursor/agent-system.json` `review_model_fallback` (attempt 1 begins at `grok-4.7-high`);
+- agent frontmatter `model: grok-4.7-high` for the first ladder rung;
 - a new agent id captured by the parent from the native Task result and a separate context;
 - `$verify-reports-and-plan`;
 - evidence profile `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED` before accepting a PASS;
@@ -77,6 +78,19 @@ no reachable independent instance stops that gate as a capability gap. An open h
 gate, a foreign target, a package outside the list, or an unknown authorization cannot
 be recorded as PASS.
 
+### AGENT-COST-01 external Codex bound review
+
+Critical final audit and exhausted escalation for `AGENT-COST-01` use
+`EXTERNAL_CODEX_BOUND_REVIEW` from `.cursor/agent-system.json`. This is not the PILOT00
+substitute marker, not a Cursor model ID, and not D15 runtime attestation. Require real
+agent/task id, external host, separate read-only context, author/implementer/reviewer
+separation, package/checkpoint binding, contract/diff/evidence manifest hashes, identical
+pre/post fingerprints, and explicit PASS/FAIL from the external reviewer. Local validators
+check workspace-derived structure and staleness only. Missing, stale, or conflicting handoff
+evidence is `BLOCKED_HUMAN`. External Codex is reachable only after explicit Cursor GPT
+`UNAVAILABLE` on the applicable ladder; substantive reviewer `FAIL` never advances to another
+model or external Codex.
+
 ## Execution
 
 1. Confirm branch/base/HEAD, empty staging, foreign changes, current ledger checkpoint and exact
@@ -84,29 +98,37 @@ be recorded as PASS.
 2. Create the `before` snapshot with `scripts/checkpoint_snapshot.py`; stop if out-of-scope paths
    are present and are not explicitly declared foreign changes.
 3. Create the immutable checkpoint contract in the existing evidence root, hash it with
-   `Get-FileHash`, record `contract_sha256`, then mark only the active checkpoint `IN_PROGRESS` and
-   implement only its allowlist.
-4. Run mandatory gates in order. At the first red/blocked gate, stop that sequence and preserve
+   `Get-FileHash`, and record `contract_sha256`.
+4. Build `context-manifest.json` with `scripts/checkpoint_snapshot.py manifest-build`, bind review
+   evidence paths, and record the manifest path in the execution journal.
+5. Mark only the active checkpoint `IN_PROGRESS` and implement only its allowlist.
+6. Run mandatory gates in order. At the first red/blocked gate, stop that sequence and preserve
    evidence.
-5. Each bounded, decision-complete failure consumes the configured checkpoint-rework budget and
+7. Each bounded, decision-complete failure consumes the configured checkpoint-rework budget and
    runs a new complete gate sequence. After exhaustion, invoke the configured fresh
    `[ROLE:escalation-reviewer]`; escalation `FAIL` sets `BLOCKED_HUMAN`.
-6. If implementer reports `SCOPE_CORRECTION_REQUIRED`, classify it before editing under the strict
+8. If implementer reports `SCOPE_CORRECTION_REQUIRED`, classify it before editing under the strict
    existing-owner/approved-criterion/no-new-behavior-or-surface rule. Record an allowed correction
    within the configured budget; otherwise treat it as Scope Expansion and stop for normal planning.
-7. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
-   native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
-   primary evidence directly; never ask the user to relay them. Require its output contract and
-   capture parent-owned Task metadata separately.
-8. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
-   review makes the checkpoint `BLOCKED`; do not revert it automatically.
-9. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
-   minimal order and consumes the configured shared rework budget; correct it, rerun the affected gates,
-   and invoke a fresh reviewer Task. After the budget, use the single escalation path above.
-10. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
-   paths and create the local commit included by the implementation authorization unless the user
-   opted out. Verify the commit file set.
-11. Advance to the next checkpoint only when it is named by the same macro authorization.
+9. Validate or regenerate the context manifest before resume/reuse with
+   `scripts/checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`.
+   `--allow-reuse` without the exact expected verification command(s) fails closed. Stale manifests
+   block reuse of completed green checkpoints. External PRE computes `bindingRecord`; anchor it once
+   in `external_review.bindingRecord` before dispatch. BOUND and recovery receipt reuse the anchored
+   record plus `manifest-validate`; diagnosis receipts never grant resume, implement, commit, or review PASS.
+10. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
+    native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
+    primary evidence directly; never ask the user to relay them. Require its output contract and
+    capture parent-owned Task metadata separately.
+11. Create the `post-review` snapshot. Any repository-state or fingerprint delta caused during
+    review makes the checkpoint `BLOCKED`; do not revert it automatically.
+12. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
+    minimal order and consumes the configured shared rework budget; correct it, rerun the affected gates,
+    and invoke a fresh reviewer Task. After the budget, use the single escalation path above.
+13. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
+    paths and create the local commit included by the implementation authorization unless the user
+    opted out. Verify the commit file set.
+14. Advance to the next checkpoint only when it is named by the same macro authorization.
 
 Package Integration and External GitHub Codex Review remain owned by the outer
 `/execute-work-package` lifecycle. Never run Codex after individual AP-029 subcheckpoints; evaluate

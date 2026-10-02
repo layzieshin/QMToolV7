@@ -10,6 +10,12 @@
 | PR | PR head SHA, checks for that SHA, threads, policy state | Old green CI proves the new fix |
 | Acceptance | required gates plus explicit human decision | Technical PASS means `Accepted` |
 | Destructive work | target identity, guard, opt-in, run count, cleanup | A failed preflight performed or consumed a reset |
+| Cost/cache/model | host-measured or attested primary evidence | Catalog listing, frontmatter, or hook metadata alone |
+
+Report token, cost, cache, runtime model, and reasoning claims as `UNKNOWN`/`UNAVAILABLE` when the
+host did not measure or attest them. Reject invented zero cost, claimed cache savings without
+evidence, and stale-manifest reuse wording that implies a green checkpoint may resume without
+`manifest-validate --allow-reuse` on a still-matching context manifest.
 
 ## Status rules
 

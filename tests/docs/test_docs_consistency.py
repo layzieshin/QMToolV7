@@ -1259,3 +1259,88 @@ def test_web01_docs_closeout_is_current() -> None:
     assert "partially outstanding" in smoke_web01
     assert "mandatory PILOT00 tracking" in smoke_web01
     assert "VISUAL_ACCEPTANCE_PASS" in smoke_web01
+
+
+def _normalize_doc_assertion_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.replace("*", "").replace("`", "")).lower()
+
+
+def _assert_critical_final_audit_routes_direct_external(doc_text: str, label: str) -> None:
+    normalized = _normalize_doc_assertion_text(doc_text)
+    assert "routing.ag_packages_critical" in normalized, f"{label} must mention routing.ag_packages_critical"
+    assert re.search(
+        r"critical final audit for packages in routing\.ag_packages_critical routes directly to the external codex",
+        normalized,
+    ), f"{label} must route critical final audit directly to external Codex"
+
+
+def test_agent_cost_profile_w2_naming_and_historical_status() -> None:
+    cost_profile = _read(DOCS / "AP-029_AGENT_WORKFLOW_COST_PROFILE.md")
+    autonomous = _read(DOCS / "CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md")
+    verify_skill = _read(ROOT / ".cursor/skills/verify-reports-and-plan/SKILL.md")
+
+    assert "profile slug **`cursor-first`**" in cost_profile
+    assert "candidate JSON **`version: 3`**" in cost_profile
+    assert "**`balanced` v2**" in cost_profile
+    assert "W1 remained **blocked**" in cost_profile or "W1 was **NOT RUN**" in cost_profile
+    assert "`.cursor/hooks.json`" in cost_profile
+    assert "`.cursor/tools/run-pytest-gate.ps1`" in cost_profile
+    assert "subagentStart` must not be claimed as a proven hard spawn" in cost_profile
+    assert "PRE_HANDOFF_READY" in autonomous
+    assert "HANDOFF_READY" in autonomous
+    assert "build/agent-cost-01/w3" in cost_profile or "build/agent-cost-01/w3" in _read(
+        ROOT / ".cursor/skills/execute-gated-macro/references/checkpoint-protocol.md"
+    )
+    assert "35" in cost_profile or "exact **35**" in cost_profile
+    assert "w2-exceptional-001" in cost_profile
+    assert "independent review **FAIL** — preserved. W3 not started." in cost_profile
+    assert "W3-PREP-01-EXCEPTIONAL-001" in cost_profile
+    assert "W3-PREP-01-EXCEPTIONAL-002" in cost_profile
+    assert "W3 — qualification and activation (CURRENT)" in cost_profile
+    assert "historical W0 baseline" in cost_profile
+    assert "Branch qualification candidate (current)" in cost_profile
+    assert "Evidence status (2026-10-02)" in cost_profile
+    assert "w3p01-exceptional-001-focused" in cost_profile
+    assert "Items A–D source repair complete" in cost_profile
+    assert "behavioral gate NOT RUN" not in cost_profile
+    assert "routing.ag_packages_critical" in cost_profile
+    _assert_critical_final_audit_routes_direct_external(cost_profile, "AP cost profile")
+    _assert_critical_final_audit_routes_direct_external(autonomous, "autonomous system guide")
+    assert "exhausted checkpoint escalation" in cost_profile
+    assert "checkpoint-reviewer` ladder before external handoff" in cost_profile
+    assert "after applicable Cursor ladder exhaustion" not in cost_profile
+    assert "qualification vs activation" in cost_profile.lower() or "Qualification vs activation" in cost_profile
+    assert "AGENT-COST-01 qualification vs activation" in autonomous
+    assert "Qualification **before** squash-merge" in autonomous
+    assert "Activation **after** merge" in autonomous
+    assert "gh pr review" in autonomous
+    assert "UNKNOWN" in verify_skill
+    assert "Never invent zero cost" in verify_skill
+    assert "W3-FINAL-REWORK-001" in cost_profile
+    assert "review_route_bindings" in cost_profile
+    assert "RECOVERY_DIAGNOSIS" in cost_profile
+    assert "bindingRecord" in autonomous
+    assert "four operational" in autonomous.lower() or "Four operational" in autonomous
+
+
+def test_agent_cost_docs_reject_false_cost_and_stale_reuse_claims() -> None:
+    patterns = _read(
+        ROOT / ".cursor/skills/verify-reports-and-plan/references/evidence-and-prompt-patterns.md"
+    )
+    codex_ref = _read(
+        ROOT / ".cursor/skills/qmtool-module-development/references/independent-codex-review.md"
+    )
+    assert "invented zero cost" in patterns.lower() or "Reject invented zero cost" in patterns
+    assert "stale-manifest reuse" in patterns.lower() or "stale-manifest reuse wording" in patterns
+    assert "EXTERNAL_CODEX_BOUND_REVIEW" in codex_ref
+    assert "PRE_HANDOFF_READY" in codex_ref
+    assert "HANDOFF_READY" in codex_ref
+    forbidden = (
+        "cost: 0",
+        "cache savings confirmed",
+        "reuse without manifest-validate",
+        "stacked Routine-Grok",
+    )
+    for token in forbidden:
+        assert token not in patterns
+        assert token not in codex_ref

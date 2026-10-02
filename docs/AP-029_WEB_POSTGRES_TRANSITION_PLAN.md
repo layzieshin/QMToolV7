@@ -244,6 +244,13 @@ Alle Einträge unten haben Status **DECIDED**.
   Modellwert umdeuten; `CONTROL_PLANE_PINNED` als `RUNTIME_ATTESTED` bezeichnen; partielle
   Runtime-Metadaten als Pin akzeptieren; fachlichen Review wegen fehlender optionaler lokaler
   Runtime-Metadaten abbrechen, obwohl `CONTROL_PLANE_PINNED` vollständig belegt ist.
+- **Nachfolger (`cursor-first`, AGENT-COST-01):** Historische `balanced` v2 / Terra-Belege bleiben
+  unverändert gültig. Unter Profil `cursor-first` prüft der native Reviewer die konfigurierte Rolle
+  plus Modellprofil (`grok-4.7-high` Standard, autorisierte Leiter mit explizitem Fallback nur nach
+  dokumentiertem `UNAVAILABLE` auf späteren Rungs). `RUNTIME_ATTESTED` nur bei beiden beobachteten
+  Feldern passend; `CONTROL_PLANE_PINNED` nur bei vollständigem native Pin und beiden Runtime-Feldern
+  `UNAVAILABLE`; partielle/konfliktierende Metadaten → `UNVERIFIED` fail-closed. Externer Codex ist
+  kein D15-Runtime- oder Control-Plane-Profil (`EXTERNAL_CODEX_BOUND_REVIEW`).
 
 ---
 

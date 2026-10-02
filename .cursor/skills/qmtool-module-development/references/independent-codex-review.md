@@ -25,6 +25,15 @@ Vor dem Review müssen aktuell sein:
 
 Fehlt der Herkunftsnachweis für eine neue oder geänderte fachliche Funktion oder eine wesentliche GUI-Entscheidung, darf Cursor den Review nicht als Ersatz für die notwendige Benutzerfrage verwenden. Die Rückfrage muss vor der Implementierung erfolgen.
 
+## AGENT-COST-01 und kritische Pakete
+
+Für `AGENT-COST-01` und andere als kritisch markierte Pakete ersetzt
+`EXTERNAL_CODEX_BOUND_REVIEW` die legacy ungebundene Codex-Anleitung unten. Es gibt keinen
+gestapelten Routine-Grok-Vollaudit plus separaten Codex/Sol-Abschlussaudit für dieselbe
+Innenfreigabe. Lokale Validatoren liefern zuerst `PRE_HANDOFF_READY`, dann das externe Ergebnis,
+dann lokal gebundenes `HANDOFF_READY` oder `HANDOFF_INVALID`. Das ist keine Cursor-Modell-ID und
+kein D15-`RUNTIME_ATTESTED`.
+
 ## Modellwahl zur Kontingentschonung
 
 ### Economy: GPT-5.4 Mini, Medium

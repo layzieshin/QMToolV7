@@ -1,7 +1,7 @@
 ---
 name: checkpoint-reviewer
 description: Independently review one QMTool checkpoint against its original use case, acceptance criteria, architecture, scope, diff, and real test evidence.
-model: gpt-5.6-terra
+model: grok-4.7-high
 readonly: true
 is_background: false
 ---
@@ -74,14 +74,23 @@ For AP-029 reviews, also satisfy D15. Report these fields explicitly:
 - `contradictory_metadata`
 - `pre_fingerprint`, `post_fingerprint`, `mutation_detected`
 
-Use `RUNTIME_ATTESTED` only when Cursor metadata actually observes the serving model/variant and it
-matches Terra. Use `CONTROL_PLANE_PINNED` only when the project custom agent was instantiated with
-frontmatter `model: gpt-5.6-terra`, the task had `[ROLE:checkpoint-reviewer]`, the parent captured a
-separate native agent identity, no fallback/deviation was reported, `$verify-reports-and-plan` was
-used, and pre/post fingerprints match. Report unavailable runtime fields honestly as `UNAVAILABLE`;
-never call that runtime attestation. Missing or contradictory proof is `UNVERIFIED` and forces the
-overall verdict `FAIL`. For parent-owned identity/fingerprint fields not visible in this context,
-write `PARENT_CAPTURE_REQUIRED`; the parent must complete them before accepting PASS.
+Use the authorized fallback ladder from `.cursor/agent-system.json`
+`review_model_fallback.roles.checkpoint-reviewer` when high demand makes the preferred model
+unavailable. Attempt in order: `grok-4.7-high`, `cursor-grok-4.6-xhigh`, `cursor-grok-4.6-high`,
+then `gpt-5.6-terra-high` only after explicit Grok unavailability. Record each attempt with role,
+attempt number, requested model, `SUCCESS` / `UNAVAILABLE` / `FAIL_SUBSTANTIVE`, native agent/task id
+when created, and the exact non-secret unavailability signal. A substantive `FAIL` stops the ladder;
+do not fall through. Auto, inherit, Fast variants, and arbitrary GPT models are forbidden.
+
+Use `RUNTIME_ATTESTED` only when Cursor metadata observes **both** `observed_runtime_model` matching
+the **selected ladder rung** and `observed_reasoning` exactly matching that rung's
+`runtime_reasoning` with evidenced Standard/non-fast service. Partial or unknown reasoning =>
+`UNVERIFIED`. Use `CONTROL_PLANE_PINNED` when the native custom agent was instantiated on an
+authorized ladder rung, the task had `[ROLE:checkpoint-reviewer]`, separate native agent identity was
+captured, explicit ladder metadata is recorded, `$verify-reports-and-plan` was used, both runtime
+fields are honestly `UNAVAILABLE`, and pre/post fingerprints match. Never label `CONTROL_PLANE_PINNED`
+as runtime attestation. Missing or contradictory proof is `UNVERIFIED` and forces overall `FAIL`.
+For parent-owned identity/fingerprint fields not visible here, write `PARENT_CAPTURE_REQUIRED`.
 
 ## Stop conditions
 

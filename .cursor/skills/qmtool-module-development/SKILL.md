@@ -316,7 +316,7 @@ bewusst zurückgestellte Funktionen,
 
 notwendige Folgeiteration.
 
-Ein externer Codex-Review ist optional und wird ausschließlich nach ausdrücklicher Anweisung des Benutzers gestartet. Das Fehlen eines Codex-Reviews blockiert den Abschluss eines Arbeitspakets nicht.
+Ein externer Codex-Review ist optional und wird ausschließlich nach ausdrücklicher Anweisung des Benutzers gestartet. Das Fehlen eines Codex-Reviews blockiert den Abschluss eines Arbeitspakets nicht. Für `AGENT-COST-01` und andere kritische Pakete gilt stattdessen verbindlich `EXTERNAL_CODEX_BOUND_REVIEW` aus `.cursor/agent-system.json`; kein gestapelter Routine-Grok-Vollaudit plus separater Codex/Sol-Finalaudit für dieselbe Freigabe.
 
 Test- und Korrekturbudget
 

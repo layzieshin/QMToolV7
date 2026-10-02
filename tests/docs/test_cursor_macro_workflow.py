@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,105 +20,223 @@ WORKFLOW = ROOT / ".cursor" / "rules" / "00-agent-workflow.mdc"
 GIT_WORKFLOW = ROOT / ".cursor" / "rules" / "01-git-workflow.mdc"
 AGENTS = ROOT / "AGENTS.md"
 
-REQUIRED_FRONTMATTER_MODEL = "gpt-5.6-terra"
-REQUIRED_TASK_MODEL = "gpt-5.6-terra"
-
-
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _config() -> dict[str, Any]:
+    return json.loads(_read(ROOT / ".cursor" / "agent-system.json"))
+
+
+def _required_reviewer_model() -> str:
+    return str(_config()["roles"]["checkpoint-reviewer"]["model"])
+
+
+def _reviewer_ladder() -> list[dict[str, Any]]:
+    return list(_config()["review_model_fallback"]["roles"]["checkpoint-reviewer"]["ladder"])
+
+
+def _authorized_reviewer_models() -> set[str]:
+    models = {_required_reviewer_model()}
+    models.update(str(rung["model"]) for rung in _reviewer_ladder())
+    return models
+
+
+REQUIRED_FRONTMATTER_MODEL = _required_reviewer_model()
+REQUIRED_TASK_MODEL = _required_reviewer_model()
+POWERSHELL = "powershell.exe"
+D15_STATE = ROOT / "build" / "pt" / "d15-validation-state.json"
 
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
 
 
-def classify_reviewer_evidence_profile(facts: dict[str, Any]) -> dict[str, str]:
-    """Pure classifier mirroring D15. Used by contract tests; not a product API."""
+def _run_d15_hook(
+    facts: dict[str, Any],
+    *,
+    stdin_bytes: bytes | None = None,
+) -> dict[str, str]:
+    D15_STATE.parent.mkdir(parents=True, exist_ok=True)
+    D15_STATE.write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["QMTOOL_WORKFLOW_STATE_PATH"] = str(D15_STATE)
+    payload = json.dumps({"validation_mode": "D15_REVIEWER_EVIDENCE", "facts": facts})
+    completed = subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / ".cursor" / "hooks" / "subagent-start.ps1"),
+        ],
+        cwd=ROOT,
+        input=stdin_bytes if stdin_bytes is not None else payload,
+        capture_output=True,
+        text=stdin_bytes is None,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    stdout = completed.stdout if stdin_bytes is None else completed.stdout.decode("utf-8")
+    return json.loads(stdout.strip())
 
-    configured = str(facts.get("configured_model") or "")
-    requested = str(facts.get("requested_model") or "")
-    observed_model = facts.get("observed_runtime_model")
-    observed_reasoning = facts.get("observed_reasoning")
-    agent_id = str(facts.get("agent_id") or "").strip()
-    separate_context = bool(facts.get("separate_context"))
-    uses_verify = bool(facts.get("uses_verify_reports_and_plan"))
-    readonly = bool(facts.get("readonly"))
-    contradictory = bool(facts.get("contradictory_metadata"))
-    fallback_msg = bool(facts.get("fallback_or_substitution_message"))
-    instantiated = bool(facts.get("agent_instantiated"))
 
-    def blocked(reason: str) -> dict[str, str]:
-        return {
-            "evidence_profile": "UNVERIFIED",
-            "gate_e": "BLOCKED",
-            "reason": reason,
-            "observed_runtime_model": (
-                "UNAVAILABLE"
-                if observed_model in (None, "", "UNAVAILABLE")
-                else str(observed_model)
-            ),
-            "observed_reasoning": (
-                "UNAVAILABLE"
-                if observed_reasoning in (None, "", "UNAVAILABLE")
-                else str(observed_reasoning)
-            ),
-        }
-
-    if not instantiated or not agent_id or not separate_context:
-        return blocked("missing agent instantiation, agent_id, or separate context")
-    if configured != REQUIRED_FRONTMATTER_MODEL:
-        return blocked("configured_model mismatch")
-    if requested != REQUIRED_TASK_MODEL:
-        return blocked("requested_model mismatch")
-    if not uses_verify or not readonly:
-        return blocked("missing verify-reports-and-plan or readonly")
-
-    # Mutation proof is fail-closed (D15): key must be an explicit bool; fingerprints required.
-    if "mutation_detected" not in facts or not isinstance(facts.get("mutation_detected"), bool):
-        return blocked("missing mutation proof")
-    pre_raw = facts.get("pre_fingerprint")
-    post_raw = facts.get("post_fingerprint")
-    if pre_raw in (None, "") or post_raw in (None, ""):
-        return blocked("missing mutation proof")
-    pre_fp = str(pre_raw)
-    post_fp = str(post_raw)
-    if facts["mutation_detected"] is True:
-        return blocked("reviewer mutation detected")
-    if post_fp != "pending_parent_capture" and pre_fp != post_fp:
-        return blocked("reviewer mutation detected")
-
-    if contradictory or fallback_msg:
-        return blocked("contradictory or fallback/substitution metadata")
-    model_observed = observed_model not in (None, "", "UNAVAILABLE")
-    reasoning_observed = observed_reasoning not in (None, "", "UNAVAILABLE")
-    allowed_models = {REQUIRED_FRONTMATTER_MODEL, REQUIRED_TASK_MODEL}
-    allowed_reasoning = {"medium", "standard", "default", "terra"}
-
-    # Exactly one observed field is fail-closed partial metadata (D15 / GOV01-R5).
-    if model_observed != reasoning_observed:
-        return blocked("partial runtime metadata")
-
-    if model_observed and reasoning_observed:
-        model_ok = str(observed_model) in allowed_models
-        reasoning_ok = str(observed_reasoning).lower() in allowed_reasoning
-        if not model_ok or not reasoning_ok:
-            return blocked("observed runtime metadata contradicts required configuration")
-        return {
-            "evidence_profile": "RUNTIME_ATTESTED",
-            "gate_e": "CONTINUE",
-            "reason": "observed runtime metadata matches required configuration",
-            "observed_runtime_model": str(observed_model),
-            "observed_reasoning": str(observed_reasoning),
-        }
-
-    # Both unavailable: CONTROL_PLANE_PINNED may continue when the pin is complete.
-    return {
-        "evidence_profile": "CONTROL_PLANE_PINNED",
-        "gate_e": "CONTINUE",
-        "reason": "local control-plane pin fully proven; runtime metadata UNAVAILABLE",
-        "observed_runtime_model": "UNAVAILABLE",
-        "observed_reasoning": "UNAVAILABLE",
+def _d15_facts(**updates: Any) -> dict[str, Any]:
+    facts: dict[str, Any] = {
+        "agent_instantiated": True,
+        "agent_id": "abc-123",
+        "separate_context": True,
+        "configured_model": REQUIRED_TASK_MODEL,
+        "requested_model": REQUIRED_TASK_MODEL,
+        "selected_model": REQUIRED_TASK_MODEL,
+        "selected_ladder_rung": 1,
+        "uses_verify_reports_and_plan": True,
+        "readonly": True,
+        "pre_fingerprint": "aa",
+        "post_fingerprint": "aa",
+        "mutation_detected": False,
+        "contradictory_metadata": False,
+        "fallback_or_substitution_message": False,
+        "explicit_ladder_fallback": False,
+        "ladder_result_category": "SUCCESS",
     }
+    facts.update(updates)
+    return facts
+
+
+def classify_reviewer_evidence_profile(facts: dict[str, Any]) -> dict[str, str]:
+    payload = dict(facts)
+    payload.setdefault("role", "checkpoint-reviewer")
+    return _run_d15_hook(payload)
+
+
+def test_d15_hook_accepts_utf8_bom_host_ingress() -> None:
+    facts = _d15_facts(
+        observed_runtime_model="UNAVAILABLE",
+        observed_reasoning="UNAVAILABLE",
+    )
+    payload = json.dumps({"validation_mode": "D15_REVIEWER_EVIDENCE", "facts": facts})
+    result = _run_d15_hook(facts, stdin_bytes=b"\xef\xbb\xbf" + payload.encode("utf-8"))
+    assert result["gate_e"] == "CONTINUE"
+    assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
+
+
+def test_d15_hook_rejects_non_object_top_level_host_ingress() -> None:
+    D15_STATE.parent.mkdir(parents=True, exist_ok=True)
+    D15_STATE.write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["QMTOOL_WORKFLOW_STATE_PATH"] = str(D15_STATE)
+    completed = subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / ".cursor" / "hooks" / "subagent-start.ps1"),
+        ],
+        cwd=ROOT,
+        input=json.dumps([]),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert completed.returncode != 0, completed.stderr or completed.stdout
+    result = json.loads(completed.stdout.strip())
+    assert result["permission"] == "deny"
+
+
+def _native_cursor_workspace_root(root: Path = ROOT) -> str:
+    path_without_drive = str(root)[len(root.drive) :].replace("\\", "/")
+    return f"/{root.drive[0].lower()}:{path_without_drive}"
+
+
+def _expected_subagent_start_exit_code(
+    payload: dict[str, Any],
+    result: dict[str, Any],
+) -> int:
+    if "validation_mode" in payload:
+        return 0
+    permission = result.get("permission")
+    if permission == "deny":
+        return 2
+    if permission == "allow":
+        return 0
+    return 0
+
+
+def _run_subagent_hook_payload(payload: dict[str, Any]) -> subprocess.CompletedProcess[str]:
+    D15_STATE.parent.mkdir(parents=True, exist_ok=True)
+    D15_STATE.write_text("{}", encoding="utf-8")
+    env = os.environ.copy()
+    env["QMTOOL_WORKFLOW_STATE_PATH"] = str(D15_STATE)
+    return subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / ".cursor" / "hooks" / "subagent-start.ps1"),
+        ],
+        cwd=ROOT,
+        input=json.dumps(payload).encode("utf-8"),
+        capture_output=True,
+        text=False,
+        check=False,
+        env=env,
+    )
+
+
+def test_subagent_hook_native_workspace_root_drive_prefix_regression() -> None:
+    payload = {
+        "hook_event_name": "subagentStart",
+        "subagent_type": "checkpoint-reviewer",
+        "model": "composer-2.5",
+        "subagent_model": "composer-2.5",
+        "subagent_id": "4d01d1bf-2885-4f82-89b1-03a7438a04be",
+        "tool_call_id": "tool-call-native",
+        "parent_conversation_id": "e426675b-3888-43d4-b7b3-da2444d00fba",
+        "is_parallel_worker": False,
+        "workspace_roots": [_native_cursor_workspace_root()],
+        "task": "[ROLE:checkpoint-reviewer]\nReview",
+    }
+    completed = _run_subagent_hook_payload(payload)
+    stdout = completed.stdout.decode("utf-8").strip()
+    assert stdout
+    result = json.loads(stdout)
+    assert result["permission"] == "deny"
+    assert "composer-2.5" in result["user_message"]
+    assert completed.returncode == _expected_subagent_start_exit_code(payload, result)
+
+
+def test_subagent_hook_malformed_workspace_root_regression_fail_closed() -> None:
+    malformed_root = f"\\{ROOT.drive[0].lower()}:{str(ROOT)[len(ROOT.drive) :]}"
+    payload = {
+        "hook_event_name": "subagentStart",
+        "subagent_type": "checkpoint-reviewer",
+        "model": "composer-2.5",
+        "subagent_model": "composer-2.5",
+        "subagent_id": "child-malformed-root",
+        "tool_call_id": "tool-malformed-root",
+        "parent_conversation_id": "parent-malformed-root",
+        "is_parallel_worker": False,
+        "workspace_roots": [malformed_root],
+        "task": "[ROLE:checkpoint-reviewer]\nReview",
+    }
+    completed = _run_subagent_hook_payload(payload)
+    assert completed.returncode != 0, completed.stderr or completed.stdout
+    stdout = completed.stdout.decode("utf-8", errors="replace").strip()
+    assert stdout
+    result = json.loads(stdout)
+    assert result["permission"] == "deny"
+    assert result["user_message"] == (
+        "Subagent enforcement could not be completed safely."
+    )
+    assert "NotSupportedException" not in stdout
+    assert malformed_root not in stdout
 
 
 def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
@@ -155,7 +274,8 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "already-running gates" in protocol
     assert "`NOT RUN` only" in protocol
     assert "evidence_profile" in protocol
-    assert REQUIRED_TASK_MODEL in protocol
+    assert "review_model_fallback" in protocol
+    assert "grok-4.7-high" in protocol
     assert "Immutable checkpoint contract" in protocol
     assert "Scope correction" in protocol
     assert "no text in this protocol creates a separate budget" in protocol
@@ -171,6 +291,8 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "fresh reviewer Task" in workflow
     assert "one consolidated report" in protocol
     assert "does not need shell access" in protocol
+    assert "working_directory" in protocol
+    assert "does not imply push" in protocol.lower() or "separately authorized push" in protocol
 
 
 def test_local_commit_is_included_in_implementation_authorization() -> None:
@@ -197,46 +319,24 @@ def test_local_commit_is_included_in_implementation_authorization() -> None:
 
 def test_reviewer_evidence_profile_runtime_attested() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-terra",
-            "observed_reasoning": "standard",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            selected_model="grok-4.7-high",
+            selected_ladder_rung=1,
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="high",
+        )
     )
     assert result["evidence_profile"] == "RUNTIME_ATTESTED"
     assert result["gate_e"] == "CONTINUE"
-    assert result["observed_runtime_model"] == "gpt-5.6-terra"
+    assert result["observed_runtime_model"] == "grok-4.7-high"
 
 
 def test_reviewer_evidence_profile_control_plane_pinned() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
     assert result["gate_e"] == "CONTINUE"
@@ -247,21 +347,12 @@ def test_reviewer_evidence_profile_control_plane_pinned() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_missing_mutation_proof() -> None:
     """Absent mutation_detected or fingerprints must BLOCK (fail-closed D15)."""
-    base = {
-        "agent_instantiated": True,
-        "agent_id": "abc-123",
-        "separate_context": True,
-        "configured_model": REQUIRED_FRONTMATTER_MODEL,
-        "requested_model": REQUIRED_TASK_MODEL,
-        "observed_runtime_model": "UNAVAILABLE",
-        "observed_reasoning": "UNAVAILABLE",
-        "uses_verify_reports_and_plan": True,
-        "readonly": True,
-        "contradictory_metadata": False,
-        "fallback_or_substitution_message": False,
-    }
+    base = _d15_facts(
+        observed_runtime_model="UNAVAILABLE",
+        observed_reasoning="UNAVAILABLE",
+    )
     missing_key = classify_reviewer_evidence_profile(
-        {**base, "pre_fingerprint": "aa", "post_fingerprint": "aa"}
+        {k: v for k, v in base.items() if k != "mutation_detected"}
     )
     assert missing_key["gate_e"] == "BLOCKED"
     assert "missing mutation proof" in missing_key["reason"]
@@ -277,7 +368,7 @@ def test_reviewer_evidence_profile_blocks_on_missing_mutation_proof() -> None:
     assert empty_fp["gate_e"] == "BLOCKED"
     assert "missing mutation proof" in empty_fp["reason"]
 
-    pending_ok = classify_reviewer_evidence_profile(
+    pending_blocked = classify_reviewer_evidence_profile(
         {
             **base,
             "pre_fingerprint": "aa",
@@ -285,28 +376,16 @@ def test_reviewer_evidence_profile_blocks_on_missing_mutation_proof() -> None:
             "mutation_detected": False,
         }
     )
-    assert pending_ok["gate_e"] == "CONTINUE"
-    assert pending_ok["evidence_profile"] == "CONTROL_PLANE_PINNED"
+    assert pending_blocked["gate_e"] == "BLOCKED"
+    assert "pending parent capture" in pending_blocked["reason"]
 
 
 def test_reviewer_evidence_profile_blocks_on_observed_model_mismatch() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "some-other-model",
-            "observed_reasoning": "xhigh",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="some-other-model",
+            observed_reasoning="high",
+        )
     )
     assert result["evidence_profile"] == "UNVERIFIED"
     assert result["gate_e"] == "BLOCKED"
@@ -315,44 +394,21 @@ def test_reviewer_evidence_profile_blocks_on_observed_model_mismatch() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_observed_reasoning_mismatch() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-terra",
-            "observed_reasoning": "low",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="low",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
 
 
 def test_reviewer_evidence_profile_blocks_on_missing_agent_id() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            agent_id="",
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "agent_id" in result["reason"]
@@ -360,22 +416,11 @@ def test_reviewer_evidence_profile_blocks_on_missing_agent_id() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_missing_separate_context() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": False,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            separate_context=False,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "separate context" in result["reason"]
@@ -383,45 +428,26 @@ def test_reviewer_evidence_profile_blocks_on_missing_separate_context() -> None:
 
 def test_reviewer_evidence_profile_blocks_on_task_model_mismatch() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": "inherit",
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            requested_model="inherit",
+            selected_model="inherit",
+            selected_ladder_rung=1,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
-    assert "requested_model" in result["reason"]
+    assert "selected model" in result["reason"]
 
 
 def test_reviewer_evidence_profile_blocks_on_mutation() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "bb",
-            "mutation_detected": True,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+            post_fingerprint="bb",
+            mutation_detected=True,
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "mutation" in result["reason"]
@@ -430,22 +456,10 @@ def test_reviewer_evidence_profile_blocks_on_mutation() -> None:
 def test_reviewer_evidence_profile_blocks_on_partial_model_only() -> None:
     """Model available and reasoning UNAVAILABLE → BLOCKED (partial runtime metadata)."""
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "gpt-5.6-terra",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert result["evidence_profile"] == "UNVERIFIED"
@@ -456,22 +470,10 @@ def test_reviewer_evidence_profile_blocks_on_partial_model_only() -> None:
 def test_reviewer_evidence_profile_blocks_on_partial_reasoning_only() -> None:
     """Reasoning available and model UNAVAILABLE → BLOCKED (partial runtime metadata)."""
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "xhigh",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="high",
+        )
     )
     assert result["gate_e"] == "BLOCKED"
     assert "partial runtime metadata" in result["reason"]
@@ -486,22 +488,10 @@ def test_macro_skill_disallows_implicit_invocation() -> None:
 
 def test_reviewer_evidence_profile_forbids_false_runtime_attested_claim() -> None:
     result = classify_reviewer_evidence_profile(
-        {
-            "agent_instantiated": True,
-            "agent_id": "abc-123",
-            "separate_context": True,
-            "configured_model": REQUIRED_FRONTMATTER_MODEL,
-            "requested_model": REQUIRED_TASK_MODEL,
-            "observed_runtime_model": "UNAVAILABLE",
-            "observed_reasoning": "UNAVAILABLE",
-            "uses_verify_reports_and_plan": True,
-            "readonly": True,
-            "pre_fingerprint": "aa",
-            "post_fingerprint": "aa",
-            "mutation_detected": False,
-            "contradictory_metadata": False,
-            "fallback_or_substitution_message": False,
-        }
+        _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
     )
     assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
     assert result["evidence_profile"] != "RUNTIME_ATTESTED"
@@ -647,6 +637,293 @@ def test_checkpoint_snapshot_fails_closed_on_out_of_scope_path(tmp_path: Path) -
     assert payload["out_of_scope_paths"] == ["unexpected.txt"]
 
 
+def test_checkpoint_snapshot_committed_final_audit_mode(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    allowed = repo / "allowed.txt"
+    allowed.write_text("v1\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    allowed.write_text("v2\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "change")
+    foreign = repo / "agent"
+    foreign.write_bytes(b"")
+
+    clean = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "audit",
+            "--output",
+            "build/ap-029-test/final-clean.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "agent",
+            "--base-ref",
+            base,
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert clean.returncode == 0, clean.stderr
+    payload = json.loads((repo / "build/ap-029-test/final-clean.json").read_text(encoding="utf-8"))
+    assert payload["scope_mode"] == "committed_final_audit"
+    assert payload["committed_paths"] == ["allowed.txt"]
+    assert payload["declared_foreign_paths"] == ["agent"]
+
+    allowed.write_text("dirty\n", encoding="utf-8")
+    dirty = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "audit-dirty",
+            "--output",
+            "build/ap-029-test/final-dirty.json",
+            "--allow",
+            "allowed.txt",
+            "--base-ref",
+            base,
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert dirty.returncode == 2
+    denied = json.loads((repo / "build/ap-029-test/final-dirty.json").read_text(encoding="utf-8"))
+    assert any("dirty_tracked_or_index" in reason for reason in denied["denial_reasons"])
+
+
+def test_checkpoint_snapshot_committed_final_audit_strict_base_ref(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    allowed = repo / "allowed.txt"
+    allowed.write_text("v1\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    ancestor_base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    allowed.write_text("v2\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "change")
+
+    def _run_snapshot(base_ref: str, output_name: str, *, fail_on_denial: bool = False) -> dict[str, Any]:
+        cmd = [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            output_name,
+            "--output",
+            f"build/ap-029-test/{output_name}.json",
+            "--allow",
+            "allowed.txt",
+            "--base-ref",
+            base_ref,
+            "--scope-mode",
+            "committed_final_audit",
+        ]
+        if fail_on_denial:
+            cmd.append("--fail-on-denial")
+        completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+        payload = json.loads(
+            (repo / "build" / "ap-029-test" / f"{output_name}.json").read_text(encoding="utf-8")
+        )
+        payload["_returncode"] = completed.returncode
+        return payload
+
+    valid = _run_snapshot(ancestor_base, "strict-base-ancestor", fail_on_denial=True)
+    assert valid["_returncode"] == 0
+    assert valid["base_sha"] == ancestor_base
+    assert valid["denial_reasons"] == []
+
+    missing = _run_snapshot(
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+        "strict-base-missing",
+    )
+    assert missing["base_sha"] is None
+    assert any(str(reason).startswith("base_failure:") for reason in missing["denial_reasons"])
+
+    tree_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD^{tree}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    non_commit = _run_snapshot(tree_sha, "strict-base-non-commit")
+    assert non_commit["base_sha"] is None
+    assert any(str(reason).startswith("base_failure:") for reason in non_commit["denial_reasons"])
+
+    _git(repo, "checkout", "--orphan", "orphan-head")
+    (repo / ".orphan-root").write_text("orphan\n", encoding="utf-8")
+    _git(repo, "add", ".orphan-root")
+    _git(repo, "commit", "-q", "-m", "orphan root")
+    non_ancestor = _run_snapshot(ancestor_base, "strict-base-non-ancestor")
+    assert non_ancestor["base_sha"] == ancestor_base
+    assert any("not an ancestor" in str(reason) for reason in non_ancestor["denial_reasons"])
+
+
+def test_checkpoint_snapshot_foreign_child_denied_only_in_final_audit(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    (repo / "allowed.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    child = repo / "models/extra.txt"
+    child.parent.mkdir(parents=True, exist_ok=True)
+    child.write_text("x\n", encoding="utf-8")
+    dirty_default = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "W1",
+            "--phase",
+            "foreign-child-dirty-default",
+            "--output",
+            "build/ap-029-test/foreign-child-dirty-default.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "models",
+            "--base-ref",
+            "HEAD",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert dirty_default.returncode == 0, dirty_default.stderr
+    final_audit = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "FINAL_AUDIT",
+            "--phase",
+            "foreign-child-final-audit",
+            "--output",
+            "build/ap-029-test/foreign-child-final-audit.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "models",
+            "--base-ref",
+            "HEAD",
+            "--scope-mode",
+            "committed_final_audit",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert final_audit.returncode == 2
+    payload = json.loads(
+        (repo / "build/ap-029-test/foreign-child-final-audit.json").read_text(encoding="utf-8")
+    )
+    assert any("foreign_child_denied" in reason for reason in payload["denial_reasons"])
+
+
+def test_checkpoint_snapshot_foreign_child_denied(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    (repo / "allowed.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "allowed.txt")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    child = repo / "models/extra.txt"
+    child.parent.mkdir(parents=True, exist_ok=True)
+    child.write_text("x\n", encoding="utf-8")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SNAPSHOT),
+            "snapshot",
+            "--root",
+            str(repo),
+            "--checkpoint",
+            "W1",
+            "--phase",
+            "foreign-child-dirty-default",
+            "--output",
+            "build/ap-029-test/foreign-child-dirty-default-legacy.json",
+            "--allow",
+            "allowed.txt",
+            "--foreign",
+            "models",
+            "--base-ref",
+            "HEAD",
+            "--fail-on-denial",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(
+        (repo / "build/ap-029-test/foreign-child-dirty-default-legacy.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "models/extra.txt" in payload["declared_foreign_paths"]
+
+
 def _pilot00_review_policy() -> dict[str, str]:
     text = _read(PROTOCOL)
     start = "<!-- PILOT00_ORCHESTRATOR_REVIEW_START -->"
@@ -758,7 +1035,7 @@ def _valid_orchestrator_review() -> dict[str, Any]:
         "human_gate_open": False,
         "agent_id": "task-real-1",
         "readonly": True,
-        "requested_model": "gpt-5.6-terra",
+        "requested_model": "grok-4.7-xhigh",
         "observed_model": "UNAVAILABLE",
         "contract_sha256": "contract",
         "expected_contract_sha256": "contract",
@@ -832,3 +1109,792 @@ def test_pilot00_orchestrator_review_rejects_forbidden_cases() -> None:
     missing_implementer_result = classify_pilot00_orchestrator_review(missing_implementer)
     assert missing_implementer_result["verdict"] == "FAIL"
     assert "same implementer" in missing_implementer_result["reason"]
+
+
+def test_reviewer_evidence_profile_runtime_attested_for_explicit_ladder_rung_one() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            selected_model="grok-4.7-high",
+            selected_ladder_rung=1,
+            ladder_result_category="SUCCESS",
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="high",
+        )
+    )
+    assert result["evidence_profile"] == "RUNTIME_ATTESTED"
+    assert result["selected_ladder_rung"] == 1
+
+
+def test_reviewer_evidence_profile_rejects_wrong_reasoning_for_runtime_attested() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            selected_model="grok-4.7-high",
+            observed_runtime_model="grok-4.7-high",
+            observed_reasoning="standard",
+        )
+    )
+    assert result["evidence_profile"] == "UNVERIFIED"
+    assert result["gate_e"] == "BLOCKED"
+
+
+def test_d15_rejects_string_boolean_facts() -> None:
+    boolean_fields = (
+        "agent_instantiated",
+        "separate_context",
+        "uses_verify_reports_and_plan",
+        "readonly",
+        "contradictory_metadata",
+        "fallback_or_substitution_message",
+        "mutation_detected",
+        "explicit_ladder_fallback",
+    )
+    for field in boolean_fields:
+        facts = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        facts[field] = "false"
+        result = classify_reviewer_evidence_profile(facts)
+        assert result["gate_e"] == "BLOCKED", field
+        assert "strict boolean" in result["reason"], field
+
+
+def test_d15_rejects_missing_boolean_facts() -> None:
+    boolean_fields = (
+        "agent_instantiated",
+        "separate_context",
+        "uses_verify_reports_and_plan",
+        "readonly",
+        "contradictory_metadata",
+        "fallback_or_substitution_message",
+        "mutation_detected",
+        "explicit_ladder_fallback",
+    )
+    for field in boolean_fields:
+        facts = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        del facts[field]
+        result = classify_reviewer_evidence_profile(facts)
+        assert result["gate_e"] == "BLOCKED", field
+
+
+def test_d15_rejects_missing_selected_ladder_rung() -> None:
+    facts = _d15_facts(
+        observed_runtime_model="UNAVAILABLE",
+        observed_reasoning="UNAVAILABLE",
+    )
+    del facts["selected_ladder_rung"]
+    result = classify_reviewer_evidence_profile(facts)
+    assert result["gate_e"] == "BLOCKED"
+    assert "selected_ladder_rung" in result["reason"]
+
+
+def test_d15_rejects_rung_model_mismatch() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="grok-4.7-high",
+            selected_model="grok-4.7-high",
+            selected_ladder_rung=2,
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "does not match" in result["reason"]
+
+
+def test_d15_rejects_non_integer_selected_ladder_rung() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            selected_ladder_rung="1",
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "strict integer" in result["reason"]
+
+
+def test_d15_rejects_inconsistent_ladder_fallback_flags() -> None:
+    rung_one_fallback = classify_reviewer_evidence_profile(
+        _d15_facts(
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert rung_one_fallback["gate_e"] == "BLOCKED"
+
+    later_rung = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="gpt-5.6-terra-high",
+            selected_model="gpt-5.6-terra-high",
+            selected_ladder_rung=4,
+            ladder_result_category="SUCCESS",
+            explicit_ladder_fallback=False,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert later_rung["gate_e"] == "BLOCKED"
+    assert "fallback" in later_rung["reason"]
+
+    unavailable_selected = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="gpt-5.6-terra-high",
+            selected_model="gpt-5.6-terra-high",
+            selected_ladder_rung=4,
+            ladder_result_category="UNAVAILABLE",
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert unavailable_selected["gate_e"] == "BLOCKED"
+    assert "did not succeed" in unavailable_selected["reason"]
+
+
+def test_d15_accepts_later_rung_with_explicit_fallback_record() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            configured_model=REQUIRED_TASK_MODEL,
+            requested_model="gpt-5.6-terra-high",
+            selected_model="gpt-5.6-terra-high",
+            selected_ladder_rung=4,
+            ladder_result_category="SUCCESS",
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["evidence_profile"] == "CONTROL_PLANE_PINNED"
+    assert result["selected_ladder_rung"] == 4
+
+
+def test_d15_rejects_missing_configured_requested_selected_models() -> None:
+    for field in ("configured_model", "requested_model", "selected_model"):
+        facts = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        del facts[field]
+        result = classify_reviewer_evidence_profile(facts)
+        assert result["gate_e"] == "BLOCKED", field
+        assert field in result["reason"]
+        wrong_type = _d15_facts(
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+        wrong_type[field] = 1
+        wrong_result = classify_reviewer_evidence_profile(wrong_type)
+        assert wrong_result["gate_e"] == "BLOCKED", field
+
+
+def test_d15_rejects_requested_selected_mismatch() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            requested_model="grok-4.7-high",
+            selected_model="cursor-grok-4.6-xhigh",
+            selected_ladder_rung=2,
+            explicit_ladder_fallback=True,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "requested_model" in result["reason"]
+
+
+def test_d15_rejects_configured_model_mismatch_with_role_primary() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            configured_model="cursor-grok-4.6-xhigh",
+            requested_model="grok-4.7-high",
+            selected_model="grok-4.7-high",
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "configured_model mismatch" in result["reason"]
+
+
+def test_d15_later_rung_requires_explicit_fallback_without_selected_requested_fallback() -> None:
+    result = classify_reviewer_evidence_profile(
+        _d15_facts(
+            configured_model=REQUIRED_TASK_MODEL,
+            requested_model="cursor-grok-4.6-xhigh",
+            selected_model="cursor-grok-4.6-xhigh",
+            selected_ladder_rung=2,
+            ladder_result_category="SUCCESS",
+            explicit_ladder_fallback=False,
+            observed_runtime_model="UNAVAILABLE",
+            observed_reasoning="UNAVAILABLE",
+        )
+    )
+    assert result["gate_e"] == "BLOCKED"
+    assert "fallback" in result["reason"]
+
+
+def _manifest_build(repo: Path, **kwargs: Any) -> dict[str, Any]:
+    cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-build",
+        "--root",
+        str(repo),
+        "--package-id",
+        kwargs.get("package_id", "AGENT-COST-01"),
+        "--checkpoint-id",
+        kwargs.get("checkpoint_id", "W2"),
+        "--contract-path",
+        kwargs["contract_path"],
+        "--profile-path",
+        kwargs.get("profile_path", ".cursor/agent-system.json"),
+        "--output",
+        kwargs["output"],
+        "--base-ref",
+        kwargs.get("base_ref", "HEAD"),
+        "--verify-command",
+        kwargs.get("verify_command", ".venv/Scripts/python.exe -m pytest tests/docs -q"),
+    ]
+    for path in kwargs.get("allowlist", ("tracked.txt",)):
+        cmd.extend(["--allow", path])
+    for evidence in kwargs.get("evidence", ()):
+        cmd.extend(["--evidence", evidence])
+    for foreign in kwargs.get("foreign", ()):
+        cmd.extend(["--foreign", foreign])
+    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    return json.loads((repo / kwargs["output"]).read_text(encoding="utf-8"))
+
+
+def _manifest_validate(
+    repo: Path,
+    manifest_path: str,
+    *,
+    allow_reuse: bool = False,
+    verify_commands: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-validate",
+        "--root",
+        str(repo),
+        "--manifest",
+        manifest_path,
+    ]
+    if allow_reuse:
+        cmd.append("--allow-reuse")
+    for command in verify_commands or ():
+        cmd.extend(["--verify-command", command])
+    completed = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False)
+    return {
+        "returncode": completed.returncode,
+        "payload": json.loads(completed.stdout),
+    }
+
+
+def test_context_manifest_foreign_cli_rejects_override_and_records_profile_bindings(
+    tmp_path: Path,
+) -> None:
+    import hashlib
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    root_config = _config()
+    foreign_bindings = list(root_config["external_codex_bound_review"]["declared_foreign_bindings"])
+    cli_bytes = b'{"fixture_only":"macro-manifest-foreign","never_from_root_cli":true}\n'
+    for binding in foreign_bindings:
+        if binding["path"] == ".cursor/cli.json":
+            binding["size"] = len(cli_bytes)
+            binding["sha256"] = hashlib.sha256(cli_bytes).hexdigest()
+    profile = {
+        "profile": "cursor-first",
+        "version": 3,
+        "external_codex_bound_review": {
+            "declared_foreign_bindings": foreign_bindings,
+        },
+    }
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "agent-system.json").write_text(json.dumps(profile) + "\n", encoding="utf-8")
+    (repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    for binding in foreign_bindings:
+        target = repo / binding["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if binding["path"] == ".cursor/cli.json":
+            target.write_bytes(cli_bytes)
+        else:
+            target.write_bytes(b"")
+    evidence_root = repo / "build" / "agent-cost-01" / "w3" / "attempt-foreign-cli"
+    evidence_root.mkdir(parents=True)
+    contract = evidence_root / "checkpoint-contract.md"
+    contract.write_text("contract body\n", encoding="utf-8")
+    manifest_path = "build/agent-cost-01/w3/attempt-foreign-cli/context-manifest.json"
+    manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w3/attempt-foreign-cli/checkpoint-contract.md",
+        output=manifest_path,
+        checkpoint_id="FINAL_AUDIT",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        base_ref="HEAD",
+    )
+    assert "foreign" not in manifest
+    bindings = manifest["declared_foreign_bindings"]
+    assert len(bindings) == 3
+    assert {item["path"] for item in bindings} == {".cursor/cli.json", "agent", "models"}
+    for item in bindings:
+        assert item["index_state"] == "untracked"
+        assert item["index_entry"] is None
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "?? .cursor/cli.json" in status.stdout
+    assert "?? agent" in status.stdout
+    assert "?? models" in status.stdout
+
+    matching_manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w3/attempt-foreign-cli/checkpoint-contract.md",
+        output="build/agent-cost-01/w3/attempt-foreign-cli/context-manifest-matching.json",
+        checkpoint_id="FINAL_AUDIT",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        base_ref="HEAD",
+        foreign=tuple(binding["path"] for binding in foreign_bindings),
+    )
+    assert len(matching_manifest["declared_foreign_bindings"]) == 3
+
+    override_cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-build",
+        "--root",
+        str(repo),
+        "--package-id",
+        "AGENT-COST-01",
+        "--checkpoint-id",
+        "FINAL_AUDIT",
+        "--contract-path",
+        "build/agent-cost-01/w3/attempt-foreign-cli/checkpoint-contract.md",
+        "--profile-path",
+        ".cursor/agent-system.json",
+        "--output",
+        "build/agent-cost-01/w3/attempt-foreign-cli/context-manifest-forged.json",
+        "--base-ref",
+        "HEAD",
+        "--verify-command",
+        ".venv/Scripts/python.exe -m pytest tests/docs -q",
+        "--allow",
+        "tracked.txt",
+        "--allow",
+        ".cursor/agent-system.json",
+        "--foreign",
+        "forged-foreign.txt",
+    ]
+    completed = subprocess.run(override_cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert completed.returncode != 0
+    assert "manifest-build --foreign cannot override profile declared_foreign_bindings" in (
+        completed.stderr or completed.stdout
+    )
+
+
+def test_context_manifest_w1_legacy_build_validate_without_foreign_bindings(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    root_config = _config()
+    foreign_bindings = list(root_config["external_codex_bound_review"]["declared_foreign_bindings"])
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "agent-system.json").write_text(json.dumps(root_config) + "\n", encoding="utf-8")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    for binding in foreign_bindings:
+        foreign_path = repo / binding["path"]
+        assert not foreign_path.exists()
+    verify_commands = (".venv/Scripts/python.exe -m pytest tests/docs -q",)
+
+    w1_root = repo / "build" / "agent-cost-01" / "w1" / "attempt-legacy"
+    w1_root.mkdir(parents=True)
+    (w1_root / "checkpoint-contract.md").write_text("contract body\n", encoding="utf-8")
+    (w1_root / "gate-result.txt").write_text("synthetic gate evidence\n", encoding="utf-8")
+    w1_manifest_path = "build/agent-cost-01/w1/attempt-legacy/context-manifest.json"
+    w1_manifest = _manifest_build(
+        repo,
+        package_id="AGENT-COST-01",
+        contract_path="build/agent-cost-01/w1/attempt-legacy/checkpoint-contract.md",
+        output=w1_manifest_path,
+        checkpoint_id="W1",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("gate=build/agent-cost-01/w1/attempt-legacy/gate-result.txt",),
+    )
+    assert "declared_foreign_bindings" not in w1_manifest
+    w1_reuse_key = w1_manifest["reuse_key_sha256"]
+    w1_ok = _manifest_validate(
+        repo,
+        w1_manifest_path,
+        allow_reuse=True,
+        verify_commands=verify_commands,
+    )
+    assert w1_ok["returncode"] == 0
+    assert w1_ok["payload"]["valid"] is True
+    assert w1_ok["payload"]["reuse_allowed"] is True
+
+    pilot_root = repo / "build" / "pilot00-b1" / "w2" / "attempt-legacy"
+    pilot_root.mkdir(parents=True)
+    (pilot_root / "checkpoint-contract.md").write_text("pilot contract\n", encoding="utf-8")
+    (pilot_root / "gate-result.txt").write_text("synthetic pilot gate evidence\n", encoding="utf-8")
+    pilot_manifest_path = "build/pilot00-b1/w2/attempt-legacy/context-manifest.json"
+    pilot_manifest = _manifest_build(
+        repo,
+        package_id="PILOT00-B1",
+        contract_path="build/pilot00-b1/w2/attempt-legacy/checkpoint-contract.md",
+        output=pilot_manifest_path,
+        checkpoint_id="W2",
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("gate=build/pilot00-b1/w2/attempt-legacy/gate-result.txt",),
+    )
+    assert "declared_foreign_bindings" not in pilot_manifest
+    pilot_ok = _manifest_validate(
+        repo,
+        pilot_manifest_path,
+        allow_reuse=True,
+        verify_commands=verify_commands,
+    )
+    assert pilot_ok["returncode"] == 0
+    assert pilot_ok["payload"]["valid"] is True
+    assert pilot_ok["payload"]["reuse_allowed"] is True
+
+    legacy_manifest_file = repo / w1_manifest_path
+    legacy_manifest = json.loads(legacy_manifest_file.read_text(encoding="utf-8"))
+    legacy_manifest["declared_foreign_bindings"] = [
+        {
+            "path": binding["path"],
+            "size": binding["size"],
+            "sha256": binding["sha256"],
+        }
+        for binding in foreign_bindings
+    ]
+    assert legacy_manifest["reuse_key_sha256"] == w1_reuse_key
+    legacy_manifest_file.write_text(json.dumps(legacy_manifest, indent=2) + "\n", encoding="utf-8")
+    legacy_ok = _manifest_validate(
+        repo,
+        w1_manifest_path,
+        allow_reuse=True,
+        verify_commands=verify_commands,
+    )
+    assert legacy_ok["returncode"] == 0
+    assert legacy_ok["payload"]["valid"] is True
+    assert legacy_ok["payload"]["reuse_allowed"] is True
+
+
+def test_context_manifest_build_validate_and_reuse(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    profile = {
+        "profile": "cursor-first",
+        "version": 3,
+    }
+    (profile_dir / "agent-system.json").write_text(json.dumps(profile) + "\n", encoding="utf-8")
+    tracked = repo / "tracked.txt"
+    tracked.write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    evidence_root = repo / "build" / "agent-cost-01" / "w2" / "attempt-001"
+    evidence_root.mkdir(parents=True)
+    contract = evidence_root / "checkpoint-contract.md"
+    contract.write_text("contract body\n", encoding="utf-8")
+    junit = evidence_root / "junit-docs.xml"
+    junit.write_text("<testsuite/>", encoding="utf-8")
+
+    manifest_path = "build/agent-cost-01/w2/attempt-001/context-manifest.json"
+    manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-001/checkpoint-contract.md",
+        output=manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-001/junit-docs.xml",),
+    )
+    assert manifest["package_id"] == "AGENT-COST-01"
+    assert manifest["checkpoint_id"] == "W2"
+    assert "declared_foreign_bindings" not in manifest
+    assert len(manifest["reuse_key_sha256"]) == 64
+
+    ok = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert ok["returncode"] == 0
+    assert ok["payload"]["valid"] is True
+    assert ok["payload"]["reuse_allowed"] is True
+
+    empty_manifest_path = "build/agent-cost-01/w2/attempt-001/empty-context-manifest.json"
+    _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-001/checkpoint-contract.md",
+        output=empty_manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+    )
+    empty_valid = _manifest_validate(repo, empty_manifest_path)
+    assert empty_valid["returncode"] == 0  # A planning index is valid, not completion proof.
+    empty_reuse = _manifest_validate(
+        repo,
+        empty_manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert empty_reuse["returncode"] == 2
+    assert empty_reuse["payload"]["reuse_allowed"] is False
+    assert "reuse_requires_bound_evidence" in empty_reuse["payload"]["reasons"]
+
+    invalid_output = repo / "build/agent-cost-01/w2/attempt-001/invalid-context-manifest.json"
+    for invalid_base in ("origin/missing-review-base", "HEAD:tracked.txt"):
+        invalid_build = subprocess.run(
+            [
+                sys.executable, str(SNAPSHOT), "manifest-build", "--root", str(repo),
+                "--package-id", "AGENT-COST-01", "--checkpoint-id", "W2",
+                "--contract-path", "build/agent-cost-01/w2/attempt-001/checkpoint-contract.md",
+                "--output", str(invalid_output), "--base-ref", invalid_base,
+                "--allow", "tracked.txt", "--verify-command", "pytest tests/docs -q",
+            ],
+            cwd=repo, capture_output=True, text=True, check=False,
+        )
+        assert invalid_build.returncode != 0
+        assert "missing base ref" in invalid_build.stderr
+        assert not invalid_output.exists()
+
+    legacy_null_base = dict(manifest, base_ref="origin/missing-review-base", base_sha=None)
+    invalid_output.write_text(json.dumps(legacy_null_base), encoding="utf-8")
+    invalid_reuse = _manifest_validate(
+        repo,
+        invalid_output.relative_to(repo).as_posix(),
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert invalid_reuse["returncode"] == 2
+    assert invalid_reuse["payload"]["reuse_allowed"] is False
+    assert any("missing base ref" in reason for reason in invalid_reuse["payload"]["reasons"])
+
+    tracked.write_text("changed\n", encoding="utf-8")
+    stale = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert stale["returncode"] == 2
+    assert stale["payload"]["valid"] is False
+    assert stale["payload"]["reuse_allowed"] is False
+    assert any(reason.startswith("binding_mismatch:") for reason in stale["payload"]["reasons"])
+
+    tracked.write_text("baseline\n", encoding="utf-8")
+    contract.write_text("changed contract\n", encoding="utf-8")
+    contract_stale = _manifest_validate(
+        repo,
+        manifest_path,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert contract_stale["returncode"] == 2
+    assert contract_stale["payload"]["valid"] is False
+
+    tracked.write_text("baseline\n", encoding="utf-8")
+    contract.write_text("contract body\n", encoding="utf-8")
+    junit.write_text("<testsuite changed/>", encoding="utf-8")
+    evidence_changed = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert evidence_changed["returncode"] == 2
+    assert evidence_changed["payload"]["valid"] is False
+    assert evidence_changed["payload"]["reuse_allowed"] is False
+    assert any(reason.startswith("evidence_changed:") for reason in evidence_changed["payload"]["reasons"])
+
+    junit.write_text("<testsuite/>", encoding="utf-8")
+    reuse_without_commands = _manifest_validate(repo, manifest_path, allow_reuse=True)
+    assert reuse_without_commands["returncode"] == 2
+    assert reuse_without_commands["payload"]["valid"] is False
+    assert reuse_without_commands["payload"]["reuse_allowed"] is False
+    assert "reuse_requires_verification_commands" in reuse_without_commands["payload"]["reasons"]
+
+    wrong_command = _manifest_validate(
+        repo,
+        manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q --maxfail=1",),
+    )
+    assert wrong_command["returncode"] == 2
+    assert wrong_command["payload"]["valid"] is False
+    assert wrong_command["payload"]["reuse_allowed"] is False
+    assert "binding_mismatch:verification_commands" in wrong_command["payload"]["reasons"]
+
+    missing_root = repo / "build" / "agent-cost-01" / "w2" / "attempt-missing"
+    missing_root.mkdir(parents=True)
+    missing_contract = missing_root / "checkpoint-contract.md"
+    missing_contract.write_text("contract body\n", encoding="utf-8")
+    missing_manifest_path = "build/agent-cost-01/w2/attempt-missing/context-manifest.json"
+    missing_manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-missing/checkpoint-contract.md",
+        output=missing_manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-missing/junit-docs.xml",),
+    )
+    assert missing_manifest["evidence_sha256"]["junit"] is None
+    missing_result = _manifest_validate(
+        repo,
+        missing_manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert missing_result["returncode"] == 2
+    assert missing_result["payload"]["valid"] is False
+    assert missing_result["payload"]["reuse_allowed"] is False
+    assert any(
+        reason.startswith("evidence_missing:") or reason.startswith("evidence_not_bound_at_build:")
+        for reason in missing_result["payload"]["reasons"]
+    )
+
+    (missing_root / "junit-docs.xml").write_text("<testsuite/>", encoding="utf-8")
+    successor_manifest = _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-missing/checkpoint-contract.md",
+        output=missing_manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-missing/junit-docs.xml",),
+    )
+    assert successor_manifest["evidence_sha256"]["junit"] is not None
+    successor_ok = _manifest_validate(
+        repo,
+        missing_manifest_path,
+        allow_reuse=True,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert successor_ok["returncode"] == 0
+    assert successor_ok["payload"]["valid"] is True
+    assert successor_ok["payload"]["reuse_allowed"] is True
+
+
+def test_context_manifest_rejects_traversal_and_forged_evidence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "tests@example.invalid")
+    _git(repo, "config", "user.name", "Tests")
+    profile_dir = repo / ".cursor"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "agent-system.json").write_text(
+        '{"profile":"cursor-first","version":3}\n',
+        encoding="utf-8",
+    )
+    (repo / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt", ".cursor/agent-system.json")
+    _git(repo, "commit", "-q", "-m", "baseline")
+    evidence_root = repo / "build" / "agent-cost-01" / "w2" / "attempt-002"
+    evidence_root.mkdir(parents=True)
+    contract = evidence_root / "checkpoint-contract.md"
+    contract.write_text("contract body\n", encoding="utf-8")
+    manifest_path = "build/agent-cost-01/w2/attempt-002/context-manifest.json"
+    traversal_cmd = [
+        sys.executable,
+        str(SNAPSHOT),
+        "manifest-build",
+        "--root",
+        str(repo),
+        "--package-id",
+        "AGENT-COST-01",
+        "--checkpoint-id",
+        "W2",
+        "--contract-path",
+        "build/agent-cost-01/w2/attempt-002/checkpoint-contract.md",
+        "--profile-path",
+        ".cursor/agent-system.json",
+        "--output",
+        manifest_path,
+        "--base-ref",
+        "HEAD",
+        "--verify-command",
+        ".venv/Scripts/python.exe -m pytest tests/docs -q",
+        "--allow",
+        "tracked.txt",
+        "--allow",
+        ".cursor/agent-system.json",
+        "--evidence",
+        "junit=../outside/junit.xml",
+    ]
+    traversal = subprocess.run(traversal_cmd, cwd=repo, capture_output=True, text=True, check=False)
+    assert traversal.returncode != 0
+
+    (evidence_root / "junit-docs.xml").write_text("<testsuite/>", encoding="utf-8")
+    _manifest_build(
+        repo,
+        contract_path="build/agent-cost-01/w2/attempt-002/checkpoint-contract.md",
+        output=manifest_path,
+        allowlist=("tracked.txt", ".cursor/agent-system.json"),
+        profile_path=".cursor/agent-system.json",
+        evidence=("junit=build/agent-cost-01/w2/attempt-002/junit-docs.xml",),
+    )
+    forged = json.loads((repo / manifest_path).read_text(encoding="utf-8"))
+    forged["verification_commands"] = ["echo forged"]
+    (repo / manifest_path).write_text(json.dumps(forged, indent=2) + "\n", encoding="utf-8")
+    result = _manifest_validate(
+        repo,
+        manifest_path,
+        verify_commands=(".venv/Scripts/python.exe -m pytest tests/docs -q",),
+    )
+    assert result["returncode"] == 2
+    assert result["payload"]["valid"] is False
+
+
+def test_checkpoint_protocol_requires_context_manifest_lifecycle() -> None:
+    protocol = _read(PROTOCOL)
+    skill = _read(SKILL)
+    work_package_skill = _read(ROOT / ".cursor/skills/execute-work-package/SKILL.md")
+    autonomous_doc = _read(ROOT / "docs" / "CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md")
+    assert "WorkingDirectory" in autonomous_doc
+    assert "working_directory" in work_package_skill
+    assert "context manifest" in protocol.lower() or "context-manifest" in protocol
+    assert "manifest-build" in skill or "context manifest" in skill.lower()
+    assert "manifest-validate" in skill or "validate" in skill.lower()
+    assert "reuse" in work_package_skill.lower()
+    assert "--allow-reuse" in work_package_skill
+    assert "--verify-command" in work_package_skill
+    assert "--allow-reuse" in autonomous_doc
+    assert "--verify-command" in autonomous_doc
+    assert "PRE_HANDOFF_READY" in work_package_skill
+    assert "HANDOFF_READY" in work_package_skill
+    assert "review_route_bindings" in protocol
+    assert "bindingRecord" in protocol
+    assert "RECOVERY_DIAGNOSIS" in protocol
+    assert "manifest-validate" in protocol
