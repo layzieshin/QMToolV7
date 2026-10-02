@@ -2897,19 +2897,8 @@ if (($validRoleMatch -and $matchedRole -eq "implementer" -or $hostImplementerWit
         } | ConvertTo-Json -Compress | Write-Output
         exit 2
     }
-    $preflight = Invoke-ExternalCodexRoutePreflight `
-        -Config $config `
-        -PackageId ([string]$workflowState.work_package) `
-        -CheckpointId ([string]$workflowState.checkpoint) `
-        -ReviewNeed "" `
-        -CheckpointOnly $true
-    if ($preflight.permission -eq "deny") {
-        @{
-            permission = "deny"
-            user_message = "Task blocked by EXTERNAL_CODEX_ROUTE_PREFLIGHT: $($preflight.reason)"
-        } | ConvertTo-Json -Compress | Write-Output
-        exit 2
-    }
+    # Implementation dispatch is not an external-review handoff. Keep state/role protection
+    # here; exact registry validation remains on the explicit external-review modes above.
     if ($hostImplementerWithoutMarker) {
         @{
             permission = "deny"

@@ -222,9 +222,11 @@ continuation. The follow-up limit comes from `.cursor/agent-system.json`.
 
 Local repair closure (2026-10-02): the complete `tests/docs` verification passed 252 tests
 with no failures, errors or skips (`build/agent-cost-01/agent-rework-direct-final-junit.xml`).
-The final routing/hook/regression source is unchanged since that run. SessionStart blocks
+This result is the pre-publication repair baseline; later PR #60 follow-up is recorded in the cost
+profile. SessionStart blocks
 Resume for actual recovery-diagnosis bindings as well as recovery receipts, while normal
-Resume remains supported. Implementer RUNNING-state and registry preflight remain mandatory.
+Resume remains supported. Implementer RUNNING-state, canonical role, model and identity checks
+remain mandatory; external-review registry preflight applies to actual external handoffs only.
 The cancelled chain is stopped and operational state is `IDLE`; historical counters and
 review outcomes are not reset or relabelled. Local readiness does not authorize publication
 or activation. Actual integration and a safe transition for new checkpoints are still required;

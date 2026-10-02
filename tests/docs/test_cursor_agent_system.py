@@ -2563,11 +2563,12 @@ def _run_implementer_pretool(
     state_path: Path,
     prompt: str = "[ROLE:implementer]\nImplement W3-FINAL-REWORK-001",
     subagent_type: str = "implementer",
+    model: str = "composer-2.5",
     **updates: Any,
 ) -> dict[str, Any]:
     tool_input: dict[str, Any] = {
         "prompt": prompt,
-        "model": "composer-2.5",
+        "model": model,
         "subagent_type": subagent_type,
     }
     payload = _pre_tool_use_task_payload(tool_input=tool_input, **updates)
@@ -4604,15 +4605,54 @@ def test_w3_final_synthetic_w2_w3_route_pre_bound_positive(tmp_path: Path) -> No
         assert result["status"] == "CONTINUE", checkpoint_id
 
 
-def test_w3_final_unregistered_checkpoint_denies_implementer_preflight(
+def test_w3_final_normal_packages_do_not_require_external_review_registry(
     tmp_path: Path,
 ) -> None:
     state_path = tmp_path / "running-state.json"
-    _write_running_state(state_path, checkpoint="CP-UNREGISTERED")
-    denied = _run_implementer_pretool(tmp_path, state_path=state_path)
-    assert denied["permission"] == "deny"
-    assert "EXTERNAL_CODEX_ROUTE_PREFLIGHT" in denied["user_message"]
-    assert "no exact registry record for checkpoint" in denied["user_message"]
+    for package_id, checkpoint_id in (("AGENT-COST-01", "W2"), ("NEW-PACKAGE", "CP-1")):
+        _write_running_state(state_path, work_package=package_id, checkpoint=checkpoint_id)
+        allowed = _run_implementer_pretool(
+            tmp_path, state_path=state_path, prompt=f"[ROLE:implementer]\nImplement {checkpoint_id}"
+        )
+        assert allowed["permission"] == "allow"
+        assert "non_authoritative" not in allowed
+
+
+def test_w3_final_normal_implementer_retains_state_model_and_identity_guards(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "running-state.json"
+    missing = _run_implementer_pretool(tmp_path, state_path=state_path)
+    assert missing["permission"] == "deny"
+    assert "missing RUNNING workflow state" in missing["user_message"]
+    _write_running_state(state_path, status="IDLE", work_package="NEW-PACKAGE", checkpoint="CP-1")
+    idle = _run_implementer_pretool(tmp_path, state_path=state_path)
+    assert idle["permission"] == "deny"
+    assert "missing RUNNING workflow state" in idle["user_message"]
+    _write_running_state(state_path, work_package="NEW-PACKAGE", checkpoint="CP-1")
+    for updates in ({"model": "grok-4.7-high"}, {"tool_use_id": ""}, {"conversation_id": ""}):
+        denied = _run_implementer_pretool(tmp_path, state_path=state_path, **updates)
+        assert denied["permission"] == "deny", updates
+    native = _live_host_subagent_payload(
+        subagent_type="implementer", subagent_model="composer-2.5",
+        task="[ROLE:implementer]\nImplement CP-1",
+    )
+    allowed = _run_hook("subagent-start.ps1", native, state_path=state_path)
+    assert allowed["permission"] == "allow"
+    for updates in ({"subagent_id": ""}, {"tool_call_id": ""}, {"child_agent_id": "contradictory-child"}):
+        denied = _run_hook("subagent-start.ps1", dict(native, **updates), state_path=state_path)
+        assert denied["permission"] == "deny", updates
+
+
+def test_w3_final_unregistered_external_review_handoff_still_denied(tmp_path: Path) -> None:
+    repo = _isolated_recovery_diagnosis_repo(tmp_path)
+    for package_id, checkpoint_id in (("AGENT-COST-01", "W2"), ("NEW-PACKAGE", "CP-1")):
+        denied = _run_route_preflight(
+            tmp_path, repo, package_id=package_id, checkpoint_id=checkpoint_id,
+            review_need="CHECKPOINT_ESCALATION",
+        )
+        assert denied["permission"] == "deny"
+        assert denied["status"] == "BLOCKED_HUMAN"
 
 
 def test_w3_final_host_alias_without_role_cannot_bypass_implementer_preflight(
@@ -5519,7 +5559,7 @@ def test_w3_final_implementer_without_marker_unknown_checkpoint_denies(
     )
     assert denied["permission"] == "deny"
     assert "EXTERNAL_CODEX_ROUTE_PREFLIGHT" in denied["user_message"]
-    assert "no exact registry record for checkpoint" in denied["user_message"]
+    assert "[ROLE:implementer]" in denied["user_message"]
 
 
 def test_w3_final_nonimplementer_helper_without_marker_stays_non_authoritative(

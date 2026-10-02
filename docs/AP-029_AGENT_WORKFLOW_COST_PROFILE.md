@@ -735,3 +735,18 @@ The remaining P1 review concerns the generic implementer registry prerequisite. 
 pending separate human authorization for a narrow correction. Do not resolve that finding, merge,
 activate, restart the cancelled chain, reset counters, or relabel historical review results merely
 because the independent manifest repairs are green.
+
+#### PR #60 follow-up — authorized implementer boundary correction, 2026-10-02
+
+The human subsequently authorized limiting review registration to actual external reviews.
+The generic implementer Task path no longer calls checkpoint-only external route preflight.
+RUNNING-state, canonical role, configured model and genuine Task/native identity validation remain
+unchanged; explicit external review modes retain registry, manifest, seal and state/counter checks.
+Normal W2 and new-package checkpoints need no external-review registry entry. This supersedes the
+earlier generic Task-ingress registry prerequisite, not the actual external-handoff safeguards.
+The cancelled runtime remains `IDLE`, historical counters and PILOT00 are unchanged, and merge
+and activation must still be established from actual GitHub results, not inferred from this repair.
+Focused verification passed **40 tests** (`build/agent-cost-01/pr60-implementer-boundary-junit.xml`):
+normal W2/new-package dispatch, missing/IDLE state, missing role, wrong model, missing/contradictory
+identity, unregistered external handoffs, manifest/binding denial and positive handoff paths, and
+canonical profile/docs checks. Historical full-suite results remain baseline evidence only.

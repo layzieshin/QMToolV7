@@ -61,9 +61,11 @@ AP/evidence documents, not runtime JSON. This file remains resume/gate state onl
 ## Coordinator operational sequencing (registry + hooks)
 
 Install the complete verified `review_route_bindings` registry in `.cursor/agent-system.json`
-before activating a stricter hook version that enforces `EXTERNAL_CODEX_ROUTE_PREFLIGHT` on Task
-ingress. If migration is interrupted, preserve the source tree and perform only explicit narrow
-config recovery on the registry owner; never switch hooks off to bypass validation. PRE computes
+before using `EXTERNAL_CODEX_ROUTE_PREFLIGHT` for an external-review handoff. Normal implementer
+Task ingress requires RUNNING state, the canonical role and existing model/identity validation,
+not an external-review registry entry. If migration is interrupted, preserve the source tree and
+perform only explicit narrow config recovery on the registry owner; never switch hooks off to
+bypass validation. PRE computes
 `bindingRecord`; the coordinator anchors it once in `external_review.bindingRecord` through the
 existing metadata writer path (journal → full state → separate readback). BOUND and recovery receipt
 validation reuse the anchored state record plus existing `manifest-validate`; they do not accept
