@@ -27,7 +27,7 @@ This file defines document priority and decision authority for the repository.
 
 - `docs/AGENT_INSTRUCTION_BOOTSTRAP_PROMPT.md` — generic Codex-first bootstrap prompt for new repos
 - `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md` — local Cursor-native work-package operation guide
-- `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md` — AGENT-COST-01 cursor-first workflow cost profile package contract (W0–W3); status **PLANNED / NOT ACTIVE**; effective profile remains `balanced` v2 until W3 PASS, independent critical Codex final audit, merge, and documented safe transition; P0 architecture and transition ledger win on product boundaries
+- `docs/AP-029_AGENT_WORKFLOW_COST_PROFILE.md` — AGENT-COST-01 workflow rework **CLOSED / ACTIVE FOR NEW PACKAGES**; `cursor-first` v3 integrated through PR #60 at `6b5653d44a73e57adc0d1b8f00650e689c29f303` after green CI and human-authorized repair; documented safe transition applies only to new packages/checkpoints on integrated `main`, without retrofitting PILOT00 or claiming measured serving/cost/50:50 evidence; P0 architecture and transition ledger win on product boundaries
 - `docs/MASTER_ORCHESTRATION_ROADMAP.md` — active work-package steering (planning only; P0 architecture docs win on boundaries)
 - `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` — Web/PostgreSQL target architecture and executable checkpoint ledger
 - `docs/AP-029_PILOT_PROFILE_ADR.md` — additional bounded PILOT00 profile `linux-rootless-synthetic`; current status `ACCEPTED_LIMITED`; historical 2026-09-26 status `PROPOSED / HUMAN_DECISION_REQUIRED`; remains P1; Windows Server first stays P0 in operations; not a pilot or deployment PASS

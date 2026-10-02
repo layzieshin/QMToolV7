@@ -1,10 +1,13 @@
 # AP-029 Agent Workflow Cost Profile — AGENT-COST-01
 
-Status: **PLANNED / NOT ACTIVE** (P1 package contract; not a product checkpoint)
+Status: **CLOSED / ACTIVE FOR NEW PACKAGES** (P1 workflow package; not product acceptance)
 Package ID: `AGENT-COST-01`
 Profile target (historical W0 baseline): `cursor-first` v1 — planning artifact only; not the active branch candidate
 Branch qualification candidate (current): **`cursor-first` `version: 3`** on `feature/cursor-agent-system-v3`
-Effective profile on `main` today: `balanced` v2 in `.cursor/agent-system.json`
+Effective profile on `main` today: **`cursor-first` `version: 3`** in `.cursor/agent-system.json`,
+integrated by [PR #60](https://github.com/layzieshin/QMToolV7/pull/60) at `6b5653d44a73e57adc0d1b8f00650e689c29f303`.
+The current closure/activation record below supersedes pre-merge status statements. Historical
+qualification, counters and reviewer results remain evidence of their respective attempts.
 Canonical index: `docs/DOCS_CANONICAL_INDEX.md`
 Transition steering: `docs/AP-029_WEB_POSTGRES_TRANSITION_PLAN.md` (P0 wins on architecture boundaries)
 Operation guide: `docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`
@@ -533,8 +536,9 @@ at W0 close; subsequent W1 work is historical qualification only until W3 public
 ### W3 — qualification and activation (CURRENT)
 
 **Qualification** proves the frozen branch-local candidate **before** squash-merge. On
-`feature/cursor-agent-system-v3`, the effective profile is **`cursor-first` `version: 3`**; `main` and
-foreign worktrees remain on historical **`balanced` v2** until merge. Routine Cursor execution uses
+`feature/cursor-agent-system-v3`, the qualified profile is **`cursor-first` `version: 3`**. Before
+integration, `main` and foreign worktrees remained on historical **`balanced` v2**. The actual
+post-merge activation is recorded below; existing worktrees are not silently migrated. Routine Cursor execution uses
 Composer 2.5 Standard; routine independent reviews use the configured Grok ladder beginning at
 `grok-4.7-high`. Critical final audit for packages in `routing.ag_packages_critical` routes
 directly to the external Codex/ChatGPT-authenticated orchestrator; exhausted checkpoint escalation
@@ -750,3 +754,33 @@ Focused verification passed **40 tests** (`build/agent-cost-01/pr60-implementer-
 normal W2/new-package dispatch, missing/IDLE state, missing role, wrong model, missing/contradictory
 identity, unregistered external handoffs, manifest/binding denial and positive handoff paths, and
 canonical profile/docs checks. Historical full-suite results remain baseline evidence only.
+
+#### Integrated closure and safe activation — 2026-10-02
+
+[PR #60](https://github.com/layzieshin/QMToolV7/pull/60) was squash-merged into `main` at
+`6b5653d44a73e57adc0d1b8f00650e689c29f303` after both checks in
+[CI run 37041887199](https://github.com/layzieshin/QMToolV7/actions/runs/37041887199) succeeded
+on final source commit `783a85664d3afd61c6272eb7d141ab1bdc674287`.
+All three review findings were repaired and their conversations resolved; no branch-protection
+bypass, synthetic independent PASS or retrospective rewrite of failed reviews was used.
+
+The human explicitly authorized direct repair, publication, integration and activation. The
+integrated JSON is `cursor-first` v3; all eight custom-agent frontmatter models match its roles,
+so the existing profile-application mechanism requires no additional model rewrite.
+The workflow rework is **CLOSED / ACTIVE FOR NEW PACKAGES** at this safe boundary:
+
+- New packages/checkpoints adopt the integrated profile only after their workspace is updated to
+  the integrated `main`, on an approved clean task branch, with a new package-bound contract/state.
+- Existing running, paused or cancelled attempts retain their started profile, contracts and
+  evidence interpretation; do not retrofit PILOT00 B1 or copy this recovery state's bindings.
+- This recovery runtime stays `IDLE`; counters remain regular 2, exceptional 6, final 1 and the
+  cancelled chain does not restart. Other worktrees and foreign files are unchanged.
+- Routine implementation/exploration uses Composer 2.5; configured Grok roles retain their ladder;
+  critical final audits and exhausted escalation retain their explicit external Codex routing.
+  Actual external handoffs still need the exact prepared registry record and bound evidence.
+- Serving identity, cost/cache savings and measured 50:50 allocation remain `UNKNOWN`.
+
+The complete 252-test run and 42-check closeout are pre-follow-up baselines. Subsequent manifest
+repair passed 73 macro/docs plus 28 handoff/docs tests; the final authorized implementer correction
+passed 40 focused checks plus 26 final docs checks. No unchanged 25-minute suite was rerun as ritual.
+This closes the agent workflow rework, not product acceptance, deployment or any other roadmap package.
