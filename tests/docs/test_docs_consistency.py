@@ -1344,3 +1344,25 @@ def test_agent_cost_docs_reject_false_cost_and_stale_reuse_claims() -> None:
     for token in forbidden:
         assert token not in patterns
         assert token not in codex_ref
+
+
+def test_agent_cost_integrated_activation_preserves_safe_boundary() -> None:
+    cost_profile = _read(DOCS / "AP-029_AGENT_WORKFLOW_COST_PROFILE.md")
+    autonomous = _read(DOCS / "CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md")
+    index = _read(DOCS / "DOCS_CANONICAL_INDEX.md")
+    for text in (cost_profile, autonomous, index):
+        assert "6b5653d44a73e57adc0d1b8f00650e689c29f303" in text
+        assert "ACTIVE FOR NEW PACKAGES" in text
+        assert "PILOT00" in text
+    assert "Status: **CLOSED / ACTIVE FOR NEW PACKAGES**" in cost_profile
+    assert "37041887199" in cost_profile
+    assert "historical evidence" in autonomous
+    assert "runtime remains `IDLE`" in autonomous
+    assert "Serving identity, cost/cache savings and measured 50:50 allocation remain `UNKNOWN`" in cost_profile
+    assert "do not retrofit PILOT00" in cost_profile
+    for line in cost_profile.splitlines():
+        if line.startswith("| Post-merge |") or line.startswith("| Post-squash-merge"):
+            assert "`cursor-first` v3" in line
+            assert "`cursor-first` v1" not in line
+    assert "Active mapping for new packages after the confirmed PR #60 integration" in cost_profile
+    assert "not effective until post-W3 transition" not in cost_profile

@@ -54,13 +54,15 @@ basetemp contract.
 The runtime file is never fachliche documentation.
 
 `.cursor/agent-system.json` is the only normative source for role models and numeric workflow
-limits. On branch-local `cursor-first` v3 candidates (AGENT-COST-01 qualification), Composer 2.5
+limits. The integrated `cursor-first` v3 profile (AGENT-COST-01, PR #60) applies to new packages
+at the documented safe boundary. Composer 2.5
 Standard carries routine execution; Grok review roles use the normalized ladder in
 `review_model_fallback` beginning at attempt 1 `grok-4.7-high` (no hidden attempt 0 and no legacy
 `grok-4.7-xhigh` route). Critical final audit for packages in `routing.ag_packages_critical` routes
 **directly** to the external Codex/ChatGPT-authenticated orchestrator; exhausted checkpoint escalation
 follows the applicable configured `checkpoint-reviewer` ladder (and Cursor GPT rung when configured)
-before external handoff. `main` and foreign worktrees remain on `balanced` v2 until merge.
+before external handoff. `main` now contains v3; existing worktrees/attempts retain their started
+profile until an explicitly approved transition, never an automatic retrofit.
 Rules, skills and this guide explain behavior; `hooks.json` contains only the
 Cursor-schema projection required by the platform, protected against drift by contract tests.
 
@@ -181,6 +183,13 @@ Qualification **before** squash-merge installs and proves the frozen candidate o
 Activation **after** merge applies the documented safe transition; it does not retrofit running
 packages or PILOT00 B1.
 
+Actual activation (2026-10-02): [PR #60](https://github.com/layzieshin/QMToolV7/pull/60) merged
+as `6b5653d44a73e57adc0d1b8f00650e689c29f303`, with both CI checks green on the final source.
+`cursor-first` v3 is **ACTIVE FOR NEW PACKAGES** only after their workspace adopts integrated
+`main` and starts a fresh approved package/checkpoint contract and state. All eight role models
+already match the JSON; no serving identity or cost result is implied. The cancelled recovery
+runtime remains `IDLE`; PILOT00, historical evidence and other worktrees are unchanged.
+
 On the branch-local `cursor-first` v3 candidate, Composer 2.5 Standard carries routine Cursor
 execution. Routine independent reviews use the normalized Grok ladder in `review_model_fallback`
 beginning at `grok-4.7-high`. Critical final audit for packages in `routing.ag_packages_critical`
@@ -228,8 +237,8 @@ Resume for actual recovery-diagnosis bindings as well as recovery receipts, whil
 Resume remains supported. Implementer RUNNING-state, canonical role, model and identity checks
 remain mandatory; external-review registry preflight applies to actual external handoffs only.
 The cancelled chain is stopped and operational state is `IDLE`; historical counters and
-review outcomes are not reset or relabelled. Local readiness does not authorize publication
-or activation. Actual integration and a safe transition for new checkpoints are still required;
+review outcomes are not reset or relabelled. Subsequent explicit human authorization, actual
+PR #60 integration and the safe transition above establish activation for new packages only;
 PILOT00 and serving/cost qualification remain unchanged.
 
 - `sessionStart` injects context but cannot block startup and is unavailable to Cloud Agents.
