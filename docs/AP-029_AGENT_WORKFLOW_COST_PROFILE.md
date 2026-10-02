@@ -20,9 +20,9 @@ Source plan: `QMTool_Agent_Workflow_Cursor_First_20260927.md` (2026-09-27; exter
 - This document is the **authoritative package contract** for AGENT-COST-01 checkpoints W0–W3.
   Ignored evidence under `build/agent-cost-01/` is an index and control record only; it is **not**
   a second source of truth.
-- **No production activation by W0, W1, or W2.** W1 may install the full `cursor-first` v1
-  **candidate** on the isolated AGENT-COST branch for qualification only; `main` and other worktrees
-  remain on `balanced` v2 until squash-merge and documented safe transition. W3 qualifies the frozen
+- **No production activation by W0, W1, or W2.** The historical W0 plan targeted a full
+  `cursor-first` v1 **candidate**; final W1/W2 qualification evolved to v3 on the isolated branch.
+  Before integration, `main` and other worktrees remained on `balanced` v2. W3 qualifies the frozen
   final candidate commit/tree — not a last-minute JSON change after canary or audit.
 - **No retrofit** on the paused PILOT00 B1 attempt (`feature/ap-029-pilot00-service-release` at
   `60f4649ed89e195c770558b928ba464de9d1c0e0`). Resume keeps contract revision and
@@ -70,11 +70,11 @@ allowed Git/worktree tools. Cursor must not fake `FINAL_GIT` or disable hooks to
 
 | Phase | Branch / tree | Profile behavior |
 | --- | --- | --- |
-| `main` and foreign worktrees | unchanged until merge | `balanced` v2 effective |
-| W1 | isolated `feature/cursor-agent-system-v3` | installs **complete** `cursor-first` v1 candidate in tracked allowlisted owners for qualification; does **not** activate for other running packages |
+| Historical pre-merge `main` / foreign worktrees | unchanged until merge | `balanced` v2 at qualification time; existing attempts retain their started profile |
+| W1 qualification | isolated `feature/cursor-agent-system-v3` | historical W0 target was v1; final qualified candidate is **complete** `cursor-first` v3 in tracked allowlisted owners; no retrofit of running packages |
 | W2 | same branch | may extend candidate (context manifest, guards, docs); after W2 a **final candidate commit/tree** must be frozen before W3 qualification |
 | W3 canary / tests / Codex audit / PR / CI | **same final frozen commit/tree/diff** | no further tracked candidate changes between freeze and audit |
-| Post-merge | `main` after squash-merge + documented transition | `cursor-first` v1 effective for **new** packages/checkpoints only |
+| Post-merge | `main` after squash-merge + documented transition | `cursor-first` v3 effective for **new** packages/checkpoints only |
 
 Rules:
 
@@ -99,14 +99,16 @@ invalidation target.
 
 ## Owner trace and configuration hardcodes
 
-Normative configuration owner: `.cursor/agent-system.json` (`profile: balanced`, `version: 2`).
+Normative configuration owner: `.cursor/agent-system.json` (current `profile: cursor-first`,
+`version: 3`). The following owner trace is the historical W0 snapshot (`balanced` v2), not
+the current role map or activation state.
 
 Additional hardcoded or mirrored owners that W1 must reconcile to the configuration owner (not
 changed in W0):
 
 | Area | Owner path(s) | Notes |
 | --- | --- | --- |
-| Role frontmatter | `.cursor/agents/<role>.md` | Six GPT-bound roles today; two Composer roles |
+| Role frontmatter | `.cursor/agents/<role>.md` | Historical W0 snapshot: six GPT-bound roles, two Composer roles; current values come only from JSON |
 | Subagent / Task hook | `.cursor/hooks.json`, `.cursor/hooks/subagent-start.ps1` | `preToolUse` matcher `^Task$` = supported pre-execution cost-control gate; `subagentStart` = lifecycle audit only; model routing is cost control, not a general security boundary (Git/file/secret/permission guards stay separate) |
 | Main launcher | `.cursor/tools/invoke-cursor-agent.ps1` | Child `WorkingDirectory` = validated target; `-Interactive` / `-ResumeSession` passthrough; `composer-2.5` default |
 | Profile apply | `.cursor/skills/apply-agent-profile/SKILL.md` | Must mirror JSON changes |
@@ -120,14 +122,14 @@ W0 records these owners only. W1 edits them per allowlist below.
 
 ## Target role matrix and host boundaries
 
-Planned **active** mapping after safe activation (not effective until post-W3 transition):
+Active mapping for new packages after the confirmed PR #60 integration and safe transition:
 
-| Responsibility | Host | Planned Cursor model / path | Boundary |
+| Responsibility | Host | Configured Cursor model / path | Boundary |
 | --- | --- | --- | --- |
 | Package coordinator, repo-explorer, implementer, git-steward | Cursor native | `composer-2.5[]` (Standard; `fast=false` equivalent) | One writer per worktree |
 | checkpoint-reviewer, plan-challenger, external-review-triager | Cursor native subagent | Ladder attempt 1 `grok-4.7-high` → `cursor-grok-4.6-xhigh` → `cursor-grok-4.6-high` → `gpt-5.6-terra-high` after explicit prior `UNAVAILABLE` only | Independent read-only context; no self-approval; evidenced ladder only |
 | roadmap-architect (in-package planning/final audit) | Cursor native | Same ladder shape ending with `gpt-5.6-sol-high` after explicit prior `UNAVAILABLE` only | Fresh final audit context for normal packages |
-| Critical final audit / exhausted escalation | External Codex/ChatGPT-authenticated orchestrator | **Not a Cursor model ID** | Agent-ID, separate context, contract, full diff, primary evidence; Cursor GPT only after ladder exhaustion, then external Codex if Cursor GPT unavailable |
+| Critical final audit / exhausted escalation | External Codex/ChatGPT-authenticated orchestrator | **Not a Cursor model ID** | Critical final audit routes directly externally; checkpoint escalation follows its configured ladder before external handoff; bound identity, separate context, contract, diff and primary evidence remain required |
 | User/orchestrator product decisions | Human + external orchestrator | N/A | No second live detail controller of the same Cursor checkpoint |
 
 External orchestrator responsibilities: goal clarification, architecture decisions, package release,
@@ -290,7 +292,7 @@ new contract fields.
 
 **Gate:** Targeted docs tests + native Grok/Composer smoke + synthetic hook tests.
 
-**Candidate install:** W1 produces the complete `cursor-first` v1 candidate on this branch (including
+**Historical W0 candidate-install plan (superseded by final v3 qualification):** W1 produces the complete `cursor-first` v1 candidate on this branch (including
 `.cursor/agent-system.json` and bound owners). This is qualification material, not activation on
 `main` or for foreign packages.
 
@@ -473,9 +475,9 @@ W0 authorizes only the two tracked doc paths.
 
 | Phase | `main` / foreign worktrees | AGENT-COST branch candidate | Document status |
 | --- | --- | --- | --- |
-| W0–W2 | `balanced` v2 | W1+ installs/extends `cursor-first` v1 candidate (qualification only) | PLANNED / NOT ACTIVE |
-| W3 pre-merge | `balanced` v2 | frozen final candidate under test/audit | PLANNED until merge |
-| Post-squash-merge + documented transition | `cursor-first` v1 | merged into `main` | ACTIVE for **new** packages only |
+| Historical W0–W2 | historical `balanced` v2 | original v1 target evolved into qualified `cursor-first` v3 (qualification only) | historical PLANNED / NOT ACTIVE |
+| Historical W3 pre-merge | historical `balanced` v2 | frozen v3 candidate under test/audit | historical PLANNED until merge |
+| Post-squash-merge + documented transition | `cursor-first` v3 on `main`; foreign attempts keep their started profile | PR #60 integrated | ACTIVE for **new** packages only |
 
 In-flight PILOT00 B1 and any running checkpoint remain on their started profile version and evidence
 interpretation. Old PASS evidence stays historically correct.

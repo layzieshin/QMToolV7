@@ -1360,3 +1360,9 @@ def test_agent_cost_integrated_activation_preserves_safe_boundary() -> None:
     assert "runtime remains `IDLE`" in autonomous
     assert "Serving identity, cost/cache savings and measured 50:50 allocation remain `UNKNOWN`" in cost_profile
     assert "do not retrofit PILOT00" in cost_profile
+    for line in cost_profile.splitlines():
+        if line.startswith("| Post-merge |") or line.startswith("| Post-squash-merge"):
+            assert "`cursor-first` v3" in line
+            assert "`cursor-first` v1" not in line
+    assert "Active mapping for new packages after the confirmed PR #60 integration" in cost_profile
+    assert "not effective until post-W3 transition" not in cost_profile
