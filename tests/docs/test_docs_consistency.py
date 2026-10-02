@@ -1316,6 +1316,11 @@ def test_agent_cost_profile_w2_naming_and_historical_status() -> None:
     assert "gh pr review" in autonomous
     assert "UNKNOWN" in verify_skill
     assert "Never invent zero cost" in verify_skill
+    assert "W3-FINAL-REWORK-001" in cost_profile
+    assert "review_route_bindings" in cost_profile
+    assert "RECOVERY_DIAGNOSIS" in cost_profile
+    assert "bindingRecord" in autonomous
+    assert "four operational" in autonomous.lower() or "Four operational" in autonomous
 
 
 def test_agent_cost_docs_reject_false_cost_and_stale_reuse_claims() -> None:

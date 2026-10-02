@@ -154,7 +154,13 @@ global_relaxation: false
 <!-- PILOT00_ORCHESTRATOR_REVIEW_END -->
 
 AGENT-COST-01 critical final audit and exhausted escalation use
-`EXTERNAL_CODEX_BOUND_REVIEW` from `.cursor/agent-system.json` `external_codex_bound_review`.
+`EXTERNAL_CODEX_BOUND_REVIEW` from `.cursor/agent-system.json`
+`external_codex_bound_review.review_route_bindings` for the exact package/checkpoint/review_need
+route. PRE computes `bindingRecord`; the coordinator anchors it once in
+`workflow-state.external_review.bindingRecord` via the existing metadata writer path; BOUND and
+recovery receipt validation reuse that anchored record plus `manifest-validate` (exit 0 and
+valid=true). Recovery diagnosis emits `RECOVERY_DIAGNOSIS_READY` / `RECOVERY_PROPOSAL_BOUND` only —
+never review `HANDOFF_READY`, `CONTINUE`, or gate/external PASS.
 This is not `INDEPENDENT_ORCHESTRATOR_REVIEW`, not a Cursor model ID, and not D15
 `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED`. Local validators check structure, staleness, and
 hash binding only; they do not authenticate external origin or serving model. Missing, stale, or

@@ -113,7 +113,9 @@ model or external Codex.
 9. Validate or regenerate the context manifest before resume/reuse with
    `scripts/checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`.
    `--allow-reuse` without the exact expected verification command(s) fails closed. Stale manifests
-   block reuse of completed green checkpoints.
+   block reuse of completed green checkpoints. External PRE computes `bindingRecord`; anchor it once
+   in `external_review.bindingRecord` before dispatch. BOUND and recovery receipt reuse the anchored
+   record plus `manifest-validate`; diagnosis receipts never grant resume, implement, commit, or review PASS.
 10. Create the `pre-review` snapshot and invoke the custom `checkpoint-reviewer` in a separate
     native Cursor Task. Pass the original plan, complete parent report, actual diff/status and
     primary evidence directly; never ask the user to relay them. Require its output contract and

@@ -92,6 +92,15 @@ public-contract, security or persistence movement requires the applicable HUMAN_
 `escalation-reviewer` local pre-handoff validation (`PRE_HANDOFF_READY`) → external Codex result →
 locally bound `HANDOFF_READY`/`HANDOFF_INVALID` when routing requires `EXTERNAL_CODEX_BOUND_REVIEW`.
 
+Four operational external routes share one registry owner
+(`external_codex_bound_review.review_route_bindings`): W1 checkpoint escalation after a complete
+UNAVAILABLE ladder; FINAL_AUDIT direct external with no ladder history; budget-FAIL recovery
+diagnosis (`RECOVERY_DIAGNOSIS` → `RECOVERY_DIAGNOSIS_READY` → `RECOVERY_PROPOSAL_BOUND` only); and
+native review that never substitutes external PASS. PRE computes `bindingRecord`; the coordinator
+anchors it once in `external_review.bindingRecord`; BOUND and recovery receipt reuse that anchored
+record plus existing `manifest-validate`. Diagnosis receipts do not grant resume, implement, commit,
+`HANDOFF_READY`, or `CONTINUE`.
+
 Resume a running package only after `context-manifest.json` validates with
 `checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`
 on a still-matching context. Repeat `--verify-command` for every expected normalized gate; missing or
@@ -210,6 +219,16 @@ Use Cursor Stop normally. The stop hook resumes only after `status=completed`; `
 continuation. The follow-up limit comes from `.cursor/agent-system.json`.
 
 ## Cursor limitations
+
+Local repair closure (2026-10-02): the complete `tests/docs` verification passed 252 tests
+with no failures, errors or skips (`build/agent-cost-01/agent-rework-direct-final-junit.xml`).
+The final routing/hook/regression source is unchanged since that run. SessionStart blocks
+Resume for actual recovery-diagnosis bindings as well as recovery receipts, while normal
+Resume remains supported. Implementer RUNNING-state and registry preflight remain mandatory.
+The cancelled chain is stopped and operational state is `IDLE`; historical counters and
+review outcomes are not reset or relabelled. Local readiness does not authorize publication
+or activation. Actual integration and a safe transition for new checkpoints are still required;
+PILOT00 and serving/cost qualification remain unchanged.
 
 - `sessionStart` injects context but cannot block startup and is unavailable to Cloud Agents.
 - Shell hooks protect only Git operations executed through Cursor's shell path; server-side branch

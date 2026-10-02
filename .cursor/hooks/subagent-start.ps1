@@ -499,7 +499,51 @@ function Get-ReviewRouteBindings {
     return $Config.external_codex_bound_review.review_route_bindings
 }
 
-function Test-ExternalReviewRouteBinding {
+function Get-RouteRegistryRequiredFields {
+    return @(
+        "package_id",
+        "checkpoint_id",
+        "review_need",
+        "base_ref",
+        "allowlist_paths",
+        "evidence_path_template",
+        "verification_commands",
+        "scope_mode"
+    )
+}
+
+function Test-RouteRegistryRecordComplete {
+    param($Record, [string]$RouteKey)
+    if ($null -eq $Record) {
+        return @{ valid = $false; reason = "partial registry record missing route $RouteKey" }
+    }
+    foreach ($field in @(Get-RouteRegistryRequiredFields)) {
+        if (-not $Record.PSObject.Properties.Name.Contains($field)) {
+            return @{ valid = $false; reason = "partial registry record missing $field on $RouteKey" }
+        }
+        if ($field -in @("allowlist_paths", "verification_commands")) { continue }
+        if (-not (Test-NonEmptyString $Record.$field)) {
+            return @{ valid = $false; reason = "partial registry record empty $field on $RouteKey" }
+        }
+    }
+    $allowlist = @($Record.allowlist_paths)
+    if ($allowlist.Count -eq 0) {
+        return @{ valid = $false; reason = "partial registry record empty allowlist_paths on $RouteKey" }
+    }
+    $commands = @($Record.verification_commands)
+    if ($commands.Count -eq 0) {
+        return @{ valid = $false; reason = "partial registry record empty verification_commands on $RouteKey" }
+    }
+    $template = $Record.evidence_path_template
+    if ($null -eq $template -or -not (Test-NonEmptyString $template.root) -or
+        -not (Test-NonEmptyString $template.contract_file) -or
+        -not (Test-NonEmptyString $template.manifest_file)) {
+        return @{ valid = $false; reason = "partial registry record incomplete evidence_path_template on $RouteKey" }
+    }
+    return @{ valid = $true }
+}
+
+function Find-ExternalReviewRouteRecord {
     param($Handoff, $Config)
     $bindings = Get-ReviewRouteBindings -Config $Config
     $packageId = [string]$Handoff.package_id
@@ -521,29 +565,49 @@ function Test-ExternalReviewRouteBinding {
     else {
         return @{ valid = $false; reason = "unknown package review route" }
     }
-    $escalation = $packageBindings.checkpoint_escalation
-    $finalAudit = $packageBindings.critical_final_audit
+    $matches = @()
+    foreach ($routeKey in @($packageBindings.PSObject.Properties.Name)) {
+        $record = $packageBindings.$routeKey
+        $complete = Test-RouteRegistryRecordComplete -Record $record -RouteKey $routeKey
+        if (-not $complete.valid) {
+            return @{ valid = $false; reason = $complete.reason }
+        }
+        if ($checkpointId -eq [string]$record.checkpoint_id -and $reviewNeed -eq [string]$record.review_need) {
+            $matches += @{ route_key = $routeKey; record = $record }
+        }
+    }
+    if ($matches.Count -eq 0) {
+        return @{ valid = $false; reason = "review_need and checkpoint_id do not match an authorized route" }
+    }
+    if ($matches.Count -gt 1) {
+        return @{ valid = $false; reason = "ambiguous review route facts" }
+    }
+    return @{
+        valid = $true
+        route_key = [string]$matches[0].route_key
+        record = $matches[0].record
+    }
+}
+
+function Test-ExternalReviewRouteBinding {
+    param($Handoff, $Config)
+    $routeMatch = Find-ExternalReviewRouteRecord -Handoff $Handoff -Config $Config
+    if (-not $routeMatch.valid) {
+        return @{ valid = $false; reason = $routeMatch.reason }
+    }
+    $routeKey = [string]$routeMatch.route_key
+    $record = $routeMatch.record
     if ($null -eq $Handoff.ladder_history) {
         $history = @()
     }
     else {
         $history = @($Handoff.ladder_history)
     }
-    $isEscalation = ($checkpointId -eq [string]$escalation.checkpoint_id -and
-        $reviewNeed -eq [string]$escalation.review_need)
-    $isFinalAudit = ($checkpointId -eq [string]$finalAudit.checkpoint_id -and
-        $reviewNeed -eq [string]$finalAudit.review_need)
-    if ($isEscalation -and $isFinalAudit) {
-        return @{ valid = $false; reason = "ambiguous review route facts" }
-    }
-    if (-not $isEscalation -and -not $isFinalAudit) {
-        return @{ valid = $false; reason = "review_need and checkpoint_id do not match an authorized route" }
-    }
-    if ($isFinalAudit) {
-        if (-not ($finalAudit.direct_external -is [bool]) -or $finalAudit.direct_external -ne $true) {
+    if ($routeKey -eq "critical_final_audit") {
+        if (-not ($record.direct_external -is [bool]) -or $record.direct_external -ne $true) {
             return @{ valid = $false; reason = "critical final audit route is not configured as direct external" }
         }
-        if (-not ($finalAudit.forbid_ladder_history -is [bool]) -or $finalAudit.forbid_ladder_history -ne $true) {
+        if (-not ($record.forbid_ladder_history -is [bool]) -or $record.forbid_ladder_history -ne $true) {
             return @{ valid = $false; reason = "critical final audit route does not strictly forbid ladder history" }
         }
         if ($history.Count -gt 0) {
@@ -551,12 +615,26 @@ function Test-ExternalReviewRouteBinding {
         }
         return @{ valid = $true; route = "critical_final_audit"; ladder_role = $null }
     }
-    if (-not ($escalation.require_complete_ladder -is [bool]) -or $escalation.require_complete_ladder -ne $true) {
+    if ($routeKey -eq "recovery_diagnosis") {
+        if ([string]$record.purpose -ne "diagnosis") {
+            return @{ valid = $false; reason = "recovery diagnosis route missing purpose=diagnosis" }
+        }
+        if ($history.Count -gt 0) {
+            return @{ valid = $false; reason = "recovery diagnosis must not include ladder history" }
+        }
+        return @{ valid = $true; route = "recovery_diagnosis"; ladder_role = $null }
+    }
+    if (-not ($record.require_complete_ladder -is [bool]) -or $record.require_complete_ladder -ne $true) {
         return @{ valid = $false; reason = "checkpoint escalation route does not strictly require a complete ladder" }
     }
-    $ladderRole = [string]$escalation.ladder_role
+    $ladderRole = [string]$record.ladder_role
     if ([string]::IsNullOrWhiteSpace($ladderRole)) {
         return @{ valid = $false; reason = "checkpoint escalation route is missing ladder_role" }
+    }
+    foreach ($entry in $history) {
+        if ([string]$entry.result_category -eq "FAIL_SUBSTANTIVE") {
+            return @{ valid = $false; reason = "substantive fail cannot be rewritten as UNAVAILABLE" }
+        }
     }
     $ladderCheck = Test-ExternalCodexLadderPrerequisite -History $Handoff.ladder_history -Role $ladderRole -Config $Config
     if (-not $ladderCheck.valid) {
@@ -571,24 +649,729 @@ function Get-ExternalReviewRoutePolicy {
     if (-not $routeCheck.valid) {
         return @{ valid = $false; reason = $routeCheck.reason }
     }
-    $contract = $Config.external_codex_bound_review
-    if ($routeCheck.route -eq "critical_final_audit") {
+    $routeMatch = Find-ExternalReviewRouteRecord -Handoff $Handoff -Config $Config
+    if (-not $routeMatch.valid) {
+        return @{ valid = $false; reason = $routeMatch.reason }
+    }
+    $record = $routeMatch.record
+    return @{
+        valid = $true
+        route = [string]$routeCheck.route
+        allowlist = @($record.allowlist_paths)
+        base_ref = [string]$record.base_ref
+        evidence_template = $record.evidence_path_template
+        scope_mode = [string]$record.scope_mode
+        verification_commands = @($record.verification_commands)
+        package_id = [string]$record.package_id
+        checkpoint_id = [string]$record.checkpoint_id
+        review_need = [string]$record.review_need
+        purpose = if ($record.PSObject.Properties.Name.Contains("purpose")) { [string]$record.purpose } else { "review" }
+    }
+}
+
+function Get-WorkflowStateFromEnv {
+    $statePath = if ($env:QMTOOL_WORKFLOW_STATE_PATH) {
+        $env:QMTOOL_WORKFLOW_STATE_PATH
+    } else {
+        Join-Path (Get-Location) ".cursor/runtime/workflow-state.json"
+    }
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+}
+
+function Invoke-ContextManifestValidate {
+    param(
+        [string]$RepoRoot,
+        [string]$ManifestRelative,
+        [string[]]$VerifyCommands,
+        [bool]$AllowReuse = $false
+    )
+    $python = Resolve-PythonExecutable
+    if (-not $python) {
+        return @{ valid = $false; reason = "manifest-validate unavailable" }
+    }
+    $snapshotScript = Join-Path $RepoRoot ".cursor/skills/execute-gated-macro/scripts/checkpoint_snapshot.py"
+    if (-not (Test-Path -LiteralPath $snapshotScript)) {
+        return @{ valid = $false; reason = "manifest-validate owner missing" }
+    }
+    $args = @(
+        $snapshotScript,
+        "manifest-validate",
+        "--root", $RepoRoot,
+        "--manifest", ($ManifestRelative -replace '\\', '/')
+    )
+    if ($AllowReuse) { $args += "--allow-reuse" }
+    foreach ($cmd in @($VerifyCommands)) {
+        if (Test-NonEmptyString $cmd) { $args += @("--verify-command", [string]$cmd) }
+    }
+    $stdout = & $python @args 2>&1 | Out-String
+    $exitCode = $LASTEXITCODE
+    if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+        try {
+            $payload = $stdout | ConvertFrom-Json
+            if ($payload.valid -ne $true) {
+                return @{
+                    valid = $false
+                    reason = "manifest-validate valid=false"
+                    payload = $payload
+                    exit_code = $exitCode
+                    stdout = $stdout
+                }
+            }
+            if ($exitCode -eq 0) {
+                return @{ valid = $true; payload = $payload }
+            }
+        }
+        catch {
+            if ($exitCode -eq 0) {
+                return @{ valid = $false; reason = "manifest-validate malformed stdout"; stdout = $stdout }
+            }
+        }
+    }
+    if ($exitCode -ne 0) {
+        return @{ valid = $false; reason = "manifest-validate exit $exitCode"; exit_code = $exitCode; stdout = $stdout }
+    }
+    if ([string]::IsNullOrWhiteSpace($stdout)) {
+        return @{ valid = $false; reason = "manifest-validate empty stdout" }
+    }
+    return @{ valid = $false; reason = "manifest-validate malformed stdout"; stdout = $stdout }
+}
+
+function Test-ManifestMetadataAgainstPolicy {
+    param(
+        [string]$RepoRoot,
+        [string]$ManifestRelative,
+        $Policy,
+        [string]$CanonicalContractPath,
+        [string]$ConfigProfilePath = ".cursor/agent-system.json"
+    )
+
+    $manifestPath = Join-Path $RepoRoot (($ManifestRelative -replace '\\', '/'))
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        return @{ valid = $false; reason = "manifest-validate valid=false"; reasons = @("manifest_missing") }
+    }
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        return @{ valid = $false; reason = "manifest-validate valid=false"; reasons = @("manifest_malformed") }
+    }
+
+    $reasons = @()
+    if ([string]$manifest.package_id -ne [string]$Policy.package_id) {
+        $reasons += "binding_mismatch:package_id"
+    }
+    if ([string]$manifest.checkpoint_id -ne [string]$Policy.checkpoint_id) {
+        $reasons += "binding_mismatch:checkpoint_id"
+    }
+    if ([string]$manifest.base_ref -ne [string]$Policy.base_ref) {
+        $reasons += "binding_mismatch:base_ref"
+    }
+
+    $manifestAllow = @($manifest.allowlist | ForEach-Object { ([string]$_).Replace('\', '/') } | Sort-Object)
+    $policyAllow = @($Policy.allowlist | ForEach-Object { ([string]$_).Replace('\', '/') } | Sort-Object)
+    if (($manifestAllow -join '|') -ne ($policyAllow -join '|')) {
+        $reasons += "binding_mismatch:allowlist"
+    }
+
+    $manifestProfile = ([string]$manifest.profile_path).Replace('\', '/')
+    if ($manifestProfile -ne $ConfigProfilePath) {
+        $reasons += "binding_mismatch:profile_path"
+    }
+    else {
+        $profilePath = Join-Path $RepoRoot ($ConfigProfilePath -replace '/', '\')
+        $liveProfileSha = Get-FileSha256 $profilePath
+        if ($null -eq $liveProfileSha) {
+            $reasons += "binding_mismatch:profile_sha256"
+        }
+        elseif ([string]$manifest.profile_sha256 -ne $liveProfileSha) {
+            $reasons += "binding_mismatch:profile_sha256"
+        }
+    }
+
+    $manifestContract = ([string]$manifest.contract_path).Replace('\', '/')
+    if ($manifestContract -ne $CanonicalContractPath) {
+        $reasons += "binding_mismatch:contract_path"
+    }
+    else {
+        $contractPath = Join-Path $RepoRoot ($CanonicalContractPath -replace '/', '\')
+        $liveContractSha = Get-FileSha256 $contractPath
+        if ($null -eq $liveContractSha) {
+            $reasons += "binding_mismatch:contract_sha256"
+        }
+        elseif ([string]$manifest.contract_sha256 -ne $liveContractSha) {
+            $reasons += "binding_mismatch:contract_sha256"
+        }
+    }
+
+    $manifestCmds = @($manifest.verification_commands | ForEach-Object { [string]$_ })
+    $policyCmds = @($Policy.verification_commands | ForEach-Object { [string]$_ })
+    if (($manifestCmds -join '|') -ne ($policyCmds -join '|')) {
+        $reasons += "binding_mismatch:verification_commands"
+    }
+
+    if ($reasons.Count -gt 0) {
         return @{
-            valid = $true
-            route = "critical_final_audit"
-            allowlist = @($contract.w3_allowlist_paths)
-            base_ref = [string]$contract.base_ref
-            evidence_template = $contract.final_audit_evidence_path_template
-            scope_mode = "committed_final_audit"
+            valid = $false
+            reason = "manifest-validate valid=false"
+            payload = @{ valid = $false; reasons = $reasons }
+        }
+    }
+    return @{ valid = $true; manifest = $manifest }
+}
+
+function New-ExternalReviewBindingRecord {
+    param($Handoff, $Config, $Policy, $Derived, [string]$CanonicalContract, [string]$CanonicalManifest)
+    $contractPath = Join-Path $Derived.target_root ($CanonicalContract -replace '/', '\')
+    $manifestPath = Join-Path $Derived.target_root ($CanonicalManifest -replace '/', '\')
+    $contractSha = Get-FileSha256 $contractPath
+    $manifestSha = Get-FileSha256 $manifestPath
+    $state = Get-WorkflowStateFromEnv
+    $record = [ordered]@{
+        package_id = [string]$Handoff.package_id
+        checkpoint_id = [string]$Handoff.checkpoint_id
+        review_need = [string]$Handoff.review_need
+        purpose = [string]$Policy.purpose
+        attempt = [string]$Handoff.evidence_attempt
+        target_root = [string]$Derived.target_root
+        branch = [string]$Derived.branch
+        base_ref = [string]$Policy.base_ref
+        reviewed_head = [string]$Derived.reviewed_head
+        contract_path = $CanonicalContract
+        contract_sha256 = $contractSha
+        manifest_path = $CanonicalManifest
+        manifest_sha256 = $manifestSha
+        diff_sha256 = [string]$Derived.diff_sha256
+        repository_state_sha256 = [string]$Derived.repository_state_sha256
+        route = [string]$Policy.route
+        profile_version = [int]$Config.version
+        verification_commands = @($Policy.verification_commands)
+        reviewer_id = [string]$Handoff.reviewer_id
+    }
+    if ($null -ne $state) {
+        if ($state.PSObject.Properties.Name.Contains("regular_rework_count")) {
+            $record.regular_rework_count = [int]$state.regular_rework_count
+        }
+        if ($state.PSObject.Properties.Name.Contains("exceptional_count")) {
+            $record.exceptional_count = [int]$state.exceptional_count
+        }
+        if ($state.PSObject.Properties.Name.Contains("final_rework_count")) {
+            $record.final_rework_count = [int]$state.final_rework_count
+        }
+    }
+    return $record
+}
+
+function Get-AuthoritativeBindingRecord {
+    param($Handoff, $Config)
+    if ($Handoff.PSObject.Properties.Name.Contains("authoritative_binding_record") -and
+        $null -ne $Handoff.authoritative_binding_record) {
+        return @{ valid = $false; reason = "payload binding record override denied" }
+    }
+    $state = Get-WorkflowStateFromEnv
+    $anchored = $null
+    if ($null -ne $state -and $null -ne $state.external_review -and
+        $state.external_review.PSObject.Properties.Name.Contains("bindingRecord") -and
+        $null -ne $state.external_review.bindingRecord) {
+        $anchored = $state.external_review.bindingRecord
+    }
+    if ($null -eq $anchored) {
+        return @{ valid = $false; reason = "missing authoritative bindingRecord" }
+    }
+    $requiredBindingFields = @(
+        "package_id", "checkpoint_id", "review_need", "purpose", "attempt",
+        "target_root", "branch", "base_ref", "reviewed_head",
+        "contract_path", "contract_sha256", "manifest_path", "manifest_sha256",
+        "diff_sha256", "repository_state_sha256", "route", "profile_version",
+        "verification_commands"
+    )
+    if ($Config.external_codex_bound_review.PSObject.Properties.Name.Contains("binding_record_required_fields")) {
+        $requiredBindingFields = @($Config.external_codex_bound_review.binding_record_required_fields)
+    }
+    foreach ($field in $requiredBindingFields) {
+        if (-not $anchored.PSObject.Properties.Name.Contains($field)) {
+            return @{ valid = $false; reason = "bindingRecord missing field $field" }
+        }
+    }
+    if ([string]$anchored.attempt -ne [string]$Handoff.evidence_attempt) {
+        return @{ valid = $false; reason = "bindingRecord attempt mismatch" }
+    }
+    if ([string]$anchored.package_id -ne [string]$Handoff.package_id -or
+        [string]$anchored.checkpoint_id -ne [string]$Handoff.checkpoint_id -or
+        [string]$anchored.review_need -ne [string]$Handoff.review_need) {
+        return @{ valid = $false; reason = "bindingRecord identity mismatch" }
+    }
+    return @{ valid = $true; record = $anchored }
+}
+
+function Get-BindingRecordPropertyNames {
+    param($Record)
+    if ($null -eq $Record) {
+        return @()
+    }
+    if ($Record -is [System.Collections.IDictionary]) {
+        return @($Record.Keys)
+    }
+    return @($Record.PSObject.Properties.Name)
+}
+
+function Test-BindingRecordHasField {
+    param($Record, [string]$Field)
+    return (Get-BindingRecordPropertyNames -Record $Record) -contains $Field
+}
+
+function Get-BindingRecordFieldValue {
+    param($Record, [string]$Field)
+    if (-not (Test-BindingRecordHasField -Record $Record -Field $Field)) {
+        return $null
+    }
+    if ($Record -is [System.Collections.IDictionary]) {
+        return $Record[$Field]
+    }
+    return $Record.$Field
+}
+
+function Test-JsonObjectHasProperty {
+    param($Object, [string]$PropertyName)
+    if ($null -eq $Object) {
+        return $false
+    }
+    if ($Object -is [System.Collections.IDictionary]) {
+        return $Object.Contains($PropertyName)
+    }
+    $names = @(Get-BindingRecordPropertyNames -Record $Object)
+    if ($names.Count -eq 0) {
+        return $false
+    }
+    return $names -contains $PropertyName
+}
+
+function Test-BindingRecordSeal {
+    param($RepoRoot, $BindingRecord)
+    $contractPath = Join-Path $RepoRoot ([string](Get-BindingRecordFieldValue -Record $BindingRecord -Field "contract_path") -replace '/', '\')
+    $manifestPath = Join-Path $RepoRoot ([string](Get-BindingRecordFieldValue -Record $BindingRecord -Field "manifest_path") -replace '/', '\')
+    $liveContract = Get-FileSha256 $contractPath
+    $liveManifest = Get-FileSha256 $manifestPath
+    if ($liveContract -ne [string](Get-BindingRecordFieldValue -Record $BindingRecord -Field "contract_sha256")) {
+        return @{ valid = $false; reason = "contract bytes changed after PRE seal" }
+    }
+    if ($liveManifest -ne [string](Get-BindingRecordFieldValue -Record $BindingRecord -Field "manifest_sha256")) {
+        return @{ valid = $false; reason = "manifest bytes changed after PRE seal" }
+    }
+    return @{ valid = $true }
+}
+
+function Test-AuthoritativeBindingRecordIdentity {
+    param($AnchoredRecord, $CurrentRecord)
+    $fields = @(
+        "package_id", "checkpoint_id", "review_need", "purpose", "attempt",
+        "target_root", "branch", "base_ref", "reviewed_head",
+        "contract_path", "contract_sha256", "manifest_path", "manifest_sha256",
+        "diff_sha256", "repository_state_sha256", "route", "profile_version",
+        "reviewer_id", "regular_rework_count", "exceptional_count", "final_rework_count",
+        "verification_commands"
+    )
+    foreach ($field in $fields) {
+        $anchoredHas = Test-BindingRecordHasField -Record $AnchoredRecord -Field $field
+        $currentHas = Test-BindingRecordHasField -Record $CurrentRecord -Field $field
+        if (-not $anchoredHas -and -not $currentHas) { continue }
+        if ($field -eq "verification_commands") {
+            $anchoredCmds = if ($anchoredHas) { @(Get-BindingRecordFieldValue -Record $AnchoredRecord -Field $field | ForEach-Object { [string]$_ }) } else { @() }
+            $currentCmds = if ($currentHas) { @(Get-BindingRecordFieldValue -Record $CurrentRecord -Field $field | ForEach-Object { [string]$_ }) } else { @() }
+            if (($anchoredCmds -join '|') -ne ($currentCmds -join '|')) {
+                return @{ valid = $false; reason = "bindingRecord identity mismatch: verification_commands" }
+            }
+            continue
+        }
+        $anchoredVal = if ($anchoredHas) { Get-BindingRecordFieldValue -Record $AnchoredRecord -Field $field } else { $null }
+        $currentVal = if ($currentHas) { Get-BindingRecordFieldValue -Record $CurrentRecord -Field $field } else { $null }
+        if ($field -eq "target_root") {
+            if (-not (Test-NormalizedPathEqual ([string]$anchoredVal) ([string]$currentVal))) {
+                return @{ valid = $false; reason = "bindingRecord identity mismatch: target_root" }
+            }
+            continue
+        }
+        if ($null -eq $anchoredVal -and $null -eq $currentVal) { continue }
+        if ([string]$anchoredVal -ne [string]$currentVal) {
+            return @{ valid = $false; reason = "bindingRecord identity mismatch: $field" }
+        }
+    }
+    return @{ valid = $true }
+}
+
+function Test-BindingRecordOverwriteDenied {
+    param($Handoff, $CurrentRecord)
+    $state = Get-WorkflowStateFromEnv
+    if ($null -eq $state -or $null -eq $state.external_review -or
+        -not $state.external_review.PSObject.Properties.Name.Contains("bindingRecord") -or
+        $null -eq $state.external_review.bindingRecord) {
+        return @{ valid = $true }
+    }
+    $existing = $state.external_review.bindingRecord
+    if ([string]$existing.attempt -ne [string]$Handoff.evidence_attempt) {
+        return @{ valid = $true }
+    }
+    $identity = Test-AuthoritativeBindingRecordIdentity -AnchoredRecord $existing -CurrentRecord $CurrentRecord
+    if ($identity.valid) {
+        return @{ valid = $true }
+    }
+    return @{ valid = $false; reason = "bindingRecord overwrite denied for attempt $([string]$Handoff.evidence_attempt)" }
+}
+
+function Test-RecoveryDiagnosisDeniedOnReviewPath {
+    param($Handoff, [string]$Mode)
+    if ($Mode -notin @("EXTERNAL_CODEX_PRE_HANDOFF", "EXTERNAL_CODEX_BOUND_REVIEW")) {
+        return @{ valid = $true }
+    }
+    if ([string]$Handoff.review_need -eq "RECOVERY_DIAGNOSIS") {
+        return @{ valid = $false; reason = "recovery diagnosis token denied on review path" }
+    }
+    if ($Handoff.PSObject.Properties.Name.Contains("handoff") -and
+        [string]$Handoff.handoff -in @("RECOVERY_DIAGNOSIS_READY", "RECOVERY_PROPOSAL_BOUND", "HANDOFF_READY")) {
+        if ([string]$Handoff.handoff -ne "HANDOFF_READY" -or $Mode -eq "EXTERNAL_CODEX_PRE_HANDOFF") {
+            if ($Mode -eq "EXTERNAL_CODEX_PRE_HANDOFF" -and [string]$Handoff.handoff -eq "HANDOFF_READY") {
+                return @{ valid = $false; reason = "pre-handoff includes completed-review field handoff" }
+            }
+            if ([string]$Handoff.handoff -in @("RECOVERY_DIAGNOSIS_READY", "RECOVERY_PROPOSAL_BOUND")) {
+                return @{ valid = $false; reason = "recovery diagnosis token denied on review path" }
+            }
+        }
+    }
+    if ($Mode -eq "EXTERNAL_CODEX_PRE_HANDOFF" -and
+        $Handoff.PSObject.Properties.Name.Contains("verdict") -and
+        [string]$Handoff.verdict -eq "PASS") {
+        return @{ valid = $false; reason = "pre-handoff includes completed-review field verdict" }
+    }
+    return @{ valid = $true }
+}
+
+function Test-PersistedCounterBinding {
+    param($Handoff, $BindingRecord, [switch]$RequireAllCounterClaims)
+    $state = Get-WorkflowStateFromEnv
+    if ($null -eq $state) {
+        if ($RequireAllCounterClaims) {
+            return @{ valid = $false; reason = "missing persisted recovery context" }
+        }
+        return @{ valid = $true }
+    }
+    foreach ($field in @("regular_rework_count", "exceptional_count", "final_rework_count")) {
+        if ($RequireAllCounterClaims) {
+            if (-not $Handoff.PSObject.Properties.Name.Contains($field) -or $null -eq $Handoff.$field) {
+                return @{ valid = $false; reason = "missing recovery counter claim $field" }
+            }
+            if ($Handoff.$field -is [string] -or $Handoff.$field -is [bool]) {
+                return @{ valid = $false; reason = "invalid recovery counter type $field" }
+            }
+            if (-not $state.PSObject.Properties.Name.Contains($field) -or $null -eq $state.$field) {
+                return @{ valid = $false; reason = "missing persisted recovery counter $field" }
+            }
+            if ($state.$field -is [string] -or $state.$field -is [bool]) {
+                return @{ valid = $false; reason = "invalid persisted recovery counter type $field" }
+            }
+        }
+        else {
+            if (-not $Handoff.PSObject.Properties.Name.Contains($field)) { continue }
+        }
+        $claimed = $Handoff.$field
+        if ($null -eq $claimed) {
+            if ($RequireAllCounterClaims) {
+                return @{ valid = $false; reason = "missing recovery counter claim $field" }
+            }
+            continue
+        }
+        $persisted = if ($state.PSObject.Properties.Name.Contains($field)) { $state.$field } else { $null }
+        if ($null -ne $persisted -and [int]$claimed -ne [int]$persisted) {
+            return @{ valid = $false; reason = "forged $field denied" }
+        }
+        if ($null -ne $BindingRecord -and $BindingRecord.PSObject.Properties.Name.Contains($field) -and
+            [int]$claimed -ne [int]$BindingRecord.$field) {
+            return @{ valid = $false; reason = "counter mismatch on bindingRecord $field" }
+        }
+    }
+    return @{ valid = $true }
+}
+
+function Test-RecoveryFailedEvidenceBinding {
+    param(
+        [string]$RepoRoot,
+        [string]$ManifestRelative,
+        [string]$EvidenceAttempt
+    )
+
+    $requiredKey = "failed_review_junit"
+    $manifestPath = Join-Path $RepoRoot (($ManifestRelative -replace '\\', '/'))
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        return @{ valid = $false; reason = "recovery failed evidence manifest missing" }
+    }
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        return @{ valid = $false; reason = "recovery failed evidence manifest malformed" }
+    }
+    if (-not (Test-JsonObjectHasProperty -Object $manifest -PropertyName "evidence_paths") -or
+        $null -eq $manifest.evidence_paths) {
+        return @{ valid = $false; reason = "recovery failed evidence not bound in manifest" }
+    }
+    $evidencePaths = $manifest.evidence_paths
+    if (-not (Test-JsonObjectHasProperty -Object $evidencePaths -PropertyName $requiredKey)) {
+        return @{ valid = $false; reason = "recovery failed evidence key missing: $requiredKey" }
+    }
+    $relativePath = ([string]$evidencePaths.$requiredKey).Replace('\', '/')
+    if ([string]::IsNullOrWhiteSpace($relativePath)) {
+        return @{ valid = $false; reason = "recovery failed evidence path empty: $requiredKey" }
+    }
+    $manifestDir = (Split-Path -Parent (($ManifestRelative -replace '\\', '/'))).TrimEnd('/').Replace('\', '/')
+    $expectedRelative = "$manifestDir/failed-junit.xml"
+    $normalizedRelative = ($relativePath -replace '\\', '/')
+    if ($normalizedRelative -ne $expectedRelative) {
+        return @{ valid = $false; reason = "recovery failed evidence path not canonical: $relativePath" }
+    }
+    if (-not (Test-JsonObjectHasProperty -Object $manifest -PropertyName "evidence_sha256") -or
+        $null -eq $manifest.evidence_sha256 -or
+        -not (Test-JsonObjectHasProperty -Object $manifest.evidence_sha256 -PropertyName $requiredKey)) {
+        return @{ valid = $false; reason = "recovery failed evidence hash not bound: $requiredKey" }
+    }
+    $recordedSha = [string]$manifest.evidence_sha256.$requiredKey
+    if ([string]::IsNullOrWhiteSpace($recordedSha)) {
+        return @{ valid = $false; reason = "recovery failed evidence hash missing: $requiredKey" }
+    }
+    $evidenceFile = Join-Path $RepoRoot ($relativePath -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $evidenceFile -PathType Leaf)) {
+        return @{ valid = $false; reason = "recovery failed evidence missing: $relativePath" }
+    }
+    $liveSha = Get-FileSha256 $evidenceFile
+    if ($liveSha -ne $recordedSha) {
+        return @{ valid = $false; reason = "recovery failed evidence changed: $relativePath" }
+    }
+    try {
+        [xml]$junit = Get-Content -LiteralPath $evidenceFile -Encoding UTF8
+    }
+    catch {
+        return @{ valid = $false; reason = "recovery failed evidence malformed junit: $relativePath" }
+    }
+    $failureCount = 0
+    if ($null -ne $junit.testsuites) {
+        foreach ($suite in @($junit.testsuites.testsuite)) {
+            if ($null -ne $suite.failures) {
+                $failureCount += [int]$suite.failures
+            }
+        }
+    }
+    if ($failureCount -le 0) {
+        return @{ valid = $false; reason = "recovery failed evidence is not a failed junit" }
+    }
+    return @{ valid = $true }
+}
+
+function Test-WorkflowStatePathConfigured {
+    $statePath = if ($env:QMTOOL_WORKFLOW_STATE_PATH) {
+        $env:QMTOOL_WORKFLOW_STATE_PATH
+    } else {
+        Join-Path (Get-Location) ".cursor/runtime/workflow-state.json"
+    }
+    return (Test-Path -LiteralPath $statePath -PathType Leaf)
+}
+
+function Test-PersistedReviewContext {
+    param($Handoff, $Derived)
+    $statePathConfigured = Test-WorkflowStatePathConfigured
+    $state = Get-WorkflowStateFromEnv
+    if ($null -eq $state) {
+        if ($statePathConfigured) {
+            return @{ valid = $false; reason = "missing persisted review context" }
+        }
+        return @{ valid = $true }
+    }
+    if (-not $state.PSObject.Properties.Name.Contains("status") -or
+        [string]$state.status -ne "RUNNING") {
+        if ($statePathConfigured) {
+            return @{ valid = $false; reason = "persisted review context not RUNNING" }
+        }
+        return @{ valid = $true }
+    }
+    foreach ($field in @("work_package", "checkpoint", "work_branch")) {
+        if (-not $state.PSObject.Properties.Name.Contains($field) -or
+            [string]::IsNullOrWhiteSpace([string]$state.$field)) {
+            return @{ valid = $false; reason = "missing persisted review context field $field" }
+        }
+    }
+    if ([string]$state.work_package -ne [string]$Handoff.package_id) {
+        return @{ valid = $false; reason = "persisted package_id mismatch" }
+    }
+    if ([string]$state.checkpoint -ne [string]$Handoff.checkpoint_id) {
+        return @{ valid = $false; reason = "persisted checkpoint_id mismatch" }
+    }
+    if ([string]$state.work_branch -ne [string]$Derived.branch) {
+        return @{ valid = $false; reason = "persisted branch mismatch" }
+    }
+    return @{ valid = $true }
+}
+
+function Test-RecoveryWorkspaceClaimBinding {
+    param($Handoff, $Derived)
+    if ([string]$Handoff.reviewed_head -ne $Derived.reviewed_head) {
+        return @{ valid = $false; reason = "stale head" }
+    }
+    if ([string]$Handoff.base_head -ne $Derived.base_head) {
+        return @{ valid = $false; reason = "wrong base" }
+    }
+    if ([string]$Handoff.branch -ne $Derived.branch) {
+        return @{ valid = $false; reason = "wrong branch" }
+    }
+    if (-not (Test-NormalizedPathEqual ([string]$Handoff.target_root) $Derived.target_root)) {
+        return @{ valid = $false; reason = "foreign target" }
+    }
+    if ([string]$Handoff.diff_sha256 -ne $Derived.diff_sha256) {
+        return @{ valid = $false; reason = "stale diff" }
+    }
+    if ([string]$Handoff.pre_fingerprint -ne $Derived.repository_state_sha256) {
+        return @{ valid = $false; reason = "pre fingerprint not workspace-derived" }
+    }
+    if ([string]$Handoff.post_fingerprint -ne $Derived.repository_state_sha256) {
+        return @{ valid = $false; reason = "post fingerprint not workspace-derived" }
+    }
+    return @{ valid = $true }
+}
+
+function Test-PersistedRecoveryContext {
+    param($Handoff, [switch]$RequirePersistedState)
+    $state = Get-WorkflowStateFromEnv
+    if ($null -eq $state) {
+        if ($RequirePersistedState) {
+            return @{ valid = $false; reason = "missing persisted recovery context" }
+        }
+        return @{ valid = $true }
+    }
+    foreach ($field in @("work_package", "checkpoint", "work_branch")) {
+        if (-not $state.PSObject.Properties.Name.Contains($field) -or
+            [string]::IsNullOrWhiteSpace([string]$state.$field)) {
+            return @{ valid = $false; reason = "missing persisted recovery context field $field" }
+        }
+    }
+    if ([string]$state.work_package -ne [string]$Handoff.package_id) {
+        return @{ valid = $false; reason = "persisted package_id mismatch" }
+    }
+    if ([string]$state.checkpoint -ne [string]$Handoff.checkpoint_id) {
+        return @{ valid = $false; reason = "persisted checkpoint_id mismatch" }
+    }
+    if ([string]$state.work_branch -ne [string]$Handoff.branch) {
+        return @{ valid = $false; reason = "persisted branch mismatch" }
+    }
+    foreach ($field in @("regular_rework_count", "exceptional_count", "final_rework_count")) {
+        if (-not $Handoff.PSObject.Properties.Name.Contains($field) -or $null -eq $Handoff.$field) {
+            return @{ valid = $false; reason = "missing recovery counter claim $field" }
+        }
+        if ($Handoff.$field -is [string] -or $Handoff.$field -is [bool]) {
+            return @{ valid = $false; reason = "invalid recovery counter type $field" }
+        }
+        if (-not $state.PSObject.Properties.Name.Contains($field) -or $null -eq $state.$field) {
+            return @{ valid = $false; reason = "missing persisted recovery counter $field" }
+        }
+        if ($state.$field -is [string] -or $state.$field -is [bool]) {
+            return @{ valid = $false; reason = "invalid persisted recovery counter type $field" }
+        }
+        if ([int]$Handoff.$field -ne [int]$state.$field) {
+            return @{ valid = $false; reason = "persisted counter mismatch $field" }
+        }
+    }
+    return @{ valid = $true }
+}
+
+function Find-RegistryRecordByCheckpoint {
+    param($Config, [string]$PackageId, [string]$CheckpointId)
+    $bindings = Get-ReviewRouteBindings -Config $Config
+    if ($null -eq $bindings) {
+        return @{ valid = $false; reason = "unknown package review route" }
+    }
+    $packageBindings = $null
+    if ($bindings -is [hashtable]) {
+        if (-not $bindings.ContainsKey($PackageId)) {
+            return @{ valid = $false; reason = "unknown package review route" }
+        }
+        $packageBindings = $bindings[$PackageId]
+    }
+    elseif ($bindings.PSObject.Properties.Name -contains $PackageId) {
+        $packageBindings = $bindings.$PackageId
+    }
+    else {
+        return @{ valid = $false; reason = "unknown package review route" }
+    }
+    $matches = @()
+    foreach ($routeKey in @($packageBindings.PSObject.Properties.Name)) {
+        $record = $packageBindings.$routeKey
+        $complete = Test-RouteRegistryRecordComplete -Record $record -RouteKey $routeKey
+        if (-not $complete.valid) {
+            return @{ valid = $false; reason = $complete.reason }
+        }
+        if ($CheckpointId -eq [string]$record.checkpoint_id) {
+            $matches += @{ route_key = $routeKey; record = $record }
+        }
+    }
+    if ($matches.Count -eq 0) {
+        return @{ valid = $false; reason = "no exact registry record for checkpoint" }
+    }
+    return @{ valid = $true; matches = $matches }
+}
+
+function Invoke-ExternalCodexRoutePreflight {
+    param(
+        $Config,
+        [string]$PackageId,
+        [string]$CheckpointId,
+        [string]$ReviewNeed,
+        [bool]$CheckpointOnly = $false
+    )
+    if ($CheckpointOnly) {
+        $checkpointMatch = Find-RegistryRecordByCheckpoint -Config $Config -PackageId $PackageId -CheckpointId $CheckpointId
+        if (-not $checkpointMatch.valid) {
+            return @{
+                permission = "deny"
+                validation_mode = "EXTERNAL_CODEX_ROUTE_PREFLIGHT"
+                handoff = "HANDOFF_INVALID"
+                status = "BLOCKED_HUMAN"
+                reason = $checkpointMatch.reason
+            }
+        }
+        return @{
+            permission = "allow"
+            validation_mode = "EXTERNAL_CODEX_ROUTE_PREFLIGHT"
+            handoff = "ROUTE_PREFLIGHT_READY"
+            status = "READY"
+            reason = "exact registry checkpoint binding present"
+            route_key = [string]$checkpointMatch.matches[0].route_key
+        }
+    }
+    $handoff = [pscustomobject]@{
+        package_id = $PackageId
+        checkpoint_id = $CheckpointId
+        review_need = $ReviewNeed
+        ladder_history = @()
+    }
+    $routeMatch = Find-ExternalReviewRouteRecord -Handoff $handoff -Config $Config
+    if (-not $routeMatch.valid) {
+        return @{
+            permission = "deny"
+            validation_mode = "EXTERNAL_CODEX_ROUTE_PREFLIGHT"
+            handoff = "HANDOFF_INVALID"
+            status = "BLOCKED_HUMAN"
+            reason = $routeMatch.reason
         }
     }
     return @{
-        valid = $true
-        route = "checkpoint_escalation"
-        allowlist = @($contract.w1_allowlist_paths)
-        base_ref = [string]$contract.base_ref
-        evidence_template = $contract.evidence_path_template
-        scope_mode = "dirty"
+        permission = "allow"
+        validation_mode = "EXTERNAL_CODEX_ROUTE_PREFLIGHT"
+        handoff = "ROUTE_PREFLIGHT_READY"
+        status = "READY"
+        reason = "exact registry route binding present"
+        route_key = [string]$routeMatch.route_key
     }
 }
 
@@ -1053,6 +1836,8 @@ function Invoke-ExternalCodexWorkspaceValidation {
     }
 
     if ($null -eq $Handoff) { return Invalid("missing handoff") }
+    $recoveryDenied = Test-RecoveryDiagnosisDeniedOnReviewPath -Handoff $Handoff -Mode $Mode
+    if (-not $recoveryDenied.valid) { return Invalid($recoveryDenied.reason) }
     $foreignOverride = Test-HandoffForeignOverrideDenied -Handoff $Handoff
     if (-not $foreignOverride.valid) { return Invalid($foreignOverride.reason) }
     foreach ($field in $requiredFields) {
@@ -1080,7 +1865,6 @@ function Invoke-ExternalCodexWorkspaceValidation {
     if (-not (Test-StrictBooleanField $Handoff "mutation_detected")) {
         return Invalid("mutation_detected must be strict boolean")
     }
-    if ($Handoff.package_id -ne "AGENT-COST-01") { return Invalid("wrong package") }
     if (-not $Handoff.separate_context -or -not $Handoff.read_only) {
         return Invalid("not separate read-only")
     }
@@ -1140,6 +1924,9 @@ function Invoke-ExternalCodexWorkspaceValidation {
         return Invalid("pending parent capture cannot prove immutability")
     }
 
+    $persistedReview = Test-PersistedReviewContext -Handoff $Handoff -Derived $derived
+    if (-not $persistedReview.valid) { return Invalid($persistedReview.reason) }
+
     $canonical = Get-CanonicalEvidencePaths -EvidenceAttempt ([string]$Handoff.evidence_attempt) -Config $Config -Template $policy.evidence_template
     if ($canonical.valid -ne $true) {
         return Invalid([string]$canonical.reason)
@@ -1172,6 +1959,48 @@ function Invoke-ExternalCodexWorkspaceValidation {
         }
     }
 
+    $metadataCheck = Test-ManifestMetadataAgainstPolicy `
+        -RepoRoot $repoRoot `
+        -ManifestRelative $canonical.manifest_path `
+        -Policy $policy `
+        -CanonicalContractPath $canonical.contract_path
+    if (-not $metadataCheck.valid) {
+        return Invalid([string]$metadataCheck.reason)
+    }
+
+    $manifestValidate = Invoke-ContextManifestValidate `
+        -RepoRoot $repoRoot `
+        -ManifestRelative $canonical.manifest_path `
+        -VerifyCommands @($policy.verification_commands)
+    if (-not $manifestValidate.valid) {
+        return Invalid([string]$manifestValidate.reason)
+    }
+
+    $bindingRecord = New-ExternalReviewBindingRecord `
+        -Handoff $Handoff `
+        -Config $Config `
+        -Policy $policy `
+        -Derived $derived `
+        -CanonicalContract $canonical.contract_path `
+        -CanonicalManifest $canonical.manifest_path
+
+    if ($Mode -eq "EXTERNAL_CODEX_BOUND_REVIEW") {
+        $anchored = Get-AuthoritativeBindingRecord -Handoff $Handoff -Config $Config
+        if (-not $anchored.valid) { return Invalid($anchored.reason) }
+        $identity = Test-AuthoritativeBindingRecordIdentity -AnchoredRecord $anchored.record -CurrentRecord $bindingRecord
+        if (-not $identity.valid) { return Invalid($identity.reason) }
+        $seal = Test-BindingRecordSeal -RepoRoot $repoRoot -BindingRecord $anchored.record
+        if (-not $seal.valid) { return Invalid($seal.reason) }
+        $counterCheck = Test-PersistedCounterBinding -Handoff $Handoff -BindingRecord $anchored.record
+        if (-not $counterCheck.valid) { return Invalid($counterCheck.reason) }
+    }
+    else {
+        $counterCheck = Test-PersistedCounterBinding -Handoff $Handoff -BindingRecord $bindingRecord
+        if (-not $counterCheck.valid) { return Invalid($counterCheck.reason) }
+        $overwrite = Test-BindingRecordOverwriteDenied -Handoff $Handoff -CurrentRecord $bindingRecord
+        if (-not $overwrite.valid) { return Invalid($overwrite.reason) }
+    }
+
     if ($Mode -eq "EXTERNAL_CODEX_PRE_HANDOFF") {
         return @{
             permission = "allow"
@@ -1182,6 +2011,7 @@ function Invoke-ExternalCodexWorkspaceValidation {
             authenticates_origin = $false
             authenticates_serving_model = $false
             derived = $derived
+            bindingRecord = $bindingRecord
         }
     }
 
@@ -1194,6 +2024,136 @@ function Invoke-ExternalCodexWorkspaceValidation {
         authenticates_origin = $false
         authenticates_serving_model = $false
         derived = $derived
+    }
+}
+
+function Invoke-ExternalCodexRecoveryValidation {
+    param($Handoff, $Config, [string]$Mode)
+    $contract = $Config.external_codex_bound_review
+
+    function InvalidRecovery([string]$Reason) {
+        return @{
+            permission = "deny"
+            validation_mode = $Mode
+            handoff = "HANDOFF_INVALID"
+            status = "BLOCKED_HUMAN"
+            reason = $Reason
+            authenticates_origin = $false
+            authenticates_serving_model = $false
+        }
+    }
+
+    if ($null -eq $Handoff) { return InvalidRecovery("missing handoff") }
+    if ([string]$Handoff.review_need -ne "RECOVERY_DIAGNOSIS") {
+        return InvalidRecovery("wrong review_need for recovery validation")
+    }
+    if ($Handoff.PSObject.Properties.Name.Contains("verdict") -and
+        [string]$Handoff.verdict -in @("PASS", "FAIL")) {
+        return InvalidRecovery("recovery diagnosis cannot grant review verdict")
+    }
+    if ($Handoff.PSObject.Properties.Name.Contains("handoff") -and
+        [string]$Handoff.handoff -in @("HANDOFF_READY", "PRE_HANDOFF_READY", "CONTINUE")) {
+        return InvalidRecovery("recovery diagnosis cannot grant review handoff token")
+    }
+    $persistedContext = Test-PersistedRecoveryContext -Handoff $Handoff -RequirePersistedState
+    if (-not $persistedContext.valid) { return InvalidRecovery($persistedContext.reason) }
+    $counterCheck = Test-PersistedCounterBinding -Handoff $Handoff -BindingRecord $null -RequireAllCounterClaims
+    if (-not $counterCheck.valid) { return InvalidRecovery($counterCheck.reason) }
+
+    $routeCheck = Test-ExternalReviewRouteBinding -Handoff $Handoff -Config $Config
+    if (-not $routeCheck.valid) { return InvalidRecovery($routeCheck.reason) }
+    $policy = Get-ExternalReviewRoutePolicy -Handoff $Handoff -Config $Config
+    if (-not $policy.valid) { return InvalidRecovery($policy.reason) }
+
+    $derived = Get-WorkspaceDerivedBindings -Config $Config -Policy $policy
+    if ($derived.snapshot_error) { return InvalidRecovery($derived.snapshot_error) }
+    $workspaceClaims = Test-RecoveryWorkspaceClaimBinding -Handoff $Handoff -Derived $derived
+    if (-not $workspaceClaims.valid) { return InvalidRecovery($workspaceClaims.reason) }
+    $canonical = Get-CanonicalEvidencePaths -EvidenceAttempt ([string]$Handoff.evidence_attempt) -Config $Config -Template $policy.evidence_template
+    if ($canonical.valid -ne $true) { return InvalidRecovery([string]$canonical.reason) }
+
+    $repoRoot = $derived.target_root
+    $metadataCheck = Test-ManifestMetadataAgainstPolicy `
+        -RepoRoot $repoRoot `
+        -ManifestRelative $canonical.manifest_path `
+        -Policy $policy `
+        -CanonicalContractPath $canonical.contract_path
+    if (-not $metadataCheck.valid) {
+        return InvalidRecovery([string]$metadataCheck.reason)
+    }
+    $failedEvidence = Test-RecoveryFailedEvidenceBinding `
+        -RepoRoot $repoRoot `
+        -ManifestRelative $canonical.manifest_path `
+        -EvidenceAttempt ([string]$Handoff.evidence_attempt)
+    if (-not $failedEvidence.valid) {
+        return InvalidRecovery($failedEvidence.reason)
+    }
+    $manifestValidate = Invoke-ContextManifestValidate `
+        -RepoRoot $repoRoot `
+        -ManifestRelative $canonical.manifest_path `
+        -VerifyCommands @($policy.verification_commands)
+    if (-not $manifestValidate.valid) {
+        return InvalidRecovery([string]$manifestValidate.reason)
+    }
+
+    $bindingRecord = New-ExternalReviewBindingRecord `
+        -Handoff $Handoff `
+        -Config $Config `
+        -Policy $policy `
+        -Derived $derived `
+        -CanonicalContract $canonical.contract_path `
+        -CanonicalManifest $canonical.manifest_path
+
+    $recoveryPreForbidden = @("verdict", "findings", "handoff", "requested_model", "observed_model")
+    if ($contract.PSObject.Properties.Name.Contains("recovery_pre_handoff_forbidden_fields")) {
+        $recoveryPreForbidden = @($contract.recovery_pre_handoff_forbidden_fields)
+    }
+    if ($Mode -eq "EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF") {
+        foreach ($forbidden in $recoveryPreForbidden) {
+            if ($Handoff.PSObject.Properties.Name.Contains($forbidden) -and $null -ne $Handoff.$forbidden) {
+                return InvalidRecovery("recovery pre-handoff includes forbidden field $forbidden")
+            }
+        }
+        $overwrite = Test-BindingRecordOverwriteDenied -Handoff $Handoff -CurrentRecord $bindingRecord
+        if (-not $overwrite.valid) { return InvalidRecovery($overwrite.reason) }
+        return @{
+            permission = "allow"
+            validation_mode = $Mode
+            handoff = "RECOVERY_DIAGNOSIS_READY"
+            status = "READY"
+            reason = "recovery diagnosis pre-handoff binding valid"
+            bindingRecord = $bindingRecord
+        }
+    }
+
+    $recoveryReceiptForbidden = @("verdict", "handoff")
+    if ($contract.PSObject.Properties.Name.Contains("recovery_receipt_forbidden_fields")) {
+        $recoveryReceiptForbidden = @($contract.recovery_receipt_forbidden_fields)
+    }
+    foreach ($forbidden in $recoveryReceiptForbidden) {
+        if ($Handoff.PSObject.Properties.Name.Contains($forbidden) -and $null -ne $Handoff.$forbidden) {
+            return InvalidRecovery("recovery receipt includes forbidden field $forbidden")
+        }
+    }
+    if ([string]$Handoff.result_kind -ne "RECOVERY_PROPOSAL") {
+        return InvalidRecovery("recovery receipt requires result_kind=RECOVERY_PROPOSAL")
+    }
+    $anchored = Get-AuthoritativeBindingRecord -Handoff $Handoff -Config $Config
+    if (-not $anchored.valid) { return InvalidRecovery($anchored.reason) }
+    $identity = Test-AuthoritativeBindingRecordIdentity -AnchoredRecord $anchored.record -CurrentRecord $bindingRecord
+    if (-not $identity.valid) { return InvalidRecovery($identity.reason) }
+    $seal = Test-BindingRecordSeal -RepoRoot $repoRoot -BindingRecord $anchored.record
+    if (-not $seal.valid) { return InvalidRecovery($seal.reason) }
+    $counterCheck = Test-PersistedCounterBinding -Handoff $Handoff -BindingRecord $anchored.record -RequireAllCounterClaims
+    if (-not $counterCheck.valid) { return InvalidRecovery($counterCheck.reason) }
+
+    return @{
+        permission = "allow"
+        validation_mode = $Mode
+        handoff = "RECOVERY_PROPOSAL_BOUND"
+        status = "BLOCKED_HUMAN"
+        reason = "recovery proposal bound without review or commit privilege"
+        bindingRecord = $anchored.record
     }
 }
 
@@ -1788,11 +2748,29 @@ function Invoke-D15ReviewerEvidenceValidation {
 $config = Get-Config
 if ($validationMode -eq "EXTERNAL_CODEX_PRE_HANDOFF") {
     $result = Invoke-ExternalCodexWorkspaceValidation -Handoff $inputData.handoff -Config $config -Mode $validationMode
-    $result | ConvertTo-Json -Compress | Write-Output
+    $result | ConvertTo-Json -Compress -Depth 12 | Write-Output
     exit 0
 }
 if ($validationMode -eq "EXTERNAL_CODEX_BOUND_REVIEW") {
     $result = Invoke-ExternalCodexWorkspaceValidation -Handoff $inputData.handoff -Config $config -Mode $validationMode
+    $result | ConvertTo-Json -Compress -Depth 12 | Write-Output
+    exit 0
+}
+if ($validationMode -eq "EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF") {
+    $result = Invoke-ExternalCodexRecoveryValidation -Handoff $inputData.handoff -Config $config -Mode $validationMode
+    $result | ConvertTo-Json -Compress -Depth 12 | Write-Output
+    exit 0
+}
+if ($validationMode -eq "EXTERNAL_CODEX_RECOVERY_RECEIPT") {
+    $result = Invoke-ExternalCodexRecoveryValidation -Handoff $inputData.handoff -Config $config -Mode $validationMode
+    $result | ConvertTo-Json -Compress -Depth 12 | Write-Output
+    exit 0
+}
+if ($validationMode -eq "EXTERNAL_CODEX_ROUTE_PREFLIGHT") {
+    $pkg = if ($inputData.PSObject.Properties.Name.Contains("package_id")) { [string]$inputData.package_id } else { "" }
+    $cp = if ($inputData.PSObject.Properties.Name.Contains("checkpoint_id")) { [string]$inputData.checkpoint_id } else { "" }
+    $need = if ($inputData.PSObject.Properties.Name.Contains("review_need")) { [string]$inputData.review_need } else { "" }
+    $result = Invoke-ExternalCodexRoutePreflight -Config $config -PackageId $pkg -CheckpointId $cp -ReviewNeed $need
     $result | ConvertTo-Json -Compress | Write-Output
     exit 0
 }
@@ -1898,6 +2876,47 @@ if ($task -match '\[ROLE[\s\t]+:' -or $task -match '\[ROLE:[\s\t]+') {
         user_message = "Malformed or misplaced [ROLE:...] marker."
     } | ConvertTo-Json -Compress | Write-Output
     exit 2
+}
+
+$declaredSubagentType = ""
+if ($inputData.PSObject.Properties.Name.Contains("subagent_type")) {
+    $declaredSubagentType = [string]$inputData.subagent_type
+}
+$hostImplementerWithoutMarker = (
+    $isPreToolUseEvent -and
+    -not $validRoleMatch -and
+    $declaredSubagentType -eq "implementer"
+)
+if (($validRoleMatch -and $matchedRole -eq "implementer" -or $hostImplementerWithoutMarker) -and
+    $isPreToolUseEvent -and [int]$config.version -ge 3) {
+    $workflowState = Get-WorkflowStateFromEnv
+    if ($null -eq $workflowState -or [string]$workflowState.status -ne "RUNNING") {
+        @{
+            permission = "deny"
+            user_message = "Task blocked by EXTERNAL_CODEX_ROUTE_PREFLIGHT: missing RUNNING workflow state for implementer dispatch"
+        } | ConvertTo-Json -Compress | Write-Output
+        exit 2
+    }
+    $preflight = Invoke-ExternalCodexRoutePreflight `
+        -Config $config `
+        -PackageId ([string]$workflowState.work_package) `
+        -CheckpointId ([string]$workflowState.checkpoint) `
+        -ReviewNeed "" `
+        -CheckpointOnly $true
+    if ($preflight.permission -eq "deny") {
+        @{
+            permission = "deny"
+            user_message = "Task blocked by EXTERNAL_CODEX_ROUTE_PREFLIGHT: $($preflight.reason)"
+        } | ConvertTo-Json -Compress | Write-Output
+        exit 2
+    }
+    if ($hostImplementerWithoutMarker) {
+        @{
+            permission = "deny"
+            user_message = "Task blocked by EXTERNAL_CODEX_ROUTE_PREFLIGHT: implementer requires authoritative [ROLE:implementer] marker"
+        } | ConvertTo-Json -Compress | Write-Output
+        exit 2
+    }
 }
 
 if (-not $validRoleMatch) {

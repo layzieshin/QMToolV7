@@ -1843,3 +1843,7 @@ def test_checkpoint_protocol_requires_context_manifest_lifecycle() -> None:
     assert "--verify-command" in autonomous_doc
     assert "PRE_HANDOFF_READY" in work_package_skill
     assert "HANDOFF_READY" in work_package_skill
+    assert "review_route_bindings" in protocol
+    assert "bindingRecord" in protocol
+    assert "RECOVERY_DIAGNOSIS" in protocol
+    assert "manifest-validate" in protocol

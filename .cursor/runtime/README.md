@@ -27,7 +27,8 @@ Required fields:
 - `escalation_used`, `human_gate`, `last_green_commit`, `next_action`, `updated_at`
 - `work_package_path`, `execution_journal_path`, `final_report_path`
 - `external_review.status`, `external_review.round`, `external_review.reviewed_head`,
-  `external_review.blocking_findings`, `external_review.last_checked_at`
+  `external_review.blocking_findings`, `external_review.last_checked_at`,
+  `external_review.bindingRecord`, `external_review.recovery_proposal_bound`
 - `gates.full_regression_pass`, `gates.final_audit_pass`, `gates.ci_pass`
 
 `updated_at` uses UTC ISO 8601. Set `human_gate=true` with `status=BLOCKED_HUMAN`. A manual Cursor
@@ -56,6 +57,17 @@ come only from `.cursor/agent-system.json`.
 
 Keep requirement sources, risk matrices, contract bodies and review comments in the owning
 AP/evidence documents, not runtime JSON. This file remains resume/gate state only.
+
+## Coordinator operational sequencing (registry + hooks)
+
+Install the complete verified `review_route_bindings` registry in `.cursor/agent-system.json`
+before activating a stricter hook version that enforces `EXTERNAL_CODEX_ROUTE_PREFLIGHT` on Task
+ingress. If migration is interrupted, preserve the source tree and perform only explicit narrow
+config recovery on the registry owner; never switch hooks off to bypass validation. PRE computes
+`bindingRecord`; the coordinator anchors it once in `external_review.bindingRecord` through the
+existing metadata writer path (journal → full state → separate readback). BOUND and recovery receipt
+validation reuse the anchored state record plus existing `manifest-validate`; they do not accept
+payload seal replacement or grant review PASS/CONTINUE/commit privilege.
 
 ## PILOT00 review substitute
 

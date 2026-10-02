@@ -14,7 +14,10 @@ Accept only tasks beginning with `[ROLE:escalation-reviewer]`.
 
 - Run only after the configured normal rework budget in `.cursor/agent-system.json` is exhausted.
 - Validate `EXTERNAL_CODEX_BOUND_REVIEW` handoff structure, staleness, and hash binding against
-  `.cursor/agent-system.json` `external_codex_bound_review`.
+  `.cursor/agent-system.json` `external_codex_bound_review.review_route_bindings` for the exact
+  package/checkpoint/review_need route.
+- BOUND validation requires the coordinator-anchored `external_review.bindingRecord` from PRE plus
+  live `manifest-validate`; recovery-diagnosis tokens are denied on this review path.
 - Return exactly one of:
   - `HANDOFF_READY` — external Codex may proceed with bound package/checkpoint/contract/diff/evidence.
   - `HANDOFF_INVALID` — list missing, stale, or conflicting handoff fields; workflow becomes

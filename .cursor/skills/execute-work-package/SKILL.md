@@ -48,6 +48,9 @@ same checkpoint.
    normalized gate; missing or wrong commands fail closed. The manifest is an index only—resume
    semantics stay unchanged. Stale or forged manifests block reuse; do not repeat
    completed steps, re-ask authorization, or re-reserve reviews when the manifest still matches.
+   External PRE computes `bindingRecord`; anchor it once in `external_review.bindingRecord` before
+   external dispatch. BOUND and recovery receipt reuse the anchored record plus `manifest-validate`;
+   diagnosis receipts never grant resume, implement, commit, or review PASS.
 4. Otherwise initialize the small state contract from `.cursor/runtime/README.md`:
    `status=RUNNING`, `phase=PLAN`, rework counters zero, gates false, package/branch/document paths,
    and a concrete `next_action`.

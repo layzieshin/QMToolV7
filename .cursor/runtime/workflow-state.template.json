@@ -20,7 +20,9 @@
     "round": 0,
     "reviewed_head": null,
     "blocking_findings": [],
-    "last_checked_at": null
+    "last_checked_at": null,
+    "bindingRecord": null,
+    "recovery_proposal_bound": false
   },
   "gates": {
     "full_regression_pass": false,

@@ -575,6 +575,20 @@ external audit, publication, and activation remain **OPEN**.
 Qualification remains **before** merge; activation remains **after** squash-merge plus documented
 safe transition for **new** checkpoints only.
 
+#### W3-FINAL-REWORK-001 — registry authority, binding record, four routes
+
+| Field | Value |
+| --- | --- |
+| Authorization | 2026-10-02 coordinator commission after external reviewer `01a0fbe9` findings F1–F3 |
+| Counters preserved | `regular_rework_count=2`, `exceptional_count=6`, `final_rework_count=1/2` — **not reset** |
+| Sole route authority | `external_codex_bound_review.review_route_bindings` — self-contained records only; partial records **deny** |
+| Task ingress | canonical `[ROLE:implementer]` from decoded prompt **before** `EXTERNAL_CODEX_ROUTE_PREFLIGHT`; host alias without top-level role cannot bypass |
+| PRE / BOUND | PRE computes `bindingRecord`; coordinator anchors once in `external_review.bindingRecord`; BOUND + recovery receipt reuse anchored record + `manifest-validate` |
+| Four operational routes | (1) native review; (2) W1 escalation after full UNAVAILABLE ladder; (3) FINAL_AUDIT direct external — no ladder; (4) `RECOVERY_DIAGNOSIS` budget-FAIL diagnosis only |
+| Diagnosis boundary | `RECOVERY_DIAGNOSIS_READY` / `RECOVERY_PROPOSAL_BOUND` only — never `HANDOFF_READY`, `CONTINUE`, review PASS, or commit/resume privilege; use existing `BLOCKED_HUMAN` |
+| Focused gate | `w3-final-rework-001-focused` → `build/agent-cost-01/w3-final-rework-001/focused-junit.xml` |
+| Repair allowlist | exact **15** owners only (see frozen contract) |
+
 #### W3 FINAL_AUDIT allowlist (exact **35** paths)
 
 Normative owner: `.cursor/agent-system.json` → `external_codex_bound_review.w3_allowlist_paths`
@@ -680,3 +694,24 @@ Normative owner: `.cursor/agent-system.json` → `external_codex_bound_review.w3
 | Docs-consistency gate (2026-10-02) | `test_agent_cost_profile_w2_naming_and_historical_status` (`w3p01-exceptional-005-docs`; JUnit `docs-consistency-junit.xml`) |
 | Closure status | transparent reuse — source-identical unaffected E004 **143/2**, E005 two-node **2 pass**, final docs node separate; **never** single 145 PASS; complete `tests/docs` gate on final commit independently required |
 | Qualification vs activation | unchanged — qualification **before** merge; activation **after** safe transition for **new** checkpoints only |
+
+#### Local repair closure — 2026-10-02
+
+The human-authorized direct repair supersedes the historical RED results above for the
+current source, without rewriting their evidence or declaring an independent review PASS.
+The complete `tests/docs` run passed **252 tests, 0 failures, 0 errors, 0 skipped**
+(`build/agent-cost-01/agent-rework-direct-final-junit.xml`, 1505.134 seconds).
+The final routing, hook and regression source is unchanged since that run; closure-document
+edits are checked separately by the focused local closeout run.
+
+SessionStart now suppresses Resume instructions for both a bound recovery receipt and an
+actual `RECOVERY_DIAGNOSIS` binding record, before and after diagnosis. Normal non-diagnosis
+Resume remains available. The implementer RUNNING-state and external registry preflight
+remain enforced; no persistent authorization guard was removed.
+
+The cancelled agent/review chain remains stopped, operational state is `IDLE`, and counters
+and historical review results are preserved. This is local repair readiness only: no push,
+PR, remote merge, CI PASS, profile activation, or project-wide `DONE` is claimed.
+Activation remains conditional on later actual integration and a safe transition for new
+checkpoints; PILOT00 is unchanged. Serving identity, measured cost and achieved 50:50
+allocation remain `UNKNOWN` without host-attested runtime evidence.
