@@ -12,7 +12,7 @@ const MODULE_ROUTE_NAMES: Record<string, string> = {
 };
 
 const MODULE_LABEL_KEYS: Record<string, string> = {
-  documents: "modules.documents.label",
+  documents: "releasedDocuments.controlLabel",
 };
 
 const { t } = useI18n();
@@ -35,7 +35,7 @@ const moduleItems = computed(() =>
       return {
         routeName,
         label: t(labelKey),
-        active: route.name === routeName,
+        active: route.name !== "released-documents" && (route.name === routeName || (module.id === "documents" && route.path.startsWith("/documents/"))),
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
@@ -71,14 +71,17 @@ const showAnyNavigation = computed(
       :aria-label="t('modules.navigationLabel')"
     >
       <v-list density="compact" nav>
+        <v-list-item :to="{ name: 'home' }" exact :active="route.name === 'home'" :title="t('dashboard.title')" data-testid="navigation-home" />
         <v-list-item
           v-for="item in moduleItems"
           :key="item.routeName"
           :to="{ name: item.routeName }"
+          exact
           :active="item.active"
           :title="item.label"
           data-testid="module-navigation-item"
         />
+        <v-list-item v-if="moduleItems.some(item => item.routeName === 'documents') && router.hasRoute('released-documents')" :to="{ name: 'released-documents' }" exact :active="route.name === 'released-documents'" :title="t('releasedDocuments.title')" data-testid="released-documents-navigation" />
       </v-list>
     </nav>
 

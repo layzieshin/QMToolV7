@@ -23,6 +23,8 @@ defineOptions({
   name: "DocumentViewerView",
 });
 
+const RELEASED_PDF_TYPE = "RELEASED_PDF";
+
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -48,11 +50,25 @@ const routeLoadable = computed(
   () => Boolean(documentId.value) && versionParse.value.valid,
 );
 
+const isReleasedCatalogRoute = computed(
+  () => route.query.returnTo === "released-documents",
+);
+
 const pdfArtifacts = computed(() =>
   artifacts.value.filter(
     (artifact) =>
       artifact.mime_type === "application/pdf" && artifact.is_current === true,
   ),
+);
+
+const releasedPdfArtifacts = computed(() =>
+  pdfArtifacts.value.filter(
+    (artifact) => artifact.artifact_type === RELEASED_PDF_TYPE,
+  ),
+);
+
+const routePdfArtifacts = computed(() =>
+  isReleasedCatalogRoute.value ? releasedPdfArtifacts.value : pdfArtifacts.value,
 );
 
 const queryArtifactId = computed(() => {
@@ -71,6 +87,9 @@ const previewEnabled = computed(() =>
 );
 
 const effectiveArtifactId = computed(() => {
+  if (isReleasedCatalogRoute.value) {
+    return releasedPdfArtifacts.value[0]?.artifact_id ?? null;
+  }
   const fromSelection = selectedArtifactId.value;
   if (fromSelection && pdfArtifacts.value.some((a) => a.artifact_id === fromSelection)) {
     return fromSelection;
@@ -162,11 +181,20 @@ async function loadViewerData(generation: number): Promise<void> {
       (artifact) =>
         artifact.mime_type === "application/pdf" && artifact.is_current === true,
     );
-    const queryId = queryArtifactId.value;
-    if (queryId && pdfs.some((a) => a.artifact_id === queryId)) {
-      selectedArtifactId.value = queryId;
-    } else if (pdfs.length === 1) {
-      selectedArtifactId.value = pdfs[0].artifact_id;
+    if (route.query.returnTo === "released-documents") {
+      const released = pdfs.filter(
+        (artifact) => artifact.artifact_type === RELEASED_PDF_TYPE,
+      );
+      if (released.length >= 1) {
+        selectedArtifactId.value = released[0].artifact_id;
+      }
+    } else {
+      const queryId = queryArtifactId.value;
+      if (queryId && pdfs.some((a) => a.artifact_id === queryId)) {
+        selectedArtifactId.value = queryId;
+      } else if (pdfs.length === 1) {
+        selectedArtifactId.value = pdfs[0].artifact_id;
+      }
     }
   } catch (cause) {
     if (generation !== requestGeneration.current) {
@@ -231,6 +259,10 @@ async function onConflictLoadServerState(): Promise<void> {
 }
 
 function backToDetail(): void {
+  if (route.query.returnTo === "released-documents") {
+    void router.push({ name: "released-documents" });
+    return;
+  }
   if (!version.value) {
     void router.push({ name: "documents" });
     return;
@@ -261,7 +293,7 @@ onUnmounted(() => {
   <section class="document-viewer-view" data-testid="document-viewer-view">
     <nav aria-label="breadcrumb">
       <v-btn variant="text" data-testid="document-viewer-back" @click="backToDetail">
-        {{ t("documents.viewer.backToDetail") }}
+        {{ t(route.query.returnTo === 'released-documents' ? "releasedDocuments.back" : "documents.viewer.backToDetail") }}
       </v-btn>
     </nav>
 
@@ -307,7 +339,7 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-else-if="pdfArtifacts.length === 0"
+            v-else-if="routePdfArtifacts.length === 0"
             data-testid="document-viewer-no-pdf"
           >
             {{ t("documents.viewer.noPdfArtifacts") }}
@@ -315,7 +347,7 @@ onUnmounted(() => {
 
           <template v-else>
             <div
-              v-if="pdfArtifacts.length > 1"
+              v-if="!isReleasedCatalogRoute && pdfArtifacts.length > 1"
               class="document-viewer-view__artifact-select"
             >
               <label for="artifact-select">{{ t("documents.viewer.selectArtifact") }}</label>
@@ -339,13 +371,14 @@ onUnmounted(() => {
             </div>
 
             <p
-              v-if="pdfArtifacts.length > 1 && !effectiveArtifactId"
+              v-if="!isReleasedCatalogRoute && pdfArtifacts.length > 1 && !effectiveArtifactId"
               data-testid="document-viewer-select-prompt"
             >
               {{ t("documents.viewer.selectArtifactPrompt") }}
             </p>
 
             <PdfViewer
+              workspace
               :preview-url="previewUrl"
               :loading="previewLoading"
               :error="Boolean(previewError)"
@@ -395,8 +428,13 @@ onUnmounted(() => {
 .document-viewer-view {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: .25rem;
+  height: 100%;
+  min-height: 0;
 }
+.document-viewer-view > nav { position: absolute; right: .5rem; z-index: 1; }
+.document-viewer-view__header { min-height: 36px; padding-right: 16rem; display: flex; align-items: center; gap: .75rem; }
+.document-viewer-view__header h1 { font-size: 1rem; }
 
 .document-viewer-view__header h1 {
   margin: 0;
@@ -409,9 +447,13 @@ onUnmounted(() => {
 
 .document-viewer-view__layout {
   display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: .5rem;
+  flex: 1;
+  min-height: 0;
 }
+.document-viewer-view__pdf-column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.document-viewer-view__comments-column { min-height: 0; overflow: auto; }
 
 .document-viewer-view__artifact-select {
   display: flex;
@@ -420,9 +462,15 @@ onUnmounted(() => {
   margin-bottom: 0.75rem;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 700px) {
   .document-viewer-view__layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 210px;
   }
+  .document-viewer-view__header { padding-right: 12rem; }
+}
+@media (max-width: 500px) {
+  .document-viewer-view__layout { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 150px; }
+  .document-viewer-view__header { display: none; }
+  .document-viewer-view > nav { position: static; }
 }
 </style>

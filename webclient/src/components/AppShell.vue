@@ -8,6 +8,7 @@ import { logout, refreshAuth, refreshConnection, useAppShellState } from "../sta
 const { t } = useI18n();
 const router = useRouter();
 const shell = useAppShellState();
+defineProps<{ documentWorkspace?: boolean }>();
 
 const connectionLabel = computed(() => {
   switch (shell.connection) {
@@ -43,18 +44,18 @@ async function onLogout(): Promise<void> {
 </script>
 
 <template>
-  <div class="app-shell" data-testid="app-shell">
+  <div class="app-shell" :class="{ 'app-shell--workspace': documentWorkspace }" data-testid="app-shell">
     <header class="app-shell__header">
       <strong>{{ t("app.title") }}</strong>
       <span data-testid="connection-state">{{ connectionLabel }}</span>
-    </header>
-    <section class="app-shell__status" aria-live="polite">
-      <p data-testid="auth-state">{{ authLabel }}</p>
+      <p data-testid="auth-state" class="app-shell__auth">{{ authLabel }}</p>
       <div v-if="shell.auth.status === 'authenticated'" data-testid="authenticated-panel">
         <v-btn variant="outlined" data-testid="shell-logout" @click="onLogout">
           {{ t("shell.logout") }}
         </v-btn>
       </div>
+    </header>
+    <section v-if="shell.lastError || shell.loading" class="app-shell__status" aria-live="polite">
       <p v-if="shell.lastError" data-testid="transport-error" role="alert">{{ shell.lastError }}</p>
       <p v-if="shell.loading" data-testid="loading-indicator">{{ t("shell.loading") }}</p>
     </section>
@@ -68,7 +69,8 @@ async function onLogout(): Promise<void> {
 .app-shell {
   font-family: system-ui, sans-serif;
   margin: 0 auto;
-  max-width: 960px;
+  max-width: 1800px;
+  width: 100%;
   padding: 1rem;
 }
 .app-shell__header {
@@ -78,6 +80,17 @@ async function onLogout(): Promise<void> {
   justify-content: space-between;
 }
 .app-shell__status {
-  margin: 1rem 0;
+  margin: 0.5rem 0 1rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
 }
+.app-shell__status p { margin: 0; }
+.app-shell__header { padding-bottom: .5rem; border-bottom: 1px solid rgba(0,0,0,.12); }
+.app-shell__auth { margin: 0; font-size: .875rem; }
+.app-shell--workspace { height: 100dvh; max-width: none; padding: .25rem .5rem; display: flex; flex-direction: column; gap: .25rem; }
+.app-shell--workspace .app-shell__header { flex: 0 0 auto; padding: 0; gap: .5rem; }
+.app-shell--workspace .app-shell__main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+@media (max-width: 600px) { .app-shell__header { flex-wrap: wrap; } .app-shell--workspace .app-shell__auth { display: none; } }
 </style>

@@ -249,7 +249,7 @@ describe("ModuleNavigation", () => {
 
     const items = wrapper.findAll("[data-testid=module-navigation-item]");
     expect(items).toHaveLength(1);
-    expect(items[0]?.text()).toBe("Dokumente");
+    expect(items[0]?.text()).toBe("Dokumentenlenkung");
     expect(wrapper.text()).not.toContain("usermanagement");
     expect(wrapper.text()).not.toContain("unknown");
     expect(wrapper.get("[data-testid=module-navigation]").attributes("aria-label")).toBe(

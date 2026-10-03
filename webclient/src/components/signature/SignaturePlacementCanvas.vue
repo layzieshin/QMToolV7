@@ -11,6 +11,11 @@ export type CanonicalPlacement = {
 export const DEFAULT_BLOCK_HEIGHT_RATIO = 0.3;
 export const MIN_TARGET_WIDTH_PDF = 10;
 
+/** PDF text baseline, matching the signature layout contract (not CSS box edges). */
+export function previewLabelAnchor(placement: CanonicalPlacement, height: number, position: string, above: number, below: number, xOffset = 0, relX = 0, relY = 0): [number, number] {
+  return [placement.x + xOffset + relX, placement.y + (position === "above" ? height + above : position === "below" ? -below : 0) + relY];
+}
+
 export function estimateBlockHeightPdf(targetWidth: number): number {
   return Math.max(6, targetWidth * DEFAULT_BLOCK_HEIGHT_RATIO);
 }
@@ -75,13 +80,14 @@ export function placementFitsPage(
 }
 
 export function pointerToSurfaceCoords(
-  stage: Pick<HTMLElement, "getBoundingClientRect" | "scrollLeft" | "scrollTop">,
+  stage: Pick<HTMLElement, "getBoundingClientRect" | "scrollLeft" | "scrollTop"> & Partial<Pick<HTMLElement, "clientLeft" | "clientTop">>,
   event: Pick<PointerEvent, "clientX" | "clientY">,
+  surface?: Pick<HTMLElement, "offsetLeft" | "offsetTop">,
 ): { x: number; y: number } {
   const rect = stage.getBoundingClientRect();
   return {
-    x: event.clientX - rect.left + stage.scrollLeft,
-    y: event.clientY - rect.top + stage.scrollTop,
+    x: event.clientX - rect.left + stage.scrollLeft - (stage.clientLeft ?? 0) - (surface?.offsetLeft ?? 0),
+    y: event.clientY - rect.top + stage.scrollTop - (stage.clientTop ?? 0) - (surface?.offsetTop ?? 0),
   };
 }
 
@@ -130,6 +136,8 @@ const props = defineProps<{
   pdfUrl: string | null;
   placement: CanonicalPlacement;
   signatureImageUrl?: string | null;
+  previewLayout?: Record<string, unknown>;
+  signerName?: string;
   loading?: boolean;
   error?: boolean;
 }>();
@@ -153,11 +161,14 @@ const currentViewport = shallowRef<PageViewport | null>(null);
 const surfaceWidthPx = ref(0);
 const surfaceHeightPx = ref(0);
 const zoomPercent = ref(DEFAULT_ZOOM);
-const fitMode = ref<"none" | "width">("none");
+const fitMode = ref<"none" | "width" | "page">("page");
 const renderError = ref(false);
 const dragging = ref(false);
 const resizing = ref(false);
 const dragOffset = ref({ x: 0, y: 0 });
+const signatureAspect = ref(DEFAULT_BLOCK_HEIGHT_RATIO);
+// A stable provisional timestamp; final signing always resolves time in the backend.
+const previewTime = new Date();
 
 type PdfCacheEntry = {
   url: string;
@@ -166,6 +177,9 @@ type PdfCacheEntry = {
 };
 
 let pdfDocumentCache: PdfCacheEntry | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let lastStageWidth = 0;
+let lastStageHeight = 0;
 
 function cancelActiveRender(): void {
   activeRenderTask.value?.cancel();
@@ -213,17 +227,44 @@ const overlayStyle = computed(() => {
   };
 });
 
-const signatureBackgroundStyle = computed(() => {
-  if (props.signatureImageUrl) {
-    return {
-      backgroundImage: `url(${props.signatureImageUrl})`,
-      backgroundSize: "contain",
-      backgroundRepeat: "no-repeat",
-      backgroundPosition: "center",
-    };
-  }
-  return undefined;
+const previewHeight = computed(() => Math.max(6, props.placement.target_width * (props.previewLayout?.show_signature === false ? 1 : signatureAspect.value)));
+const imageRect = computed(() => {
+  const viewport = currentViewport.value;
+  if (!viewport) return null;
+  const [left, top] = viewport.convertToViewportPoint(props.placement.x, props.placement.y + previewHeight.value);
+  const [right, bottom] = viewport.convertToViewportPoint(props.placement.x + props.placement.target_width, props.placement.y);
+  return { x: left, y: top, width: right - left, height: bottom - top };
 });
+
+function layoutNumber(key: string, fallback: number): number {
+  const value = props.previewLayout?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+const previewLabels = computed(() => {
+  const viewport = currentViewport.value;
+  const layout = props.previewLayout;
+  if (!viewport || !layout) return [];
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const date = `${previewTime.getFullYear()}-${pad(previewTime.getMonth() + 1)}-${pad(previewTime.getDate())}`;
+  const time = `${pad(previewTime.getHours())}:${pad(previewTime.getMinutes())}:${pad(previewTime.getSeconds())}`;
+  return (["name", "date"] as const).flatMap(kind => {
+    const position = String(layout[`${kind}_position`] ?? (kind === "name" ? "above" : "below"));
+    if (!layout[`show_${kind}`] || position === "off") return [];
+    const anchor = previewLabelAnchor(props.placement, previewHeight.value, position,
+      layoutNumber(`${kind}_above`, kind === "name" ? 6 : 18),
+      layoutNumber(`${kind}_below`, kind === "name" ? 12 : 24), layoutNumber("x_offset", 0),
+      layoutNumber(`${kind}_rel_x`, 0), layoutNumber(`${kind}_rel_y`, 0));
+    const [x, y] = viewport.convertToViewportPoint(...anchor);
+    return [{ kind, x, y, text: kind === "name" ? props.signerName ?? "" : `${date}${layout.show_time ? ` ${time}` : ""}`,
+      size: Math.max(6, Math.trunc(layoutNumber(`${kind}_font_size`, 12))) * viewport.scale,
+      color: String(layout.color_hex ?? "#000000") }];
+  });
+});
+function onSignatureImageLoaded(event: Event): void {
+  const image = event.target as HTMLImageElement;
+  if (image.naturalWidth > 0) signatureAspect.value = image.naturalHeight / image.naturalWidth;
+}
+watch(() => props.signatureImageUrl, () => { signatureAspect.value = DEFAULT_BLOCK_HEIGHT_RATIO; });
 
 function emitPlacement(next: CanonicalPlacement): void {
   const clamped = clampPlacementToPage(
@@ -288,7 +329,13 @@ async function renderCurrentPage(): Promise<void> {
         scale = containerWidth / unscaled.width;
       }
     }
+    if (fitMode.value === "page" && stageRef.value) {
+      const width = stageRef.value.clientWidth;
+      const height = stageRef.value.clientHeight;
+      if (width > 0 && height > 0) scale = Math.min(width / unscaled.width, Math.max(1, height - 2) / unscaled.height);
+    }
     const viewport = page.getViewport({ scale, rotation: 0 });
+    if (fitMode.value !== "none") zoomPercent.value = Math.round(scale * 100);
     currentViewport.value = viewport;
     surfaceWidthPx.value = viewport.width;
     surfaceHeightPx.value = viewport.height;
@@ -357,13 +404,14 @@ function onZoomOut(): void {
 function onFitWidth(): void {
   fitMode.value = "width";
 }
+function onFitHeight(): void { fitMode.value = "page"; scheduleRender(); }
 
 function pointerCoordsFromEvent(event: PointerEvent): { x: number; y: number } {
   const stage = stageRef.value;
   if (!stage) {
     return { x: 0, y: 0 };
   }
-  return pointerToSurfaceCoords(stage, event);
+  return pointerToSurfaceCoords(stage, event, surfaceRef.value ?? undefined);
 }
 
 function onBlockPointerDown(event: PointerEvent): void {
@@ -447,7 +495,24 @@ onMounted(() => {
   scheduleRender();
 });
 
+watch(stageRef, (stage) => {
+  resizeObserver?.disconnect();
+  if (typeof ResizeObserver !== "undefined" && stage) {
+    lastStageWidth = stage.clientWidth;
+    lastStageHeight = stage.clientHeight;
+    resizeObserver = new ResizeObserver(() => {
+      const width = stageRef.value?.clientWidth ?? 0;
+      const height = stageRef.value?.clientHeight ?? 0;
+      if ((width !== lastStageWidth && fitMode.value !== "none") || (height !== lastStageHeight && fitMode.value === "page")) scheduleRender();
+      lastStageWidth = width;
+      lastStageHeight = height;
+    });
+    resizeObserver.observe(stage);
+  }
+});
+
 onUnmounted(() => {
+  resizeObserver?.disconnect();
   renderGeneration.current += 1;
   cancelActiveRender();
   destroyPdfCache();
@@ -485,6 +550,7 @@ defineExpose({
       <span data-testid="signature-zoom-label">{{ zoomPercent }}%</span>
       <v-btn size="small" variant="text" @click="onZoomIn">{{ t("signature.canvas.zoomIn") }}</v-btn>
       <v-btn size="small" variant="text" @click="onFitWidth">{{ t("signature.canvas.fitWidth") }}</v-btn>
+      <v-btn size="small" variant="text" data-testid="signature-fit-height" @click="onFitHeight">{{ t("signature.canvas.fitHeight") }}</v-btn>
     </div>
 
     <p v-if="loading" role="status">{{ t("signature.canvas.loading") }}</p>
@@ -498,18 +564,23 @@ defineExpose({
         :style="{ width: `${surfaceWidthPx}px`, height: `${surfaceHeightPx}px` }"
       >
         <canvas ref="canvasRef" class="signature-placement-canvas__pdf" data-testid="signature-pdf-canvas" />
+        <img v-if="signatureImageUrl" :key="signatureImageUrl" :src="signatureImageUrl" hidden alt="" @load="onSignatureImageLoaded" />
+        <svg class="signature-placement-canvas__overlay" :width="surfaceWidthPx" :height="surfaceHeightPx" aria-hidden="true" data-testid="signature-composite-preview">
+          <image v-if="signatureImageUrl && imageRect" :href="signatureImageUrl" v-bind="imageRect" preserveAspectRatio="none" data-testid="signature-preview-image" />
+          <text v-for="label in previewLabels" :key="label.kind" :x="label.x" :y="label.y" :font-size="label.size" :fill="label.color" font-family="Helvetica, Arial, sans-serif" font-weight="bold" :data-testid="`signature-preview-${label.kind}`">{{ label.text }}</text>
+        </svg>
         <div class="signature-placement-canvas__overlay">
           <div
             v-if="overlayStyle"
             class="signature-placement-canvas__block"
-            :style="[overlayStyle, signatureBackgroundStyle]"
+            :style="overlayStyle"
             data-testid="signature-placement-block"
             @pointerdown="onBlockPointerDown"
             @pointermove="onBlockPointerMove"
             @pointerup="onBlockPointerUp"
             @pointercancel="onBlockPointerUp"
           >
-            <span v-if="!signatureImageUrl" class="signature-placement-canvas__placeholder">
+            <span v-if="!signatureImageUrl && previewLayout?.show_signature !== false" class="signature-placement-canvas__placeholder">
               {{ t("signature.canvas.placeholder") }}
             </span>
             <span
@@ -528,7 +599,9 @@ defineExpose({
 .signature-placement-canvas {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: .25rem;
+  height: 100%;
+  min-height: 0;
 }
 
 .signature-placement-canvas__toolbar {
@@ -541,12 +614,17 @@ defineExpose({
 .signature-placement-canvas__stage {
   position: relative;
   max-width: 100%;
+  flex: 1;
+  min-height: 0;
+  scrollbar-gutter: stable;
+  background: #e9edf1;
   overflow: auto;
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
 
 .signature-placement-canvas__surface {
   position: relative;
+  margin-inline: auto;
 }
 
 .signature-placement-canvas__pdf {
@@ -562,7 +640,7 @@ defineExpose({
 .signature-placement-canvas__block {
   position: absolute;
   border: 2px dashed rgba(25, 118, 210, 0.9);
-  background-color: rgba(25, 118, 210, 0.08);
+  background-color: transparent;
   pointer-events: auto;
   cursor: move;
   display: flex;

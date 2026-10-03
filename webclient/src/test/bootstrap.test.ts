@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiBasePrefix, probeHealth } from "../api/client";
+import { apiBasePrefix, fetchDocumentHomeTasks, fetchReleasedDocuments, probeHealth } from "../api/client";
 import type { BootstrapResponse, ConnectionResponse, ModuleBootstrapItem } from "../api/client";
 import {
   __getBootstrapRetryDelayForTest,
@@ -66,6 +66,22 @@ function bootstrapResponse(modules: ModuleBootstrapItem[]): BootstrapResponse {
 }
 
 describe("bootstrap state and session API", () => {
+  it("loads the release catalog from the existing server endpoint, not a client status filter", async () => {
+    const fetchCatalog = captureFetch(() => jsonResponse(200, []));
+    vi.stubGlobal("fetch", fetchCatalog);
+    await expect(fetchReleasedDocuments()).resolves.toEqual([]);
+    expect(fetchCatalog.mock.calls[0][0]).toBe("/api/v1/documents/released");
+    expect(fetchCatalog.mock.calls[0][1]?.credentials).toBe("include");
+  });
+  it("reads current-actor document tasks through the existing cookie transport", async () => {
+    const fetchTasks = captureFetch(() => jsonResponse(200, []));
+    vi.stubGlobal("fetch", fetchTasks);
+    await expect(fetchDocumentHomeTasks()).resolves.toEqual([]);
+    const call = fetchTasks.mock.calls[0];
+    expect(call[0]).toBe("/api/v1/documents/home/tasks");
+    expect(call[1]?.credentials).toBe("include");
+    expect(new Headers(call[1]?.headers).has("Authorization")).toBe(false);
+  });
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {

@@ -4,7 +4,21 @@ export default {
   },
   dashboard: {
     title: "Start",
-    hint: "Willkommen in QMTool. Wählen Sie ein Modul in der Navigation, sobald es verfügbar ist.",
+    hint: "Ihre Dokumentaufgaben und der direkte Einstieg in die Dokumentverwaltung.",
+    openDocuments: "Dokumentverwaltung öffnen",
+    tasksTitle: "Meine offenen Dokumentaufgaben",
+    refresh: "Aktualisieren",
+    loading: "Dokumentaufgaben werden geladen …",
+    empty: "Keine offenen Dokumentaufgaben.",
+    unavailable: "Die Dokumentverwaltung ist für diese Sitzung nicht verfügbar.",
+    version: "Version {version}",
+  },
+  releasedDocuments: {
+    title: "Gelenkte Dokumente",
+    controlLabel: "Dokumentenlenkung",
+    hint: "Katalog freigegebener, nicht ersetzter Versionen. Freigabestatus und Gültigkeitsdatum sind getrennte Angaben.",
+    document: "Dokument", version: "Version", releasedAt: "Freigegeben am", validUntil: "Gültig bis", action: "Aktion",
+    read: "Lesen", back: "Zurück zu gelenkten Dokumenten", empty: "Keine freigegebenen Dokumente.", noDate: "Nicht angegeben", dateExceeded: "Gültigkeitsdatum überschritten",
   },
   connection: {
     offline: "Verbindung unterbrochen",
@@ -311,7 +325,7 @@ export default {
         zoomIn: "Vergrößern",
         zoomOut: "Verkleinern",
         fitWidth: "Breite anpassen",
-        fitPage: "Seite anpassen",
+        fitPage: "Höhe einpassen",
         loading: "PDF wird geladen…",
         loadError: "PDF-Vorschau konnte nicht geladen werden.",
         invalidMime: "Die Vorschaudatei ist kein gültiges PDF.",
@@ -374,6 +388,7 @@ export default {
   },
   signature: {
     workspace: {
+      previewTimeNotice: "Layoutvorschau mit vorläufiger lokaler Zeit. Der endgültige Signaturzeitpunkt wird vom Server bestimmt.",
       title: "Signatur-Arbeitsbereich",
       backToDetail: "Zurück zur Detailansicht",
       loading: "Signatur-Arbeitsbereich wird geladen…",
@@ -415,6 +430,7 @@ export default {
       zoomIn: "Vergrößern",
       zoomOut: "Verkleinern",
       fitWidth: "Breite anpassen",
+      fitHeight: "Höhe einpassen",
       loading: "PDF wird für die Platzierung geladen…",
       loadError: "PDF konnte nicht für die Platzierung geladen werden.",
       empty: "Kein PDF für die Platzierung verfügbar.",
