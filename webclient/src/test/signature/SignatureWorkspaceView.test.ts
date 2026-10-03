@@ -320,6 +320,10 @@ function queryReauthPassword(): HTMLInputElement {
 }
 
 describe("Signature placement coordinates", () => {
+  it("removes centered page offsets and stage borders from pointer coordinates", () => {
+    const stage = { getBoundingClientRect: () => ({ left: 10, top: 20 } as DOMRect), scrollLeft: 30, scrollTop: 40, clientLeft: 1, clientTop: 1 };
+    expect(pointerToSurfaceCoords(stage, { clientX: 401, clientY: 101 }, { offsetLeft: 300, offsetTop: 0 })).toEqual({ x: 120, y: 120 });
+  });
   it("matches backend text baselines including custom template offsets", () => {
     const placement = { page_index: 0, x: 72, y: 72, target_width: 120 };
     expect(previewLabelAnchor(placement, 36, "above", 6, 12)).toEqual([72, 114]);
@@ -587,6 +591,26 @@ describe("SignaturePlacementCanvas", () => {
     await flushPromises();
     expect(getPageMock).toHaveBeenCalledTimes(1);
     host.remove();
+  });
+
+  it("fits the available height and responds to resize without altering PDF placement", async () => {
+    setupPdfJsMocks();
+    const placement = { page_index: 0, x: 72, y: 72, target_width: 120 };
+    const wrapper = mount(SignaturePlacementCanvas, { attachTo: document.body, props: { pdfUrl: "blob:height-fit", placement }, global: { plugins: [i18n, vuetify] } });
+    await flushPromises();
+    const stage = wrapper.get('[data-testid="signature-canvas-stage"]').element;
+    let height = 800;
+    Object.defineProperties(stage, { clientWidth: { configurable: true, value: 1000 }, clientHeight: { configurable: true, get: () => height } });
+    await wrapper.get('[data-testid="signature-fit-height"]').trigger("click"); await flushPromises();
+    expect(Number(wrapper.get('[data-testid="signature-pdf-canvas"]').attributes("height"))).toBeCloseTo(798, 0);
+    height = 600;
+    await (wrapper.vm as unknown as { renderCurrentPage: () => Promise<void> }).renderCurrentPage();
+    expect(Number(wrapper.get('[data-testid="signature-pdf-canvas"]').attributes("height"))).toBeCloseTo(598, 0);
+    expect(wrapper.props("placement")).toEqual(placement);
+    const zoomIn = wrapper.findAll("button").find(button => button.text().includes("Vergrößern"));
+    await zoomIn!.trigger("click"); await flushPromises();
+    expect(wrapper.props("placement")).toEqual(placement);
+    wrapper.unmount();
   });
 
   it("keeps canonical placement when zoom changes", async () => {

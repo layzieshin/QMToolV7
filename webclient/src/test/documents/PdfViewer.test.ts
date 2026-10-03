@@ -412,6 +412,7 @@ function mountPdfViewer(
     stageHeight?: number;
     loading?: boolean;
     error?: boolean;
+    workspace?: boolean;
   },
 ) {
   const wrapper = mount(PdfViewer, {
@@ -419,6 +420,7 @@ function mountPdfViewer(
       previewUrl,
       loading: options?.loading ?? false,
       error: options?.error ?? false,
+      workspace: options?.workspace ?? false,
     },
     global: {
       plugins: [vuetify, i18n],
@@ -583,6 +585,16 @@ describe("PdfViewer", () => {
     expect(
       wrapper.get("[data-testid=pdf-viewer-canvas]").element.getAttribute("data-rendered-fit"),
     ).toBe("page");
+    wrapper.unmount();
+  });
+
+  it("starts the full-height workspace with the complete page fitted without changing embedded defaults", async () => {
+    const mocks = setupPdfJsMocks({ defaultUrl: "blob:height-workspace" });
+    const wrapper = mountPdfViewer("blob:height-workspace", { workspace: true, stageWidth: 1000, stageHeight: 800 });
+    await readyPdfViewer(wrapper, mocks, "blob:height-workspace");
+    expect(mocks.viewportCalls.at(-1)?.scale).toBeCloseTo(Math.min(1000 / PAGE_WIDTH, 800 / PAGE_HEIGHT));
+    expect(wrapper.classes()).toContain("pdf-viewer--workspace");
+    expect(wrapper.get("[data-testid=pdf-viewer-canvas]").attributes("data-rendered-fit")).toBe("page");
     wrapper.unmount();
   });
 

@@ -18,6 +18,7 @@ const props = defineProps<{
   previewUrl: string | null;
   loading?: boolean;
   error?: boolean;
+  workspace?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -28,7 +29,7 @@ const { t } = useI18n();
 
 const currentPage = ref(MIN_PAGE);
 const zoomPercent = ref(DEFAULT_ZOOM);
-const fitMode = ref<"none" | "width" | "page">("none");
+const fitMode = ref<"none" | "width" | "page">(props.workspace ? "page" : "none");
 const pageCount = ref(0);
 const renderState = ref<"loading" | "ready" | "error">("loading");
 const internalError = ref(false);
@@ -442,7 +443,7 @@ watch(
       }
       currentPage.value = MIN_PAGE;
       zoomPercent.value = DEFAULT_ZOOM;
-      fitMode.value = "none";
+      fitMode.value = props.workspace ? "page" : "none";
       pageCount.value = 0;
       destroyPdfCache();
       if (url && !loading && !error) {
@@ -489,7 +490,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="pdf-viewer" data-testid="pdf-viewer">
+  <section class="pdf-viewer" :class="{ 'pdf-viewer--workspace': workspace }" data-testid="pdf-viewer">
     <div
       class="pdf-viewer__toolbar"
       role="toolbar"
@@ -634,6 +635,9 @@ onUnmounted(() => {
   overflow: auto;
   scrollbar-gutter: stable;
 }
+.pdf-viewer--workspace { flex: 1; height: 100%; min-height: 0; gap: .25rem; }
+.pdf-viewer--workspace .pdf-viewer__toolbar { flex: 0 0 auto; gap: .25rem; }
+.pdf-viewer--workspace .pdf-viewer__frame { flex: 1; min-height: 0; height: auto; background: #e9edf1; }
 
 .pdf-viewer__canvas {
   display: block;

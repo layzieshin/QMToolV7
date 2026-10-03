@@ -10,6 +10,11 @@ export type BootstrapResponse = components["schemas"]["BootstrapResponse"];
 export type ModuleBootstrapItem = components["schemas"]["ModuleBootstrapItem"];
 export type DocumentQueryItem = components["schemas"]["DocumentQueryItem"];
 export type DocumentTaskItem = components["schemas"]["DocumentTaskItemModel"];
+/** Existing /documents/released DTO (the OpenAPI response is currently untyped). */
+export type ReleasedDocumentItem = { document_id: string; version: number; title: string; valid_until: string | null; released_at: string | null; owner_user_id: string | null };
+export async function fetchReleasedDocuments(): Promise<ReleasedDocumentItem[]> {
+  return expectJson<ReleasedDocumentItem[]>(await apiFetch("/documents/released", { method: "GET" }));
+}
 
 /** The backend resolves the actor from the cookie session, never a client user ID. */
 export async function fetchDocumentHomeTasks(): Promise<DocumentTaskItem[]> {

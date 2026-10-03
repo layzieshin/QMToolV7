@@ -40,9 +40,12 @@ test("approved UI package: synthetic desktop views, full signature preview and r
     else if (path === "/documents/home/tasks") payload = [item, { ...item, document_id: "SYN-002", title: "Arbeitsanweisung Probenannahme", status: "IN_REVIEW", version: 3 }];
     else if (path === "/documents/query") payload = { items: [item, { ...item, document_id: "SYN-002", title: "Arbeitsanweisung Probenannahme", status: "IN_REVIEW", version: 3 }, { ...item, document_id: "SYN-003", title: "Qualitätsleitbild", status: "APPROVED", workflow_active: false }], limit: 50, next_cursor: null };
     else if (path === "/documents/capabilities") payload = { can_create_new_documents: true };
+    else if (path === "/documents/released") payload = [{ document_id: "SYN-003", version: 1, title: "Qualitätsleitbild", released_at: "2026-09-01T08:00:00Z", valid_until: "2099-12-31T23:59:59Z", owner_user_id: null }, { document_id: "SYN-004", version: 2, title: "Archivierungsanweisung · Termin überschritten", released_at: "2025-01-01T08:00:00Z", valid_until: "2020-12-31T23:59:59Z", owner_user_id: null }];
+    else if (path === "/documents/versions/SYN-003/1") payload = { ...detail, state: { ...item, document_id: "SYN-003", title: "Qualitätsleitbild", status: "APPROVED" }, allowed_actions: actions.filter(action => action.code === "preview") };
+    else if (path === "/documents/versions/SYN-003/1/artifacts") payload = [{ artifact_id: "synthetic-pdf", document_id: "SYN-003", version: 1, artifact_type: "SIGNED_PDF", mime_type: "application/pdf", is_current: true, original_filename: "synthetisches-dokument.pdf", created_at: "2026-09-01T08:00:00Z" }];
     else if (path === "/documents/versions/SYN-001/1") payload = detail;
     else if (path.endsWith("/workflow/ensure-source-pdf")) payload = { ...detail, artifact_id: "synthetic-pdf" };
-    else if (path.endsWith("/artifacts") || path.endsWith("/history")) payload = [];
+    else if (path.endsWith("/artifacts") || path.endsWith("/history") || path.endsWith("/comments")) payload = [];
     else if (path === "/signature/assets/active/id") payload = { asset_id: "synthetic-asset" };
     else if (path === "/signature/assets/active/content") { await route.fulfill({ contentType: "image/png", body: png }); return; }
     else if (path === "/documents/artifacts/synthetic-pdf/preview") { await route.fulfill({ contentType: "application/pdf", body: syntheticPdf() }); return; }
@@ -54,7 +57,7 @@ test("approved UI package: synthetic desktop views, full signature preview and r
   });
   const browserErrors: string[] = [];
   page.on("pageerror", error => browserErrors.push(error.message));
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(page.getByTestId("dashboard-task")).toHaveCount(2);
   const refresh = page.getByRole("button", { name: "Aktualisieren", exact: true });
@@ -70,11 +73,35 @@ test("approved UI package: synthetic desktop views, full signature preview and r
   await page.getByTestId("documents-table-row").first().click();
   await expect(page.getByTestId("documents-pool-open-detail")).toBeEnabled();
   await page.screenshot({ path: `${output}/documents-1440.png`, fullPage: true });
+  await page.getByTestId("released-documents-navigation").click();
+  await expect(page.getByTestId("released-document-row")).toHaveCount(2);
+  await expect(page.getByTestId("released-date-exceeded")).toHaveText(/überschritten/);
+  await expect(page.getByTestId("released-documents")).not.toContainText("Prüfanweisung Wareneingang");
+  await expect(page.getByTestId("module-navigation-item")).not.toHaveClass(/v-list-item--active/);
+  await expect(page.getByTestId("released-documents-navigation")).toHaveClass(/v-list-item--active/);
+  await expect(page.locator('[data-testid="module-navigation"] .v-list-item--active')).toHaveCount(1);
+  const catalogRefresh = page.getByRole("button", { name: "Aktualisieren", exact: true });
+  await expect(catalogRefresh).toBeEnabled();
+  await expect.poll(() => catalogRefresh.evaluate(button => Number(getComputedStyle(button).opacity))).toBeGreaterThan(.99);
+  await page.mouse.move(5, 5);
+  await page.screenshot({ path: `${output}/released-documents-1440.png`, fullPage: true, animations: "disabled" });
+  await page.getByTestId("released-document-read").first().click();
+  for (const size of [{ width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(size);
+    await expect(page.getByTestId("pdf-viewer-canvas")).toHaveAttribute("data-rendered-fit", "page");
+    await expect.poll(async () => (await page.getByTestId("pdf-viewer-canvas").boundingBox())!.height).toBeGreaterThan(size.height * .8);
+    const box = (await page.getByTestId("pdf-viewer-canvas").boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual(size.height + 1);
+    await page.screenshot({ path: `${output}/reader-height-${size.width}.png` });
+  }
+  await page.getByTestId("document-viewer-back").click();
+  await expect(page.getByTestId("released-documents")).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/documents/SYN-001/signature?version=1&action=complete_editing");
   await expect(page.getByTestId("signature-preview-name")).toHaveText("demo.signer");
   await expect(page.getByTestId("signature-preview-date")).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
   await expect(page.getByTestId("signature-preview-image")).toBeVisible();
-  await expect.poll(() => page.getByTestId("signature-pdf-canvas").evaluate(canvas => (canvas as HTMLCanvasElement).width)).toBeGreaterThan(500);
+  await expect.poll(() => page.getByTestId("signature-pdf-canvas").evaluate(canvas => (canvas as HTMLCanvasElement).width)).toBeGreaterThan(400);
   const pdfRegion = await page.getByTestId("signature-workspace-canvas-region").boundingBox();
   const sidebar = await page.getByTestId("signature-workspace-sidebar").boundingBox();
   expect(pdfRegion!.width).toBeGreaterThan(sidebar!.width * 2);
@@ -83,8 +110,21 @@ test("approved UI package: synthetic desktop views, full signature preview and r
     await page.setViewportSize(viewport);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(page.getByTestId("signature-sign-button")).toBeVisible();
-    await page.screenshot({ path: `${output}/signature-${viewport.width}.png`, fullPage: true });
+    if (viewport.width >= 1280) {
+      await expect.poll(async () => (await page.getByTestId("signature-pdf-canvas").boundingBox())!.height).toBeGreaterThan(viewport.height * .8);
+      const box = (await page.getByTestId("signature-pdf-canvas").boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+    }
+    await page.screenshot({ path: `${output}/signature-height-${viewport.width}.png` });
   }
   expect(browserErrors).toEqual([]);
+  const image = page.getByTestId("signature-preview-image");
+  const widthBefore = Number(await image.getAttribute("width"));
+  const xBefore = Number(await image.getAttribute("x"));
+  const handle = (await page.getByTestId("signature-resize-handle").boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down(); await page.mouse.move(handle.x + handle.width / 2 + 20, handle.y + handle.height / 2); await page.mouse.up();
+  await expect.poll(async () => Number(await image.getAttribute("width"))).toBeCloseTo(widthBefore + 20, -1);
+  expect(Number(await image.getAttribute("x"))).toBeCloseTo(xBefore, 1);
   expect(unexpected).toEqual([]);
 });

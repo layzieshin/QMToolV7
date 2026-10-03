@@ -1157,6 +1157,21 @@ Favoriten, Personalisierung, modulübergreifende Inbox, globale Suche,
 Benachrichtigungszentrum, Edit-Leases, generische Jobs, Print/IPP und QmSign-Export
 bleiben außerhalb dieses freigegebenen Pakets. Q25/Q26-Entscheidungen bleiben erhalten.
 
+Ergänzung 2026-10-03: Lese- und Signaturansicht erhalten einen viewporthohen
+Arbeitsplatz mit knapper Orientierung, vollständig sichtbarer PDF-Seite im
+Standardmodus „Höhe einpassen“ und separat scrollbareren Seitenwerkzeugen.
+Fenster-Resize, Benutzerzoom und Breitenanpassung erhalten die PDF-Koordinaten.
+Die Navigation trennt „Dokumentenlenkung“ (bestehender Pool/Workflow) von
+„Gelenkte Dokumente“ (bestehendes `/api/v1/documents/released`). Beide sind
+Ansichten desselben Moduls `documents`, keine neuen Backendmodule.
+Der Katalog enthält backendseitig APPROVED und nicht ersetzte Versionen;
+`valid_until` wird angezeigt und ein überschrittenes Datum markiert. Er ist
+kein zugesicherter „nur aktuell gültige Dokumente“-Vertrag: Eine solche
+fachliche Gültigkeits-/Zugriffspolicy wäre gesondert im Backend festzulegen.
+Neue synthetische Sichtnachweise umfassen beide PDF-Ansichten und die getrennte
+Navigation bei 1440×900 und 1920×1080, mit schmaler Layoutprüfung. Keine
+Pilotinbetriebnahme oder menschliche Abnahme wird dadurch vorweggenommen.
+
 ### Q27 27. Accessibility (19)
 
 | SP | Unterpunkt | Entscheidung | Evidence | Owner | Offener Wert | Spaetestes Gate |

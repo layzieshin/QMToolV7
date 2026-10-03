@@ -231,6 +231,10 @@ async function onConflictLoadServerState(): Promise<void> {
 }
 
 function backToDetail(): void {
+  if (route.query.returnTo === "released-documents") {
+    void router.push({ name: "released-documents" });
+    return;
+  }
   if (!version.value) {
     void router.push({ name: "documents" });
     return;
@@ -261,7 +265,7 @@ onUnmounted(() => {
   <section class="document-viewer-view" data-testid="document-viewer-view">
     <nav aria-label="breadcrumb">
       <v-btn variant="text" data-testid="document-viewer-back" @click="backToDetail">
-        {{ t("documents.viewer.backToDetail") }}
+        {{ t(route.query.returnTo === 'released-documents' ? "releasedDocuments.back" : "documents.viewer.backToDetail") }}
       </v-btn>
     </nav>
 
@@ -346,6 +350,7 @@ onUnmounted(() => {
             </p>
 
             <PdfViewer
+              workspace
               :preview-url="previewUrl"
               :loading="previewLoading"
               :error="Boolean(previewError)"
@@ -395,8 +400,13 @@ onUnmounted(() => {
 .document-viewer-view {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: .25rem;
+  height: 100%;
+  min-height: 0;
 }
+.document-viewer-view > nav { position: absolute; right: .5rem; z-index: 1; }
+.document-viewer-view__header { min-height: 36px; padding-right: 16rem; display: flex; align-items: center; gap: .75rem; }
+.document-viewer-view__header h1 { font-size: 1rem; }
 
 .document-viewer-view__header h1 {
   margin: 0;
@@ -409,9 +419,13 @@ onUnmounted(() => {
 
 .document-viewer-view__layout {
   display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: .5rem;
+  flex: 1;
+  min-height: 0;
 }
+.document-viewer-view__pdf-column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.document-viewer-view__comments-column { min-height: 0; overflow: auto; }
 
 .document-viewer-view__artifact-select {
   display: flex;
@@ -420,9 +434,15 @@ onUnmounted(() => {
   margin-bottom: 0.75rem;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 700px) {
   .document-viewer-view__layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 210px;
   }
+  .document-viewer-view__header { padding-right: 12rem; }
+}
+@media (max-width: 500px) {
+  .document-viewer-view__layout { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 150px; }
+  .document-viewer-view__header { display: none; }
+  .document-viewer-view > nav { position: static; }
 }
 </style>

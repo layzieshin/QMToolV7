@@ -1198,8 +1198,11 @@ onUnmounted(() => {
 .signature-workspace {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: .25rem;
+  height: 100%;
+  min-height: 0;
 }
+.signature-workspace__header h2 { font-size: 1rem; margin: 0; }
 
 .signature-workspace__header {
   display: flex;
@@ -1210,9 +1213,11 @@ onUnmounted(() => {
 
 .signature-workspace__grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: .5rem;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .signature-workspace__sidebar {
@@ -1223,11 +1228,19 @@ onUnmounted(() => {
   background: white;
   border: 1px solid rgba(0,0,0,.12);
   border-radius: 6px;
+  overflow: auto;
+  min-height: 0;
 }
 
 .signature-workspace__canvas-region {
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  order: -1;
 }
+.signature-workspace__canvas-region > p { order: 1; margin: .25rem 0 0; }
+.signature-workspace__canvas-region > :deep(.signature-placement-canvas) { flex: 1; }
 
 .signature-workspace__layout-controls {
   display: grid;
@@ -1251,9 +1264,14 @@ onUnmounted(() => {
   margin: 0 0 0.5rem;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 700px) {
+  .signature-workspace__grid { grid-template-columns: minmax(0, 1fr) 210px; }
+  .signature-workspace__layout-controls { grid-template-columns: 1fr; }
+}
+@media (max-width: 500px) {
   .signature-workspace__grid {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) 180px;
   }
 }
 </style>

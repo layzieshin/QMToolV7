@@ -8,6 +8,7 @@ import DocumentViewerView from "../views/documents/DocumentViewerView.vue";
 import SignatureWorkspaceView from "../views/signature/SignatureWorkspaceView.vue";
 import DocumentImportView from "../views/documents/DocumentImportView.vue";
 import DocumentsPoolView from "../views/documents/DocumentsPoolView.vue";
+import ReleasedDocumentsView from "../views/documents/ReleasedDocumentsView.vue";
 import AdminUserDetailView from "../views/admin/AdminUserDetailView.vue";
 import AdminUsersView from "../views/admin/AdminUsersView.vue";
 import LoginView from "../views/LoginView.vue";
@@ -34,6 +35,12 @@ export const routes: RouteRecordRaw[] = [
         name: "document-import",
         meta: { requiresAuth: true },
         component: DocumentImportView,
+      },
+      {
+        path: "documents/released",
+        name: "released-documents",
+        meta: { requiresAuth: true },
+        component: ReleasedDocumentsView,
       },
       {
         path: "documents/:docId/viewer",

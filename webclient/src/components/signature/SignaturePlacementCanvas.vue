@@ -80,13 +80,14 @@ export function placementFitsPage(
 }
 
 export function pointerToSurfaceCoords(
-  stage: Pick<HTMLElement, "getBoundingClientRect" | "scrollLeft" | "scrollTop">,
+  stage: Pick<HTMLElement, "getBoundingClientRect" | "scrollLeft" | "scrollTop"> & Partial<Pick<HTMLElement, "clientLeft" | "clientTop">>,
   event: Pick<PointerEvent, "clientX" | "clientY">,
+  surface?: Pick<HTMLElement, "offsetLeft" | "offsetTop">,
 ): { x: number; y: number } {
   const rect = stage.getBoundingClientRect();
   return {
-    x: event.clientX - rect.left + stage.scrollLeft,
-    y: event.clientY - rect.top + stage.scrollTop,
+    x: event.clientX - rect.left + stage.scrollLeft - (stage.clientLeft ?? 0) - (surface?.offsetLeft ?? 0),
+    y: event.clientY - rect.top + stage.scrollTop - (stage.clientTop ?? 0) - (surface?.offsetTop ?? 0),
   };
 }
 
@@ -160,7 +161,7 @@ const currentViewport = shallowRef<PageViewport | null>(null);
 const surfaceWidthPx = ref(0);
 const surfaceHeightPx = ref(0);
 const zoomPercent = ref(DEFAULT_ZOOM);
-const fitMode = ref<"none" | "width">("width");
+const fitMode = ref<"none" | "width" | "page">("page");
 const renderError = ref(false);
 const dragging = ref(false);
 const resizing = ref(false);
@@ -178,6 +179,7 @@ type PdfCacheEntry = {
 let pdfDocumentCache: PdfCacheEntry | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let lastStageWidth = 0;
+let lastStageHeight = 0;
 
 function cancelActiveRender(): void {
   activeRenderTask.value?.cancel();
@@ -327,8 +329,13 @@ async function renderCurrentPage(): Promise<void> {
         scale = containerWidth / unscaled.width;
       }
     }
+    if (fitMode.value === "page" && stageRef.value) {
+      const width = stageRef.value.clientWidth;
+      const height = stageRef.value.clientHeight;
+      if (width > 0 && height > 0) scale = Math.min(width / unscaled.width, Math.max(1, height - 2) / unscaled.height);
+    }
     const viewport = page.getViewport({ scale, rotation: 0 });
-    if (fitMode.value === "width") zoomPercent.value = Math.round(scale * 100);
+    if (fitMode.value !== "none") zoomPercent.value = Math.round(scale * 100);
     currentViewport.value = viewport;
     surfaceWidthPx.value = viewport.width;
     surfaceHeightPx.value = viewport.height;
@@ -397,13 +404,14 @@ function onZoomOut(): void {
 function onFitWidth(): void {
   fitMode.value = "width";
 }
+function onFitHeight(): void { fitMode.value = "page"; scheduleRender(); }
 
 function pointerCoordsFromEvent(event: PointerEvent): { x: number; y: number } {
   const stage = stageRef.value;
   if (!stage) {
     return { x: 0, y: 0 };
   }
-  return pointerToSurfaceCoords(stage, event);
+  return pointerToSurfaceCoords(stage, event, surfaceRef.value ?? undefined);
 }
 
 function onBlockPointerDown(event: PointerEvent): void {
@@ -491,10 +499,13 @@ watch(stageRef, (stage) => {
   resizeObserver?.disconnect();
   if (typeof ResizeObserver !== "undefined" && stage) {
     lastStageWidth = stage.clientWidth;
+    lastStageHeight = stage.clientHeight;
     resizeObserver = new ResizeObserver(() => {
       const width = stageRef.value?.clientWidth ?? 0;
-      if (width !== lastStageWidth && fitMode.value === "width") scheduleRender();
+      const height = stageRef.value?.clientHeight ?? 0;
+      if ((width !== lastStageWidth && fitMode.value !== "none") || (height !== lastStageHeight && fitMode.value === "page")) scheduleRender();
       lastStageWidth = width;
+      lastStageHeight = height;
     });
     resizeObserver.observe(stage);
   }
@@ -539,6 +550,7 @@ defineExpose({
       <span data-testid="signature-zoom-label">{{ zoomPercent }}%</span>
       <v-btn size="small" variant="text" @click="onZoomIn">{{ t("signature.canvas.zoomIn") }}</v-btn>
       <v-btn size="small" variant="text" @click="onFitWidth">{{ t("signature.canvas.fitWidth") }}</v-btn>
+      <v-btn size="small" variant="text" data-testid="signature-fit-height" @click="onFitHeight">{{ t("signature.canvas.fitHeight") }}</v-btn>
     </div>
 
     <p v-if="loading" role="status">{{ t("signature.canvas.loading") }}</p>
@@ -587,7 +599,9 @@ defineExpose({
 .signature-placement-canvas {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: .25rem;
+  height: 100%;
+  min-height: 0;
 }
 
 .signature-placement-canvas__toolbar {
@@ -600,7 +614,9 @@ defineExpose({
 .signature-placement-canvas__stage {
   position: relative;
   max-width: 100%;
-  max-height: max(360px, calc(100vh - 260px));
+  flex: 1;
+  min-height: 0;
+  scrollbar-gutter: stable;
   background: #e9edf1;
   overflow: auto;
   border: 1px solid rgba(0, 0, 0, 0.12);
@@ -608,6 +624,7 @@ defineExpose({
 
 .signature-placement-canvas__surface {
   position: relative;
+  margin-inline: auto;
 }
 
 .signature-placement-canvas__pdf {

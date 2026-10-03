@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { ApiTransportError } from "../api/client";
 import AppShell from "../components/AppShell.vue";
@@ -19,6 +19,8 @@ import {
 import { refreshAuth, useAppShellState } from "../state/appShell";
 
 const router = useRouter();
+const route = useRoute();
+const documentWorkspace = computed(() => route.name === "document-viewer" || route.name === "document-signature");
 const shell = useAppShellState();
 
 const showModuleNavigation = computed(() => shell.auth.status === "authenticated");
@@ -65,10 +67,10 @@ watch(
 
 <template>
   <v-app>
-    <AppShell>
+    <AppShell :document-workspace="documentWorkspace">
       <ConnectionBanner />
-      <div class="app-layout__body">
-        <aside v-if="showModuleNavigation" class="app-layout__sidebar" aria-label="Navigation">
+      <div class="app-layout__body" :class="{ 'app-layout__body--workspace': documentWorkspace }">
+        <aside v-if="showModuleNavigation && !documentWorkspace" class="app-layout__sidebar" aria-label="Navigation">
           <ModuleNavigation />
         </aside>
         <div class="app-layout__content">
@@ -92,6 +94,8 @@ watch(
   flex: 1;
   min-width: 0;
 }
+.app-layout__body--workspace { flex: 1; min-height: 0; }
+.app-layout__body--workspace .app-layout__content { height: 100%; }
 
 @media (max-width: 960px) {
   .app-layout__body {
