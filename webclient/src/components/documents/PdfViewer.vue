@@ -340,7 +340,6 @@ function goToPreviousPage(): void {
     return;
   }
   currentPage.value -= 1;
-  fitMode.value = "none";
   emitValidatedPageChange(currentPage.value);
   requestRender();
 }
@@ -350,7 +349,6 @@ function goToNextPage(): void {
     return;
   }
   currentPage.value += 1;
-  fitMode.value = "none";
   emitValidatedPageChange(currentPage.value);
   requestRender();
 }
@@ -372,7 +370,6 @@ function onPageInput(event: Event): void {
     return;
   }
   currentPage.value = clamped;
-  fitMode.value = "none";
   input.value = String(clamped);
   emitValidatedPageChange(clamped);
   requestRender();

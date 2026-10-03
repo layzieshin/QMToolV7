@@ -42,7 +42,7 @@ test("approved UI package: synthetic desktop views, full signature preview and r
     else if (path === "/documents/capabilities") payload = { can_create_new_documents: true };
     else if (path === "/documents/released") payload = [{ document_id: "SYN-003", version: 1, title: "Qualitätsleitbild", released_at: "2026-09-01T08:00:00Z", valid_until: "2099-12-31T23:59:59Z", owner_user_id: null }, { document_id: "SYN-004", version: 2, title: "Archivierungsanweisung · Termin überschritten", released_at: "2025-01-01T08:00:00Z", valid_until: "2020-12-31T23:59:59Z", owner_user_id: null }];
     else if (path === "/documents/versions/SYN-003/1") payload = { ...detail, state: { ...item, document_id: "SYN-003", title: "Qualitätsleitbild", status: "APPROVED" }, allowed_actions: actions.filter(action => action.code === "preview") };
-    else if (path === "/documents/versions/SYN-003/1/artifacts") payload = [{ artifact_id: "synthetic-pdf", document_id: "SYN-003", version: 1, artifact_type: "SIGNED_PDF", mime_type: "application/pdf", is_current: true, original_filename: "synthetisches-dokument.pdf", created_at: "2026-09-01T08:00:00Z" }];
+    else if (path === "/documents/versions/SYN-003/1/artifacts") payload = [{ artifact_id: "synthetic-pdf", document_id: "SYN-003", version: 1, artifact_type: "RELEASED_PDF", mime_type: "application/pdf", is_current: true, original_filename: "synthetisches-dokument.pdf", created_at: "2026-09-01T08:00:00Z" }];
     else if (path === "/documents/versions/SYN-001/1") payload = detail;
     else if (path.endsWith("/workflow/ensure-source-pdf")) payload = { ...detail, artifact_id: "synthetic-pdf" };
     else if (path.endsWith("/artifacts") || path.endsWith("/history") || path.endsWith("/comments")) payload = [];

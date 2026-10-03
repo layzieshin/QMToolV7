@@ -371,10 +371,10 @@ function versionState(
   };
 }
 
-function pdfArtifact(id = "art-pdf-1") {
+function pdfArtifact(id = "art-pdf-1", artifactType = "source") {
   return {
     artifact_id: id,
-    artifact_type: "source",
+    artifact_type: artifactType,
     created_at: "2026-01-15T10:00:00Z",
     document_id: "DOC-1",
     is_current: true,
@@ -961,6 +961,45 @@ describe("PdfViewer", () => {
     wrapper.unmount();
   });
 
+  it("preserves page fit mode and fitted scale across workspace page navigation", async () => {
+    const mocks = setupPdfJsMocks({ numPages: 3, defaultUrl: "blob:fit-nav" });
+    const wrapper = mountPdfViewer("blob:fit-nav", {
+      workspace: true,
+      stageWidth: 400,
+      stageHeight: 300,
+    });
+    await readyPdfViewer(wrapper, mocks, "blob:fit-nav");
+
+    const expectedFitScale = Math.min(400 / PAGE_WIDTH, 300 / PAGE_HEIGHT);
+    const canvas = wrapper.get("[data-testid=pdf-viewer-canvas]").element as HTMLCanvasElement;
+    expect(canvas.getAttribute("data-rendered-fit")).toBe("page");
+    expect(Number(canvas.getAttribute("data-rendered-scale"))).toBeCloseTo(
+      expectedFitScale * 100,
+      0,
+    );
+    expect(mocks.viewportCalls.at(-1)?.scale).toBeCloseTo(expectedFitScale, 5);
+
+    await wrapper.get("[data-testid=pdf-next-page]").trigger("click");
+    await flushPromises();
+    mocks.resolveAll("blob:fit-nav");
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(wrapper.get("[data-testid=pdf-viewer-stage]").attributes("data-render-state")).toBe(
+        "ready",
+      );
+    });
+
+    const canvasAfterNav = wrapper.get("[data-testid=pdf-viewer-canvas]").element as HTMLCanvasElement;
+    expect(canvasAfterNav.getAttribute("data-rendered-fit")).toBe("page");
+    expect(Number(canvasAfterNav.getAttribute("data-rendered-scale"))).toBeCloseTo(
+      expectedFitScale * 100,
+      0,
+    );
+    expect(mocks.viewportCalls.at(-1)?.scale).toBeCloseTo(expectedFitScale, 5);
+    expect(Number(canvasAfterNav.getAttribute("data-rendered-scale"))).not.toBe(100);
+    wrapper.unmount();
+  });
+
   it("blocks navigation and page-change emits while external loading or error is active", async () => {
     const mocks = setupPdfJsMocks({ numPages: 3, defaultUrl: "blob:external-lock" });
     const wrapper = mountPdfViewer("blob:external-lock");
@@ -1187,6 +1226,35 @@ describe("DocumentViewerView routing", () => {
       "nicht verfügbar",
     );
     expect(wrapper.find("[data-testid=comments-create-form]").exists()).toBe(false);
+  });
+
+  it("previews current RELEASED_PDF on released-catalog route without artifact selection", async () => {
+    fetchDocumentArtifactsMock.mockResolvedValue([
+      pdfArtifact("art-source", "SOURCE_PDF"),
+      pdfArtifact("art-signed", "SIGNED_PDF"),
+      pdfArtifact("art-released", "RELEASED_PDF"),
+    ]);
+    const { wrapper } = await mountViewer(
+      "/documents/DOC-1/viewer?version=2&returnTo=released-documents",
+    );
+    expect(fetchArtifactPreviewBlobMock).toHaveBeenCalledWith("art-released");
+    expect(wrapper.find("[data-testid=artifact-select]").exists()).toBe(false);
+    expect(wrapper.find("[data-testid=document-viewer-select-prompt]").exists()).toBe(false);
+    expect(wrapper.find("[data-testid=pdf-viewer-frame]").exists()).toBe(true);
+  });
+
+  it("does not preview non-released PDFs on released-catalog route when RELEASED_PDF is absent", async () => {
+    fetchDocumentArtifactsMock.mockResolvedValue([
+      pdfArtifact("art-source", "SOURCE_PDF"),
+      pdfArtifact("art-signed", "SIGNED_PDF"),
+    ]);
+    const { wrapper } = await mountViewer(
+      "/documents/DOC-1/viewer?version=2&returnTo=released-documents",
+    );
+    expect(fetchArtifactPreviewBlobMock).not.toHaveBeenCalled();
+    expect(wrapper.find("[data-testid=document-viewer-no-pdf]").exists()).toBe(true);
+    expect(wrapper.find("[data-testid=artifact-select]").exists()).toBe(false);
+    expect(wrapper.find("[data-testid=pdf-viewer-frame]").exists()).toBe(false);
   });
 
   it("uses preview read path without download segment", async () => {

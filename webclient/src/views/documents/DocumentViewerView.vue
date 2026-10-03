@@ -23,6 +23,8 @@ defineOptions({
   name: "DocumentViewerView",
 });
 
+const RELEASED_PDF_TYPE = "RELEASED_PDF";
+
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -48,11 +50,25 @@ const routeLoadable = computed(
   () => Boolean(documentId.value) && versionParse.value.valid,
 );
 
+const isReleasedCatalogRoute = computed(
+  () => route.query.returnTo === "released-documents",
+);
+
 const pdfArtifacts = computed(() =>
   artifacts.value.filter(
     (artifact) =>
       artifact.mime_type === "application/pdf" && artifact.is_current === true,
   ),
+);
+
+const releasedPdfArtifacts = computed(() =>
+  pdfArtifacts.value.filter(
+    (artifact) => artifact.artifact_type === RELEASED_PDF_TYPE,
+  ),
+);
+
+const routePdfArtifacts = computed(() =>
+  isReleasedCatalogRoute.value ? releasedPdfArtifacts.value : pdfArtifacts.value,
 );
 
 const queryArtifactId = computed(() => {
@@ -71,6 +87,9 @@ const previewEnabled = computed(() =>
 );
 
 const effectiveArtifactId = computed(() => {
+  if (isReleasedCatalogRoute.value) {
+    return releasedPdfArtifacts.value[0]?.artifact_id ?? null;
+  }
   const fromSelection = selectedArtifactId.value;
   if (fromSelection && pdfArtifacts.value.some((a) => a.artifact_id === fromSelection)) {
     return fromSelection;
@@ -162,11 +181,20 @@ async function loadViewerData(generation: number): Promise<void> {
       (artifact) =>
         artifact.mime_type === "application/pdf" && artifact.is_current === true,
     );
-    const queryId = queryArtifactId.value;
-    if (queryId && pdfs.some((a) => a.artifact_id === queryId)) {
-      selectedArtifactId.value = queryId;
-    } else if (pdfs.length === 1) {
-      selectedArtifactId.value = pdfs[0].artifact_id;
+    if (route.query.returnTo === "released-documents") {
+      const released = pdfs.filter(
+        (artifact) => artifact.artifact_type === RELEASED_PDF_TYPE,
+      );
+      if (released.length >= 1) {
+        selectedArtifactId.value = released[0].artifact_id;
+      }
+    } else {
+      const queryId = queryArtifactId.value;
+      if (queryId && pdfs.some((a) => a.artifact_id === queryId)) {
+        selectedArtifactId.value = queryId;
+      } else if (pdfs.length === 1) {
+        selectedArtifactId.value = pdfs[0].artifact_id;
+      }
     }
   } catch (cause) {
     if (generation !== requestGeneration.current) {
@@ -311,7 +339,7 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-else-if="pdfArtifacts.length === 0"
+            v-else-if="routePdfArtifacts.length === 0"
             data-testid="document-viewer-no-pdf"
           >
             {{ t("documents.viewer.noPdfArtifacts") }}
@@ -319,7 +347,7 @@ onUnmounted(() => {
 
           <template v-else>
             <div
-              v-if="pdfArtifacts.length > 1"
+              v-if="!isReleasedCatalogRoute && pdfArtifacts.length > 1"
               class="document-viewer-view__artifact-select"
             >
               <label for="artifact-select">{{ t("documents.viewer.selectArtifact") }}</label>
@@ -343,7 +371,7 @@ onUnmounted(() => {
             </div>
 
             <p
-              v-if="pdfArtifacts.length > 1 && !effectiveArtifactId"
+              v-if="!isReleasedCatalogRoute && pdfArtifacts.length > 1 && !effectiveArtifactId"
               data-testid="document-viewer-select-prompt"
             >
               {{ t("documents.viewer.selectArtifactPrompt") }}
