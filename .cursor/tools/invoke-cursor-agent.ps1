@@ -115,29 +115,73 @@ function Assert-FreshEntryWorkflowState {
         throw "Fresh package entry requires workflow-state.json."
     }
     try {
-        $workflowState = Get-Content -LiteralPath $WorkflowStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $workflowStateJson = Get-Content -LiteralPath $WorkflowStatePath -Raw -Encoding UTF8
+        # Windows PowerShell can unwrap a one-element JSON array during pipeline assignment.
+        if ($workflowStateJson -notmatch '^\s*\{') { throw "workflow state is not an object" }
+        $workflowState = $workflowStateJson | ConvertFrom-Json
     }
     catch {
-        throw "Fresh package entry requires valid workflow-state.json."
+        throw "Fresh package entry requires valid workflow-state.json as a JSON object."
     }
-    if (-not $workflowState.PSObject.Properties.Name.Contains("status")) {
-        throw "Fresh package entry requires workflow-state.json with a known status."
+    # The existing runtime README/template owns this contract. Validate its required shape here,
+    # before interpreting ownership; missing guards must never behave like false/null defaults.
+    $stateGroups = @(
+        @{ value = $workflowState; label = "workflow-state"; fields = [ordered]@{
+            status = "string"; human_gate = "bool"; work_package = "nullable-string";
+            base_branch = "string"; work_branch = "nullable-string"; phase = "string";
+            checkpoint = "nullable-string"; rework_count = "counter"; final_rework_count = "counter";
+            escalation_used = "bool"; last_green_commit = "nullable-string"; next_action = "nullable-string";
+            updated_at = "string"; work_package_path = "nullable-string";
+            execution_journal_path = "nullable-string"; final_report_path = "nullable-string"
+        } },
+        @{ value = $workflowState.external_review; label = "external_review"; fields = [ordered]@{
+            status = "string"; round = "counter"; reviewed_head = "nullable-string";
+            blocking_findings = "array"; last_checked_at = "nullable-string";
+            bindingRecord = "nullable-object"; recovery_proposal_bound = "bool"
+        } },
+        @{ value = $workflowState.gates; label = "gates"; fields = [ordered]@{
+            full_regression_pass = "bool"; final_audit_pass = "bool"; ci_pass = "bool"
+        } }
+    )
+    # Recovery is a newer optional extension; existing states need no migration at entry.
+    if ($workflowState.PSObject.Properties.Name -contains "technical_recovery") {
+        $stateGroups += @{ value = $workflowState.technical_recovery; label = "technical_recovery";
+            fields = [ordered]@{ enabled = "bool"; user_stop = "bool" } }
     }
-    $status = [string]$workflowState.status
+    foreach ($group in $stateGroups) {
+        if ($group.value -isnot [pscustomobject]) {
+            throw "Fresh package entry requires workflow-state.json object $($group.label)."
+        }
+        foreach ($field in $group.fields.Keys) {
+            if ($group.value.PSObject.Properties.Name -notcontains $field) {
+                throw "Fresh package entry requires workflow-state.json field $($group.label).$field."
+            }
+            $value = $group.value.$field
+            $validType = switch ($group.fields[$field]) {
+                "string" { $value -is [string] }
+                "nullable-string" { $null -eq $value -or $value -is [string] }
+                "bool" { $value -is [bool] }
+                "counter" { ($value -is [int] -or $value -is [long]) -and $value -ge 0 }
+                "array" { $value -is [array] }
+                "nullable-object" { $null -eq $value -or $value -is [pscustomobject] }
+            }
+            if (-not $validType) {
+                throw "Fresh package entry requires workflow-state.json field $($group.label).$field of type $($group.fields[$field])."
+            }
+        }
+    }
+    $status = $workflowState.status
     if ($status -notin @("IDLE", "DONE")) {
         throw "Fresh package entry blocked by workflow status: $status"
     }
-    if ($workflowState.PSObject.Properties.Name.Contains("human_gate") -and $workflowState.human_gate -eq $true) {
+    if ($workflowState.human_gate) {
         throw "Fresh package entry blocked by human_gate."
     }
-    if ($status -eq "IDLE") {
-        $packageValue = $null
-        if ($workflowState.PSObject.Properties.Name.Contains("work_package")) {
-            $packageValue = $workflowState.work_package
-        }
-        if ($null -ne $packageValue -and [string]$packageValue.Trim()) {
-            throw "Fresh package entry blocked by conflicting work_package ownership while IDLE."
-        }
+    if ($workflowState.technical_recovery.user_stop) {
+        throw "Fresh package entry blocked by technical_recovery.user_stop."
+    }
+    if ($status -eq "IDLE" -and $null -ne $workflowState.work_package -and $workflowState.work_package.Trim()) {
+        throw "Fresh package entry blocked by conflicting work_package ownership while IDLE."
     }
 }
 

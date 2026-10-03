@@ -1520,6 +1520,83 @@ def test_cursor_launcher_fresh_entry_rejects_malformed_workflow_before_child(tmp
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+@pytest.mark.parametrize("variant, field, value, error_field", [
+    pytest.param("minimal", "", None, "human_gate", id="review-reproducer-status-only"),
+    pytest.param("missing", "human_gate", None, "human_gate", id="missing-human-guard"),
+    pytest.param("missing", "work_package", None, "work_package", id="missing-owner"),
+    pytest.param("missing", "phase", None, "phase", id="missing-required-metadata"),
+    pytest.param("missing", "external_review.bindingRecord", None, "external_review.bindingRecord", id="missing-nested-review"),
+    pytest.param("missing", "gates.ci_pass", None, "gates.ci_pass", id="missing-nested-gate"),
+    pytest.param("type", "status", ["IDLE"], "status", id="status-array"),
+    pytest.param("type", "human_gate", "false", "human_gate", id="string-human-guard"),
+    pytest.param("type", "work_package", 42, "work_package", id="numeric-done-owner"),
+    pytest.param("type", "external_review.round", True, "external_review.round", id="boolean-review-counter"),
+    pytest.param("type", "external_review.blocking_findings", "", "external_review.blocking_findings", id="nonarray-findings"),
+    pytest.param("type", "gates", None, "gates", id="null-gate-object"),
+    pytest.param("array", "", None, "JSON object", id="single-object-array-document"),
+    pytest.param("type", "technical_recovery.enabled", "false", "technical_recovery.enabled", id="string-recovery-enabled"),
+    pytest.param("missing", "technical_recovery.user_stop", None, "technical_recovery.user_stop", id="missing-recovery-stop"),
+    pytest.param("type", "technical_recovery.user_stop", "false", "technical_recovery.user_stop", id="string-recovery-stop"),
+    pytest.param("type", "technical_recovery.user_stop", True, "technical_recovery.user_stop", id="stopped-done"),
+])
+def test_cursor_launcher_fresh_entry_rejects_incomplete_or_mistyped_state_before_child(
+    tmp_path: Path, variant: str, field: str, value: object, error_field: str,
+) -> None:
+    state = json.loads((ROOT / ".cursor/runtime/workflow-state.template.json").read_text(encoding="utf-8"))
+    if field in ("work_package", "technical_recovery.user_stop") and variant == "type":
+        state.update(status="DONE", work_package="FINISHED-PACKAGE")
+    if variant in ("missing", "type"):
+        owner = state
+        segments = field.split(".")
+        for segment in segments[:-1]:
+            owner = owner[segment]
+        if variant == "missing":
+            del owner[segments[-1]]
+        else:
+            owner[segments[-1]] = value
+    state_payload = {"status": "IDLE"} if variant == "minimal" else [state] if variant == "array" else state
+    meta = _create_isolated_fresh_entry_repo(tmp_path, workflow_bytes=json.dumps(state_payload).encode("utf-8"))
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env, prompt="validate state ownership", work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]), expected_head=str(meta["head"]),
+        target_root=meta["repo"], launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0, completed.stdout
+    assert error_field in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert not (meta["repo"] / "build/codex-cursor-entry").exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+@pytest.mark.parametrize("status, owner, legacy", [
+    pytest.param("IDLE", None, False, id="template-idle"),
+    pytest.param("DONE", "FINISHED-PACKAGE", False, id="completed-owner"),
+    pytest.param("IDLE", None, True, id="legacy-without-technical-recovery"),
+])
+def test_cursor_launcher_fresh_entry_accepts_valid_idle_done_state(
+    tmp_path: Path, status: str, owner: str | None, legacy: bool,
+) -> None:
+    state = json.loads((ROOT / ".cursor/runtime/workflow-state.template.json").read_text(encoding="utf-8"))
+    state.update(status=status, work_package=owner)
+    if legacy:
+        state.pop("technical_recovery")
+    meta = _create_isolated_fresh_entry_repo(tmp_path, workflow_bytes=json.dumps(state).encode("utf-8"))
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env, prompt="valid state entry", work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]), expected_head=str(meta["head"]),
+        target_root=meta["repo"], launcher_path=meta["launcher"],
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    assert args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
 def test_cursor_launcher_fresh_entry_rejects_conflicting_idle_ownership_before_child(
     tmp_path: Path,
 ) -> None:
