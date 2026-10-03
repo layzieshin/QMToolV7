@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "recovery-policy.ps1")
 
 $logPath = if ($env:QMTOOL_RUNTIME_LOG_PATH) {
     $env:QMTOOL_RUNTIME_LOG_PATH
@@ -856,6 +857,7 @@ function New-ExternalReviewBindingRecord {
         reviewer_id = [string]$Handoff.reviewer_id
     }
     if ($null -ne $state) {
+        if ($state.PSObject.Properties.Name.Contains("rework_count")) { $record.rework_count = $state.rework_count }
         if ($state.PSObject.Properties.Name.Contains("regular_rework_count")) {
             $record.regular_rework_count = [int]$state.regular_rework_count
         }
@@ -975,7 +977,7 @@ function Test-AuthoritativeBindingRecordIdentity {
         "target_root", "branch", "base_ref", "reviewed_head",
         "contract_path", "contract_sha256", "manifest_path", "manifest_sha256",
         "diff_sha256", "repository_state_sha256", "route", "profile_version",
-        "reviewer_id", "regular_rework_count", "exceptional_count", "final_rework_count",
+        "reviewer_id", "rework_count", "regular_rework_count", "exceptional_count", "final_rework_count",
         "verification_commands"
     )
     foreach ($field in $fields) {
@@ -1061,7 +1063,7 @@ function Test-PersistedCounterBinding {
         }
         return @{ valid = $true }
     }
-    foreach ($field in @("regular_rework_count", "exceptional_count", "final_rework_count")) {
+    foreach ($field in @(Get-RecoveryCounterFields $state)) {
         if ($RequireAllCounterClaims) {
             if (-not $Handoff.PSObject.Properties.Name.Contains($field) -or $null -eq $Handoff.$field) {
                 return @{ valid = $false; reason = "missing recovery counter claim $field" }
@@ -1121,6 +1123,9 @@ function Test-RecoveryFailedEvidenceBinding {
         return @{ valid = $false; reason = "recovery failed evidence not bound in manifest" }
     }
     $evidencePaths = $manifest.evidence_paths
+    if (Test-JsonObjectHasProperty -Object $evidencePaths -PropertyName "failed_command_result") {
+        $requiredKey = "failed_command_result"
+    }
     if (-not (Test-JsonObjectHasProperty -Object $evidencePaths -PropertyName $requiredKey)) {
         return @{ valid = $false; reason = "recovery failed evidence key missing: $requiredKey" }
     }
@@ -1129,7 +1134,7 @@ function Test-RecoveryFailedEvidenceBinding {
         return @{ valid = $false; reason = "recovery failed evidence path empty: $requiredKey" }
     }
     $manifestDir = (Split-Path -Parent (($ManifestRelative -replace '\\', '/'))).TrimEnd('/').Replace('\', '/')
-    $expectedRelative = "$manifestDir/failed-junit.xml"
+    $expectedRelative = if ($requiredKey -eq "failed_command_result") { "$manifestDir/failed-command.json" } else { "$manifestDir/failed-junit.xml" }
     $normalizedRelative = ($relativePath -replace '\\', '/')
     if ($normalizedRelative -ne $expectedRelative) {
         return @{ valid = $false; reason = "recovery failed evidence path not canonical: $relativePath" }
@@ -1151,6 +1156,18 @@ function Test-RecoveryFailedEvidenceBinding {
     if ($liveSha -ne $recordedSha) {
         return @{ valid = $false; reason = "recovery failed evidence changed: $relativePath" }
     }
+    if ($requiredKey -eq "failed_command_result") {
+        try { $failedCommand = Get-Content -LiteralPath $evidenceFile -Raw -Encoding UTF8 | ConvertFrom-Json }
+        catch { return @{ valid = $false; reason = "recovery failed command result malformed" } }
+        if ($failedCommand.kind -ne "FAILED_COMMAND" -or
+            $failedCommand.exit_code -isnot [int] -or $failedCommand.exit_code -eq 0 -or
+            -not (Test-NonEmptyString $failedCommand.command) -or
+            -not (Test-NonEmptyString $failedCommand.context) -or
+            $failedCommand.secrets_redacted -isnot [bool] -or -not $failedCommand.secrets_redacted) {
+            return @{ valid = $false; reason = "recovery failed command requires nonzero exit and bounded context" }
+        }
+        return @{ valid = $true }
+    }
     try {
         [xml]$junit = Get-Content -LiteralPath $evidenceFile -Encoding UTF8
     }
@@ -1163,6 +1180,7 @@ function Test-RecoveryFailedEvidenceBinding {
             if ($null -ne $suite.failures) {
                 $failureCount += [int]$suite.failures
             }
+            if ($null -ne $suite.errors) { $failureCount += [int]$suite.errors }
         }
     }
     if ($failureCount -le 0) {
@@ -1265,7 +1283,7 @@ function Test-PersistedRecoveryContext {
     if ([string]$state.work_branch -ne [string]$Handoff.branch) {
         return @{ valid = $false; reason = "persisted branch mismatch" }
     }
-    foreach ($field in @("regular_rework_count", "exceptional_count", "final_rework_count")) {
+    foreach ($field in @(Get-RecoveryCounterFields $state)) {
         if (-not $Handoff.PSObject.Properties.Name.Contains($field) -or $null -eq $Handoff.$field) {
             return @{ valid = $false; reason = "missing recovery counter claim $field" }
         }
@@ -2147,12 +2165,15 @@ function Invoke-ExternalCodexRecoveryValidation {
     $counterCheck = Test-PersistedCounterBinding -Handoff $Handoff -BindingRecord $anchored.record -RequireAllCounterClaims
     if (-not $counterCheck.valid) { return InvalidRecovery($counterCheck.reason) }
 
+    $recovery = Invoke-TechnicalRecoveryPolicy -Config $Config -BindingRecord $anchored.record `
+        -ProposalPath ([string]$Handoff.proposal_path) -ProposalSha256 ([string]$Handoff.proposal_sha256) -Reserve
     return @{
         permission = "allow"
         validation_mode = $Mode
         handoff = "RECOVERY_PROPOSAL_BOUND"
-        status = "BLOCKED_HUMAN"
-        reason = "recovery proposal bound without review or commit privilege"
+        status = if ($recovery.eligible) { "RUNNING" } else { "BLOCKED_HUMAN" }
+        reason = if ($recovery.eligible) { "bound technical repair batch; independent review still required" } else { "recovery proposal bound without review or commit privilege" }
+        recovery = $recovery
         bindingRecord = $anchored.record
     }
 }
@@ -2896,6 +2917,17 @@ if (($validRoleMatch -and $matchedRole -eq "implementer" -or $hostImplementerWit
             user_message = "Task blocked by EXTERNAL_CODEX_ROUTE_PREFLIGHT: missing RUNNING workflow state for implementer dispatch"
         } | ConvertTo-Json -Compress | Write-Output
         exit 2
+    }
+    if ([bool]$workflowState.human_gate -or [bool]$workflowState.technical_recovery.user_stop) {
+        @{ permission = "deny"; user_message = "Implementer blocked by explicit stop or HUMAN_GATE." } | ConvertTo-Json -Compress | Write-Output
+        exit 2
+    }
+    if ([string]$workflowState.external_review.bindingRecord.review_need -eq "RECOVERY_DIAGNOSIS") {
+        $recovery = Invoke-TechnicalRecoveryPolicy -Config $config
+        if (-not $recovery.eligible) {
+            @{ permission = "deny"; user_message = "Implementer blocked: $($recovery.reason)" } | ConvertTo-Json -Compress | Write-Output
+            exit 2
+        }
     }
     # Implementation dispatch is not an external-review handoff. Keep state/role protection
     # here; exact registry validation remains on the explicit external-review modes above.

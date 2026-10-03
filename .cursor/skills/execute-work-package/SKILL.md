@@ -41,7 +41,10 @@ same checkpoint.
 1. Locate the approved package in the existing flat `docs/AP-*` structure. Requirements and
    architecture must already be decision-complete; otherwise use `/maintain-roadmap`.
 2. Require one non-base work branch/worktree for exactly this package. Preserve foreign changes.
-3. If state is `RUNNING`, resume its exact phase/checkpoint/`next_action`. Validate the bound
+3. If state is `RUNNING` with no `human_gate` or `technical_recovery.user_stop`, resume its exact
+   phase/checkpoint/`next_action`. Preserve BLOCKED/aborted/stopped attempts and their counters, batch
+   history, contracts and evidence; resume them only after explicit authorization, through the
+   existing metadata writer, without reinitializing counters. Validate the bound
    `context-manifest.json` with
    `scripts/checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`
    before reusing any completed green checkpoint. Repeat `--verify-command` for every expected
@@ -50,10 +53,20 @@ same checkpoint.
    completed steps, re-ask authorization, or re-reserve reviews when the manifest still matches.
    External PRE computes `bindingRecord`; anchor it once in `external_review.bindingRecord` before
    external dispatch. BOUND and recovery receipt reuse the anchored record plus `manifest-validate`;
-   diagnosis receipts never grant resume, implement, commit, or review PASS.
-4. Otherwise initialize the small state contract from `.cursor/runtime/README.md`:
-   `status=RUNNING`, `phase=PLAN`, rework counters zero, gates false, package/branch/document paths,
-   and a concrete `next_action`.
+   diagnosis receipts alone grant no execution, commit or review PASS. A commissioned and reserved
+   technical batch follows the guarded recovery lifecycle in `.cursor/runtime/README.md`.
+4. Initialize the small state contract only for a new authorized package from absent/`IDLE` state or
+   a genuinely completed `DONE` package: `status=RUNNING`, `phase=PLAN`, rework counters zero, gates
+   false, package/branch/document paths and a concrete `next_action`. Never turn a blocked, aborted
+   or stopped attempt into a new package to reset its budget.
+   During PLAN, technical metadata registration on the existing `.cursor/agent-system.json` owner
+   belongs to the named autonomous mandate: include that exact path in the approved checkpoint
+   allowlist before scope freeze, and install its exact recovery and required subsequent review
+   routes from the contract. Follow the field schema and ordering in `.cursor/runtime/README.md`:
+   route preflight -> frozen contract/profile/manifest -> immutable commission -> persisted opt-in.
+   Do not ask for fresh approval per package registration, copy historical W3 identities, change
+   review policy or create fallback routes. Preserve existing routes; unknown substantive decisions
+   still use the active HUMAN_GATE.
 5. Use existing ledger/execution/final sections in the owning AP or its established companion
    report. Add compact sections there only when missing; store decisions and evidence, not chat
    transcripts.
@@ -98,13 +111,14 @@ applicable `HUMAN_GATE`. Never silently edit acceptance criteria after implement
    questions. The implementer makes no Git writes and cannot grant PASS.
 5. If implementer returns `SCOPE_CORRECTION_REQUIRED`, verify before edit that every named file is
    an existing canonical owner omitted from the allowlist, is directly required by an approved
-   criterion, adds no behavior/public surface/architecture/technology, and is small and immediate.
-   Within the configured scope-correction budget, amend allowlist/evidence once and re-invoke the
-   implementer. Otherwise classify it as Scope Expansion and use normal planning/HUMAN_GATE.
+   criterion, adds no behavior outside approved criteria or unapproved surface/architecture/technology,
+   and is small and immediate. Preserve an amendment before edit and use the checkpoint protocol
+   correction/recovery limits. Genuine new user decisions remain Scope Expansion/HUMAN_GATE.
 
 ### REVIEW
 
-1. For the first review set `rework_count=0`, `phase=REVIEW`.
+1. Set `phase=REVIEW`; initialize counters only when creating a new bound checkpoint, never reset
+   consumed repair/recovery when entering its first review.
 2. Capture the complete diff and pre-review repository fingerprint.
 3. Invoke a fresh custom agent with a task beginning `[ROLE:checkpoint-reviewer]` using the
    authorized fallback ladder in `.cursor/agent-system.json` `review_model_fallback` when the
@@ -143,8 +157,11 @@ applicable `HUMAN_GATE`. Never silently edit acceptance criteria after implement
 - Validate the returned bound result with `validation_mode=EXTERNAL_CODEX_BOUND_REVIEW`, which
   yields `HANDOFF_READY` or `HANDOFF_INVALID`. The native `escalation-reviewer` performs this
   read-only validation only; it never grants checkpoint `PASS`/`FAIL`, findings, or merge approval.
-- External `FAIL`, missing, stale, or conflicting evidence sets `BLOCKED_HUMAN`. No Cursor GPT
-  fallback and no Cursor verdict substitute.
+- External substantive FAIL shares internal FAIL's applicable repair/authorized recovery policy.
+  Repair/revalidate correctable evidence defects; missing identity/access, genuine decisions or
+  exhausted unresolved recovery require `BLOCKED_HUMAN`. No fallback to evade FAIL or substitute verdict.
+- Use the checkpoint protocol for complete diagnosis, bundled findings, dependency reruns and bound
+  `max_technical_recovery_batches`. Explicit autonomy includes these repairs without consent per finding.
 
 Do not reset a counter, disguise retries as diagnostics, weaken assertions, add hidden fallback
 paths, or continue after an unexplained failure. A material new blocker consumes the already
@@ -191,12 +208,14 @@ After every checkpoint is green:
      rules, and final report. Accept only `FINAL_PASS` or `FINAL_FAIL`.
    - **Critical packages** (including `AGENT-COST-01`): skip duplicate Grok full audit. Require
      `EXTERNAL_CODEX_BOUND_REVIEW` only via external Codex host with bound contract/diff/evidence.
-     Local hook validation is structure/staleness/hash only. External `FAIL`/missing/stale =>
-     `BLOCKED_HUMAN`. No Cursor verdict substitute.
-3. On internal Grok `FINAL_FAIL`, issue bounded order to `[ROLE:implementer]`, increment
-   `final_rework_count`, rerun full regression, and invoke another fresh final audit per routing.
-4. Each final-audit rework consumes the configured final-rework budget; exhaustion sets
-   `BLOCKED_HUMAN`.
+     Local validation is structure/staleness/hash only. Missing/stale evidence cannot grant PASS;
+     repair it under the authorized policy. No Cursor verdict substitute.
+3. Internal/external substantive `FINAL_FAIL` gets one bundled bounded repair order; increment
+   `final_rework_count`, rerun affected dependencies, satisfy the complete required final matrix,
+   and obtain a fresh independent final audit under configured routing.
+4. After configured final rework use existing escalation/opted-in technical recovery. No extra
+   external-review rounds are implied. Genuine decisions, missing independent capability or exhausted
+   unresolved recovery set `BLOCKED_HUMAN`.
 5. On accepted final audit (`FINAL_PASS` or external Codex `PASS` on bound handoff), set
    `gates.final_audit_pass=true`; update roadmap when applicable; prepare—but never start—the next
    package.
@@ -263,7 +282,8 @@ Mergeable external states are `PASS` with `reviewed_head` equal to current PR he
 
 Stop only for an established architecture/security/trust change, fundamental technology/framework,
 destructive data ambiguity, materially ambiguous requirements, missing credentials/permissions,
-failed escalation, failed final audit after the configured rework budget, or mandatory external
-merge approval.
+unresolved failure after applicable configured repair/escalation/authorized recovery, missing bound
+recovery authorization, or mandatory external merge approval. Bundle true decisions; engineering
+repairs inside explicit autonomy need no per-finding consent. Preserve manual stops/target guards.
 Report the concrete blocker, why it cannot be decided autonomously, current evidence, two or three
 options, recommendation, and consequence of each.

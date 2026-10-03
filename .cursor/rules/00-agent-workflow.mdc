@@ -118,9 +118,9 @@ a separate approval step.
 
 Exception for an authorized autonomous run: when `.cursor/runtime/workflow-state.json` is
 `status=RUNNING`, identifies the concrete approved package, and the user started it with
-`/execute-work-package <WP-ID>`, that invocation is the implementation-plan approval for its
-decision-ready checkpoints. Do not request another general Phase-2 approval for each persistence,
-backend, migration, security or public-surface step. Only the HUMAN_GATEs defined by the active
+`/execute-work-package <WP-ID>` or equivalent named authorization accepted by the active contract,
+that mandate supplies implementation-plan approval for its decision-ready checkpoints. Do not request
+another general Phase-2 approval for each persistence, backend, migration, security or public-surface step. Only the HUMAN_GATEs defined by the active
 work-package contracts may interrupt that run. A missing requirement source, material contract
 amendment or new architecture decision still triggers the applicable HUMAN_GATE.
 
@@ -159,7 +159,13 @@ Apply these rules:
 - Demonstrate a pre-existing failure with evidence when practical.
 - For an environmental failure, record the command and exact limitation.
 - Do not silently repair an outside-scope failure.
-- An unexplained failure blocks further implementation.
+- An unexplained failure blocks dependent implementation/acceptance; collect safe independent
+  diagnostics and complete findings before one bounded repair order.
+- Explicit autonomous work uses the checkpoint protocol's bound engineering recovery and configured
+  `max_technical_recovery_batches`, without per-finding consent or retroactive opt-in. Trace necessary
+  owner corrections to approved criteria and preserve amendments before edits; true new decisions stay gated.
+- Rerun failed checks/affected dependencies; reuse unaffected evidence only with valid binding.
+  Required full/integration gates remain mandatory.
 - Do not disable, weaken, skip, or rewrite tests merely to obtain a passing result.
 - Do not swallow exceptions to make a test pass.
 - Do not remove assertions without behavior-based justification.
@@ -194,8 +200,9 @@ does not create a budget or a new status. Numeric limits stay in
 
 If the reviewer returns `FAIL`, apply only its bounded minimal order within the configured rework
 budget, rerun affected verification, and invoke a fresh reviewer Task. After exhaustion, use the
-configured escalation-review budget. On `PASS`, return one consolidated final report; escalation FAIL
-sets `BLOCKED_HUMAN`.
+configured escalation and explicitly authorized recovery policy in the checkpoint protocol. Internal/
+external FAIL share that policy. On PASS return one report; genuine decisions or exhausted unresolved
+recovery are bundled as `BLOCKED_HUMAN`. Preserve manual stops and all protection boundaries.
 
 For all other implementation tasks, keep the general adversarial review above: use a subagent or
 separate review agent when available, otherwise perform a fresh explicit review pass. Do not invoke

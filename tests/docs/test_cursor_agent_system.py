@@ -415,6 +415,7 @@ def test_config_agents_skills_rules_and_worktree_contracts() -> None:
     assert config["version"] == 3
     assert defaults == {
         "max_checkpoint_reworks": 2,
+        "max_technical_recovery_batches": 2,
         "max_final_audit_reworks": 2,
         "max_escalation_reviews": 1,
         "max_reviewer_verification_passes": 1,
@@ -2215,6 +2216,7 @@ def _build_route_manifest(
     allowlist: tuple[str, ...],
     base_ref: str,
     verification_commands: tuple[str, ...],
+    evidence: dict[str, str] | None = None,
 ) -> None:
     cmd = [
         sys.executable,
@@ -2237,6 +2239,8 @@ def _build_route_manifest(
     ]
     for verify in verification_commands:
         cmd.extend(["--verify-command", verify])
+    for key, relative in (evidence or {}).items():
+        cmd.extend(["--evidence", f"{key}={relative}"])
     for path in _manifest_build_allowlist(
         allowlist,
         contract_path=contract_path,
@@ -2508,6 +2512,7 @@ def _run_route_preflight(
         "subagent-start.ps1",
         payload,
         state_path=tmp_path / "route-preflight-state.json",
+        log_path=tmp_path / "route-preflight.log",
         cwd=repo,
     )
 
@@ -3023,10 +3028,13 @@ def _find_route_record(
     config: dict[str, Any],
     package_id: str,
     checkpoint_id: str,
+    review_need: str | None = None,
 ) -> dict[str, Any]:
     package_bindings = config["external_codex_bound_review"]["review_route_bindings"][package_id]
     for record in package_bindings.values():
-        if record["checkpoint_id"] == checkpoint_id:
+        if record["checkpoint_id"] == checkpoint_id and (
+            review_need is None or record["review_need"] == review_need
+        ):
             return record
     raise KeyError(f"no route record for {package_id}/{checkpoint_id}")
 
@@ -3091,12 +3099,14 @@ def _registry_route_handoff(
     package_id: str,
     checkpoint_id: str,
     evidence_attempt: str,
+    review_need: str | None = None,
+    evidence: dict[str, str] | None = None,
     **updates: Any,
 ) -> dict[str, Any]:
     import hashlib
 
     config = json.loads((binding_repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
-    record = _find_route_record(config, package_id, checkpoint_id)
+    record = _find_route_record(config, package_id, checkpoint_id, review_need)
     template = record["evidence_path_template"]
     rel_contract = Path(template["root"]) / evidence_attempt / template["contract_file"]
     rel_manifest = Path(template["root"]) / evidence_attempt / template["manifest_file"]
@@ -3116,13 +3126,14 @@ def _registry_route_handoff(
         allowlist=allowlist,
         base_ref=base_ref,
         verification_commands=tuple(record["verification_commands"]),
+        evidence=evidence,
     )
     branch = _git(binding_repo, "branch", "--show-current").stdout.strip()
     reviewed_head = _git(binding_repo, "rev-parse", "HEAD").stdout.strip()
     base_head = _git(binding_repo, "rev-parse", base_ref).stdout.strip()
     diff_sha = _allowlist_diff_sha256(binding_repo, allowlist, base_ref)
     workspace_fp = _hook_workspace_fingerprint(binding_repo, allowlist, base_ref=base_ref)
-    if record.get("forbid_ladder_history") or record.get("direct_external"):
+    if record.get("forbid_ladder_history") or record.get("direct_external") or record.get("purpose") == "diagnosis":
         ladder_history: list[dict[str, Any]] = []
     else:
         ladder_history = _complete_w1_ladder_history()
@@ -5840,3 +5851,356 @@ def test_w3_final_session_start_recovery_receipt_blocks_resume_instructions(tmp_
     assert "Do not issue Resume, Implement, or Commit instructions" in context
     assert "BLOCKED_HUMAN" in context
     assert "Resume the persisted workflow" not in context
+
+
+def _commission_technical_recovery(
+    repo: Path, state_path: Path, handoff: dict[str, Any], *, proposal_suffix: str = "one",
+    repair_paths: list[str] | None = None, evidence_key: str = "failed_review_junit",
+) -> dict[str, Any]:
+    import hashlib
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    record = state["external_review"]["bindingRecord"]
+    if record is None:
+        # PLAN commission uses contract/manifest facts, not a fabricated validated PRE record.
+        config = json.loads((repo / ".cursor/agent-system.json").read_text(encoding="utf-8"))
+        route = _find_route_record(config, handoff["package_id"], handoff["checkpoint_id"], handoff["review_need"])
+        record = {**handoff, "manifest_path": handoff["evidence_manifest_path"],
+                  "manifest_sha256": handoff["evidence_manifest_sha256"],
+                  "verification_commands": route["verification_commands"]}
+    repair_paths = repair_paths or [".cursor/hooks/subagent-start.ps1"]
+    evidence_root = Path(record["manifest_path"]).parent
+    commission_path = evidence_root / "user-commission.json"
+    if not state.get("technical_recovery", {}).get("enabled"):
+        commission = {
+            "kind": "AUTONOMOUS_TECHNICAL_RECOVERY",
+            "user_authorization": "Synthetic explicit authorization for this package recovery.",
+            "allow_technical_repair": True,
+            "package_id": record["package_id"],
+            "checkpoint_id": record["checkpoint_id"],
+            "target_root": str(repo.resolve()),
+            "branch": record["branch"],
+            "contract_sha256": record["contract_sha256"],
+            "repair_allowlist": repair_paths,
+            "counter_floor": {
+                field: state[field]
+                for field in ("rework_count", "regular_rework_count", "exceptional_count", "final_rework_count") if field in state
+            },
+        }
+        (repo / commission_path).write_text(json.dumps(commission), encoding="utf-8")
+        state["technical_recovery"] = {
+            "enabled": True, "user_stop": False,
+            "commission_path": commission_path.as_posix(),
+            "commission_sha256": hashlib.sha256((repo / commission_path).read_bytes()).hexdigest(),
+            "batches": [], "active_batch_id": None,
+        }
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+    proposal = {
+        "kind": "TECHNICAL_RECOVERY_PROPOSAL",
+        "decision": "REPAIR_WITHIN_COMMISSION",
+        "diagnosis_complete": True,
+        "requires_user_decision": False,
+        "changes_security_or_permissions": False,
+        "material_amendment": False,
+        **{field: record[field] for field in (
+            "package_id", "checkpoint_id", "contract_sha256", "manifest_sha256", "diff_sha256"
+        )},
+        "findings": [{"id": proposal_suffix, "cause": "Bound synthetic failure",
+                      "repair": "Repair the existing owner", "evidence_key": evidence_key}],
+        "repair_paths": repair_paths,
+        "verification_commands": record["verification_commands"],
+    }
+    proposal_path = evidence_root / f"proposal-{proposal_suffix}.json"
+    (repo / proposal_path).write_text(json.dumps(proposal), encoding="utf-8")
+    return {**handoff, "result_kind": "RECOVERY_PROPOSAL",
+            "proposal_path": proposal_path.as_posix(),
+            "proposal_sha256": hashlib.sha256((repo / proposal_path).read_bytes()).hexdigest()}
+
+
+def _technical_recovery_fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, Any]]:
+    repo = _isolated_recovery_diagnosis_repo(tmp_path)
+    handoff = _recovery_diagnosis_handoff(tmp_path, binding_repo=repo)
+    state_path = _recovery_running_state_path(tmp_path)
+    pre = _run_external_codex_hook(tmp_path, handoff, mode="EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF",
+                                   binding_repo=repo, state_path=state_path)
+    assert pre["handoff"] == "RECOVERY_DIAGNOSIS_READY", pre
+    _write_state_binding_record(state_path, pre["bindingRecord"])
+    return repo, state_path, _commission_technical_recovery(repo, state_path, handoff)
+
+
+def _technical_receipt(tmp_path: Path, repo: Path, state_path: Path, handoff: dict[str, Any]) -> dict[str, Any]:
+    return _run_external_codex_hook(tmp_path, handoff, mode="EXTERNAL_CODEX_RECOVERY_RECEIPT",
+                                    binding_repo=repo, state_path=state_path)
+
+
+def test_technical_recovery_receipt_reserves_once_and_resumes_real_hooks(tmp_path: Path) -> None:
+    repo, state_path, handoff = _technical_recovery_fixture(tmp_path)
+    before = json.loads(state_path.read_text(encoding="utf-8"))
+    receipt = _technical_receipt(tmp_path, repo, state_path, handoff)
+    assert receipt["status"] == "RUNNING", _hook_result_json(receipt)
+    assert receipt["handoff"] == "RECOVERY_PROPOSAL_BOUND"
+    assert receipt["recovery"]["batch_count"] == 1
+    assert receipt["recovery"]["review_pass"] is False
+    assert receipt["recovery"]["git_authorized"] is False
+    replay = _technical_receipt(tmp_path, repo, state_path, handoff)
+    assert replay["recovery"]["replay"] is True, replay
+    assert replay["recovery"]["batch_count"] == 1
+    raw_finding = _commission_technical_recovery(repo, state_path, handoff, proposal_suffix="raw-finding")
+    premature = _technical_receipt(tmp_path, repo, state_path, raw_finding)
+    assert "complete current recovery batch" in premature["recovery"]["reason"], premature
+    after = json.loads(state_path.read_text(encoding="utf-8"))
+    assert after["phase"] == "REWORK"
+    for field in ("rework_count", "regular_rework_count", "exceptional_count", "final_rework_count", "gates"):
+        assert after[field] == before[field]
+    for script in ("session-start.ps1", "workflow-watchdog.ps1"):
+        result = _run_hook(script, {"status": "completed"}, state_path=state_path, cwd=repo)
+        assert "reserved technical recovery batch" in json.dumps(result).lower(), result
+    payload = _pre_tool_use_task_payload(tool_input={"prompt": "[ROLE:implementer]\nApply reserved repair",
+                                                    "model": "composer-2.5", "subagent_type": "implementer"})
+    payload["workspace_roots"] = [str(repo.resolve())]
+    allowed = _run_hook("subagent-start.ps1", payload, state_path=state_path, cwd=repo,
+                        log_path=tmp_path / "recovery-implementer.log")
+    assert allowed["permission"] == "allow", allowed
+
+
+def test_technical_recovery_budget_survives_receipt_reset_and_changed_handoff(tmp_path: Path) -> None:
+    repo, state_path, handoff = _technical_recovery_fixture(tmp_path)
+    assert _technical_receipt(tmp_path, repo, state_path, handoff)["status"] == "RUNNING"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["external_review"]["recovery_proposal_bound"] = False
+    state["technical_recovery"]["batches"][-1]["outcome"] = "FAILED"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    second = _commission_technical_recovery(repo, state_path, handoff, proposal_suffix="two")
+    result = _technical_receipt(tmp_path, repo, state_path, second)
+    assert result["recovery"]["batch_count"] == 2, result
+    # A fresh PRE/evidence-attempt must carry the existing commission and batch history.
+    next_handoff = _recovery_diagnosis_handoff(tmp_path, binding_repo=repo, evidence_attempt="fresh-context")
+    pre = _run_external_codex_hook(tmp_path, next_handoff, mode="EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF",
+                                   binding_repo=repo, state_path=state_path)
+    assert pre["handoff"] == "RECOVERY_DIAGNOSIS_READY", pre
+    _write_state_binding_record(state_path, pre["bindingRecord"])
+    third = _commission_technical_recovery(repo, state_path, next_handoff, proposal_suffix="three")
+    denied = _technical_receipt(tmp_path, repo, state_path, third)
+    assert denied["status"] == "BLOCKED_HUMAN"
+    assert "budget exhausted" in denied["recovery"]["reason"], denied
+    assert len(json.loads(state_path.read_text(encoding="utf-8"))["technical_recovery"]["batches"]) == 2
+
+
+def test_technical_recovery_decision_stop_and_stale_proposal_deny_without_reservation(tmp_path: Path) -> None:
+    import hashlib
+
+    repo, state_path, handoff = _technical_recovery_fixture(tmp_path)
+    original_state = state_path.read_bytes()
+    for stop in ("human_gate", "user_stop", "blocked_state"):
+        state = json.loads(original_state)
+        if stop == "human_gate": state["human_gate"] = True
+        elif stop == "user_stop": state["technical_recovery"]["user_stop"] = True
+        else: state["status"] = "BLOCKED_HUMAN"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        denied = _technical_receipt(tmp_path, repo, state_path, handoff)
+        assert denied["status"] == "BLOCKED_HUMAN", denied
+        assert json.loads(state_path.read_text(encoding="utf-8"))["technical_recovery"]["batches"] == []
+        session = _run_hook("session-start.ps1", {}, state_path=state_path, cwd=repo)
+        assert "Resume reserved" not in session["additional_context"]
+        assert _run_hook("workflow-watchdog.ps1", {"status": "completed"}, state_path=state_path, cwd=repo) == {}
+    state_path.write_bytes(original_state)
+    proposal_path = repo / handoff["proposal_path"]
+    original_proposal = proposal_path.read_bytes()
+    for field in ("requires_user_decision", "changes_security_or_permissions", "material_amendment"):
+        proposal = json.loads(original_proposal)
+        proposal[field] = True
+        proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+        blocked = _technical_receipt(tmp_path, repo, state_path, {**handoff,
+            "proposal_sha256": hashlib.sha256(proposal_path.read_bytes()).hexdigest()})
+        assert blocked["status"] == "BLOCKED_HUMAN", blocked
+    stale = _technical_receipt(tmp_path, repo, state_path, handoff)
+    assert "hash mismatch" in stale["recovery"]["reason"], stale
+    assert json.loads(state_path.read_text(encoding="utf-8"))["technical_recovery"]["batches"] == []
+
+
+def test_technical_recovery_watchdog_budget_persists_and_manual_abort_never_consumes(tmp_path: Path) -> None:
+    repo, state_path, handoff = _technical_recovery_fixture(tmp_path)
+    assert _technical_receipt(tmp_path, repo, state_path, handoff)["status"] == "RUNNING"
+    before = json.loads(state_path.read_text(encoding="utf-8"))
+    proposal_before = (repo / handoff["proposal_path"]).read_bytes()
+    assert _run_hook("workflow-watchdog.ps1", {"status": "aborted"}, state_path=state_path, cwd=repo) == {}
+    stopped = json.loads(state_path.read_text(encoding="utf-8"))
+    expected = json.loads(json.dumps(before))
+    expected["technical_recovery"]["user_stop"] = True
+    assert stopped == expected  # Counts, evidence bindings, phase and gates all preserved.
+    session = _run_hook("session-start.ps1", {}, state_path=state_path, cwd=repo)
+    assert "Resume reserved" not in session["additional_context"]
+    assert "Resume the persisted workflow" not in session["additional_context"]
+    assert _run_hook("workflow-watchdog.ps1", {"status": "completed"}, state_path=state_path, cwd=repo) == {}
+    stopped_bytes = state_path.read_bytes()
+    assert _run_hook("workflow-watchdog.ps1", {"status": "aborted"}, state_path=state_path, cwd=repo) == {}
+    assert state_path.read_bytes() == stopped_bytes
+    assert _technical_receipt(tmp_path, repo, state_path, handoff)["status"] == "BLOCKED_HUMAN"
+    assert (repo / handoff["proposal_path"]).read_bytes() == proposal_before
+    # Simulate the coordinator's explicit-user-resume metadata write; no budget reset.
+    stopped["technical_recovery"]["user_stop"] = False
+    state_path.write_text(json.dumps(stopped), encoding="utf-8")
+    for _ in range(_config()["defaults"]["stop_hook_loop_limit"]):
+        result = _run_hook("workflow-watchdog.ps1", {"status": "completed", "loop_count": 0}, state_path=state_path, cwd=repo)
+        assert "followup_message" in result, result
+    assert _run_hook("workflow-watchdog.ps1", {"status": "completed", "loop_count": 0}, state_path=state_path, cwd=repo) == {}
+    replay = _technical_receipt(tmp_path, repo, state_path, handoff)
+    assert replay["recovery"]["replay"] is True
+    assert _run_hook("workflow-watchdog.ps1", {"status": "completed"}, state_path=state_path, cwd=repo) == {}
+
+
+def test_session_start_human_gate_never_emits_normal_resume(tmp_path: Path) -> None:
+    state_path = tmp_path / "human-state.json"
+    _write_state(state_path, status="BLOCKED_HUMAN", human_gate=True, next_action="commit then implement")
+    result = _run_hook("session-start.ps1", {}, state_path=state_path)
+    assert "Resume the persisted workflow" not in result["additional_context"]
+    assert "commit then implement" not in result["additional_context"]
+
+
+def test_recovery_failed_command_and_errors_only_evidence_binding(tmp_path: Path) -> None:
+    import hashlib
+
+    repo = _isolated_recovery_diagnosis_repo(tmp_path)
+    handoff = _recovery_diagnosis_handoff(tmp_path, binding_repo=repo)
+    state_path = _recovery_running_state_path(tmp_path)
+    manifest_path = repo / handoff["evidence_manifest_path"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    junit = repo / manifest["evidence_paths"]["failed_review_junit"]
+    junit.write_text(junit.read_text(encoding="utf-8").replace('errors="0" failures="1"', 'errors="1" failures="0"'), encoding="utf-8")
+    manifest["evidence_sha256"]["failed_review_junit"] = hashlib.sha256(junit.read_bytes()).hexdigest()
+    manifest_binding = {key: value for key, value in manifest.items() if key not in ("schema_version", "created_at", "reuse_key_sha256")}
+    manifest["reuse_key_sha256"] = hashlib.sha256(json.dumps(manifest_binding, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    handoff["evidence_manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    errors = _run_external_codex_hook(tmp_path, handoff, mode="EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF",
+                                      binding_repo=repo, state_path=state_path)
+    assert errors["handoff"] == "RECOVERY_DIAGNOSIS_READY", _hook_result_json(errors)
+    command_path = manifest_path.parent / "failed-command.json"
+    command_path.write_text(json.dumps({"kind": "FAILED_COMMAND", "command": "synthetic-build --check",
+        "exit_code": 2, "context": "Synthetic startup failure before JUnit", "secrets_redacted": True}), encoding="utf-8")
+    manifest["evidence_paths"] = {"failed_command_result": command_path.relative_to(repo).as_posix()}
+    manifest["evidence_sha256"] = {"failed_command_result": hashlib.sha256(command_path.read_bytes()).hexdigest()}
+    manifest_binding = {key: value for key, value in manifest.items() if key not in ("schema_version", "created_at", "reuse_key_sha256")}
+    manifest["reuse_key_sha256"] = hashlib.sha256(json.dumps(manifest_binding, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    handoff["evidence_manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    command = _run_external_codex_hook(tmp_path, handoff, mode="EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF",
+                                       binding_repo=repo, state_path=state_path)
+    assert command["handoff"] == "RECOVERY_DIAGNOSIS_READY", _hook_result_json(command)
+    command_path.write_text(command_path.read_text(encoding="utf-8").replace('"exit_code": 2', '"exit_code": 0'), encoding="utf-8")
+    changed = _run_external_codex_hook(tmp_path, handoff, mode="EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF",
+                                       binding_repo=repo, state_path=state_path)
+    assert changed["permission"] == "deny"
+    assert "changed" in changed["reason"], changed
+
+
+def test_technical_recovery_actual_template_lifecycle_and_fresh_review(tmp_path: Path) -> None:
+    package_id, checkpoint_id = "NEW-PACKAGE", "CP1"
+    repair_path = "repair-target.txt"
+    check_code = "from pathlib import Path; assert Path('repair-target.txt').read_text() == 'repaired\\n'"
+    check_path = "verify-repair.py"
+    verify_command = f"python {check_path}"
+    route = {
+        "package_id": package_id, "checkpoint_id": checkpoint_id, "base_ref": "pending",
+        "allowlist_paths": [".cursor/agent-system.json", repair_path, check_path],
+        "evidence_path_template": {"root": "build/new-package/cp1",
+                                   "contract_file": "checkpoint-contract.md", "manifest_file": "context-manifest.json"},
+        "verification_commands": [verify_command], "scope_mode": "dirty",
+    }
+    repo = _isolated_generic_registry_repo(tmp_path, extra_bindings={package_id: {
+        "checkpoint_escalation": {**route, "review_need": "CHECKPOINT_ESCALATION",
+                                  "ladder_role": "checkpoint-reviewer", "require_complete_ladder": True},
+    }})
+    missing = _run_route_preflight(tmp_path, repo, package_id=package_id, checkpoint_id=checkpoint_id,
+                                   review_need="RECOVERY_DIAGNOSIS")
+    assert missing["permission"] == "deny"
+    # Existing config owner is registered during PLAN, before manifests/commission/source repair.
+    config_path = repo / ".cursor/agent-system.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    base_ref = config["external_codex_bound_review"]["base_ref"]
+    config["external_codex_bound_review"]["review_route_bindings"][package_id]["recovery_diagnosis"] = {
+        **route, "base_ref": base_ref, "review_need": "RECOVERY_DIAGNOSIS", "purpose": "diagnosis",
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    for need in ("RECOVERY_DIAGNOSIS", "CHECKPOINT_ESCALATION"):
+        ready = _run_route_preflight(tmp_path, repo, package_id=package_id, checkpoint_id=checkpoint_id,
+                                     review_need=need)
+        assert ready["handoff"] == "ROUTE_PREFLIGHT_READY", ready
+    wrong = _run_route_preflight(tmp_path, repo, package_id=package_id, checkpoint_id="CP-OTHER",
+                                 review_need="RECOVERY_DIAGNOSIS")
+    assert wrong["permission"] == "deny"
+    evidence_root = Path(route["evidence_path_template"]["root"])
+    _synthetic_repo_exclude_paths(repo, f"{evidence_root.as_posix()}/")
+    (repo / check_path).write_text(check_code + "\n", encoding="utf-8")
+    failed = subprocess.run([sys.executable, check_path], cwd=repo, capture_output=True, text=True)
+    assert failed.returncode != 0
+    failed_path = evidence_root / "recovery-one/failed-command.json"
+    (repo / failed_path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / failed_path).write_text(json.dumps({"kind": "FAILED_COMMAND", "command": verify_command,
+        "exit_code": failed.returncode, "context": "Fixture candidate does not contain the required repair.",
+        "secrets_redacted": True}), encoding="utf-8")
+    handoff = _final_audit_pre_payload(_registry_route_handoff(
+        tmp_path, binding_repo=repo, package_id=package_id, checkpoint_id=checkpoint_id,
+        evidence_attempt="recovery-one", review_need="RECOVERY_DIAGNOSIS",
+        evidence={"failed_command_result": failed_path.as_posix()},
+        rework_count=_config()["defaults"]["max_checkpoint_reworks"], final_rework_count=0,
+    ))
+    state_path = tmp_path / "template-lifecycle.json"
+    state = _write_state(state_path, work_package=package_id, checkpoint=checkpoint_id,
+                         work_branch=handoff["branch"], phase="PLAN", rework_count=handoff["rework_count"])
+    assert "regular_rework_count" not in state
+    receipt_payload = _commission_technical_recovery(repo, state_path, handoff,
+        repair_paths=[repair_path], evidence_key="failed_command_result")
+    assert json.loads(state_path.read_text(encoding="utf-8"))["external_review"]["bindingRecord"] is None
+    pre = _run_external_codex_hook(tmp_path, handoff, mode="EXTERNAL_CODEX_RECOVERY_PRE_HANDOFF",
+                                   binding_repo=repo, state_path=state_path)
+    assert pre["handoff"] == "RECOVERY_DIAGNOSIS_READY", _hook_result_json(pre)
+    _write_state_binding_record(state_path, pre["bindingRecord"])
+    receipt = _technical_receipt(tmp_path, repo, state_path, receipt_payload)
+    assert receipt["status"] == "RUNNING", _hook_result_json(receipt)
+    assert receipt["recovery"]["review_pass"] is False
+    assert receipt["recovery"]["git_authorized"] is False
+    payload = _pre_tool_use_task_payload(tool_input={"prompt": "[ROLE:implementer]\nApply reserved repair",
+                                                    "model": "composer-2.5", "subagent_type": "implementer"})
+    payload["workspace_roots"] = [str(repo.resolve())]
+    allowed = _run_hook("subagent-start.ps1", payload, state_path=state_path, cwd=repo,
+                        log_path=tmp_path / "new-package-implementer.log")
+    assert allowed["permission"] == "allow", allowed
+    (repo / repair_path).write_text("repaired\n", encoding="utf-8")
+    passed = subprocess.run([sys.executable, check_path], cwd=repo, capture_output=True, text=True)
+    assert passed.returncode == 0, passed.stderr
+    passed_path = evidence_root / "review-two/passed-command.json"
+    (repo / passed_path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / passed_path).write_text(json.dumps({"command": verify_command, "exit_code": passed.returncode}), encoding="utf-8")
+    review_handoff = _final_audit_pre_payload(_registry_route_handoff(
+        tmp_path, binding_repo=repo, package_id=package_id, checkpoint_id=checkpoint_id,
+        evidence_attempt="review-two", review_need="CHECKPOINT_ESCALATION",
+        evidence={"verification_result": passed_path.as_posix()},
+        rework_count=handoff["rework_count"], final_rework_count=0,
+    ))
+    assert review_handoff["diff_sha256"] != handoff["diff_sha256"]
+    fresh = _run_external_codex_hook(tmp_path, review_handoff, mode="EXTERNAL_CODEX_PRE_HANDOFF",
+                                    binding_repo=repo, state_path=state_path)
+    assert fresh["handoff"] == "PRE_HANDOFF_READY", _hook_result_json(fresh)
+    assert fresh["bindingRecord"]["package_id"] == package_id
+    assert fresh["bindingRecord"]["review_need"] == "CHECKPOINT_ESCALATION"
+    assert fresh["bindingRecord"]["attempt"] == "review-two"
+    # The coordinator anchors only the real PRE return; independent review has not run yet.
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    history = state["technical_recovery"]["batches"]
+    history[-1]["outcome"] = "REPAIRED"
+    state["phase"] = "REVIEW"
+    state["external_review"]["recovery_proposal_bound"] = False
+    state["external_review"]["bindingRecord"] = fresh["bindingRecord"]
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    session = _run_hook("session-start.ps1", {}, state_path=state_path, cwd=repo)
+    assert "Resume the persisted workflow" in session["additional_context"], session
+    watchdog = _run_hook("workflow-watchdog.ps1", {"status": "completed"}, state_path=state_path, cwd=repo)
+    assert "followup_message" in watchdog
+    final = json.loads(state_path.read_text(encoding="utf-8"))
+    assert final["technical_recovery"]["batches"] == history
+    assert len(history) == 1
+    assert final["rework_count"] == handoff["rework_count"]
+    assert final["final_rework_count"] == 0
+    assert not any(final["gates"].values())
+    assert final["external_review"]["status"] == "NOT_REQUESTED"

@@ -28,5 +28,13 @@
     "full_regression_pass": false,
     "final_audit_pass": false,
     "ci_pass": false
+  },
+  "technical_recovery": {
+    "enabled": false,
+    "user_stop": false,
+    "commission_path": null,
+    "commission_sha256": null,
+    "batches": [],
+    "active_batch_id": null
   }
 }

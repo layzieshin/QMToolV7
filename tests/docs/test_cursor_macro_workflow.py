@@ -260,25 +260,31 @@ def test_qmtool_reviewer_and_macro_skill_contracts() -> None:
     assert "PARENT_CAPTURE_REQUIRED" in agent
 
     assert ".cursor/agent-system.json" in skill
-    assert "configured checkpoint-rework budget" in skill
+    assert "configured shared rework budget" in skill
+    assert "max_technical_recovery_batches" in skill
     assert "checkpoint-contract.md" in skill
     assert "contract_sha256" in skill
-    assert "SCOPE_CORRECTION_REQUIRED" in skill
+    assert "Trace Scope Correction to existing owners/approved criteria before edits" in skill
+    assert "genuine new decisions remain bundled Scope Expansion/HUMAN_GATE" in skill
     assert "Never run Codex after individual AP-029 subcheckpoints" in skill
     normalized_skill = " ".join(skill.split())
     assert "separate context" in normalized_skill
     assert "post-review" in skill
     assert "CONTROL_PLANE_PINNED" in skill
     assert REQUIRED_TASK_MODEL in skill
-    assert "do not start another gate" in protocol
-    assert "already-running gates" in protocol
-    assert "`NOT RUN` only" in protocol
+    normalized_protocol = " ".join(protocol.split())
+    assert "red/blocked gate stops acceptance and dependent progression" in normalized_protocol
+    assert "already authorized independent diagnostics whose prerequisites hold" in normalized_protocol
+    assert "label them `NOT_ACCEPTANCE`" in normalized_protocol
+    assert "Do not advance the checkpoint or mutate an unapproved target" in normalized_protocol
+    assert "`NOT RUN` means never started/reached" in normalized_protocol
     assert "evidence_profile" in protocol
     assert "review_model_fallback" in protocol
     assert "grok-4.7-high" in protocol
     assert "Immutable checkpoint contract" in protocol
     assert "Scope correction" in protocol
-    assert "no text in this protocol creates a separate budget" in protocol
+    assert "`max_technical_recovery_batches` limits come only from config" in normalized_protocol
+    assert "record normal and recovery use separately without resetting limits" in normalized_protocol
 
     for contract in (agent, skill, protocol, workflow):
         normalized = " ".join(contract.split()).lower()
