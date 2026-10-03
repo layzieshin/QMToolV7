@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "recovery-policy.ps1")
 
 $null = [Console]::In.ReadToEnd()
 $statePath = if ($env:QMTOOL_WORKFLOW_STATE_PATH) {
@@ -44,7 +45,16 @@ $context = @(
     "Execution Journal Path: $($state.execution_journal_path)"
 )
 
-if ($recoveryProposalBound) {
+$technicalRecovery = $null
+if ($recoveryProposalBound -or $recoveryDiagnosisBound) {
+    $config = Get-Content -LiteralPath (Join-Path (Get-Location) ".cursor/agent-system.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $technicalRecovery = Invoke-TechnicalRecoveryPolicy -Config $config
+}
+if ($null -ne $technicalRecovery -and $technicalRecovery.eligible) {
+    $context += "Resume reserved technical recovery batch $($technicalRecovery.batch_count): $($technicalRecovery.batch_id)."
+    $context += "Use the bound consolidated proposal, then mandatory gates and fresh independent review. No review PASS or Git authority is granted by this receipt."
+}
+elseif ($recoveryProposalBound) {
     $context += "Recovery diagnosis receipt: RECOVERY_PROPOSAL_BOUND"
     $context += "Do not issue Resume, Implement, or Commit instructions from this receipt."
     $context += "Missing explicit coordinator commission blocks further automation."
@@ -55,6 +65,9 @@ elseif ($recoveryDiagnosisBound) {
     $context += "Do not issue Resume, Implement, or Commit instructions while recovery diagnosis binding is active."
     $context += "Missing explicit coordinator commission blocks further automation."
     $context += "Status remains BLOCKED_HUMAN until human gate or new valid commission."
+}
+elseif ($state.status -ne "RUNNING" -or [bool]$state.human_gate -or [bool]$state.technical_recovery.user_stop) {
+    $context += "Workflow remains stopped. Do not resume implementation or Git operations without resolving the recorded human gate or explicit user stop."
 }
 else {
     $context += "Next Action: $($state.next_action)"

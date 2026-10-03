@@ -27,9 +27,12 @@ alwaysApply: true
   integrity bypass, or was introduced by the rework; otherwise record it as a non-blocking follow-up.
 - Each reviewer instance gets the configured focused verification passes. No recursive exploration
   or new reviewer/fix loop; material new blockers consume the configured rework budget.
-- An omitted existing owner may enter the configured Scope Correction path before edit; new
-  responsibility, behavior, API, architecture or technology is Scope Expansion and follows normal
-  plan/HUMAN_GATE rules.
+- The checkpoint protocol owns diagnosis, bundled repair, dependency reruns and technical recovery.
+  Explicit autonomy binds package/checkpoint/contract; `max_technical_recovery_batches` is config-only.
+  No consent per engineering finding, counter resets or retroactive opt-in.
+- Existing-owner Scope Correction may meet approved criteria with a preserved amendment before edits;
+  no behavior outside those criteria or unapproved API/architecture/technology. New user decisions stay gated.
+- Internal/external FAIL share the applicable repair policy; no diagnosis/local receipt substitutes PASS.
 - Only `git-steward` performs workflow Git/GitHub writes, and only in `CHECKPOINT_GIT` or
   `FINAL_GIT` under the hook gates.
 - GitHub Codex is a bounded optional external reviewer on the final PR path, never per checkpoint.

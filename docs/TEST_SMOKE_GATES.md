@@ -9,15 +9,21 @@ Verpflichtende Vorher/Nachher-Gates für Governance-, Architektur-, Persistenz- 
 
 ## First-red Semantik
 
-- Beim ersten roten oder blockierten **Pflichtgate** keine späteren Pflichtgates starten.
-- Parent-Checkpoint bleibt `FAILED` oder `BLOCKED` (kein PASS durch spätere Grüns).
+- Rot/blockiert stoppt Freigabe und abhängigen Fortschritt. Sichere autorisierte unabhängige
+  Diagnose darf Findings vollständig sammeln (`NOT_ACCEPTANCE`); erste Fehler/Evidence erhalten.
+- Parent-Checkpoint bleibt `FAILED`/`BLOCKED` bis zur gültigen Neubewertung nach Reparatur.
+  Spätere Diagnose-Grüns sind kein PASS.
 - Nur nie gestartete Schritte als `NOT RUN` melden.
 - Bereits ausgeführte Gates mit ihrem echten Ergebnis berichten.
 - Keine Retries zur Verdeckung, keine abgeschwächten Assertions, keine verlängerten Timeouts
   als Ersatz für einen Fix.
-- In einem ausdrücklich freigegebenen AP-029-Makro sind höchstens zwei klar abgegrenzte
-  Remediation-Runden je Checkpoint zulässig. Danach beginnt jeweils eine neue vollständige
-  Gatesequenz; ein weiterer normaler FAIL führt genau einmal in den Escalation Review.
+- Engineering-Findings gebündelt reparieren, dann fehlgeschlagene Checks und betroffene
+  Abhängigkeiten erneut prüfen. Unveränderte Evidence nur mit gültiger Bindung wiederverwenden;
+  verpflichtende Voll-/Integrationsgates bleiben bestehen.
+- Rework-, Eskalations- und `max_technical_recovery_batches`-Grenzen stammen ausschließlich aus
+  `.cursor/agent-system.json`. Opt-in, Diagnose, Recovery und echte HUMAN_GATEs regelt das bestehende
+  `.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`; alte blockierte/abgebrochene
+  Versuche werden nicht rückwirkend freigegeben.
 
 Technische Gates ersetzen keine menschliche Pilotfreigabe.
 

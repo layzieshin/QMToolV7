@@ -10,7 +10,8 @@
     "stop_hook_loop_limit": 8,
     "local_only": true,
     "architecture_change_requires_human": true,
-    "auto_merge_after_all_gates": true
+    "auto_merge_after_all_gates": true,
+    "max_technical_recovery_batches": 2
   },
   "planning_quality": {
     "enabled": true,

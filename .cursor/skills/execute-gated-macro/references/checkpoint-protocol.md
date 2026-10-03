@@ -5,18 +5,53 @@
 Allowed ledger statuses are `TODO`, `IN_PROGRESS`, `PASS`, `FAILED` and `BLOCKED`. Only one
 checkpoint may be active. A green focused test never promotes a parent checkpoint by itself.
 
-After the first mandatory red or blocked gate:
+A mandatory red/blocked gate stops acceptance and dependent progression. Preserve the first error
+and actual results. Safe, already authorized independent diagnostics whose prerequisites hold may
+collect the complete actionable finding set; label them `NOT_ACCEPTANCE`. Do not advance the
+checkpoint or mutate an unapproved target. `NOT RUN` means never started/reached. Diagnosis cannot
+be relabeled as retry, review verdict or PASS.
 
-- do not start another gate in that sequence;
-- preserve the evidence and first error;
-- report already-running gates by their observed results;
-- use `NOT RUN` only for never-started or never-reached work;
-- record any fail-fast violation separately.
+Bundle engineering findings into one decision-complete repair order. One remediation round is one
+bounded change set plus verification, not every assertion or diagnostic. Numeric normal-rework,
+escalation, scope-correction and `max_technical_recovery_batches` limits come only from config.
 
-One remediation round means one bounded change set followed by a new gate sequence. An isolated
-diagnostic is not a PASS and may not silently become a retry. Numeric limits and role models come
-only from `.cursor/agent-system.json`; no text in this protocol creates a separate budget. After
-the configured normal budget, the configured fresh escalation path decides PASS or BLOCKED_HUMAN.
+### Authorized engineering recovery
+
+An explicit autonomous mandate includes engineering recovery inside its approved goal, without
+renewed consent per finding. Opt-in binds the concrete package, checkpoint and frozen contract for
+a new attempt or explicitly approved resume. Config/document changes, positive budget and diagnosis
+receipts never opt in old blocked/stopped attempts. Preserve their counters, contracts and evidence
+interpretation. Manual stop requires human resume: watchdog `status=aborted` persists
+`technical_recovery.user_stop=true`; later completed/session events must not clear it. PLAN registry
+registration, immutable Commission fields and exact PRE -> receipt -> repair -> fresh-review PRE
+sequencing use the existing owner schemas in `.cursor/runtime/README.md`; perform registration
+before scope freeze and preserve budgets on explicitly authorized resume.
+
+Use normal repair first, then existing escalation to consolidate causes. Within a valid bound
+commission and configured technical-recovery limit, execute its bounded repair batches; record
+normal and recovery use separately without resetting limits. This creates no extra model ladder
+or external-review rounds. Local validation grants neither PASS nor execution by itself; bound
+authorization and runtime guards remain required. Missing opt-in, exhausted recovery, no justified
+new repair approach or a genuine user decision blocks dependent work.
+
+Internal/external substantive FAIL follows the same applicable repair policy. Fix findings and
+obtain a fresh independent verdict; never switch reviewer/model to evade FAIL. Correctable stale
+or missing evidence requires repair/revalidation, not assumed PASS. Changed reviewed content needs
+a fresh verdict; missing real identity, access or independent capability remains a gate.
+
+### Verification and decisions
+
+Rerun failed checks and affected dependencies/regression. Reuse unaffected evidence only with valid
+exact-command/input/prerequisite/hash binding; a new binding does not make old results current.
+The complete required package/integration matrix must be satisfied before PASS. Explicit full-run
+and exact-candidate requirements remain mandatory; avoid unchanged expensive reruns without cause.
+
+Keep criteria and architecture/security/data invariants fixed. Engineering defaults/corrections
+needed to meet them are autonomous; preserve necessary amendments before editing. Bundle genuine
+product, architecture, trust, credential/permission, cost, target-ownership, destructive-data or
+human-acceptance decisions with evidence, options and recommendation. Continue independent authorized
+work while dependent action is blocked. Never weaken tests, hide failures, bypass guards, alter
+foreign work or substitute technical green for human acceptance.
 
 ## Runtime status evidence chain
 
@@ -85,9 +120,11 @@ handled by the planning process.
 
 On `SCOPE_CORRECTION_REQUIRED`, do not edit the omitted file. The parent may update the allowlist
 within the configured budget only when it is an existing canonical owner directly required by an
-approved criterion and the change is small, immediate, and adds no behavior, public surface,
-architecture or technology. Record file, responsibility, reason, affected criterion and reviewer
-verification. Anything broader is Scope Expansion; no incremental allowlist erosion.
+approved criterion and the change is small and immediate, with no behavior outside approved criteria
+or unapproved public surface, architecture or technology. Preserve an amendment with file,
+responsibility, reason, affected criterion and reviewer verification before editing. Authorized
+technical recovery uses the same owner/criterion trace within its configured limit. New user
+decisions remain Scope Expansion; no incremental erosion of the approved goal or invariants.
 
 ## Reviewer handoff
 
@@ -168,7 +205,9 @@ never review `HANDOFF_READY`, `CONTINUE`, or gate/external PASS.
 This is not `INDEPENDENT_ORCHESTRATOR_REVIEW`, not a Cursor model ID, and not D15
 `RUNTIME_ATTESTED` or `CONTROL_PLANE_PINNED`. Local validators check structure, staleness, and
 hash binding only; they do not authenticate external origin or serving model. Missing, stale, or
-conflicting handoff evidence is `BLOCKED_HUMAN` with no Cursor GPT fallback.
+conflicting handoff evidence blocks the handoff. Diagnose and correct technical binding defects
+under the authorized recovery policy; missing trust/access or an unresolved exhausted recovery
+requires `BLOCKED_HUMAN`. No Cursor GPT fallback may substitute an external verdict.
 
 <!-- EXTERNAL_CODEX_BOUND_REVIEW_START -->
 contract_id: EXTERNAL_CODEX_BOUND_REVIEW
@@ -196,11 +235,11 @@ external_codex_after_cursor_gpt_unavailable: true
 substantive_fail_blocks_external: true
 <!-- EXTERNAL_CODEX_BOUND_REVIEW_END -->
 
-Exhausted checkpoint rework uses `[ROLE:escalation-reviewer]` only to validate
-`EXTERNAL_CODEX_BOUND_REVIEW` handoff via `.cursor/hooks/subagent-start.ps1`
-(`validation_mode=EXTERNAL_CODEX_BOUND_REVIEW`). After `HANDOFF_READY`, require the external Codex
-result on the same bound contract/diff/evidence. Critical packages skip duplicate Grok full audit and
-require external Codex final audit only.
+Exhausted checkpoint rework uses configured escalation and the recovery policy above. For external
+handoff, local validation produces `PRE_HANDOFF_READY` in `EXTERNAL_CODEX_PRE_HANDOFF` mode;
+then obtain the external result on the bound contract/diff/evidence. Only subsequent
+`EXTERNAL_CODEX_BOUND_REVIEW` validation may produce `HANDOFF_READY`. Local validation grants no
+checkpoint PASS. Critical packages retain configured direct-external final audit without duplicate audit.
 
 Required reviewer content fields: `agent_name`, `configured_model`,
 `requested_model`, `observed_runtime_model`, `observed_reasoning`, `evidence_profile`,

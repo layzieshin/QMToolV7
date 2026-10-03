@@ -22,7 +22,8 @@ Before acting, read:
   independent reviewer verdict and local commit after PASS unless the user explicitly opts out.
 - Before source edits freeze `checkpoint-contract.md`, record its SHA256 in the journal, and review
   against it. Preserve old snapshots and formal amendments; never move acceptance criteria silently.
-- Stop the macro on the first unresolved checkpoint.
+- Do not advance past an unresolved checkpoint; continue its authorized diagnosis/bounded repair
+  under the checkpoint protocol. Manual stops remain stopped.
 - Use `.cursor/agent-system.json` as the normative source for remediation, reviewer, scope-correction,
   escalation, parallelism and model limits. AP-029 has no implicit numeric override.
 - Do not infer permission for destructive tests, external writes, deployment, Echtdaten, human
@@ -86,10 +87,10 @@ substitute marker, not a Cursor model ID, and not D15 runtime attestation. Requi
 agent/task id, external host, separate read-only context, author/implementer/reviewer
 separation, package/checkpoint binding, contract/diff/evidence manifest hashes, identical
 pre/post fingerprints, and explicit PASS/FAIL from the external reviewer. Local validators
-check workspace-derived structure and staleness only. Missing, stale, or conflicting handoff
-evidence is `BLOCKED_HUMAN`. External Codex is reachable only after explicit Cursor GPT
-`UNAVAILABLE` on the applicable ladder; substantive reviewer `FAIL` never advances to another
-model or external Codex.
+check structure/staleness only. Correctable evidence defects use authorized repair, never assumed
+PASS. Missing identity/access or exhausted unresolved recovery requires `BLOCKED_HUMAN`. Critical
+final audit uses its configured direct-external route; checkpoint escalation follows the configured
+UNAVAILABLE ladder. Substantive FAIL never advances to another model/host to evade the verdict.
 
 ## Execution
 
@@ -102,14 +103,14 @@ model or external Codex.
 4. Build `context-manifest.json` with `scripts/checkpoint_snapshot.py manifest-build`, bind review
    evidence paths, and record the manifest path in the execution journal.
 5. Mark only the active checkpoint `IN_PROGRESS` and implement only its allowlist.
-6. Run mandatory gates in order. At the first red/blocked gate, stop that sequence and preserve
-   evidence.
-7. Each bounded, decision-complete failure consumes the configured checkpoint-rework budget and
-   runs a new complete gate sequence. After exhaustion, invoke the configured fresh
-   `[ROLE:escalation-reviewer]`; escalation `FAIL` sets `BLOCKED_HUMAN`.
-8. If implementer reports `SCOPE_CORRECTION_REQUIRED`, classify it before editing under the strict
-   existing-owner/approved-criterion/no-new-behavior-or-surface rule. Record an allowed correction
-   within the configured budget; otherwise treat it as Scope Expansion and stop for normal planning.
+6. Run gates with their prerequisites. Red/blocked stops acceptance/dependent progression; preserve
+   evidence and collect safe independent diagnosis as `NOT_ACCEPTANCE`.
+7. Bundle findings and use the checkpoint protocol's normal repair, escalation and explicitly bound
+   `max_technical_recovery_batches`. Rerun failed checks/affected dependencies; valid binding is required
+   to reuse unaffected evidence. The full matrix remains mandatory; no per-finding consent.
+8. Trace Scope Correction to existing owners/approved criteria before edits. Preserve an amendment;
+   no behavior outside those criteria or unapproved surface/architecture/technology. Use configured
+   correction/recovery; genuine new decisions remain bundled Scope Expansion/HUMAN_GATE.
 9. Validate or regenerate the context manifest before resume/reuse with
    `scripts/checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`.
    `--allow-reuse` without the exact expected verification command(s) fails closed. Stale manifests
@@ -124,7 +125,8 @@ model or external Codex.
     review makes the checkpoint `BLOCKED`; do not revert it automatically.
 12. Accept only reviewer `PASS` with an accepted evidence profile. Reviewer `FAIL` supplies the
     minimal order and consumes the configured shared rework budget; correct it, rerun the affected gates,
-    and invoke a fresh reviewer Task. After the budget, use the single escalation path above.
+    and invoke a fresh reviewer Task. After the budget, use the same escalation/recovery policy above;
+    internal/external FAIL share repair semantics without self-PASS.
 13. After PASS, update ledger/evidence, rerun the final documentation gate, stage exact allowed
     paths and create the local commit included by the implementation authorization unless the user
     opted out. Verify the commit file set.

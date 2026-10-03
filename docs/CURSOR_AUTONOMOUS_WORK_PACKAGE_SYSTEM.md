@@ -44,6 +44,63 @@ pytest remains supported; `conftest.py` assigns a unique `build/pt/<pid>-<token>
 caller deliberately supplies `--basetemp`. Guarded PostgreSQL/J04 runners keep their stricter fresh
 basetemp contract.
 
+## Codex implementation entry
+
+Authorized implementation packages that originate in the Codex IDE extension enter the existing
+Cursor workflow through the same launcher and coordinator roles. Codex keeps questions, reviews,
+architecture and planning; only bounded implementation work crosses into Cursor.
+
+### Supported fresh-package invocation
+
+Approval source, branch, and full HEAD must be fixed before launch. Example for a coordinator-owned
+fresh entry at a new package boundary:
+
+```powershell
+& .\.cursor\tools\invoke-cursor-agent.ps1 `
+  -TargetRoot I:\Projekte\QMToolV7-codex-cursor-entry `
+  -WorkPackage codex-cursor-entry `
+  -ExpectedBranch feature/codex-cursor-entry `
+  -ExpectedHead 9939c96657f6a22f2fa594d4ffbccbd988a5a673 `
+  -Prompt "<commissioned implementation prompt from the approving orchestrator>"
+```
+
+`-WorkPackage`, `-ExpectedBranch`, and `-ExpectedHead` form one complete binding group.
+`-WorkPackage` is a binding label only; it is not an implicit `/execute-work-package` command or
+broader Git authorization. The supplied task prompt carries the original approved scope. The
+launcher requires the target's canonical `invoke-cursor-agent.ps1`, `agent-system.json`, and
+`.cursor/runtime/workflow-state.json`, an attached branch matching the immutable 40-hex SHA, a clean
+fresh target, and known inactive `IDLE` or completed `DONE` workflow state with no `human_gate` or
+conflicting ownership. It rejects protected `main`/`master` targets, partial/blank binding,
+branch-name `ExpectedHead`, malformed state, redirected hook/Git owner variables such as
+`QMTOOL_WORKFLOW_STATE_PATH`, `QMTOOL_RUNTIME_LOG_PATH`, `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_COMMON_DIR`, or `GIT_INDEX_FILE`, reparse-point redirected canonical launcher/config/runtime
+owners, and any `-ResumeSession` combination. Generic prompt and resume calls without the binding
+group keep their existing supported behavior; this path does not implement automatic package
+resume. State/owner checks plus the child's immediate recheck are not an atomic exclusive-writer lock.
+
+The child receives the binding in its prompt and must recheck identity/ownership before any edit.
+The coordinator model comes only from the target's `.cursor/agent-system.json`
+(`routing.coordinator_model`); the launcher does not expose a user-facing model parameter.
+Opt-in `-AutoReview` forwards Cursor's native `--auto-review` only and cannot combine with `-Force`.
+
+### Evidence and limits
+
+Start/result lines append to
+`build/codex-cursor-entry/<work-package>/execution-journal.md` with one launcher-generated
+`launch_correlation_id` per attempt (not a native Cursor task/session id). The journal keeps
+requested model, observed child executable/working-directory/process id or start-failure outcome,
+native task/session evidence (`unknown` unless separately attested), and package result
+(`unverified`) distinct. Launcher exit `0` never means package `DONE`, reviewer `PASS`, or runtime
+model attestation. Failed entry never starts a child and never rewrites
+`.cursor/runtime/workflow-state.json`.
+
+Invoking the launcher does not grant push, PR, merge, or branch deletion. Those remain separately
+user-gated. A launcher smoke from a trusted Cursor host proves only that entry host; the Codex IDE
+extension path remains **NOT RUN** until exercised there.
+
+Activation applies at a new package boundary in a fresh Codex chat after integration. Existing
+UI/PILOT00 attempts, contracts, counters, runtime and acceptance states are preserved.
+
 ## State and evidence
 
 - Local resume state: `.cursor/runtime/workflow-state.json` (ignored)
@@ -100,8 +157,9 @@ UNAVAILABLE ladder; FINAL_AUDIT direct external with no ladder history; budget-F
 diagnosis (`RECOVERY_DIAGNOSIS` → `RECOVERY_DIAGNOSIS_READY` → `RECOVERY_PROPOSAL_BOUND` only); and
 native review that never substitutes external PASS. PRE computes `bindingRecord`; the coordinator
 anchors it once in `external_review.bindingRecord`; BOUND and recovery receipt reuse that anchored
-record plus existing `manifest-validate`. Diagnosis receipts do not grant resume, implement, commit,
-`HANDOFF_READY`, or `CONTINUE`.
+record plus existing `manifest-validate`. Diagnosis receipts alone do not grant resume, implement,
+commit, `HANDOFF_READY`, or `CONTINUE`. A separately commissioned, runtime-validated technical
+recovery batch permits bounded repair under the protocol below, never review PASS or Git authority.
 
 Resume a running package only after `context-manifest.json` validates with
 `checkpoint_snapshot.py manifest-validate --allow-reuse --verify-command "<exact normalized gate>"`
@@ -115,11 +173,16 @@ read-only `INDEPENDENT_ORCHESTRATOR_REVIEW` may fill the same responsibility.
 The author of the diff cannot be that reviewer. The label is not a Terra or Sol
 PASS and not a new budget.
 
-Escalation `FAIL` sets `BLOCKED_HUMAN`; no further automatic repair runs. A missing allowlisted
-file may use Scope Correction only when it is an existing canonical owner directly required by an
-approved criterion and adds no behavior, surface, architecture or technology; otherwise it is
-Scope Expansion. After all checkpoints, the package integration scenario and full relevant
-regression run before a fresh Sol final architect audit. Configured final-audit rework is bounded.
+Diagnosis, bundled repair and technical recovery have one protocol owner:
+`.cursor/skills/execute-gated-macro/references/checkpoint-protocol.md`. Red blocks acceptance and
+dependent progression while safe authorized diagnosis continues. Explicit autonomous mandates bound
+to package/checkpoint/contract cover engineering recovery within configured
+`max_technical_recovery_batches`, without consent per finding. Old blocked/stopped attempts need
+explicit approved resume and retain counters/evidence. Existing-owner Scope Correction may meet
+approved criteria without behavior outside them or unapproved surface/architecture/technology;
+preserve an amendment. Genuine decisions remain HUMAN_GATEs. Satisfy package integration/full relevant
+regression before a fresh final audit under configured routing. Internal/external FAIL share the
+bounded repair policy; neither grants self-PASS.
 `FINAL_PASS` updates the existing roadmap and prepares—but does not
 implement—the next package.
 
@@ -215,11 +278,13 @@ Cursor asks the user only for:
 - a destructive data decision without an approved procedure;
 - materially ambiguous requirements;
 - missing credentials or external permissions;
-- escalation `FAIL` after the configured normal rework budget;
-- final-audit `FAIL` after the configured final rework budget;
+- unresolved failure after applicable repair/escalation/authorized recovery limits or no justified
+  new repair approach;
+- recovery without concrete package/checkpoint/contract-bound autonomy or resume authorization;
 - mandatory external merge approval or repository protection automation cannot satisfy.
 
-Every gate report includes evidence, two or three options, recommendation, and consequences.
+Bundle genuine decisions with evidence, options, recommendation and consequences. Engineering defaults
+and already authorized repairs need no new consent; continue independent authorized work.
 
 ## Manual stop
 

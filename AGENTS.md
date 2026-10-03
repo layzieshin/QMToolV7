@@ -57,6 +57,41 @@ HUMAN_GATEs are documented in
 [`docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`](docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md)
 and supplemented by `.cursor/rules/02-autonomous-work-package.mdc`.
 
+## Codex implementation entry (authorized packages only)
+
+When an **authorized implementation package** originates in the Codex IDE extension, Codex must not
+implement product changes directly in that chat. Questions, reviews, architecture and planning stay
+with the requesting orchestrator. Route only bounded implementation work through the repository's
+native Cursor execution roles.
+
+- Bind the exact target worktree and approved scope before launch. Use
+  `.cursor/tools/invoke-cursor-agent.ps1` as the **only** nested Cursor CLI launcher.
+- Supply `-WorkPackage`, `-ExpectedBranch`, and `-ExpectedHead` together for a **fresh package
+  entry** at a new package boundary. `-WorkPackage` is a binding label only; it is not an implicit
+  `/execute-work-package` command or broader Git authorization. The supplied task prompt carries the
+  original approved scope. The launcher rejects partial binding, blank labels, non-40-hex
+  `ExpectedHead`, protected `main`/`master` branches, dirty targets, unknown/malformed workflow
+  state, active `human_gate` or conflicting ownership, redirected hook/Git owner variables such as
+  `QMTOOL_WORKFLOW_STATE_PATH`, `QMTOOL_RUNTIME_LOG_PATH`, `GIT_DIR`, `GIT_WORK_TREE`,
+  `GIT_COMMON_DIR`, or `GIT_INDEX_FILE`, reparse-point redirected canonical launcher/config/runtime
+  owners, and any combination of
+  fresh entry with `-ResumeSession`. State/owner checks plus the child's immediate recheck are not
+  an atomic exclusive-writer lock.
+- The inner checkpoint/review loop belongs to the native Cursor coordinator in the bound target.
+  A Cursor child must not recursively invoke the entry launcher or treat launcher exit `0` as package
+  `DONE`, reviewer `PASS`, or runtime model attestation.
+- Missing host capabilities (`EXECUTION_HOST_REQUIRED`, unavailable CLI, blocked proxy/session store)
+  must be reported honestly. There is no silent all-Codex implementation fallback.
+- Opt-in `-AutoReview` forwards only Cursor's native `--auto-review` classifier. It cannot be
+  combined with `-Force`; the launcher never enables `--force`/`--yolo` or changes global approval
+  settings automatically.
+- Invoking the launcher is **not** new push/merge permission. External Git actions remain separately
+  user-gated per Rule 01.
+
+The concrete supported invocation, approval source, and evidence rules are documented in
+[`docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md`](docs/CURSOR_AUTONOMOUS_WORK_PACKAGE_SYSTEM.md)
+under **Codex implementation entry**.
+
 ## Environment (this repo)
 
 - OS/shell: Windows / PowerShell — chain commands with `;`, not `&&`.

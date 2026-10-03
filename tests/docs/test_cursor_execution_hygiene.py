@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 from uuid import uuid4
@@ -892,11 +893,20 @@ def test_cursor_launcher_is_synchronous_and_does_not_weaken_host_controls() -> N
     preflight = (TOOLS / "assert-execution-host.ps1").read_text(encoding="utf-8")
     assert "Start-Process" not in launcher
     assert "RequireCursorCli" in launcher
-    assert '"--model", "composer-2.5"' in launcher or "--model composer-2.5" in launcher
+    assert "$coordinatorModel" in launcher
+    assert "agent-system.json" in launcher
     assert "--" in launcher
     assert "Invoke-CursorAgentProcess" in launcher
     assert "$startInfo.WorkingDirectory" in launcher
     assert "[switch]$Interactive" in launcher
+    assert "[switch]$AutoReview" in launcher
+    assert "$WorkPackage" in launcher
+    assert "QMTOOL_WORKFLOW_STATE_PATH" in launcher
+    assert "QMTOOL_RUNTIME_LOG_PATH" in launcher
+    assert "GIT_DIR" in launcher
+    assert "ReparsePoint" in launcher
+    assert "GetFullPath" in launcher
+    assert "launch_correlation_id" in launcher
     assert "$ResumeSession" in launcher
     assert "$promptText" in launcher
     assert "SetEnvironmentVariable" not in launcher
@@ -925,6 +935,11 @@ def test_autonomous_rules_require_preflight_and_gate_wrapper() -> None:
     assert "## Execution host and temporary paths" in system
     assert "invoke-cursor-agent.ps1" in system
     assert "build/pt/<pid>-<token>" in system
+    assert "Codex implementation entry" in agents
+    assert "Codex implementation entry" in system
+    assert "build/codex-cursor-entry" in system
+    assert "binding label only" in agents
+    assert "not an atomic exclusive-writer lock" in system
 
 
 def _launcher_mock_env(tmp_path: Path, *, exit_code: int = 0) -> tuple[dict[str, str], Path, Path]:
@@ -948,17 +963,118 @@ def _launcher_mock_env(tmp_path: Path, *, exit_code: int = 0) -> tuple[dict[str,
         f"raise SystemExit(int(os.environ.get('QMTOOL_MOCK_EXIT_CODE', '{exit_code}')))\n",
         encoding="utf-8",
     )
-    mock_agent = mock_dir / "cursor-agent.cmd"
+    mock_agent = mock_dir / "cursor-agent.ps1"
     mock_agent.write_text(
-        f'@echo off\r\n"{sys.executable}" "{capture_script}" %*\r\n',
+        "$payload = @{ argv = @($args); cwd = (Get-Location).Path }\n"
+        "$dash = [Array]::IndexOf([object[]]@($args), '--')\n"
+        "if ($dash -ge 0 -and $dash -lt ($args.Length - 1)) {\n"
+        "    $payload.prompt_args = @($args[($dash + 1)..($args.Length - 1)])\n"
+        "}\n"
+        "$json = $payload | ConvertTo-Json -Compress\n"
+        "[System.IO.File]::WriteAllText(\n"
+        "    $env:QMTOOL_MOCK_ARGV_LOG,\n"
+        '    $json + [Environment]::NewLine,\n'
+        "    [System.Text.UTF8Encoding]::new($false)\n"
+        ")\n"
+        "exit [int]$env:QMTOOL_MOCK_EXIT_CODE\n",
         encoding="utf-8",
     )
     env = dict(os.environ)
+    pathext = env.get("PATHEXT", ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;")
+    if not pathext.upper().startswith(".PS1"):
+        env["PATHEXT"] = ".PS1;" + pathext
     env["PATH"] = str(mock_dir) + os.pathsep + env.get("PATH", "")
     env["QMTOOL_MOCK_ARGV_LOG"] = str(args_log)
     env["QMTOOL_MOCK_EXIT_CODE"] = str(exit_code)
     _assert_cursor_agent_resolves_to_fixture(env, mock_agent)
     return env, args_log, mock_agent
+
+
+def _create_isolated_fresh_entry_repo(
+    tmp_path: Path,
+    *,
+    branch: str = "feature/entry-test",
+    workflow_status: str = "IDLE",
+    human_gate: bool = False,
+    workflow_bytes: bytes | None = None,
+    work_package_in_state: str | None = None,
+) -> dict[str, object]:
+    repo = tmp_path / "entry-repo"
+    repo.mkdir()
+    subprocess.run(
+        ["git", "init", "--initial-branch", branch, str(repo)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    tools = repo / ".cursor" / "tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    shutil.copy(TOOLS / "invoke-cursor-agent.ps1", tools / "invoke-cursor-agent.ps1")
+    shutil.copy(TOOLS / "assert-execution-host.ps1", tools / "assert-execution-host.ps1")
+    cursor_dir = repo / ".cursor"
+    shutil.copy(ROOT / ".cursor" / "agent-system.json", cursor_dir / "agent-system.json")
+    (repo / ".gitignore").write_text(
+        "build/\n.cursor/runtime/workflow-state.json\n",
+        encoding="utf-8",
+    )
+    for relative in (
+        ".gitignore",
+        ".cursor/tools/invoke-cursor-agent.ps1",
+        ".cursor/tools/assert-execution-host.ps1",
+        ".cursor/agent-system.json",
+    ):
+        subprocess.run(["git", "add", relative], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=QMTool Test",
+            "-c",
+            "user.email=qmtool@example.invalid",
+            "commit",
+            "-m",
+            "seed fresh-entry fixture",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    current_branch = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    runtime = cursor_dir / "runtime"
+    runtime.mkdir(parents=True, exist_ok=True)
+    state_path = runtime / "workflow-state.json"
+    if workflow_bytes is not None:
+        state_path.write_bytes(workflow_bytes)
+    else:
+        state = json.loads(
+            (ROOT / ".cursor" / "runtime" / "workflow-state.template.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        state["status"] = workflow_status
+        state["human_gate"] = human_gate
+        if work_package_in_state is not None:
+            state["work_package"] = work_package_in_state
+        state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    return {
+        "repo": repo,
+        "branch": current_branch,
+        "head": head,
+        "launcher": tools / "invoke-cursor-agent.ps1",
+        "state_path": state_path,
+    }
 
 
 def _invoke_launcher(
@@ -967,11 +1083,16 @@ def _invoke_launcher(
     prompt: str | None = None,
     prompt_path: Path | None = None,
     force: bool = False,
+    auto_review: bool = False,
+    work_package: str | None = None,
+    expected_branch: str | None = None,
+    expected_head: str | None = None,
     prompt_as_separate_arg: bool = False,
     interactive: bool = False,
     resume_session: str | None = None,
     resume_flag_only: bool = False,
     target_root: Path = ROOT,
+    launcher_path: Path | None = None,
     cwd: Path = ROOT,
 ) -> subprocess.CompletedProcess[str]:
     args = [
@@ -980,7 +1101,7 @@ def _invoke_launcher(
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        str(TOOLS / "invoke-cursor-agent.ps1"),
+        str(launcher_path or (TOOLS / "invoke-cursor-agent.ps1")),
         "-TargetRoot",
         str(target_root),
     ]
@@ -994,6 +1115,14 @@ def _invoke_launcher(
             args.append("-Prompt:" + prompt)
     if force:
         args.append("-Force")
+    if auto_review:
+        args.append("-AutoReview")
+    if work_package is not None:
+        args.extend(["-WorkPackage", work_package])
+    if expected_branch is not None:
+        args.extend(["-ExpectedBranch", expected_branch])
+    if expected_head is not None:
+        args.extend(["-ExpectedHead", expected_head])
     if interactive:
         args.append("-Interactive")
     if resume_flag_only or resume_session is not None:
@@ -1011,8 +1140,10 @@ def _launcher_prompt_after_double_dash(captured: str) -> str:
     payload = _launcher_argv_payload(captured)
     prompt_args = payload.get("prompt_args")
     assert isinstance(prompt_args, list), payload
-    assert len(prompt_args) == 1, payload
-    return str(prompt_args[0])
+    assert prompt_args, payload
+    if len(prompt_args) == 1:
+        return str(prompt_args[0])
+    return "\n".join(str(part) for part in prompt_args)
 
 
 def _extract_powershell_function(source: str, name: str) -> str:
@@ -1182,6 +1313,421 @@ def test_cursor_launcher_native_argument_quoting_round_trips_windows_argv(tmp_pa
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_auto_review_switch_and_exit_passthrough(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path, exit_code=7)
+    completed = _invoke_launcher(env, prompt="auto review off")
+    assert completed.returncode == 7, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    assert "--auto-review" not in _launcher_argv_payload(captured)["argv"]
+
+    args_log.unlink()
+    completed_auto_review = _invoke_launcher(env, prompt="auto review on", auto_review=True)
+    assert completed_auto_review.returncode == 7, completed_auto_review.stderr or completed_auto_review.stdout
+    captured_auto_review = args_log.read_text(encoding="utf-8")
+    assert "--auto-review" in _launcher_argv_payload(captured_auto_review)["argv"]
+    assert "--force" not in _launcher_argv_payload(captured_auto_review)["argv"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_rejects_auto_review_with_force_before_child(tmp_path: Path) -> None:
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    completed = _invoke_launcher(env, prompt="mutually exclusive", force=True, auto_review=True)
+    assert completed.returncode != 0
+    assert "AutoReview cannot be combined with Force" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_partial_binding_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="partial binding",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "must be supplied together" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_protected_main_branch(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="protected branch",
+        work_package="codex-cursor-entry",
+        expected_branch="main",
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "protected branch" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_non_immutable_head_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="branch name head",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["branch"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "40-character commit SHA" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_branch_and_head_mismatch_before_child(
+    tmp_path: Path,
+) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    branch = str(meta["branch"])
+    head = str(meta["head"])
+    state_bytes = meta["state_path"].read_bytes()
+    wrong_branch = _invoke_launcher(
+        env,
+        prompt="wrong branch",
+        work_package="codex-cursor-entry",
+        expected_branch="feature/does-not-exist",
+        expected_head=head,
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert wrong_branch.returncode != 0
+    assert "ExpectedBranch mismatch" in (wrong_branch.stderr or wrong_branch.stdout)
+    assert not args_log.exists()
+
+    wrong_head = _invoke_launcher(
+        env,
+        prompt="wrong head",
+        work_package="codex-cursor-entry",
+        expected_branch=branch,
+        expected_head="0" * 40,
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert wrong_head.returncode != 0
+    assert "Git command failed" in (wrong_head.stderr or wrong_head.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_dirty_worktree_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    dirty_marker = meta["repo"] / "tracked-dirty.txt"
+    dirty_marker.write_text("dirty\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(meta["repo"]), "add", "tracked-dirty.txt"],
+        check=True,
+    )
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="dirty target",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "clean worktree" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_active_workflow_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path, workflow_status="RUNNING")
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="active workflow",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "workflow status: RUNNING" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_human_gate_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path, human_gate=True)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="human gate",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "human_gate" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_malformed_workflow_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path, workflow_bytes=b"{not-json")
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="malformed workflow",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "valid workflow-state.json" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_conflicting_idle_ownership_before_child(
+    tmp_path: Path,
+) -> None:
+    meta = _create_isolated_fresh_entry_repo(
+        tmp_path,
+        work_package_in_state="WP-OLD",
+    )
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="conflicting ownership",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "conflicting work_package ownership" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_resume_combination_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="resume plus fresh entry",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        resume_session="session-chat-abc",
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "cannot be combined with ResumeSession" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_redirected_runtime_owner_before_child(
+    tmp_path: Path,
+) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    redirected_state = tmp_path / "foreign-workflow-state.json"
+    redirected_state.write_text('{"status":"IDLE"}', encoding="utf-8")
+    env["QMTOOL_WORKFLOW_STATE_PATH"] = str(redirected_state)
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="redirected runtime owner",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "QMTOOL_WORKFLOW_STATE_PATH" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_redirected_git_dir_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    env["GIT_DIR"] = str(tmp_path / "foreign-git-dir")
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="redirected git dir",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode != 0
+    assert "GIT_DIR" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows parent-junction guard is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_parent_junction_runtime_before_child(
+    tmp_path: Path,
+) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    repo = meta["repo"]
+    state_path = meta["state_path"]
+    state_bytes = state_path.read_bytes()
+    outside_runtime = tmp_path / "outside-runtime"
+    outside_runtime.mkdir()
+    (outside_runtime / "workflow-state.json").write_bytes(state_bytes)
+    runtime_dir = repo / ".cursor" / "runtime"
+    state_path.unlink()
+    runtime_dir.rmdir()
+    junction = runtime_dir
+    mklink = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside_runtime)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert mklink.returncode == 0, mklink.stderr or mklink.stdout
+    try:
+        completed = _invoke_launcher(
+            env,
+            prompt="parent junction runtime",
+            work_package="codex-cursor-entry",
+            expected_branch=str(meta["branch"]),
+            expected_head=str(meta["head"]),
+            target_root=repo,
+            launcher_path=meta["launcher"],
+        )
+        assert completed.returncode != 0
+        assert "reparse-point redirected canonical" in (completed.stderr or completed.stdout)
+        assert not args_log.exists()
+        assert (outside_runtime / "workflow-state.json").read_bytes() == state_bytes
+    finally:
+        if junction.exists():
+            junction.rmdir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_rejects_redirected_launcher_before_child(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    foreign_tools = tmp_path / "foreign-tools"
+    foreign_tools.mkdir()
+    shutil.copy(TOOLS / "invoke-cursor-agent.ps1", foreign_tools / "invoke-cursor-agent.ps1")
+    shutil.copy(TOOLS / "assert-execution-host.ps1", foreign_tools / "assert-execution-host.ps1")
+    state_bytes = meta["state_path"].read_bytes()
+    completed = _invoke_launcher(
+        env,
+        prompt="redirected launcher",
+        work_package="codex-cursor-entry",
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=foreign_tools / "invoke-cursor-agent.ps1",
+    )
+    assert completed.returncode != 0
+    assert "canonical invoke-cursor-agent.ps1" in (completed.stderr or completed.stdout)
+    assert not args_log.exists()
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
+def test_cursor_launcher_fresh_entry_launches_child_and_records_journal(tmp_path: Path) -> None:
+    meta = _create_isolated_fresh_entry_repo(tmp_path)
+    env, args_log, mock_agent = _launcher_mock_env(tmp_path, exit_code=7)
+    work_package = "codex-cursor-entry"
+    journal = meta["repo"] / "build" / "codex-cursor-entry" / work_package / "execution-journal.md"
+    state_bytes = meta["state_path"].read_bytes()
+    config = json.loads((meta["repo"] / ".cursor" / "agent-system.json").read_text(encoding="utf-8"))
+    coordinator_model = config["routing"]["coordinator_model"]
+    completed = _invoke_launcher(
+        env,
+        prompt="fresh entry probe",
+        work_package=work_package,
+        expected_branch=str(meta["branch"]),
+        expected_head=str(meta["head"]),
+        target_root=meta["repo"],
+        launcher_path=meta["launcher"],
+    )
+    assert completed.returncode == 7, completed.stderr or completed.stdout
+    captured = args_log.read_text(encoding="utf-8")
+    prompt_after = _launcher_prompt_after_double_dash(captured)
+    assert "CODEX_ENTRY_BINDING" in prompt_after
+    assert work_package in prompt_after
+    assert str(meta["branch"]) in prompt_after
+    assert str(meta["head"]) in prompt_after
+    assert "binding label only" in prompt_after
+    child_cwd = Path(_launcher_child_cwd(captured)).resolve()
+    assert child_cwd == Path(meta["repo"]).resolve()
+    argv = _launcher_argv_payload(captured)["argv"]
+    model_index = argv.index("--model")
+    assert argv[model_index + 1] == coordinator_model
+    assert journal.is_file()
+    journal_text = journal.read_text(encoding="utf-8")
+    assert "## ENTRY_START" in journal_text
+    assert "## ENTRY_RESULT" in journal_text
+    assert "launch_correlation_id:" in journal_text
+    assert "launcher-generated; not a native Cursor task/session id" in journal_text
+    assert "child_exit_code: 7" in journal_text
+    assert "child_executable:" in journal_text
+    assert "child_working_directory:" in journal_text
+    assert str(meta["repo"]) in journal_text
+    child_executable_line = next(
+        line for line in journal_text.splitlines() if line.startswith("- child_executable:")
+    )
+    assert Path(POWERSHELL).name.lower() in child_executable_line.lower()
+    assert "native_cursor_task_session: unknown" in journal_text
+    assert "package_result: unverified" in journal_text
+    assert meta["state_path"].read_bytes() == state_bytes
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
 def test_cursor_launcher_force_switch_and_exit_passthrough(tmp_path: Path) -> None:
     env, args_log, _mock_agent = _launcher_mock_env(tmp_path, exit_code=7)
     completed = _invoke_launcher(env, prompt="force off")
@@ -1206,12 +1752,20 @@ def test_cursor_launcher_preflight_failure_skips_child(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
-def test_cursor_launcher_model_matches_coordinator_config() -> None:
+def test_cursor_launcher_model_matches_coordinator_config(tmp_path: Path) -> None:
     config = json.loads((ROOT / ".cursor" / "agent-system.json").read_text(encoding="utf-8"))
     coordinator_model = config["routing"]["coordinator_model"]
     launcher = (TOOLS / "invoke-cursor-agent.ps1").read_text(encoding="utf-8")
-    assert f'"--model", "{coordinator_model}"' in launcher
+    assert "agent-system.json" in launcher
+    assert "coordinator_model" in launcher
+    assert "$coordinatorModel" in launcher
     assert "ArgumentList" in launcher
+    env, args_log, _mock_agent = _launcher_mock_env(tmp_path)
+    completed = _invoke_launcher(env, prompt="model probe")
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    argv = _launcher_argv_payload(args_log.read_text(encoding="utf-8"))["argv"]
+    model_index = argv.index("--model")
+    assert argv[model_index + 1] == coordinator_model
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell launcher contract is Windows-only")
@@ -1404,10 +1958,10 @@ def test_cursor_launcher_argument_list_preserves_terminal_backslash_quotes_and_n
         + "$args = @($capture,'--print','--output-format','text','--workspace','"
         + str(ROOT).replace("\\", "\\\\")
         + "','--model','composer-2.5','--',$prompt)\n"
-        + "$code = Invoke-CursorAgentProcess -Executable $python -ArgumentList $args -WorkingDirectory '"
+        + "$result = Invoke-CursorAgentProcess -Executable $python -ArgumentList $args -WorkingDirectory '"
         + str(ROOT).replace("\\", "\\\\")
         + "'\n"
-        + "exit $code\n",
+        + "exit $result.ExitCode\n",
         encoding="utf-8",
     )
     completed = _run_subprocess_bounded(
